@@ -5,6 +5,14 @@ import { checkConnection as checkPostgres } from './db/postgres.js'
 import { checkConnection as checkRedis } from './db/redis.js'
 import { attachLessonWS } from './ws/lesson-ws.js'
 
+const REQUIRED_ENV = ['DATABASE_URL', 'REDIS_URL', 'JWT_SECRET']
+for (const key of REQUIRED_ENV) {
+  if (!process.env[key]) {
+    console.error(`[server] missing required env variable: ${key}`)
+    process.exit(1)
+  }
+}
+
 const PORT = Number(process.env.PORT ?? 4000)
 
 async function main(): Promise<void> {
