@@ -1,0 +1,52 @@
+import pg from 'pg'
+import 'dotenv/config'
+
+const { Pool } = pg
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 10,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 5_000,
+})
+
+pool.on('error', (err) => {
+  console.error('[postgres] idle client error:', err.message)
+})
+
+export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
+  text: string,
+  params?: unknown[],
+): Promise<pg.QueryResult<T>> {
+  const start = Date.now()
+  const result = await pool.query<T>(text, params)
+  const duration = Date.now() - start
+  if (duration > 500) {
+    console.warn(`[postgres] slow query (${duration}ms):`, text.slice(0, 80))
+  }
+  return result
+}
+
+export async function withTransaction<T>(
+  fn: (client: pg.PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const result = await fn(client)
+    await client.query('COMMIT')
+    return result
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+export async function checkConnection(): Promise<void> {
+  const result = await pool.query<{ now: Date }>('SELECT NOW()')
+  console.log('[postgres] connected, server time:', result.rows[0].now)
+}
+
+export default pool

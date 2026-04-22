@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(unzip -o \"C:/Users/Admin/Downloads/ai-teacher-project-v2.zip\" -d .)"
+    ]
+  }
+}
