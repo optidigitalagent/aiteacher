@@ -1,10 +1,9 @@
 [build]
 builder = "nixpacks"
-buildCommand = "npm install"
 
 [deploy]
 startCommand = "npm run migrate && npm start"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 60
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
