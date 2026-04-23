@@ -30,7 +30,7 @@ async function seed(): Promise<void> {
         TEST_PROFILE_ID,
         TEST_STUDENT_ID,
         JSON.stringify({ past_simple_regular: 0.4, past_simple_irregular: 0.2 }),
-        ['{"forgets -ed in negatives"}'],
+        ['forgets -ed in negatives'],
         'examples_first',
         20,
       ],

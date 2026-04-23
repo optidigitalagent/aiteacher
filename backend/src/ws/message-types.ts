@@ -1,4 +1,5 @@
 import { z } from 'zod'
+export type { LessonPhase } from '../lesson/types.js'
 
 // ─── Inbound (Client → Server) ───────────────────────────────────────────────
 
@@ -9,10 +10,20 @@ export const LessonConfigSchema = z.object({
   textbookUnit:  z.string().min(1),
 })
 
+// Focus textbook mode: student picks a unit number, backend fills the rest
+export const FocusLessonConfigSchema = z.object({
+  studentId: z.string().uuid(),
+  unit:      z.number().int().min(1).max(12),
+})
+
 export const InboundMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type:    z.literal('lesson_start'),
     payload: LessonConfigSchema,
+  }),
+  z.object({
+    type:    z.literal('focus_lesson_start'),
+    payload: FocusLessonConfigSchema,
   }),
   z.object({
     type: z.literal('text_message'),
@@ -32,19 +43,13 @@ export const InboundMessageSchema = z.discriminatedUnion('type', [
   }),
 ])
 
-export type InboundMessage  = z.infer<typeof InboundMessageSchema>
-export type LessonConfig    = z.infer<typeof LessonConfigSchema>
+export type InboundMessage    = z.infer<typeof InboundMessageSchema>
+export type LessonConfig      = z.infer<typeof LessonConfigSchema>
+export type FocusLessonConfig = z.infer<typeof FocusLessonConfigSchema>
 
 // ─── Outbound (Server → Client) ──────────────────────────────────────────────
 
-export type LessonPhase =
-  | 'DIAGNOSTIC'
-  | 'CONTEXT_INPUT'
-  | 'RULE_DISCOVERY'
-  | 'EXERCISES'
-  | 'VOCABULARY'
-  | 'DEEP_THINKING'
-  | 'WRAP_UP'
+import type { LessonPhase } from '../lesson/types.js'
 
 export interface OutboundAiText {
   type:  'ai_text'
@@ -60,10 +65,11 @@ export interface OutboundAudioChunk {
 export interface OutboundExercise {
   type:     'exercise'
   exercise: {
-    id:            string
-    exerciseType:  string
-    question:      string
-    difficulty:    number
+    id:           string
+    exerciseType: string
+    question:     string
+    hint:         string
+    difficulty:   number
   }
 }
 
@@ -82,12 +88,17 @@ export interface OutboundFeedback {
 export interface OutboundLessonEnd {
   type:    'lesson_end'
   summary: {
-    lessonId:       string
-    phasesReached:  LessonPhase[]
-    exerciseScore:  number
+    lessonId:        string
+    phasesReached:   LessonPhase[]
+    exerciseScore:   number
     vocabularyCount: number
-    durationMin:    number
+    durationMin:     number
   }
+}
+
+export interface OutboundTranscript {
+  type: 'transcript'
+  text: string
 }
 
 export interface OutboundError {
@@ -103,4 +114,5 @@ export type OutboundMessage =
   | OutboundPhaseChange
   | OutboundFeedback
   | OutboundLessonEnd
+  | OutboundTranscript
   | OutboundError
