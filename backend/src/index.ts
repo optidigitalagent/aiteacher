@@ -52,11 +52,6 @@ const PORT         = Number(process.env.PORT ?? 4000)
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000'
 
 async function main(): Promise<void> {
-  await checkPostgres()
-  await initTables()
-  await checkRedis()
-  setupOpenAI()
-
   const app = express()
 
   // ── CORS ───────────────────────────────────────────────────────────────────
@@ -76,11 +71,36 @@ async function main(): Promise<void> {
   const server = createServer(app)
   attachLessonWS(server)
 
-  server.listen(PORT, () => {
-    console.log(`[server] running on http://localhost:${PORT}`)
-    console.log(`[server] WS endpoint: ws://localhost:${PORT}/lesson`)
-    console.log(`[server] frontend origin: ${FRONTEND_URL}`)
+  // Start HTTP server first so Railway healthcheck is reachable immediately
+  await new Promise<void>((resolve) => {
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`[server] listening on 0.0.0.0:${PORT}`)
+      console.log(`[server] NODE_ENV: ${process.env.NODE_ENV ?? 'development'}`)
+      console.log(`[server] GET /health is available`)
+      resolve()
+    })
   })
+
+  // Connect to services after HTTP is up — failures are logged but don't kill the process
+  try {
+    await checkPostgres()
+    await initTables()
+    console.log(`[server] PostgreSQL ready`)
+  } catch (err) {
+    console.error('[server] PostgreSQL startup error (will retry on next request):', err)
+  }
+
+  try {
+    await checkRedis()
+    console.log(`[server] Redis ready`)
+  } catch (err) {
+    console.error('[server] Redis startup error (will retry on next request):', err)
+  }
+
+  setupOpenAI()
+
+  console.log(`[server] WS endpoint: ws://localhost:${PORT}/lesson`)
+  console.log(`[server] frontend origin: ${FRONTEND_URL}`)
 }
 
 main().catch((err) => {
