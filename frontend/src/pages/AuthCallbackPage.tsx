@@ -16,6 +16,7 @@ export default function AuthCallbackPage() {
     const token  = params.get('token')
 
     async function processLogin() {
+      console.log('[auth] callback token found:', !!token)
       if (token) {
         storeToken(token)
         // Sync auth context state before navigating — without this the user

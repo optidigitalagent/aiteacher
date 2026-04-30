@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+const API_BASE = import.meta.env.VITE_API_URL ?? ''
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ProfileStats {
@@ -173,7 +175,7 @@ function EditProfileModal({ initialName, initialEmoji, token, onClose, onSaved }
       const body: Record<string, string> = { displayName: trimmed }
       if (emoji) body.avatarEmoji = emoji
 
-      const res = await fetch('/api/profile', {
+      const res = await fetch(`${API_BASE}/api/profile`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body:    JSON.stringify(body),
@@ -581,7 +583,7 @@ export default function ProfilePage() {
     }
     setFetchError(false)
     try {
-      const res = await fetch('/api/profile', {
+      const res = await fetch(`${API_BASE}/api/profile`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.ok) {

@@ -41,6 +41,7 @@ const AuthContext = createContext<AuthState>({
 })
 
 const TOKEN_KEY = 'auth_token'
+const API_BASE  = import.meta.env.VITE_API_URL ?? ''
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user,          setUser]          = useState<AuthUser | null>(null)
@@ -50,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchMe = useCallback(async (t: string): Promise<boolean> => {
     try {
-      const res = await fetch('/api/me', {
+      const res = await fetch(`${API_BASE}/api/me`, {
         headers: { Authorization: `Bearer ${t}` },
       })
       if (!res.ok) return false

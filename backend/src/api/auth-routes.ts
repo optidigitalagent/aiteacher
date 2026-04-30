@@ -22,6 +22,7 @@ router.get('/auth/google/callback', async (req: Request, res: Response): Promise
   }
   try {
     const token = await handleGoogleCallback(code)
+    console.log('[auth] callback success → redirecting to', `${FRONTEND_URL}/auth/callback?token=<jwt>`)
     res.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`)
   } catch (err) {
     console.error('[auth] Google callback error:', err)
