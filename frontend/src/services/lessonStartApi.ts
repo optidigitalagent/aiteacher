@@ -1,5 +1,7 @@
 import { getStoredToken } from '../context/AuthContext'
 
+const API_BASE = import.meta.env.VITE_API_URL ?? ''
+
 export interface LessonStartPayload {
   mode:          'textbook' | 'topic'
   bookId:        string
@@ -18,7 +20,7 @@ export interface LessonStartResponse {
 
 export async function startLesson(payload: LessonStartPayload): Promise<LessonStartResponse> {
   const token = getStoredToken()
-  const res = await fetch('/lesson/start', {
+  const res = await fetch(`${API_BASE}/lesson/start`, {
     method:  'POST',
     headers: {
       'Content-Type':  'application/json',
