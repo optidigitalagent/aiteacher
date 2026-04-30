@@ -1,3 +1,8 @@
+import crypto from 'crypto'
+if (!globalThis.crypto) {
+  (globalThis as any).crypto = crypto.webcrypto
+}
+
 import 'dotenv/config'
 import path from 'path'
 
