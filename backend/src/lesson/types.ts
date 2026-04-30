@@ -1,3 +1,22 @@
+// ── Slide / Teaching Cards ────────────────────────────────────────────────────
+
+export interface SlideBlock {
+  label:    string
+  form?:    string
+  example?: string
+}
+
+export interface SlideSpec {
+  bookId:         string
+  sectionId:      string
+  slideType:      'grammar_overview' | 'mini_explanation' | 'audio_task'
+  title:          string
+  blocks:         SlideBlock[]
+  commonMistake?: string
+  tryThis?:       string
+  createdAt:      string
+}
+
 export type LessonPhase =
   | 'DIAGNOSTIC'
   | 'CONTEXT_INPUT'
@@ -15,7 +34,8 @@ export interface LessonState {
   studentId:   string
   phase:       LessonPhase
   mode:        LessonMode    // 'free' = user-driven, 'focus' = strict textbook
-  focusUnit?:  number        // only set when mode === 'focus'
+  focusUnit?:   number        // only set when mode === 'focus'
+  focusLesson?: string        // sub-unit section, e.g. "1.2", "3.4"
   grammarTarget: string
   lessonTopic:   string
   textbookUnit:  string
@@ -28,6 +48,10 @@ export interface LessonState {
   currentDifficulty:  number
   deepThinkingExchanges: number
 
+  // exercise sequencing (Focus mode: tracks which textbook exercise we're on)
+  currentExerciseNum: number      // 1-based; 0 = not started yet
+  completedExercises: number[]    // exercise numbers already given to student
+
   // content tracking
   vocabularyTaught: string[]
   errorsThisLesson: ErrorRecord[]
@@ -36,6 +60,7 @@ export interface LessonState {
   studentConfirmedReading: boolean
   ruleStatedCorrectly:     boolean
   summaryDelivered:        boolean
+  overviewShown:           boolean  // CONTEXT_INPUT: grammar card shown once, never repeat
 
   startedAt:     string // ISO
   phaseStartedAt: string // ISO
@@ -63,17 +88,22 @@ export interface AIResponse {
 export interface ExerciseData {
   id:           string
   type: 'form_transformation' | 'error_correction' | 'reconstruction' | 'free_production'
-  question:     string
+  question:     string   // CURRENT ITEM ONLY — the single item being asked right now
   correct_answer: string
   hint:         string
   difficulty:   number
+  exerciseNumber?: number  // textbook exercise number (1, 2, 3…)
+  instruction?:    string  // what the student must do, e.g. "Complete each sentence with the correct form"
+  skillFocus?:     string  // grammar/skill being practiced
+  items?:          string[] // ALL items of this exercise for card display (["1. text", "2. text", …])
 }
 
 export interface OrchestratorResult {
-  text:          string
-  phase:         LessonPhase
-  phaseChanged:  boolean
+  text:         string
+  displayText:  string        // formatted display_text from AI (may contain card markdown)
+  phase:        LessonPhase
+  phaseChanged: boolean
   previousPhase: LessonPhase
-  exercise:      ExerciseData | null
-  ended:         boolean
+  exercise:     ExerciseData | null
+  ended:        boolean
 }

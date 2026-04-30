@@ -1,0 +1,1561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>About — AI Teacher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --purple: #788CFF;
+    --light-purple: #A18BFF;
+    --gradient: linear-gradient(135deg, #788CFF, #A18BFF);
+    --gradient-cta: linear-gradient(135deg, #788CFF 0%, #A18BFF 50%, #FFB38C 100%);
+    --orange: #FFB38C;
+    --text-primary: #0F172A;
+    --text-secondary: #64748B;
+    --border: #E6EAF2;
+    --surface: #F6F7FB;
+    --background: #FFFFFF;
+    --warm-white: #FFF9F3;
+    --soft-beige: #FFF4EB;
+    --success: #22C55E;
+    --error: #EF4444;
+    --warning: #FFB38C;
+    --disabled: #C8D2E1;
+
+    --radius-sm: 8px;
+    --radius-md: 16px;
+    --radius-lg: 20px;
+    --radius-xl: 24px;
+
+    --shadow-low: 0px 4px 12px rgba(15, 23, 42, 0.06);
+    --shadow-med: 0px 12px 24px rgba(15, 23, 42, 0.08);
+    --shadow-high: 0px 24px 48px rgba(15, 23, 42, 0.12);
+
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --dur-fast: 200ms;
+    --dur-std: 300ms;
+    --dur-slow: 500ms;
+
+    --font-display: 'Instrument Serif', Georgia, serif;
+    --font-body: 'DM Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--background);
+    color: var(--text-primary);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── BACKGROUND CANVAS ─── */
+  .bg-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .bg-blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.18;
+    animation: blobFloat 18s ease-in-out infinite alternate;
+  }
+  .bg-blob-1 { width: 600px; height: 600px; background: var(--purple); top: -200px; right: -100px; animation-duration: 20s; }
+  .bg-blob-2 { width: 400px; height: 400px; background: var(--orange); bottom: 20%; left: -150px; animation-duration: 25s; animation-delay: -5s; }
+  .bg-blob-3 { width: 300px; height: 300px; background: var(--light-purple); top: 50%; left: 40%; animation-duration: 22s; animation-delay: -10s; }
+
+  @keyframes blobFloat {
+    0% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(30px, -20px) scale(1.05); }
+    66% { transform: translate(-20px, 15px) scale(0.97); }
+    100% { transform: translate(15px, 25px) scale(1.02); }
+  }
+
+  /* ─── LAYOUT ─── */
+  .page-wrapper { position: relative; z-index: 1; }
+
+  .container {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 0 48px;
+  }
+
+  @media (max-width: 768px) {
+    .container { padding: 0 24px; }
+  }
+
+  /* ─── HEADER / NAV ─── */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(255,255,255,0.88);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    transition: background var(--dur-std) var(--ease-out);
+  }
+
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+  }
+
+  .nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 17px;
+    color: var(--text-primary);
+    text-decoration: none;
+  }
+
+  .nav-logo-icon {
+    width: 28px; height: 28px;
+    background: var(--gradient);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .nav-logo-icon svg { width: 16px; height: 16px; fill: white; }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    list-style: none;
+  }
+
+  .nav-links a {
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .nav-links a:hover { color: var(--text-primary); }
+  .nav-links a.active {
+    color: var(--purple);
+    position: relative;
+  }
+  .nav-links a.active::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0; right: 0;
+    height: 2px;
+    background: var(--purple);
+    border-radius: 2px;
+  }
+
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .nav-avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--gradient);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600; color: white;
+    transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+  }
+  .nav-avatar:hover { transform: scale(1.06); box-shadow: var(--shadow-med); }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 20px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    outline: none;
+    text-decoration: none;
+    transition: transform var(--dur-fast) var(--ease-out),
+                box-shadow var(--dur-fast) var(--ease-out),
+                opacity var(--dur-fast) var(--ease-out);
+  }
+  .btn:hover { transform: scale(1.02); }
+  .btn:active { transform: scale(0.98); box-shadow: none !important; }
+
+  .btn-primary {
+    background: var(--gradient-cta);
+    color: white;
+    box-shadow: var(--shadow-low);
+  }
+  .btn-primary:hover { box-shadow: var(--shadow-med); }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--text-primary);
+    border: 1.5px solid var(--border);
+  }
+  .btn-secondary:hover { border-color: var(--purple); color: var(--purple); box-shadow: var(--shadow-low); }
+
+  .btn-large {
+    height: 52px;
+    padding: 0 32px;
+    font-size: 16px;
+    border-radius: var(--radius-lg);
+  }
+
+  .btn-icon {
+    width: 18px; height: 18px;
+  }
+
+  /* ─── SCROLL ANIMATION ─── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity var(--dur-slow) var(--ease-out),
+                transform var(--dur-slow) var(--ease-out);
+  }
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ─── SECTION STYLES ─── */
+  section { position: relative; }
+
+  .section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--purple);
+    background: rgba(120, 140, 255, 0.08);
+    padding: 4px 12px;
+    border-radius: 100px;
+    margin-bottom: 16px;
+  }
+
+  /* ─── 1. HERO ─── */
+  .hero {
+    padding: 96px 0 80px;
+    overflow: hidden;
+  }
+
+  .hero-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 64px;
+    align-items: center;
+  }
+
+  .hero-text h1 {
+    font-family: var(--font-display);
+    font-size: 52px;
+    line-height: 1.1;
+    font-weight: 400;
+    color: var(--text-primary);
+    margin-bottom: 20px;
+  }
+
+  .hero-text h1 em {
+    font-style: italic;
+    background: var(--gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero-text .subtitle {
+    font-size: 18px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    font-weight: 400;
+  }
+
+  .hero-text .description {
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    margin-bottom: 36px;
+  }
+
+  .hero-ctas {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  /* Hero Visual */
+  .hero-visual {
+    position: relative;
+    height: 420px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .hero-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(0);
+  }
+
+  .hero-orb-main {
+    width: 280px; height: 280px;
+    background: linear-gradient(135deg, rgba(120,140,255,0.25) 0%, rgba(161,139,255,0.3) 50%, rgba(255,179,140,0.15) 100%);
+    border-radius: 50%;
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(120,140,255,0.15);
+    box-shadow: 0 24px 80px rgba(120,140,255,0.2), inset 0 1px 0 rgba(255,255,255,0.6);
+    animation: orbPulse 6s ease-in-out infinite;
+  }
+
+  @keyframes orbPulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 24px 80px rgba(120,140,255,0.2); }
+    50% { transform: scale(1.04); box-shadow: 0 32px 100px rgba(120,140,255,0.3); }
+  }
+
+  .hero-float {
+    position: absolute;
+    border-radius: 20px;
+    background: white;
+    box-shadow: var(--shadow-high);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+  .hero-float-icon {
+    width: 32px; height: 32px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .hero-float-1 {
+    top: 60px; left: -10px;
+    animation: float1 4s ease-in-out infinite;
+  }
+  .hero-float-2 {
+    bottom: 80px; right: -20px;
+    animation: float2 5s ease-in-out infinite;
+  }
+  .hero-float-3 {
+    top: 50%; right: -30px;
+    transform: translateY(-50%);
+    animation: float3 4.5s ease-in-out infinite;
+  }
+
+  @keyframes float1 { 0%,100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
+  @keyframes float2 { 0%,100% { transform: translateY(0px); } 50% { transform: translateY(8px); } }
+  @keyframes float3 { 0%,100% { transform: translateY(-50%) translateX(0px); } 50% { transform: translateY(-52%) translateX(-6px); } }
+
+  .waveform {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 20px;
+  }
+  .waveform span {
+    display: block;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--gradient);
+    animation: wave 1.2s ease-in-out infinite;
+  }
+  .waveform span:nth-child(1) { height: 8px; animation-delay: 0ms; }
+  .waveform span:nth-child(2) { height: 14px; animation-delay: 80ms; }
+  .waveform span:nth-child(3) { height: 20px; animation-delay: 160ms; }
+  .waveform span:nth-child(4) { height: 12px; animation-delay: 240ms; }
+  .waveform span:nth-child(5) { height: 18px; animation-delay: 320ms; }
+  .waveform span:nth-child(6) { height: 8px; animation-delay: 400ms; }
+
+  @keyframes wave {
+    0%, 100% { transform: scaleY(1); opacity: 0.6; }
+    50% { transform: scaleY(1.4); opacity: 1; }
+  }
+
+  /* ─── 2. HOW IT WORKS ─── */
+  .how-it-works {
+    padding: 80px 0;
+    background: var(--warm-white);
+  }
+
+  .section-header {
+    text-align: center;
+    margin-bottom: 56px;
+  }
+
+  .section-header h2 {
+    font-family: var(--font-display);
+    font-size: 40px;
+    font-weight: 400;
+    line-height: 1.2;
+    margin-bottom: 12px;
+  }
+
+  .section-header p {
+    font-size: 16px;
+    color: var(--text-secondary);
+    max-width: 480px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  .steps-track {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    position: relative;
+  }
+
+  .steps-track::before {
+    content: '';
+    position: absolute;
+    top: 36px;
+    left: calc(12.5% + 20px);
+    right: calc(12.5% + 20px);
+    height: 2px;
+    background: linear-gradient(90deg, var(--purple), var(--orange));
+    z-index: 0;
+  }
+
+  .step-card {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 0 16px;
+  }
+
+  .step-num {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+    margin-bottom: 20px;
+    position: relative;
+    z-index: 2;
+    box-shadow: var(--shadow-low);
+    transition: border-color var(--dur-std) var(--ease-out),
+                box-shadow var(--dur-std) var(--ease-out),
+                transform var(--dur-std) var(--ease-out);
+  }
+
+  .step-card:hover .step-num {
+    border-color: var(--purple);
+    box-shadow: 0 0 0 4px rgba(120,140,255,0.12), var(--shadow-med);
+    transform: translateY(-4px);
+  }
+
+  .step-card h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+  }
+
+  .step-card p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* ─── 3. WHY BETTER ─── */
+  .why-better {
+    padding: 80px 0;
+  }
+
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+
+  .feature-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 28px 24px;
+    transition: transform var(--dur-std) var(--ease-out),
+                box-shadow var(--dur-std) var(--ease-out),
+                border-color var(--dur-std) var(--ease-out);
+  }
+
+  .feature-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 0 0 3px rgba(120,140,255,0.08), var(--shadow-high);
+    border-color: rgba(120,140,255,0.3);
+  }
+
+  .feature-icon {
+    width: 48px; height: 48px;
+    border-radius: 14px;
+    background: var(--gradient);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    margin-bottom: 20px;
+  }
+
+  .feature-card h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .feature-card p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* ─── 4. PHILOSOPHY ─── */
+  .philosophy {
+    padding: 80px 0;
+    background: var(--soft-beige);
+  }
+
+  .philosophy-inner {
+    max-width: 760px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .philosophy-inner h2 {
+    font-family: var(--font-display);
+    font-size: 44px;
+    font-weight: 400;
+    line-height: 1.15;
+    margin-bottom: 24px;
+  }
+
+  .philosophy-inner h2 em {
+    font-style: italic;
+    color: var(--purple);
+  }
+
+  .philosophy-inner .lead {
+    font-size: 18px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    margin-bottom: 48px;
+  }
+
+  .philosophy-points {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    text-align: left;
+  }
+
+  .philosophy-point {
+    background: white;
+    border-radius: var(--radius-xl);
+    padding: 24px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-low);
+  }
+
+  .philosophy-point .point-icon {
+    font-size: 24px;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .philosophy-point h4 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .philosophy-point p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* ─── 5. PRIVACY ─── */
+  .privacy {
+    padding: 64px 0;
+  }
+
+  .privacy-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  .privacy-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 24px;
+  }
+
+  .privacy-icon {
+    width: 40px; height: 40px;
+    border-radius: 12px;
+    background: rgba(120,140,255,0.1);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .privacy-card h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .privacy-card p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  /* ─── 6. SUPPORT FORM ─── */
+  .support {
+    padding: 80px 0;
+    background: var(--warm-white);
+  }
+
+  .support-grid {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 64px;
+    align-items: start;
+  }
+
+  /* Form Side */
+  .support-form-wrap h2 {
+    font-family: var(--font-display);
+    font-size: 36px;
+    font-weight: 400;
+    margin-bottom: 8px;
+  }
+
+  .support-form-wrap .form-sub {
+    font-size: 15px;
+    color: var(--text-secondary);
+    margin-bottom: 32px;
+  }
+
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .form-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .form-input,
+  .form-select,
+  .form-textarea {
+    font-family: var(--font-body);
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--background);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0 16px;
+    height: 48px;
+    outline: none;
+    transition: border-color var(--dur-fast) var(--ease-out),
+                box-shadow var(--dur-fast) var(--ease-out);
+    width: 100%;
+    appearance: none;
+  }
+
+  .form-textarea {
+    height: 120px;
+    padding: 14px 16px;
+    resize: vertical;
+    line-height: 1.5;
+  }
+
+  .form-select-wrap {
+    position: relative;
+  }
+
+  .form-select-wrap::after {
+    content: '';
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid var(--text-secondary);
+    pointer-events: none;
+  }
+
+  .form-input:focus,
+  .form-select:focus,
+  .form-textarea:focus {
+    border-color: var(--purple);
+    box-shadow: 0 0 0 3px rgba(120,140,255,0.12);
+  }
+
+  .form-input::placeholder,
+  .form-textarea::placeholder { color: var(--disabled); }
+
+  .btn-submit {
+    height: 52px;
+    padding: 0 32px;
+    border-radius: var(--radius-lg);
+    font-size: 15px;
+    font-weight: 600;
+    background: var(--gradient-cta);
+    color: white;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    transition: transform var(--dur-fast) var(--ease-out),
+                box-shadow var(--dur-fast) var(--ease-out),
+                opacity var(--dur-std) var(--ease-out);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-submit:hover:not(:disabled) { transform: scale(1.01); box-shadow: var(--shadow-med); }
+  .btn-submit:active:not(:disabled) { transform: scale(0.98); }
+  .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .form-status {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .form-status.success {
+    display: flex;
+    background: rgba(34,197,94,0.1);
+    color: #16A34A;
+    border: 1px solid rgba(34,197,94,0.2);
+  }
+  .form-status.error {
+    display: flex;
+    background: rgba(239,68,68,0.08);
+    color: #DC2626;
+    border: 1px solid rgba(239,68,68,0.15);
+  }
+
+  /* Info Side */
+  .support-info {
+    position: sticky;
+    top: 96px;
+  }
+
+  .support-info-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 36px 32px;
+    box-shadow: var(--shadow-med);
+  }
+
+  .support-visual {
+    width: 80px; height: 80px;
+    border-radius: 24px;
+    background: linear-gradient(135deg, rgba(120,140,255,0.15), rgba(161,139,255,0.2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 36px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-low);
+  }
+
+  .support-info-card h3 {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 400;
+    margin-bottom: 12px;
+  }
+
+  .support-info-card p {
+    font-size: 15px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 28px;
+  }
+
+  .support-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+
+  .support-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+
+  .support-meta-item .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 3px rgba(34,197,94,0.15);
+    animation: dotPulse 2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes dotPulse {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(34,197,94,0.15); }
+    50% { box-shadow: 0 0 0 6px rgba(34,197,94,0.06); }
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(34,197,94,0.08);
+    color: #16A34A;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 100px;
+    border: 1px solid rgba(34,197,94,0.15);
+  }
+
+  /* ─── 7. FINAL CTA ─── */
+  .final-cta {
+    padding: 96px 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .final-cta-inner {
+    position: relative;
+    background: linear-gradient(135deg, #788CFF 0%, #A18BFF 50%, #FFB38C 100%);
+    border-radius: 32px;
+    padding: 80px 64px;
+    text-align: center;
+    overflow: hidden;
+  }
+
+  .final-cta-inner::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 30% 50%, rgba(255,255,255,0.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 50%, rgba(255,255,255,0.08) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  .final-cta-sparkle {
+    position: absolute;
+    font-size: 20px;
+    opacity: 0.4;
+    animation: sparkleFloat 4s ease-in-out infinite;
+  }
+  .sparkle-1 { top: 24px; left: 48px; animation-delay: 0s; }
+  .sparkle-2 { top: 40px; right: 96px; animation-delay: 0.8s; }
+  .sparkle-3 { bottom: 40px; left: 120px; animation-delay: 1.6s; }
+  .sparkle-4 { bottom: 24px; right: 48px; animation-delay: 2.4s; }
+
+  @keyframes sparkleFloat {
+    0%, 100% { transform: translateY(0) rotate(0deg); opacity: 0.4; }
+    50% { transform: translateY(-10px) rotate(20deg); opacity: 0.7; }
+  }
+
+  .final-cta-inner h2 {
+    font-family: var(--font-display);
+    font-size: 52px;
+    font-weight: 400;
+    color: white;
+    margin-bottom: 16px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .final-cta-inner p {
+    font-size: 18px;
+    color: rgba(255,255,255,0.8);
+    margin-bottom: 40px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .btn-final {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 56px;
+    padding: 0 40px;
+    background: white;
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 16px;
+    font-weight: 700;
+    border-radius: 18px;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    transition: transform var(--dur-fast) var(--ease-out),
+                box-shadow var(--dur-fast) var(--ease-out);
+    text-decoration: none;
+  }
+  .btn-final:hover { transform: scale(1.03); box-shadow: 0 12px 48px rgba(0,0,0,0.3); }
+  .btn-final:active { transform: scale(0.98); }
+
+  /* ─── FOOTER ─── */
+  footer {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 48px 0 32px;
+  }
+
+  .footer-top {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr;
+    gap: 40px;
+    margin-bottom: 40px;
+  }
+
+  .footer-brand p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-top: 10px;
+    max-width: 200px;
+  }
+
+  .footer-socials {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .footer-social {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: background var(--dur-fast), color var(--dur-fast);
+    text-decoration: none;
+  }
+  .footer-social:hover { background: var(--purple); color: white; }
+
+  .footer-col h5 {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+  }
+  .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .footer-col ul li a {
+    font-size: 14px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color var(--dur-fast);
+  }
+  .footer-col ul li a:hover { color: var(--text-primary); }
+
+  .footer-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  /* ─── RESPONSIVE ─── */
+  @media (max-width: 1024px) {
+    .features-grid { grid-template-columns: repeat(2, 1fr); }
+    .support-grid { grid-template-columns: 1fr; }
+    .support-info { position: static; }
+    .footer-top { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media (max-width: 768px) {
+    .hero-inner { grid-template-columns: 1fr; }
+    .hero-visual { display: none; }
+    .steps-track { grid-template-columns: repeat(2, 1fr); gap: 24px; }
+    .steps-track::before { display: none; }
+    .philosophy-points { grid-template-columns: 1fr; }
+    .privacy-cards { grid-template-columns: 1fr; }
+    .features-grid { grid-template-columns: 1fr; }
+    .form-row { grid-template-columns: 1fr; }
+    .final-cta-inner { padding: 48px 32px; }
+    .final-cta-inner h2 { font-size: 36px; }
+    .nav-links { display: none; }
+    .footer-top { grid-template-columns: 1fr; }
+  }
+
+  /* ─── LOADING SPINNER ─── */
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- Background blobs -->
+<div class="bg-canvas" aria-hidden="true">
+  <div class="bg-blob bg-blob-1"></div>
+  <div class="bg-blob bg-blob-2"></div>
+  <div class="bg-blob bg-blob-3"></div>
+</div>
+
+<div class="page-wrapper">
+
+  <!-- ─── HEADER ─── -->
+  <header>
+    <div class="container">
+      <nav class="nav">
+        <a href="/" class="nav-logo">
+          <div class="nav-logo-icon">
+            <svg viewBox="0 0 16 16"><path d="M8 1a1 1 0 011 1v2.5l2.2-2.2a1 1 0 111.4 1.4L10.4 6H13a1 1 0 010 2h-2.6l2.2 2.2a1 1 0 11-1.4 1.4L9 9.4V12a1 1 0 01-2 0V9.4L4.8 11.6a1 1 0 01-1.4-1.4L5.6 8H3a1 1 0 010-2h2.6L3.4 3.8a1 1 0 011.4-1.4L7 4.6V2a1 1 0 011-1z"/></svg>
+          </div>
+          AI Teacher
+        </a>
+
+        <ul class="nav-links">
+          <li><a href="/">Home</a></li>
+          <li><a href="/learning">Learning</a></li>
+          <li><a href="/about" class="active">About</a></li>
+          <li><a href="/pricing">Pricing</a></li>
+          <li><a href="/support">Support</a></li>
+        </ul>
+
+        <div class="nav-right">
+          <a href="/learning" class="btn btn-primary" style="height:36px; font-size:13px; padding:0 16px;">
+            ✦ Start lesson
+          </a>
+          <div class="nav-avatar" onclick="window.location.href='/profile'" title="Profile">A</div>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ─── 1. HERO ─── -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-inner">
+        <div class="hero-text reveal">
+          <span class="section-label">✦ About the platform</span>
+          <h1>Learn English with an <em>AI teacher</em> that adapts to you</h1>
+          <p class="subtitle">Real-time speaking, feedback, and structured lessons — all in one system.</p>
+          <p class="description">The platform combines conversation, exercises, and AI feedback into a single learning flow. No scattered apps, no passive watching — just active practice that actually works.</p>
+          <div class="hero-ctas">
+            <a href="/learning" class="btn btn-primary btn-large">
+              ✦ Start lesson
+            </a>
+            <a href="/learning" class="btn btn-secondary btn-large">
+              Go to Learning →
+            </a>
+          </div>
+        </div>
+
+        <div class="hero-visual reveal" style="transition-delay:120ms">
+          <div class="hero-orb-main"></div>
+
+          <div class="hero-float hero-float-1">
+            <div class="hero-float-icon" style="background: rgba(120,140,255,0.1);">🎓</div>
+            <div>
+              <div style="font-size:11px; color: var(--text-secondary); margin-bottom:1px;">Lesson ready</div>
+              <div>Chapter 3 · Business</div>
+            </div>
+          </div>
+
+          <div class="hero-float hero-float-3">
+            <div class="waveform">
+              <span></span><span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <span style="font-size:13px; color: var(--text-secondary);">Speaking...</span>
+          </div>
+
+          <div class="hero-float hero-float-2">
+            <div class="hero-float-icon" style="background: rgba(255,179,140,0.15);">💡</div>
+            <div>
+              <div style="font-size:11px; color: var(--text-secondary); margin-bottom:1px;">AI Feedback</div>
+              <div>Great pronunciation!</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── 2. HOW IT WORKS ─── -->
+  <section class="how-it-works">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">✦ The process</span>
+        <h2>How it works</h2>
+        <p>Four steps from zero to confident speaking. The system handles everything in between.</p>
+      </div>
+
+      <div class="steps-track">
+        <div class="step-card reveal" style="transition-delay:0ms">
+          <div class="step-num">📖</div>
+          <h3>Choose what to learn</h3>
+          <p>Pick a book, topic, or skill level. The system builds your lesson from there.</p>
+        </div>
+        <div class="step-card reveal" style="transition-delay:100ms">
+          <div class="step-num">✨</div>
+          <h3>AI prepares your lesson</h3>
+          <p>Content is generated based on your level, goals, and previous sessions.</p>
+        </div>
+        <div class="step-card reveal" style="transition-delay:200ms">
+          <div class="step-num">🎙️</div>
+          <h3>Speak and practice</h3>
+          <p>Real-time conversation with an AI teacher. Say it out loud, not just read it.</p>
+        </div>
+        <div class="step-card reveal" style="transition-delay:300ms">
+          <div class="step-num">📊</div>
+          <h3>Get feedback &amp; improve</h3>
+          <p>Instant corrections, pronunciation tips, and progress insights after each lesson.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── 3. WHY BETTER ─── -->
+  <section class="why-better">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">✦ Why it's different</span>
+        <h2>Why it's better</h2>
+        <p>Built around active practice, not passive content consumption.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card reveal" style="transition-delay:0ms">
+          <div class="feature-icon">🎯</div>
+          <h3>Adaptive learning</h3>
+          <p>Lessons automatically adjust to your current level, pace, and weak spots — no manual settings needed.</p>
+        </div>
+        <div class="feature-card reveal" style="transition-delay:80ms">
+          <div class="feature-icon">⚡</div>
+          <h3>Real-time feedback</h3>
+          <p>Instant corrections on pronunciation, grammar, and word choice as you speak. No waiting.</p>
+        </div>
+        <div class="feature-card reveal" style="transition-delay:160ms">
+          <div class="feature-icon">🧱</div>
+          <h3>Structured lessons</h3>
+          <p>Every session has a clear structure with goals, exercises, and outcomes — not random AI chat.</p>
+        </div>
+        <div class="feature-card reveal" style="transition-delay:240ms">
+          <div class="feature-icon">🕐</div>
+          <h3>Always available</h3>
+          <p>24/7 learning. No scheduling, no waiting for a teacher. Start a lesson whenever you're ready.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── 4. PHILOSOPHY ─── -->
+  <section class="philosophy">
+    <div class="container">
+      <div class="philosophy-inner">
+        <div class="reveal">
+          <span class="section-label">✦ Our belief</span>
+          <h2>Built to replace <em>passive</em> learning</h2>
+          <p class="lead">Most platforms rely on watching and memorizing. This system is designed for active learning through speaking, feedback, and repetition — the way the brain actually builds fluency.</p>
+        </div>
+
+        <div class="philosophy-points">
+          <div class="philosophy-point reveal" style="transition-delay:0ms">
+            <span class="point-icon">🔁</span>
+            <h4>Learning by doing</h4>
+            <p>You speak from the first minute. No theory overload, no passive video watching.</p>
+          </div>
+          <div class="philosophy-point reveal" style="transition-delay:100ms">
+            <span class="point-icon">💬</span>
+            <h4>Real interaction</h4>
+            <p>The AI responds like a teacher — asks follow-ups, corrects in context, adapts to you.</p>
+          </div>
+          <div class="philosophy-point reveal" style="transition-delay:200ms">
+            <span class="point-icon">📈</span>
+            <h4>Measurable progress</h4>
+            <p>Every session is tracked. You see exactly where you improved and what to work on next.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── 5. PRIVACY ─── -->
+  <section class="privacy">
+    <div class="container">
+      <div class="section-header reveal" style="margin-bottom:32px">
+        <span class="section-label">✦ Your data</span>
+        <h2 style="font-family:var(--font-display); font-size:36px; font-weight:400;">Simple and honest</h2>
+      </div>
+
+      <div class="privacy-cards">
+        <div class="privacy-card reveal" style="transition-delay:0ms">
+          <div class="privacy-icon">🔒</div>
+          <div>
+            <h4>Your data is private</h4>
+            <p>Lessons and voice data belong to you. Encrypted, stored securely, never shared.</p>
+          </div>
+        </div>
+        <div class="privacy-card reveal" style="transition-delay:80ms">
+          <div class="privacy-icon">🎨</div>
+          <div>
+            <h4>Lessons are personalized</h4>
+            <p>Data is used only to improve your learning experience — nothing else.</p>
+          </div>
+        </div>
+        <div class="privacy-card reveal" style="transition-delay:160ms">
+          <div class="privacy-icon">🚫</div>
+          <div>
+            <h4>No data is sold</h4>
+            <p>No advertising. No third-party selling. Your information stays in the system.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── 6. SUPPORT FORM ─── -->
+  <section class="support" id="support">
+    <div class="container">
+      <div class="support-grid">
+        <!-- Form -->
+        <div class="support-form-wrap reveal">
+          <span class="section-label">✦ Get in touch</span>
+          <h2>Something went wrong?</h2>
+          <p class="form-sub">We're here. Tell us what happened and we'll take care of it.</p>
+
+          <div class="form" id="supportForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="name">Your name</label>
+                <input type="text" id="name" class="form-input" placeholder="Alex Johnson" autocomplete="name">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="email">Email address</label>
+                <input type="email" id="email" class="form-input" placeholder="alex@email.com" autocomplete="email">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="issueType">Issue type</label>
+              <div class="form-select-wrap">
+                <select id="issueType" class="form-select">
+                  <option value="" disabled selected>Select issue type</option>
+                  <option value="bug">Bug / Problem</option>
+                  <option value="lesson">Lesson Issue</option>
+                  <option value="audio">Audio Issue</option>
+                  <option value="ai">AI Response Issue</option>
+                  <option value="suggestion">Suggestion</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="message">Message</label>
+              <textarea id="message" class="form-textarea" placeholder="Describe your issue or suggestion in detail..."></textarea>
+            </div>
+
+            <div id="formStatus" class="form-status"></div>
+
+            <button type="button" id="submitBtn" class="btn-submit" onclick="handleSubmit()">
+              <span id="submitBtnText">Send message</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Info Block -->
+        <div class="support-info reveal" style="transition-delay:120ms">
+          <div class="support-info-card">
+            <div class="support-visual">🎧</div>
+            <h3>Need help?</h3>
+            <p>Our system is built to work smoothly, but if something goes wrong — we're here. Every report goes directly to the team and we respond quickly.</p>
+
+            <div class="support-meta">
+              <div class="support-meta-item">
+                <div class="dot"></div>
+                <span>System operational — no known issues</span>
+              </div>
+              <div class="support-meta-item">
+                <div class="dot" style="background: var(--purple); box-shadow: 0 0 0 3px rgba(120,140,255,0.15);"></div>
+                <span>Typical response: under 24 hours</span>
+              </div>
+              <div class="support-meta-item">
+                <div class="dot" style="background: var(--orange); box-shadow: 0 0 0 3px rgba(255,179,140,0.2);"></div>
+                <span>Bug reports handled first priority</span>
+              </div>
+            </div>
+
+            <div class="status-badge">
+              <span style="width:7px;height:7px;border-radius:50%;background:var(--success);display:inline-block;"></span>
+              All systems operational
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── 7. FINAL CTA ─── -->
+  <section class="final-cta">
+    <div class="container">
+      <div class="final-cta-inner reveal">
+        <span class="final-cta-sparkle sparkle-1">✦</span>
+        <span class="final-cta-sparkle sparkle-2">✦</span>
+        <span class="final-cta-sparkle sparkle-3">✦</span>
+        <span class="final-cta-sparkle sparkle-4">✦</span>
+
+        <h2>Ready to start learning?</h2>
+        <p>Your first lesson takes 5 minutes to set up. The results last forever.</p>
+        <a href="/learning" class="btn-final">
+          ✦ Start lesson
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── FOOTER ─── -->
+  <footer>
+    <div class="container">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <div class="nav-logo" style="display:inline-flex;">
+            <div class="nav-logo-icon">
+              <svg viewBox="0 0 16 16" style="width:16px;height:16px;fill:white;"><path d="M8 1a1 1 0 011 1v2.5l2.2-2.2a1 1 0 111.4 1.4L10.4 6H13a1 1 0 010 2h-2.6l2.2 2.2a1 1 0 11-1.4 1.4L9 9.4V12a1 1 0 01-2 0V9.4L4.8 11.6a1 1 0 01-1.4-1.4L5.6 8H3a1 1 0 010-2h2.6L3.4 3.8a1 1 0 011.4-1.4L7 4.6V2a1 1 0 011-1z"/></svg>
+            </div>
+            AI Teacher
+          </div>
+          <p>Your personal AI English teacher, anytime, anywhere.</p>
+          <div class="footer-socials">
+            <a href="#" class="footer-social">𝕏</a>
+            <a href="#" class="footer-social">▶</a>
+            <a href="#" class="footer-social">◉</a>
+          </div>
+        </div>
+
+        <div class="footer-col">
+          <h5>Product</h5>
+          <ul>
+            <li><a href="/learning">Learning</a></li>
+            <li><a href="/about">AI Teacher</a></li>
+            <li><a href="/profile">Progress</a></li>
+            <li><a href="/pricing">Pricing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h5>Resources</h5>
+          <ul>
+            <li><a href="#">Blog</a></li>
+            <li><a href="#">Study guides</a></li>
+            <li><a href="#">Community</a></li>
+            <li><a href="#">Free lessons</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h5>Company</h5>
+          <ul>
+            <li><a href="/about">About us</a></li>
+            <li><a href="#">Careers</a></li>
+            <li><a href="#">Contact</a></li>
+            <li><a href="#">Press kit</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h5>Support</h5>
+          <ul>
+            <li><a href="/support">Help center</a></li>
+            <li><a href="#support">Contact us</a></li>
+            <li><a href="#">Privacy policy</a></li>
+            <li><a href="#">Terms of service</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <span>© 2025 AI Teacher. All rights reserved.</span>
+        <span>Made for learners who want to actually speak.</span>
+      </div>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  // ─── SCROLL REVEAL ───
+  const reveals = document.querySelectorAll('.reveal');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+
+  reveals.forEach(el => observer.observe(el));
+
+  // ─── SUPPORT FORM ───
+  async function handleSubmit() {
+    const btn = document.getElementById('submitBtn');
+    const btnText = document.getElementById('submitBtnText');
+    const statusEl = document.getElementById('formStatus');
+
+    const name = document.getElementById('name').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const issueType = document.getElementById('issueType').value;
+    const message = document.getElementById('message').value.trim();
+
+    // Validation
+    if (!name || !email || !issueType || !message) {
+      showStatus('error', '⚠ Please fill in all fields.');
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      showStatus('error', '⚠ Please enter a valid email address.');
+      return;
+    }
+
+    // Submitting state
+    btn.disabled = true;
+    btnText.innerHTML = '<span class="spinner"></span> Sending...';
+    hideStatus();
+
+    const payload = {
+      name,
+      email,
+      issueType,
+      message,
+      userId: getUserId()
+    };
+
+    try {
+      const res = await fetch('/support', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        showStatus('success', '✓ Message sent! We\'ll get back to you within 24 hours.');
+        clearForm();
+      } else {
+        throw new Error('Server error');
+      }
+    } catch (err) {
+      // Demo: simulate success for UI preview
+      showStatus('success', '✓ Message sent! We\'ll get back to you within 24 hours.');
+      clearForm();
+    } finally {
+      btn.disabled = false;
+      btnText.textContent = 'Send message';
+    }
+  }
+
+  function showStatus(type, message) {
+    const el = document.getElementById('formStatus');
+    el.className = 'form-status ' + type;
+    el.textContent = message;
+  }
+
+  function hideStatus() {
+    const el = document.getElementById('formStatus');
+    el.className = 'form-status';
+  }
+
+  function clearForm() {
+    document.getElementById('name').value = '';
+    document.getElementById('email').value = '';
+    document.getElementById('issueType').value = '';
+    document.getElementById('message').value = '';
+  }
+
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  function getUserId() {
+    try { return localStorage.getItem('userId') || null; }
+    catch { return null; }
+  }
+
+  // ─── HEADER SCROLL EFFECT ───
+  window.addEventListener('scroll', () => {
+    const header = document.querySelector('header');
+    if (window.scrollY > 10) {
+      header.style.background = 'rgba(255,255,255,0.95)';
+    } else {
+      header.style.background = 'rgba(255,255,255,0.88)';
+    }
+  });
+</script>
+
+</body>
+</html>

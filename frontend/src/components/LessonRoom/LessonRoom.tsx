@@ -1,160 +1,277 @@
 import { useEffect, useRef, useState } from 'react'
-import { useLesson } from '../../hooks/useLesson'
+import { useLesson, type ExerciseCard } from '../../hooks/useLesson'
+import { LessonStage, deriveStage }     from './LessonStage'
+import { LessonControls }               from './controls/LessonControls'
+import { ClassroomHeader }              from './chrome/ClassroomHeader'
+import { ProgressRail }                 from './chrome/ProgressRail'
+import { FloatingAvatar }               from './chrome/FloatingAvatar'
+import { CaptionsPanel }                from './chrome/CaptionsPanel'
+import { TeachingOverlay }              from './overlays/TeachingOverlay'
+import { ExitModal }                    from './overlays/ExitModal'
 
-const TEST_CONFIG = {
-  studentId:     '00000000-0000-0000-0000-000000000001',
-  grammarTarget: 'Dynamic and state verbs',
-  lessonTopic:   'Social media and identity',
-  textbookUnit:  'Focus B1 Unit 1',
-}
-
-const PHASE_LABELS: Record<string, string> = {
-  DIAGNOSTIC:    'Diagnostic',
-  CONTEXT_INPUT: 'Context',
-  RULE_DISCOVERY: 'Rule Discovery',
-  EXERCISES:     'Exercises',
-  VOCABULARY:    'Vocabulary',
-  DEEP_THINKING: 'Deep Thinking',
-  WRAP_UP:       'Wrap-Up',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  disconnected: 'bg-gray-400',
-  connecting:   'bg-yellow-400 animate-pulse',
-  connected:    'bg-green-400',
-  error:        'bg-red-500',
+// FUTURE: sectionId, bookId, teacherId, voiceId will come from route/session params
+const LESSON_CONFIG = {
+  studentId: '00000000-0000-0000-0000-000000000001',
+  unit:      1,
+  section:   '1.2',
 }
 
 export default function LessonRoom() {
-  const { messages, connectionState, currentPhase, connect, startLesson, sendText } = useLesson()
-  const [input, setInput]       = useState('')
-  const [started, setStarted]   = useState(false)
-  const bottomRef               = useRef<HTMLDivElement>(null)
+  const {
+    messages,
+    connectionState,
+    currentPhase,
+    currentExercise,
+    sectionCard,
+    teachingCard,
+    isConfusionLoading,
+    isTeacherSpeaking,
+    connect,
+    startFocusLesson,
+    sendText,
+    sendConfused,
+    dismissTeachingCard,
+  } = useLesson()
+
+  const [input, setInput]         = useState('')
+  const [chatInput, setChatInput] = useState('')
+  const [started, setStarted]     = useState(false)
+  const [voiceModeActive, setVoiceModeActive] = useState(false)
+  const [isListening, setIsListening]         = useState(false)
+  const [micError, setMicError]               = useState<string | null>(null)
+  const [voiceStatusHint, setVoiceStatusHint] = useState<string | null>(null)
+
+  // Classroom UI state — chat open by default to match reference
+  const [chatOpen, setChatOpen]         = useState(true)
+  const [exitModalOpen, setExitModalOpen] = useState(false)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef      = useRef<any>(null)
+  const voiceModeRef        = useRef(false)
+  const isRestartingRef     = useRef(false)
+  const restartTimeoutRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isTTSSpeakingRef    = useRef(false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const startRecognitionRef = useRef<() => void>(() => {})
+  const voiceBufferRef      = useRef<string>('')
+  const voiceFlushTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const currentExerciseRef  = useRef<ExerciseCard | null>(null)
+
+  // Auto-connect on mount
+  useEffect(() => { connect() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-start once connected (only once)
+  useEffect(() => {
+    if (connectionState === 'connected' && !started) {
+      startFocusLesson(LESSON_CONFIG)
+      setStarted(true)
+    }
+  }, [connectionState, started, startFocusLesson])
+
+  function clearRestartTimer() {
+    if (restartTimeoutRef.current !== null) { clearTimeout(restartTimeoutRef.current); restartTimeoutRef.current = null }
+  }
+  function clearVoiceFlushTimer() {
+    if (voiceFlushTimerRef.current !== null) { clearTimeout(voiceFlushTimerRef.current); voiceFlushTimerRef.current = null }
+  }
+  function showVoiceHint(msg: string, durationMs = 3000) {
+    setVoiceStatusHint(msg); setTimeout(() => setVoiceStatusHint(null), durationMs)
+  }
+  function flushVoiceBuffer() {
+    clearVoiceFlushTimer()
+    const text = voiceBufferRef.current.trim(); voiceBufferRef.current = ''
+    if (text) { setVoiceStatusHint(null); sendText(text) }
+  }
+  function handleVoiceTranscript(transcript: string) {
+    const t = transcript.trim(); if (!t) return
+    const ex = currentExerciseRef.current
+    if (/^(uh+|um+|hmm+|ah+|er+|mm+|yeah|yep)\s*[.,]?\s*$/i.test(t)) return
+    if (/^(next|skip|move on)\s*[.,]?\s*$/i.test(t) && ex) {
+      voiceBufferRef.current = ''; clearVoiceFlushTimer(); showVoiceHint('Finish this one first.'); return
+    }
+    if (/\b(and|but|because|so|or|if|when|that)\s*[.,]?\s*$/i.test(t)) {
+      voiceBufferRef.current = voiceBufferRef.current ? voiceBufferRef.current + ' ' + t : t
+      clearVoiceFlushTimer(); voiceFlushTimerRef.current = setTimeout(flushVoiceBuffer, 2500); return
+    }
+    voiceBufferRef.current = voiceBufferRef.current ? voiceBufferRef.current + ' ' + t : t
+    clearVoiceFlushTimer(); voiceFlushTimerRef.current = setTimeout(flushVoiceBuffer, 900)
+  }
+
+  function startRecognition() {
+    if (isRestartingRef.current) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SR) { setMicError('Voice input requires Chrome browser.'); voiceModeRef.current = false; setVoiceModeActive(false); return }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rec: any = new SR()
+    rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = false; rec.maxAlternatives = 1
+    rec.onstart  = () => { setIsListening(true); isRestartingRef.current = false }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (event: any) => {
+      if (isTTSSpeakingRef.current) return
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) { const tr: string = event.results[i][0].transcript.trim(); if (tr) handleVoiceTranscript(tr) }
+      }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onerror = (event: any) => {
+      isRestartingRef.current = false
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        voiceModeRef.current = false; setVoiceModeActive(false); setIsListening(false)
+        setMicError('Microphone permission denied. Allow access in browser settings.')
+      }
+    }
+    rec.onend = () => {
+      setIsListening(false); isRestartingRef.current = false
+      if (voiceModeRef.current && !isTTSSpeakingRef.current) {
+        clearRestartTimer(); restartTimeoutRef.current = setTimeout(() => {
+          if (voiceModeRef.current && !isTTSSpeakingRef.current) startRecognition()
+        }, 200)
+      }
+    }
+    recognitionRef.current = rec; isRestartingRef.current = true
+    try { rec.start() } catch { isRestartingRef.current = false }
+  }
+
+  function stopRecognition() {
+    clearRestartTimer(); voiceModeRef.current = false; isRestartingRef.current = false
+    setVoiceModeActive(false); setIsListening(false); recognitionRef.current?.stop(); recognitionRef.current = null
+  }
+
+  startRecognitionRef.current = startRecognition
+
+  function toggleVoiceMode() {
+    if (voiceModeActive) { stopRecognition() }
+    else { setMicError(null); voiceModeRef.current = true; setVoiceModeActive(true); startRecognition() }
+  }
+
+  useEffect(() => { currentExerciseRef.current = currentExercise }, [currentExercise])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    isTTSSpeakingRef.current = isTeacherSpeaking
+    if (isTeacherSpeaking) {
+      clearVoiceFlushTimer(); voiceBufferRef.current = ''; clearRestartTimer()
+      isRestartingRef.current = false; recognitionRef.current?.stop(); recognitionRef.current = null; setIsListening(false)
+    } else if (voiceModeRef.current) { startRecognitionRef.current() }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTeacherSpeaking])
 
-  function handleConnect() {
-    connect()
-  }
-
-  function handleStart() {
-    startLesson(TEST_CONFIG)
-    setStarted(true)
-  }
+  useEffect(() => () => {
+    clearRestartTimer(); clearVoiceFlushTimer(); recognitionRef.current?.stop()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function handleSend() {
-    const text = input.trim()
-    if (!text) return
-    sendText(text)
-    setInput('')
+    const text = input.trim(); if (!text) return; sendText(text); setInput('')
+  }
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
+  }
+  function handleChatSend() {
+    const text = chatInput.trim(); if (!text) return; sendText(text); setChatInput('')
+  }
+  function handleChatKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend() }
+  }
+  function handleConfused() {
+    const lastTeacher = [...messages].reverse().find(m => m.role === 'teacher')
+    sendConfused({
+      phase:              currentPhase,
+      lastTeacherMessage: lastTeacher?.text?.slice(0, 400),
+      lastExercise:       currentExercise?.question?.slice(0, 400),
+    })
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
+  const lastTeacherMessage = [...messages].reverse().find(m => m.role === 'teacher') ?? null
+  const stageType          = deriveStage({ started, connectionState, currentExercise, sectionCard, currentPhase })
+  const avatarState        = isTeacherSpeaking ? 'speaking' : isConfusionLoading ? 'thinking' : 'waiting'
+  const isActive           = started && connectionState === 'connected'
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-gray-100">
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-3 bg-gray-900 border-b border-gray-800">
-        <div className="flex items-center gap-3">
-          <span className="font-semibold text-brand-500 text-lg">AI English Teacher</span>
-          <span className="text-xs text-gray-500 font-mono">Phase 0 — Foundation</span>
-        </div>
-        <div className="flex items-center gap-2 text-sm">
-          <span className={`w-2.5 h-2.5 rounded-full ${STATUS_COLORS[connectionState]}`} />
-          <span className="text-gray-400 capitalize">{connectionState}</span>
-          {connectionState === 'connected' && (
-            <span className="ml-2 text-xs bg-gray-800 text-brand-500 px-2 py-0.5 rounded font-mono">
-              {PHASE_LABELS[currentPhase] ?? currentPhase}
-            </span>
-          )}
-        </div>
-      </header>
+    <div className="h-screen bg-[#F5F5F7] text-gray-900 flex flex-col overflow-hidden">
 
-      {/* Message area */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full gap-4 text-gray-600">
-            <div className="text-5xl">📚</div>
-            <p className="text-center max-w-sm">
-              Connect to the backend, then start a lesson to begin.
-            </p>
-          </div>
+      {/* ── Header ── */}
+      <ClassroomHeader
+        currentPhase={currentPhase}
+        started={started}
+        connectionState={connectionState}
+        onRequestExit={() => setExitModalOpen(true)}
+      />
+
+      {/* ── Body: 3-column layout ── */}
+      <div className="flex flex-1 overflow-hidden min-h-0">
+
+        {/* Left: Teacher sidebar */}
+        <FloatingAvatar state={avatarState} />
+
+        {/* Center: lesson content */}
+        <main className="flex-1 min-w-0 overflow-y-auto flex flex-col">
+          <LessonStage
+            stageType={stageType}
+            currentExercise={currentExercise}
+            sectionCard={sectionCard}
+            lastTeacherMessage={lastTeacherMessage}
+            isTeacherSpeaking={isTeacherSpeaking}
+            isConfusionLoading={isConfusionLoading}
+            connectionState={connectionState}
+            started={started}
+            onSubmitAnswer={sendText}
+          />
+        </main>
+
+        {/* Right: Progress panel */}
+        <ProgressRail
+          currentPhase={currentPhase}
+          currentExercise={currentExercise}
+          chatOpen={chatOpen}
+          onToggleChat={() => setChatOpen(v => !v)}
+        />
+
+        {/* Right: Chat panel — slides in when open */}
+        {chatOpen && (
+          <CaptionsPanel
+            messages={messages}
+            onClose={() => setChatOpen(false)}
+            input={chatInput}
+            onInputChange={setChatInput}
+            onSend={handleChatSend}
+            onKeyDown={handleChatKeyDown}
+          />
         )}
-
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.role === 'student' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed
-                ${msg.role === 'student'
-                  ? 'bg-brand-700 text-white rounded-br-sm'
-                  : 'bg-gray-800 text-gray-100 rounded-bl-sm'
-                }`}
-            >
-              {msg.role === 'teacher' && msg.phase && (
-                <div className="text-xs text-gray-500 mb-1 font-mono">
-                  [{PHASE_LABELS[msg.phase] ?? msg.phase}]
-                </div>
-              )}
-              {msg.text}
-            </div>
-          </div>
-        ))}
-        <div ref={bottomRef} />
       </div>
 
-      {/* Controls */}
-      <div className="px-4 py-3 bg-gray-900 border-t border-gray-800 space-y-2">
-        {connectionState === 'disconnected' || connectionState === 'error' ? (
-          <button
-            onClick={handleConnect}
-            className="w-full py-2.5 rounded-xl bg-brand-700 hover:bg-brand-500 transition text-sm font-medium"
-          >
-            Connect to Backend
-          </button>
-        ) : !started && connectionState === 'connected' ? (
-          <button
-            onClick={handleStart}
-            className="w-full py-2.5 rounded-xl bg-green-700 hover:bg-green-600 transition text-sm font-medium"
-          >
-            Start Lesson — {TEST_CONFIG.grammarTarget}
-          </button>
-        ) : (
-          <div className="flex gap-2">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type your answer... (Enter to send)"
-              rows={1}
-              disabled={connectionState !== 'connected'}
-              className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5
-                         text-sm resize-none focus:outline-none focus:border-brand-500
-                         disabled:opacity-50 placeholder-gray-600"
-            />
-            <button
-              onClick={handleSend}
-              disabled={connectionState !== 'connected' || !input.trim()}
-              className="px-5 py-2.5 rounded-xl bg-brand-700 hover:bg-brand-500 transition
-                         text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Send
-            </button>
-          </div>
-        )}
-        <p className="text-center text-xs text-gray-700">
-          Voice input arrives in Phase 1 — Deepgram STT integration
-        </p>
-      </div>
+      {/* ── Bottom floating controls ── */}
+      <LessonControls
+        isActive={isActive}
+        connectionState={connectionState}
+        voiceModeActive={voiceModeActive}
+        isListening={isListening}
+        isTeacherSpeaking={isTeacherSpeaking}
+        micError={micError}
+        voiceStatusHint={voiceStatusHint}
+        onToggleVoice={toggleVoiceMode}
+        input={input}
+        onInputChange={setInput}
+        onSend={handleSend}
+        onKeyDown={handleKeyDown}
+        onConfused={handleConfused}
+        isConfusionLoading={isConfusionLoading}
+      />
+
+      {/* ── Overlays ── */}
+      {teachingCard && (
+        <TeachingOverlay card={teachingCard} onDismiss={dismissTeachingCard} />
+      )}
+      {exitModalOpen && (
+        <ExitModal
+          onStay={() => setExitModalOpen(false)}
+          onLeave={() => {
+            // FUTURE: call backend to save/pause lesson before leaving
+            setExitModalOpen(false)
+            window.location.href = '/'
+          }}
+        />
+      )}
     </div>
   )
 }

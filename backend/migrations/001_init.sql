@@ -28,9 +28,9 @@ CREATE TABLE IF NOT EXISTS student_profiles (
 CREATE TABLE IF NOT EXISTS lessons (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   student_id      UUID REFERENCES students(id) ON DELETE CASCADE,
-  grammar_target  VARCHAR(100) NOT NULL,
-  lesson_topic    VARCHAR(200),
-  textbook_unit   VARCHAR(100),
+  grammar_target  TEXT NOT NULL,
+  lesson_topic    TEXT,
+  textbook_unit   TEXT,
   status          VARCHAR(20) DEFAULT 'active',
   phase_reached   VARCHAR(50),
   started_at      TIMESTAMP DEFAULT NOW(),

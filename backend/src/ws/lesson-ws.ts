@@ -16,15 +16,84 @@ import {
 } from './message-types.js'
 import type { LessonPhase, LessonState } from '../lesson/types.js'
 import { getFocusUnit } from '../lesson/focus-content.js'
+import { getTeachersBookSection } from '../lesson/focus-teachers-book.js'
+import { getFocusStudentBookSection } from '../lesson/focus-student-book.js'
 import { LessonOrchestrator } from '../lesson/orchestrator.js'
 import { DeepgramSTT } from '../voice/stt.js'
 import { speakToClient } from '../voice/tts.js'
 import { loadExercise, recordAnswer } from '../exercises/exercise-store.js'
 import { validateAnswer } from '../exercises/validator.js'
 import { updateStudentProfile } from '../lesson/profile-updater.js'
+import { getOrCreateSectionCard } from '../lesson/slide-cache.js'
+import type { StudentConfused } from './message-types.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
+
+// ── Voice input filter ────────────────────────────────────────────────────────
+// Deepgram fires UtteranceEnd after 1500ms of silence, but short fillers and
+// trailing-conjunction fragments still arrive as "complete" utterances.
+// We filter them here before sending to the AI.
+
+const FILLER_ONLY = /^(uh+|um+|hmm+|ah+|er+|mm+|yeah|yep|ok|okay|right|sure|wait|so)\s*[.,]?\s*$/i
+const TRAILING_CONJUNCTION = /\b(and|but|because|so|or|if|when|that|I|the|a|an|to|of|in)\s*[.,]?\s*$/i
+const SINGLE_PRONOUN = /^\s*I\s*$/i
+
+function shouldProcessTranscript(text: string): boolean {
+  const t = text.trim()
+  if (!t) return false
+  if (FILLER_ONLY.test(t)) return false
+  if (SINGLE_PRONOUN.test(t)) return false
+  if (TRAILING_CONJUNCTION.test(t)) return false
+  return true
+}
+
+function buildFocusGreeting(
+  unit: number,
+  section: string | undefined,
+  grammarTarget: string,
+  textbookUnit: string,
+): string {
+  if (!section) {
+    return `Hello! I'm Alex. Today we're working on ${textbookUnit}. Grammar focus: ${grammarTarget}. Tell me one example sentence using this grammar — don't worry if it's not perfect.`
+  }
+
+  // Student Book is the authoritative source for the section title and content.
+  const sb = getFocusStudentBookSection(section)
+  const sectionTitle  = sb?.lessonTitle ?? section
+  const grammarFocus  = sb?.grammarFocus ?? grammarTarget
+
+  let body = `Today we're on section ${section} — "${sectionTitle}".`
+
+  if (grammarFocus) {
+    body += ` The grammar focus is: ${grammarFocus}.`
+  }
+
+  // Teacher Book is used only for structural info: which exercises exist and
+  // whether there is a listening task. Never for section title or page numbers.
+  const tb = getTeachersBookSection(unit, section)
+  if (tb.found && tb.section) {
+    const s = tb.section
+    const hasAnswerKeys = s.answerKeys.filter(k => !k.isVideoActivity).length > 0
+    const isListening   = s.answerKeys.some(k => k.isListeningActivity)
+    const exercises     = s.answerKeys
+      .filter(k => !k.isVideoActivity)
+      .map(k => k.exerciseRef)
+      .join(', ')
+
+    if (hasAnswerKeys) {
+      body += ` We'll work through: ${exercises}.`
+    }
+
+    if (isListening) {
+      body += ` There's a listening task — you'll play the audio from your book and tell me what you hear. I have the answer key.`
+    }
+  }
+
+  body += ` Open your book to this section. Tell me when you're on the page.`
+
+  return `Hello! I'm Alex, your English teacher. ${body}`
+}
 
 const orchestrator = new LessonOrchestrator()
 
@@ -75,6 +144,8 @@ async function handleLessonStart(
     grammarTarget:  config.grammarTarget,
     lessonTopic:    config.lessonTopic,
     textbookUnit:   config.textbookUnit,
+    currentExerciseNum:  0,
+    completedExercises:  [],
     exchangeCount:       0,
     exerciseCount:       0,
     consecutiveCorrect:  0,
@@ -86,6 +157,7 @@ async function handleLessonStart(
     studentConfirmedReading: false,
     ruleStatedCorrectly:     false,
     summaryDelivered:        false,
+    overviewShown:           false,
     startedAt:      new Date().toISOString(),
     phaseStartedAt: new Date().toISOString(),
   }
@@ -98,7 +170,9 @@ async function handleLessonStart(
 
   meta.stt = new DeepgramSTT((transcript) => {
     send(ws, { type: 'transcript', text: transcript })
-    void processInput(ws, meta, transcript)
+    if (shouldProcessTranscript(transcript)) {
+      void processInput(ws, meta, transcript)
+    }
   })
 
   const greeting = `Hello! I'm Alex, your English teacher. Today we'll work on "${config.grammarTarget}" using the topic "${config.lessonTopic}". Let's start — tell me one thing you already know about this topic.`
@@ -123,10 +197,20 @@ async function handleFocusLessonStart(
   meta.studentId       = config.studentId
   meta.lessonStartedAt = Date.now()
 
+  // When a specific section is selected, use its metadata as the authoritative
+  // source for grammarTarget and lessonTopic — not the unit-level defaults.
+  let grammarTarget = unitData.grammarTarget
+  let lessonTopic   = unitData.lessonTopic
+  if (config.section) {
+    const sectionData = getFocusStudentBookSection(config.section)
+    if (sectionData?.grammarFocus) grammarTarget = sectionData.grammarFocus
+    if (sectionData?.lessonTitle)  lessonTopic   = sectionData.lessonTitle
+  }
+
   await query(
     `INSERT INTO lessons (id, student_id, grammar_target, lesson_topic, textbook_unit)
      VALUES ($1, $2, $3, $4, $5)`,
-    [lessonId, config.studentId, unitData.grammarTarget, unitData.lessonTopic, unitData.textbookUnit],
+    [lessonId, config.studentId, grammarTarget, lessonTopic, unitData.textbookUnit],
   )
 
   const initialState: LessonState = {
@@ -135,9 +219,12 @@ async function handleFocusLessonStart(
     phase:          'DIAGNOSTIC',
     mode:           'focus',
     focusUnit:      config.unit,
-    grammarTarget:  unitData.grammarTarget,
-    lessonTopic:    unitData.lessonTopic,
+    focusLesson:    config.section,
+    grammarTarget,
+    lessonTopic,
     textbookUnit:   unitData.textbookUnit,
+    currentExerciseNum:  0,
+    completedExercises:  [],
     exchangeCount:       0,
     exerciseCount:       0,
     consecutiveCorrect:  0,
@@ -149,6 +236,7 @@ async function handleFocusLessonStart(
     studentConfirmedReading: false,
     ruleStatedCorrectly:     false,
     summaryDelivered:        false,
+    overviewShown:           false,
     startedAt:      new Date().toISOString(),
     phaseStartedAt: new Date().toISOString(),
   }
@@ -161,12 +249,21 @@ async function handleFocusLessonStart(
 
   meta.stt = new DeepgramSTT((transcript) => {
     send(ws, { type: 'transcript', text: transcript })
-    void processInput(ws, meta, transcript)
+    if (shouldProcessTranscript(transcript)) {
+      void processInput(ws, meta, transcript)
+    }
   })
 
-  const greeting = `Hello! I'm Alex. Today we're working on ${unitData.textbookUnit}: "${unitData.title}". The grammar focus is ${unitData.grammarTarget}. To start — can you give me one example sentence using this grammar? Don't worry if it's not perfect.`
+  const greeting = buildFocusGreeting(config.unit, config.section, unitData.grammarTarget, unitData.textbookUnit)
 
   send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: greeting })
+
+  // For grammar sections, asynchronously generate/load the section overview card
+  if (config.section) {
+    const sb = getFocusStudentBookSection(config.section)
+    if (sb?.type === 'Grammar') sendSectionCardAsync(ws, config.section)
+  }
+
   await ttsStream(ws, meta, greeting)
 }
 
@@ -174,6 +271,7 @@ async function processInput(
   ws: WebSocket,
   meta: ClientMeta,
   text: string,
+  sendCard = false,
 ): Promise<void> {
   if (!meta.lessonId) {
     send(ws, { type: 'error', code: 'NO_LESSON', message: 'Start a lesson first.' })
@@ -182,7 +280,12 @@ async function processInput(
 
   const result = await orchestrator.process(meta.lessonId, text)
 
-  send(ws, { type: 'ai_text', phase: result.phase, text: result.text })
+  send(ws, { type: 'ai_text', phase: result.phase, text: result.text, displayText: result.displayText })
+
+  // When handling confusion, send the AI's display_text as a teaching card
+  if (sendCard && result.displayText && result.displayText !== result.text) {
+    send(ws, { type: 'teaching_card', cardType: 'mini_explanation', displayText: result.displayText })
+  }
 
   if (result.phaseChanged) {
     send(ws, { type: 'phase_change', from: result.previousPhase, to: result.phase })
@@ -193,11 +296,15 @@ async function processInput(
     send(ws, {
       type: 'exercise',
       exercise: {
-        id:           result.exercise.id,
-        exerciseType: result.exercise.type,
-        question:     result.exercise.question,
-        hint:         result.exercise.hint,
-        difficulty:   result.exercise.difficulty,
+        id:             result.exercise.id,
+        exerciseType:   result.exercise.type,
+        question:       result.exercise.question,
+        hint:           result.exercise.hint,
+        difficulty:     result.exercise.difficulty,
+        exerciseNumber: result.exercise.exerciseNumber,
+        instruction:    result.exercise.instruction,
+        skillFocus:     result.exercise.skillFocus,
+        items:          result.exercise.items,
       },
     })
   }
@@ -273,12 +380,67 @@ async function handleExerciseAnswer(
 
   send(ws, { type: 'feedback', correct: validation.correct, explanation: validation.feedback })
 
-  // Pass result to AI so it can react and continue the lesson
+  // Pass result to AI — enforces mastery loop and correction ladder
   const context = validation.correct
-    ? `[exercise result] My answer: "${answer}" — correct! Please continue.`
-    : `[exercise result] My answer: "${answer}" — incorrect. Correct was: "${exercise.correct_answer}". Please help me understand and continue.`
+    ? `[EXERCISE RESULT] Student answered: "${answer}" — CORRECT.
+Confirm with one word ("Exactly." / "Right." / "Correct.").
+Explain WHY in one sentence — state the grammar rule that makes this correct.
+Optionally ask one micro follow-up question to deepen understanding (e.g. "Why 'does' and not 'do' here?").
+Then present the next item of this exercise, or if all items are done, announce exercise completion and introduce the next exercise.`
+    : `[EXERCISE RESULT] Student answered: "${answer}" — INCORRECT.
+Known correct answer (for your reference only — do NOT reveal it yet): "${exercise.correct_answer}".
+
+CORRECTION LADDER — start at TURN A this turn. Do NOT skip ahead.
+TURN A (this turn): Ask exactly ONE guiding question that targets the specific knowledge gap.
+  Do NOT give any part of the answer. Do NOT recast the correct form yet.
+  Think: what specific rule or knowledge caused this error? Ask about that.
+  Examples:
+    Wrong auxiliary → "For 'he', do we use do or does?"
+    Wrong verb form → "Is this verb regular or irregular? What does that mean?"
+    Wrong word order → "In English questions, where does the auxiliary verb go?"
+  Set "exercise": null — do NOT advance until the retry is resolved.
+
+On the student's next response (plain text, not "[EXERCISE RESULT]"):
+  If correct → confirm + explain why + continue the exercise.
+  If still wrong → escalate to TURN B (give one small hint, not the full answer).
+  Each failed retry escalates one step: A → B → C → D.
+  Only at TURN D (3 failed retries) may you give the full answer, then ask the student to repeat it.`
 
   await processInput(ws, meta, context)
+}
+
+async function handleStudentConfused(
+  ws: WebSocket,
+  meta: ClientMeta,
+  msg: StudentConfused,
+): Promise<void> {
+  if (!meta.lessonId) {
+    send(ws, { type: 'error', code: 'NO_LESSON', message: 'Start a lesson first.' })
+    return
+  }
+
+  const parts: string[] = ['[STUDENT_CONFUSED] The student clicked "I don\'t understand".']
+  if (msg.lastTeacherMessage) parts.push(`Last teacher message: "${msg.lastTeacherMessage}"`)
+  if (msg.lastExercise)       parts.push(`Current exercise: "${msg.lastExercise}"`)
+  if (msg.studentLastAnswer)  parts.push(`Student\'s last answer: "${msg.studentLastAnswer}"`)
+  parts.push('Follow the CONFUSION PROTOCOL. Identify the specific knowledge gap. Present a MINI TEACHING CARD in display_text.')
+
+  const confusionContext = parts.join('\n')
+  await processInput(ws, meta, confusionContext, true)
+}
+
+/** Fire-and-forget: generate (or load from cache) a section grammar card and send to client. */
+function sendSectionCardAsync(ws: WebSocket, sectionId: string): void {
+  getOrCreateSectionCard(sectionId)
+    .then((card) => {
+      if (card && ws.readyState === WebSocket.OPEN) {
+        send(ws, { type: 'section_card', sectionId, card })
+        console.log(`[ws] section_card sent for ${sectionId}`)
+      }
+    })
+    .catch((err: unknown) => {
+      console.error('[ws] section card generation failed:', err)
+    })
 }
 
 const ALL_PHASES: LessonPhase[] = [
@@ -353,6 +515,9 @@ export function attachLessonWS(server: Server): void {
             break
           case 'exercise_answer':
             await handleExerciseAnswer(ws, meta, msg.exerciseId, msg.answer)
+            break
+          case 'student_confused':
+            await handleStudentConfused(ws, meta, msg)
             break
         }
       } catch (err) {
