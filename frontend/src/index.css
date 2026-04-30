@@ -1,3 +1,121 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  html, body, #root {
+    height: 100%;
+    background-color: #F5F5F7;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  input, textarea, button {
+    font-family: inherit;
+  }
+
+  input:focus, textarea:focus {
+    outline: none;
+  }
+
+  ::-webkit-scrollbar { width: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c5bff0; border-radius: 99px; }
+}
+
+/* ── CLASSROOM ANIMATIONS (prefixed cls- to avoid collision) ── */
+
+@keyframes cls-wave {
+  0%, 100% { transform: scaleY(0.3); }
+  50%       { transform: scaleY(1); }
+}
+
+@keyframes cls-halo-breathe {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.06); }
+}
+
+@keyframes cls-aura-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes cls-pulse-ring {
+  0%   { transform: scale(1);   opacity: 0.55; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+
+@keyframes cls-dot-bounce {
+  0%, 80%, 100% { transform: translateY(0);   opacity: 0.4; }
+  40%           { transform: translateY(-5px); opacity: 1; }
+}
+
+@keyframes cls-slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cls-shake {
+  0%, 100% { transform: translateX(0);   }
+  20%      { transform: translateX(-7px);}
+  40%      { transform: translateX(7px); }
+  60%      { transform: translateX(-4px);}
+  80%      { transform: translateX(4px); }
+}
+
+@keyframes cls-msg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cls-pulse-glow {
+  0%   { box-shadow: 0 0 22px rgba(155,140,255,0.5), 0 10px 36px rgba(110,124,251,0.4); }
+  50%  { box-shadow: 0 0 55px rgba(255,184,107,0.65), 0 10px 48px rgba(155,140,255,0.55); }
+  100% { box-shadow: 0 0 22px rgba(155,140,255,0.5), 0 10px 36px rgba(110,124,251,0.4); }
+}
+
+/* ── UTILITY CLASSES ── */
+
+.cls-wave-bar {
+  display: inline-block;
+  width: 2.5px;
+  height: 18px;
+  background: #6E7CFB;
+  border-radius: 99px;
+  margin: 0 1.5px;
+  transform-origin: center;
+  animation: cls-wave 0.9s ease-in-out infinite;
+}
+
+.cls-pulse-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(110, 124, 251, 0.22);
+  animation: cls-pulse-ring 2s ease-out infinite;
+  pointer-events: none;
+}
+
+.cls-pulse-ring-2 { animation-delay: 0.65s; }
+.cls-pulse-ring-3 { animation-delay: 1.3s; }
+
+.cls-typing-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #9B8CFF;
+  margin: 0 2px;
+  animation: cls-dot-bounce 1.3s ease-in-out infinite;
+}
+.cls-typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.cls-typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+.cls-slide-up { animation: cls-slide-up 0.25s ease forwards; }
+.cls-shake    { animation: cls-shake 0.4s ease; }

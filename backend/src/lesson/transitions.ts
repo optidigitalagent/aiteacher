@@ -52,15 +52,25 @@ export function shouldTransition(state: LessonState): LessonPhase | null {
   }
 }
 
-// Called with AI's next_action string — mutates state flags or returns target phase
+// Called with AI's next_action string — mutates state flags or returns target phase.
+// Only allows forward transitions (no jumps backward).
 export function applyAISignal(state: LessonState, nextAction: string): LessonPhase | null {
   if (nextAction.startsWith('transition_to:')) {
     const target = nextAction.slice('transition_to:'.length) as LessonPhase
-    if (PHASE_ORDER.includes(target)) return target
+    const currentIdx = PHASE_ORDER.indexOf(state.phase)
+    const targetIdx  = PHASE_ORDER.indexOf(target)
+    // Only allow forward movement (skip ahead is OK, going back is not)
+    if (targetIdx > currentIdx) {
+      console.log(`[transitions] AI signal: ${state.phase} → ${target}`)
+      return target
+    }
+    console.warn(`[transitions] blocked backward/self transition attempt: ${state.phase} → ${target}`)
+    return null
   }
   // Flag setters — Claude uses these to signal readiness without forcing transition
   if (nextAction === 'student_confirmed_reading') state.studentConfirmedReading = true
   if (nextAction === 'rule_stated_correctly')     state.ruleStatedCorrectly = true
   if (nextAction === 'summary_delivered')         state.summaryDelivered = true
+  if (nextAction === 'overview_shown')            state.overviewShown = true
   return null
 }

@@ -31,9 +31,10 @@ const PHASE_INTRO: Record<LessonPhase, (s: LessonState) => string> = {
 }
 
 function stubResponse(state: LessonState): AIResponse {
+  const text = PHASE_INTRO[state.phase](state)
   return {
-    speech:        PHASE_INTRO[state.phase](state),
-    display_text:  PHASE_INTRO[state.phase](state),
+    speech:        text,
+    display_text:  text,
     next_action:   'continue_phase',
     exercise:      null,
     internal_note: `[stub] phase=${state.phase} exchanges=${state.exchangeCount}`,
@@ -57,6 +58,9 @@ export class LessonOrchestrator {
     const state = await this.loadState(lessonId)
     const previousPhase = state.phase
 
+    const inputPreview = inputText.length > 80 ? inputText.slice(0, 80) + '…' : inputText
+    console.log(`[orch] section=${state.focusLesson ?? 'free'} phase=${state.phase} exercise=${state.currentExerciseNum} exchanges=${state.exchangeCount} input="${inputPreview}"`)
+
     // Log student input
     await this.logEvent(lessonId, 'student_utterance', { text: inputText })
 
@@ -67,7 +71,7 @@ export class LessonOrchestrator {
     // Get AI response (stub or Claude)
     const aiResp = await aiHandler(state, inputText)
 
-    // Apply AI signal first, then check rule-based transitions
+    // Apply AI signal first (forward-only), then check rule-based transitions
     const aiTarget   = applyAISignal(state, aiResp.next_action)
     const ruleTarget = shouldTransition(state)
     const target: LessonPhase | null = aiTarget ?? ruleTarget
@@ -78,6 +82,26 @@ export class LessonOrchestrator {
       state.phaseStartedAt = new Date().toISOString()
       phaseChanged         = true
       await this.logEvent(lessonId, 'phase_change', { from: previousPhase, to: target })
+      console.log(`[orch] phase transition: ${previousPhase} → ${target}`)
+    }
+
+    // Track which textbook exercise we're on.
+    // currentExerciseNum = the exercise currently being worked on (0 = not started).
+    // Only advance when the AI returns an exercise with a DIFFERENT exerciseNumber.
+    // Items within the same exercise share the same exerciseNumber → no increment.
+    if (aiResp.exercise) {
+      const newNum = aiResp.exercise.exerciseNumber
+      if (newNum !== undefined && newNum > 0 && newNum !== state.currentExerciseNum) {
+        // Moving to a new textbook exercise — mark previous as complete
+        if (state.currentExerciseNum > 0 && !state.completedExercises.includes(state.currentExerciseNum)) {
+          state.completedExercises = [...state.completedExercises, state.currentExerciseNum]
+        }
+        state.currentExerciseNum = newNum
+        console.log(`[orch] exercise advanced to #${state.currentExerciseNum}, completed=[${state.completedExercises.join(',')}]`)
+      } else if (!newNum && state.currentExerciseNum === 0) {
+        // Free mode or AI omitted exerciseNumber — start at 1
+        state.currentExerciseNum = 1
+      }
     }
 
     await this.saveState(lessonId, state)
@@ -96,18 +120,14 @@ export class LessonOrchestrator {
       ? await saveExercise(lessonId, aiResp.exercise)
       : null
 
-    // If phase just changed → introduce the new phase
-    const responseText = phaseChanged
-      ? PHASE_INTRO[state.phase](state)
-      : aiResp.speech
-
     return {
-      text:          responseText,
-      phase:         state.phase,
+      text:         aiResp.speech,
+      displayText:  aiResp.display_text ?? aiResp.speech,
+      phase:        state.phase,
       phaseChanged,
       previousPhase,
       exercise,
-      ended:         state.phase === 'END',
+      ended:        state.phase === 'END',
     }
   }
 

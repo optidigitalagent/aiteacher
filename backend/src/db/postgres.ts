@@ -1,4 +1,7 @@
 import pg from 'pg'
+import { readFileSync } from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
 import 'dotenv/config'
 
 const { Pool } = pg
@@ -47,6 +50,19 @@ export async function withTransaction<T>(
 export async function checkConnection(): Promise<void> {
   const result = await pool.query<{ now: Date }>('SELECT NOW()')
   console.log('[postgres] connected, server time:', result.rows[0].now)
+}
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+export async function initTables(): Promise<void> {
+  const migrations = ['001_init.sql', '002_auth.sql', '003_profile_editable.sql']
+  for (const file of migrations) {
+    const sqlPath = join(__dirname, '../../migrations', file)
+    const sql = readFileSync(sqlPath, 'utf-8')
+    await query(sql)
+    console.log(`[postgres] migration applied: ${file}`)
+  }
 }
 
 export default pool

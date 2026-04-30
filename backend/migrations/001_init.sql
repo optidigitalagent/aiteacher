@@ -28,9 +28,9 @@ CREATE TABLE IF NOT EXISTS student_profiles (
 CREATE TABLE IF NOT EXISTS lessons (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   student_id      UUID REFERENCES students(id) ON DELETE CASCADE,
-  grammar_target  VARCHAR(100) NOT NULL,
-  lesson_topic    VARCHAR(200),
-  textbook_unit   VARCHAR(100),
+  grammar_target  TEXT NOT NULL,
+  lesson_topic    TEXT,
+  textbook_unit   TEXT,
   status          VARCHAR(20) DEFAULT 'active',
   phase_reached   VARCHAR(50),
   started_at      TIMESTAMP DEFAULT NOW(),
@@ -90,3 +90,15 @@ CREATE INDEX IF NOT EXISTS idx_lesson_events_lesson   ON lesson_events(lesson_id
 CREATE INDEX IF NOT EXISTS idx_exercises_lesson       ON exercises(lesson_id);
 CREATE INDEX IF NOT EXISTS idx_vocab_student          ON vocabulary_items(student_id);
 CREATE INDEX IF NOT EXISTS idx_vocab_next_review      ON vocabulary_items(next_review);
+
+-- Dev seed student (idempotent — safe to re-run)
+INSERT INTO students (id, name, age, level, textbook, current_unit)
+VALUES ('00000000-0000-0000-0000-000000000001', 'Alex', 15, 'B1', 'Focus 2', 1)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO student_profiles (student_id)
+SELECT '00000000-0000-0000-0000-000000000001'::uuid
+WHERE NOT EXISTS (
+  SELECT 1 FROM student_profiles
+  WHERE student_id = '00000000-0000-0000-0000-000000000001'
+);

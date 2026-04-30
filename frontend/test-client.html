@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Teacher — Test Client</title>
+  <style>
+    body { font-family: monospace; padding: 12px; max-width: 860px; }
+    fieldset { margin: 6px 0; padding: 8px; }
+    input[type=text] { padding: 2px 4px; }
+    button { margin: 0 3px; cursor: pointer; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    #log {
+      height: 380px; overflow-y: auto;
+      border: 1px solid #999; padding: 8px;
+      margin: 8px 0; font-size: 13px;
+      background: #fafafa;
+    }
+    .ai    { color: #000; }
+    .sys   { color: #888; font-style: italic; }
+    .err   { color: #c00; }
+    .you   { color: #00c; }
+    .ok    { color: #080; }
+    #exerciseBox {
+      display: none;
+      border: 2px solid #000; padding: 8px; margin: 6px 0;
+    }
+    #phaseLabel { font-weight: bold; font-size: 1.1em; }
+    #statusDot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ccc; margin-right: 4px; }
+    #statusDot.on { background: #0a0; }
+    #statusDot.off { background: #c00; }
+  </style>
+</head>
+<body>
+
+<h2>AI Teacher — Test Client</h2>
+
+<!-- ── Connection ───────────────────────────────────────────── -->
+<fieldset>
+  <legend>Connection</legend>
+  WS URL: <input type="text" id="wsUrl" value="ws://localhost:4000/lesson" size="32">
+  <button id="btnConnect">Connect</button>
+  <button id="btnDisconnect" disabled>Disconnect</button>
+  &nbsp;
+  <span id="statusDot" class="off"></span>
+  <span id="statusText">Disconnected</span>
+  &nbsp;&nbsp;
+  <label><input type="checkbox" id="mockMode"> Mock mode (no backend)</label>
+</fieldset>
+
+<!-- ── Lesson Config — Free Mode ────────────────────────────── -->
+<fieldset>
+  <legend>Free Lesson (custom topic)</legend>
+  Student ID: <input type="text" id="studentId" value="00000000-0000-0000-0000-000000000001" size="38"><br><br>
+  Grammar: <input type="text" id="grammarTarget" value="Past Simple" size="20">
+  Topic:   <input type="text" id="lessonTopic"   value="Mount Everest 1953" size="22">
+  Unit:    <input type="text" id="textbookUnit"   value="Focus B1 Unit 2" size="18">
+  <button id="btnStart" disabled>▶ Start Lesson</button>
+</fieldset>
+
+<!-- ── Focus Mode ────────────────────────────────────────────── -->
+<fieldset style="border-color:#00a; background:#f0f4ff;">
+  <legend style="color:#00a; font-weight:bold;">📖 Focus Student's Book 2 — Textbook Mode</legend>
+  Student ID: <input type="text" id="focusStudentId" value="00000000-0000-0000-0000-000000000001" size="38"><br><br>
+  Section:
+  <select id="focusSection">
+    <option value="1.1">1.1</option>
+    <option value="1.2" selected>1.2</option>
+    <option value="1.3">1.3</option>
+  </select>
+  &nbsp;
+  <button id="btnFocusStart" disabled>📖 Start Focus Lesson</button>
+  <span style="color:#666; font-size:0.85em; margin-left:8px;">AI ведёт урок строго по этому разделу учебника</span>
+</fieldset>
+
+<!-- ── Phase ────────────────────────────────────────────────── -->
+Phase: <span id="phaseLabel">—</span>
+
+<!-- ── Log ─────────────────────────────────────────────────── -->
+<div id="log"></div>
+
+<!-- ── Exercise ─────────────────────────────────────────────── -->
+<div id="exerciseBox">
+  <strong>EXERCISE</strong> (<span id="exerciseType">—</span>, difficulty <span id="exerciseDiff">—</span>)<br>
+  <div id="exerciseQuestion" style="margin:6px 0;"></div>
+  <div id="exerciseHint" style="color:#666;font-style:italic;margin-bottom:4px;"></div>
+  <input type="text" id="exerciseAnswer" placeholder="Your answer…" size="50">
+  <button id="btnSubmitAnswer">Submit</button>
+</div>
+
+<!-- ── Input ─────────────────────────────────────────────────── -->
+<fieldset>
+  <legend>Input</legend>
+  <input type="text" id="textInput" placeholder="Type a message…" size="55" disabled>
+  <button id="btnSend" disabled>Send</button>
+  &nbsp;|&nbsp;
+  <button id="btnMic"     disabled>🎤 Start mic</button>
+  <button id="btnStopMic" disabled>⏹ Stop mic</button>
+  <button id="btnInterrupt" disabled>✋ Interrupt</button>
+</fieldset>
+
+<script>
+'use strict'
+
+// ── State ──────────────────────────────────────────────────────
+let ws               = null
+let currentExerciseId = null
+let isRecording      = false
+let audioCtx         = null
+let workletNode      = null
+let micStream        = null
+let ttsChunks        = []
+let ttsFlushTimer    = null
+
+// ── Elements ───────────────────────────────────────────────────
+const $ = id => document.getElementById(id)
+const btnConnect    = $('btnConnect')
+const btnDisconnect = $('btnDisconnect')
+const btnStart      = $('btnStart')
+const btnFocusStart = $('btnFocusStart')
+const btnSend       = $('btnSend')
+const btnMic        = $('btnMic')
+const btnStopMic    = $('btnStopMic')
+const btnInterrupt  = $('btnInterrupt')
+const btnSubmit     = $('btnSubmitAnswer')
+const textInput     = $('textInput')
+const logEl         = $('log')
+
+// ── Logging ────────────────────────────────────────────────────
+function log(text, cls = 'sys') {
+  const d = document.createElement('div')
+  d.className = cls
+  d.textContent = text
+  logEl.appendChild(d)
+  logEl.scrollTop = logEl.scrollHeight
+}
+
+// ── WS send ────────────────────────────────────────────────────
+function wsSend(obj) {
+  if (!ws) return
+  ws.send(JSON.stringify(obj))
+}
+
+// ── Connection ─────────────────────────────────────────────────
+btnConnect.onclick = () => {
+  if ($('mockMode').checked) { connectMock(); return }
+
+  const url = $('wsUrl').value.trim()
+  ws = new WebSocket(url)
+
+  ws.onopen = () => {
+    setConnected(true)
+    log('✓ Connected to ' + url)
+  }
+  ws.onclose = () => {
+    setConnected(false)
+    log('✗ Disconnected')
+  }
+  ws.onerror = () => log('⚠ WebSocket error', 'err')
+  ws.onmessage = e => {
+    try { handleMsg(JSON.parse(e.data)) }
+    catch { log('⚠ Bad JSON from server', 'err') }
+  }
+}
+
+btnDisconnect.onclick = () => ws?.close()
+
+// ── Lesson start ───────────────────────────────────────────────
+btnStart.onclick = () => {
+  const payload = {
+    studentId:     $('studentId').value.trim(),
+    grammarTarget: $('grammarTarget').value.trim(),
+    lessonTopic:   $('lessonTopic').value.trim(),
+    textbookUnit:  $('textbookUnit').value.trim(),
+  }
+  if (!payload.studentId || !payload.grammarTarget) {
+    log('⚠ Fill in Student ID and Grammar Target', 'err'); return
+  }
+  wsSend({ type: 'lesson_start', payload })
+  log('▶ Lesson start sent')
+}
+
+// ── Focus lesson start ─────────────────────────────────────────
+btnFocusStart.onclick = () => {
+  const section = $('focusSection').value  // e.g. "1.2"
+  const unit    = parseInt(section.split('.')[0], 10)
+  const payload = {
+    studentId: $('focusStudentId').value.trim(),
+    unit,
+    section,
+  }
+  if (!payload.studentId) {
+    log('⚠ Fill in Student ID', 'err'); return
+  }
+  wsSend({ type: 'focus_lesson_start', payload })
+  const sectionText = $('focusSection').options[$('focusSection').selectedIndex].text
+  log(`📖 Focus lesson start → ${sectionText}`)
+}
+
+// ── Text message ───────────────────────────────────────────────
+btnSend.onclick = sendText
+textInput.onkeydown = e => { if (e.key === 'Enter') sendText() }
+
+function sendText() {
+  const text = textInput.value.trim()
+  if (!text) return
+  wsSend({ type: 'text_message', text })
+  log('You: ' + text, 'you')
+  textInput.value = ''
+}
+
+// ── Interrupt TTS ──────────────────────────────────────────────
+btnInterrupt.onclick = () => {
+  wsSend({ type: 'interrupt' })
+  ttsChunks = []
+  clearTimeout(ttsFlushTimer)
+  log('✋ Interrupted TTS')
+}
+
+// ── Exercise answer ────────────────────────────────────────────
+btnSubmit.onclick = () => {
+  const answer = $('exerciseAnswer').value.trim()
+  if (!answer || !currentExerciseId) return
+  wsSend({ type: 'exercise_answer', exerciseId: currentExerciseId, answer })
+  log('Exercise answer: ' + answer, 'you')
+  $('exerciseAnswer').value = ''
+  $('exerciseBox').style.display = 'none'
+  currentExerciseId = null
+}
+$('exerciseAnswer').onkeydown = e => { if (e.key === 'Enter') btnSubmit.click() }
+
+// ── Microphone (AudioWorklet → PCM16 → base64) ─────────────────
+btnMic.onclick = startMic
+btnStopMic.onclick = stopMic
+
+async function startMic() {
+  if (isRecording) return
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    audioCtx  = new AudioContext({ sampleRate: 16000 })
+
+    // Inline AudioWorklet — converts Float32 → Int16 PCM
+    const code = `
+      class P extends AudioWorkletProcessor {
+        process(inputs) {
+          const ch = inputs[0]?.[0]
+          if (ch) {
+            const b = new Int16Array(ch.length)
+            for (let i = 0; i < ch.length; i++)
+              b[i] = Math.max(-32768, Math.min(32767, ch[i] * 32768))
+            this.port.postMessage(b.buffer, [b.buffer])
+          }
+          return true
+        }
+      }
+      registerProcessor('pcm', P)
+    `
+    const blobUrl = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }))
+    await audioCtx.audioWorklet.addModule(blobUrl)
+    URL.revokeObjectURL(blobUrl)
+
+    const src = audioCtx.createMediaStreamSource(micStream)
+    workletNode = new AudioWorkletNode(audioCtx, 'pcm')
+    workletNode.port.onmessage = ({ data }) => {
+      wsSend({ type: 'audio_chunk', data: ab2b64(data) })
+    }
+    src.connect(workletNode)
+    isRecording = true
+    btnMic.disabled = true
+    btnStopMic.disabled = false
+    log('🎤 Recording… (PCM16 16kHz)')
+  } catch (err) {
+    log('⚠ Mic: ' + err.message, 'err')
+  }
+}
+
+function stopMic() {
+  if (!isRecording) return
+  workletNode?.disconnect(); workletNode = null
+  micStream?.getTracks().forEach(t => t.stop()); micStream = null
+  audioCtx?.close(); audioCtx = null
+  isRecording = false
+  btnMic.disabled = false
+  btnStopMic.disabled = true
+  log('⏹ Recording stopped')
+}
+
+function ab2b64(buf) {
+  let bin = ''
+  new Uint8Array(buf).forEach(b => bin += String.fromCharCode(b))
+  return btoa(bin)
+}
+
+// ── TTS playback ───────────────────────────────────────────────
+// ElevenLabs sends chunks of a single MP3 stream.
+// Accumulate for 400 ms after the last chunk, then decode + play.
+function queueTTS(b64) {
+  ttsChunks.push(b64)
+  clearTimeout(ttsFlushTimer)
+  ttsFlushTimer = setTimeout(flushTTS, 400)
+}
+
+async function flushTTS() {
+  if (!ttsChunks.length) return
+  const chunks = ttsChunks.splice(0)
+
+  const arrays = chunks.map(b64 => {
+    const bin = atob(b64)
+    const a = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i)
+    return a
+  })
+  const total = arrays.reduce((s, a) => s + a.length, 0)
+  const merged = new Uint8Array(total)
+  let off = 0
+  arrays.forEach(a => { merged.set(a, off); off += a.length })
+
+  try {
+    const ctx = new AudioContext()
+    const decoded = await ctx.decodeAudioData(merged.buffer)
+    const src = ctx.createBufferSource()
+    src.buffer = decoded
+    src.connect(ctx.destination)
+    src.start()
+    log(`[TTS playing — ${(total / 1024).toFixed(1)} KB]`)
+  } catch {
+    log('[TTS decode failed — MP3 may be incomplete]', 'err')
+  }
+}
+
+// ── Handle server messages ─────────────────────────────────────
+function handleMsg(msg) {
+  switch (msg.type) {
+
+    case 'transcript':
+      log(`🎤 STT: ${msg.text}`, 'you')
+      break
+
+    case 'ai_text':
+      $('phaseLabel').textContent = msg.phase
+      log(`Alex [${msg.phase}]: ${msg.text}`, 'ai')
+      break
+
+    case 'audio_chunk':
+      queueTTS(msg.data)
+      break
+
+    case 'phase_change':
+      $('phaseLabel').textContent = msg.to
+      log(`⟶ Phase change: ${msg.from} → ${msg.to}`)
+      break
+
+    case 'exercise':
+      currentExerciseId = msg.exercise.id
+      $('exerciseType').textContent = msg.exercise.exerciseType
+      $('exerciseDiff').textContent  = msg.exercise.difficulty
+      $('exerciseQuestion').textContent = msg.exercise.question
+      $('exerciseHint').textContent  = msg.exercise.hint ? `Hint: ${msg.exercise.hint}` : ''
+      $('exerciseBox').style.display = 'block'
+      $('exerciseAnswer').focus()
+      log(`📝 [${msg.exercise.exerciseType}] ${msg.exercise.question}`, 'ai')
+      break
+
+    case 'feedback':
+      log(`${msg.correct ? '✓' : '✗'} ${msg.explanation}`, msg.correct ? 'ok' : 'err')
+      break
+
+    case 'lesson_end':
+      log(`🏁 Lesson complete — ${msg.summary.durationMin} min | phases: ${msg.summary.phasesReached.join(' → ')}`)
+      break
+
+    case 'error':
+      log(`⚠ [${msg.code}] ${msg.message}`, 'err')
+      break
+
+    default:
+      log(`? ${JSON.stringify(msg)}`)
+  }
+}
+
+// ── Mock mode (no backend needed) ─────────────────────────────
+function connectMock() {
+  setConnected(true)
+  log('✓ Mock mode — simulating backend locally')
+
+  ws = {
+    send(raw) {
+      const msg = JSON.parse(raw)
+      if (msg.type === 'lesson_start') {
+        setTimeout(() => handleMsg({
+          type: 'ai_text', phase: 'DIAGNOSTIC',
+          text: `Hello! I'm Alex. Today: "${msg.payload.grammarTarget}" via "${msg.payload.lessonTopic}". What do you already know?`
+        }), 300)
+      } else if (msg.type === 'focus_lesson_start') {
+        const sectionNames = {
+          '1.1': 'Vocabulary — Free-time activities',
+          '1.2': 'Grammar 1 — Present Simple',
+          '1.3': 'Listening — Talking about hobbies',
+        }
+        const section = msg.payload.section || `Unit ${msg.payload.unit}`
+        const title   = sectionNames[section] || section
+        setTimeout(() => handleMsg({
+          type: 'ai_text', phase: 'DIAGNOSTIC',
+          text: `Hello! I'm Alex. Today we're working on Focus 2, section ${section}: ${title}. Can you give me one example sentence?`
+        }), 300)
+      } else if (msg.type === 'audio_chunk') {
+        // Simulate STT: emit a fake transcript every ~10 chunks
+        if (Math.random() < 0.1) {
+          setTimeout(() => handleMsg({ type: 'transcript', text: '[mock STT] I went to school yesterday.' }), 600)
+        }
+      } else if (msg.type === 'text_message') {
+        const replies = [
+          { type: 'ai_text', phase: 'DIAGNOSTIC', text: 'Interesting! Can you give me an example sentence?' },
+          { type: 'phase_change', from: 'DIAGNOSTIC', to: 'CONTEXT_INPUT' },
+          { type: 'ai_text', phase: 'CONTEXT_INPUT', text: 'Great. Now read this: "In 1953, Hillary climbed Everest." What actions do you notice?' },
+          { type: 'exercise', exercise: { id: 'mock-ex-1', exerciseType: 'form_transformation', question: 'Hillary _____ (reach) the summit.', difficulty: 0.3 } },
+        ]
+        const r = replies[Math.floor(Math.random() * replies.length)]
+        setTimeout(() => handleMsg(r), 400)
+      } else if (msg.type === 'exercise_answer') {
+        setTimeout(() => handleMsg({ type: 'feedback', correct: true, explanation: 'Correct! "reached" — regular verb, -ed ending.' }), 300)
+      }
+    },
+    close() { setConnected(false); log('✗ Mock disconnected') },
+    readyState: 1
+  }
+}
+
+// ── UI helpers ─────────────────────────────────────────────────
+function setConnected(on) {
+  btnConnect.disabled    = on
+  btnDisconnect.disabled = !on
+  btnStart.disabled      = !on
+  btnFocusStart.disabled = !on
+  btnSend.disabled       = !on
+  btnMic.disabled        = !on
+  btnInterrupt.disabled  = !on
+  textInput.disabled     = !on
+  $('statusDot').className = on ? 'on' : 'off'
+  $('statusText').textContent = on ? 'Connected' : 'Disconnected'
+}
+</script>
+
+</body>
+</html>
