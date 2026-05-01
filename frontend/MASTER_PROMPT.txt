@@ -1,0 +1,415 @@
+You are a Senior Frontend Architect, Product Engineer, and System Integrator.
+
+Your task is NOT to design pages.
+
+Your task is to transform an inconsistent frontend into a SINGLE, PRODUCTION-READY SYSTEM.
+
+---
+
+# 🎯 CORE OBJECTIVE
+
+Build a unified platform where:
+
+- all pages share ONE layout
+- all pages use ONE design system
+- all navigation is connected
+- all CTAs are functional
+- lesson flow works end-to-end
+
+This is SYSTEM INTEGRATION.
+
+NOT redesign.
+NOT creativity.
+
+---
+
+# 🧠 EXECUTION STRATEGY (MANDATORY ORDER)
+
+You MUST follow this order:
+
+1. Scan entire project structure
+2. Identify all pages and components
+3. Detect inconsistencies:
+   - fonts
+   - layout
+   - spacing
+   - headers/footers
+   - mixed HTML vs React
+4. Convert everything into ONE system
+
+DO NOT start coding before analysis.
+
+---
+
+# 📁 PROJECT CONTEXT
+
+You have:
+
+- HomePage.jsx → PRIMARY DESIGN SOURCE
+- learning.html
+- ProfilePage.jsx
+- about.html
+
+---
+
+# ⚠️ SOURCE OF TRUTH
+
+HomePage.jsx defines:
+
+- layout
+- typography
+- spacing
+- header
+- visual hierarchy
+
+You MUST:
+
+- reuse it
+- extract system from it
+- apply to all pages
+
+DO NOT invent new UI.
+
+---
+
+# 🎨 GLOBAL DESIGN SYSTEM
+
+Apply globally:
+
+Typography:
+- Headings → Sora
+- Body → DM Sans
+
+Remove ALL other fonts.
+
+Colors:
+- Primary → #7B8CFF
+- Secondary → #A18BFF
+- Accent → #FFB38C
+
+Spacing:
+- 8px grid
+
+Radius:
+- 16px / 20px / 24px
+
+Shadows:
+- soft only
+
+---
+
+# 🧱 LAYOUT SYSTEM (CREATE FROM SCRATCH)
+
+Create:
+
+## Layout.jsx
+
+Structure:
+
+<Header />
+<main>{children}</main>
+<Footer />
+
+Wrap ALL pages with Layout.
+
+---
+
+## Header.jsx (CRITICAL)
+
+Based on HomePage.
+
+Must include:
+
+- logo (left)
+- navigation (center)
+  - Learning
+  - About
+  - Pricing
+  - Support
+- right side:
+  - avatar
+  - primary CTA
+
+---
+
+### HEADER STATES
+
+Homepage:
+- transparent
+- dark text
+
+Other pages:
+- white background
+- blur
+- border bottom
+- sticky
+
+---
+
+### ACTIVE LINK LOGIC
+
+- highlight current route
+- user always knows where they are
+
+---
+
+## Footer.jsx
+
+Use About page structure.
+
+- minimal
+- consistent
+- reused globally
+
+---
+
+# 🔁 ROUTING SYSTEM
+
+Implement:
+
+/ → Home
+/learning → Learning
+/profile → Profile
+/about → About
+
+Prepare for:
+/pricing (future)
+
+---
+
+Use React Router.
+
+NO broken links.
+NO dead routes.
+
+---
+
+# 🔗 NAVIGATION CONNECTIONS
+
+All buttons MUST work:
+
+- Start lesson → /learning
+- Continue learning → /learning
+- Avatar → /profile
+- About → /about
+
+Nothing should be static.
+
+---
+
+# 🧠 LESSON ENTRY SYSTEM (CRITICAL)
+
+Implement full logic:
+
+---
+
+## ACTION
+
+User clicks:
+"Start lesson"
+
+---
+
+## FLOW
+
+1. Call API:
+POST /lesson/start
+
+2. Set state:
+isLoadingLesson = true
+
+3. Show UI:
+"AI is preparing your lesson..."
+
+4. Disable interactions
+
+5. Wait response:
+{ sessionId }
+
+6. Redirect:
+/classroom/:sessionId
+
+---
+
+## ERROR HANDLING
+
+If request fails:
+
+- show error message
+- show retry button
+- restore UI
+
+---
+
+## RESUME LOGIC
+
+If user has active session:
+
+CTA becomes:
+"Continue learning"
+
+---
+
+# 🧩 GLOBAL STATE (REQUIRED)
+
+Define:
+
+- isNewUser
+- hasActiveLesson
+- isLoadingLesson
+
+Use for:
+
+- CTA switching
+- navigation decisions
+- UI states
+
+---
+
+# 🔄 FILE NORMALIZATION
+
+You MUST:
+
+1. Convert:
+   - learning.html → LearningPage.jsx
+   - about.html → AboutPage.jsx
+
+2. Move all pages into React structure
+
+3. Remove duplicate headers/footers
+
+4. Apply Layout wrapper
+
+---
+
+# 🧠 SYSTEM LOGIC (VERY IMPORTANT)
+
+You are building a SYSTEM.
+
+NOT pages.
+
+Think in:
+
+- flows
+- states
+- transitions
+
+---
+
+# 🔁 CORE USER FLOW
+
+User journey MUST work:
+
+Home
+→ Learning
+→ Start lesson
+→ Setup (implicit)
+→ Classroom
+→ Exit
+→ Back to Learning
+
+---
+
+# ⚠️ RISKS + SOLUTIONS
+
+You MUST handle ALL:
+
+---
+
+## 1. Broken routing
+
+Solution:
+- central route config
+
+---
+
+## 2. UI inconsistency
+
+Solution:
+- enforce design system globally
+
+---
+
+## 3. Font mismatch
+
+Solution:
+- global font import only
+
+---
+
+## 4. Multiple headers
+
+Solution:
+- single Header component
+
+---
+
+## 5. Lesson start failure
+
+Solution:
+- retry UI
+- error state
+
+---
+
+## 6. Dead buttons
+
+Solution:
+- every CTA must navigate or trigger action
+
+---
+
+## 7. Mixed HTML/React
+
+Solution:
+- convert everything to React
+
+---
+
+# 🔧 OUTPUT REQUIREMENTS
+
+You MUST produce:
+
+1. Clean project structure
+2. Layout system (Header + Footer)
+3. All pages connected
+4. Routing working
+5. CTA logic working
+6. Lesson entry system working
+7. State management implemented
+
+---
+
+# 🚫 DO NOT
+
+- redesign UI
+- change structure
+- add features
+- overengineer
+
+---
+
+# 🧠 FINAL RESULT
+
+After execution:
+
+User can:
+
+- navigate all pages
+- start lesson
+- enter classroom
+- return safely
+
+System works WITHOUT errors.
+
+---
+
+# ⚡ FINAL RULE
+
+Think like a SYSTEM ENGINEER.
+
+Every action → has logic  
+Every button → has destination  
+Every state → is handled  
+
+Build a REAL product.

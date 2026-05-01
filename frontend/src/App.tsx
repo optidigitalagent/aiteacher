@@ -9,6 +9,8 @@ import PricingPage from './pages/PricingPage'
 import SupportPage from './pages/SupportPage'
 import AuthCallbackPage from './pages/AuthCallbackPage'
 import ClassroomLayout from './features/classroom/components/ClassroomLayout'
+import DemoSetup from './components/demo/DemoSetup'
+import DemoClassroomPage from './pages/DemoClassroomPage'
 
 export default function App() {
   return (
@@ -32,6 +34,10 @@ export default function App() {
 
           {/* Classroom — full-screen, no Header/Footer */}
           <Route path="/classroom/:sessionId" element={<ClassroomLayout />} />
+
+          {/* Demo flow — full-screen, no Header/Footer */}
+          <Route path="/demo/setup" element={<DemoSetup />} />
+          <Route path="/demo/classroom/:id" element={<DemoClassroomPage />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />

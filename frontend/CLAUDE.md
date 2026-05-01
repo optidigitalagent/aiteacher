@@ -1,3 +1,63 @@
+Use skills from .claude/skills for UI/UX, frontend, and product design tasks.
+
+Always use the ui-ux-pro-max skill for:
+- UI
+- UX
+- product design
+
+Always think as a senior product designer.
+
+Use 21st/magic MCP and ui-ux-pro-max skill.
+
+Find or generate a premium React/Tailwind component for the AI Teacher Learning page.
+Do not redesign the whole product.
+Keep the existing flow: Learning → Setup → Classroom.
+
+## FRONTEND MODE (TEMPORARY OVERRIDE)
+
+You are currently working on FRONTEND SYSTEM INTEGRATION.
+
+Ignore backend complexity unless explicitly required.
+
+Your ONLY focus right now:
+
+- unify frontend pages
+- build layout system
+- fix routing
+- connect UI to lesson entry flow
+- ensure navigation works
+- ensure CTA logic works
+
+DO NOT:
+- modify lesson FSM
+- modify AI prompts
+- modify backend architecture
+- modify Redis/PostgreSQL logic
+- touch voice system (STT/TTS)
+
+You are operating in:
+
+FRONTEND INTEGRATION MODE
+
+This takes priority over all other instructions in this file.
+
+Goal:
+
+Transform standalone frontend pages into a single cohesive React application
+connected to existing backend endpoints.
+
+Classroom already exists.
+Do NOT redesign it.
+
+Focus on:
+
+- Header
+- Footer
+- Layout
+- Routing
+- Learning → Lesson → Classroom flow
+
+This override is ACTIVE for current session.
 # AI English Teacher — Project Constitution
 > This file is loaded at the start of EVERY Claude Code session.
 > Read it completely before writing a single line of code.
@@ -103,3 +163,23 @@ Auth:         JWT (simple, students + teachers)
 └── vector-db/
     └── scripts/               ← Textbook ingestion scripts
 ```
+## CURRENT TASK (ACTIVE)
+
+Current focus:
+
+Frontend integration of existing pages:
+- Home
+- Learning
+- Profile
+- About
+
+Goal:
+
+Create unified React system with:
+- shared layout
+- working navigation
+- working lesson entry
+
+Do NOT expand scope.
+
+Finish integration FIRST before moving to backend.

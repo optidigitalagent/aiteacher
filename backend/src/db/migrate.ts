@@ -6,7 +6,13 @@ import { checkConnection, query } from './postgres.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-const MIGRATIONS = ['001_init.sql', '002_auth.sql', '003_profile_editable.sql']
+const MIGRATIONS = [
+  '001_init.sql',
+  '002_auth.sql',
+  '003_profile_editable.sql',
+  '003_demo_safety.sql',
+  '004_demo_sessions.sql',
+]
 
 async function migrate(): Promise<void> {
   await checkConnection()

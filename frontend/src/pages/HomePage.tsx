@@ -324,8 +324,8 @@ export default function HomePage() {
                 </RevealSection>
                 <RevealSection delay={240}>
                   <div className="hp-hero-btns">
-                    <Link to="/learning" className="hp-btn-primary">✦ Start lesson</Link>
-                    <button className="hp-btn-secondary" onClick={() => alert('Demo coming soon!')}>▶ Watch demo</button>
+                    <Link to="/demo/setup" className="hp-btn-primary">✦ Start free AI demo</Link>
+                    <Link to="/demo/setup" className="hp-btn-secondary">▶ Watch demo</Link>
                   </div>
                 </RevealSection>
               </div>
@@ -422,9 +422,9 @@ export default function HomePage() {
               <div className="hp-cta-block">
                 <div className="hp-cta-left">
                   <h2 className="hp-cta-title">Ready to improve your English?</h2>
-                  <p className="hp-cta-sub">Start your first lesson now. It's free.</p>
+                  <p className="hp-cta-sub">Try your first AI demo lesson free.</p>
                 </div>
-                <Link to="/learning" className="hp-cta-btn">Start lesson →</Link>
+                <Link to="/demo/setup" className="hp-cta-btn">Start demo lesson →</Link>
               </div>
             </RevealSection>
           </div>

@@ -55,14 +55,22 @@ export async function checkConnection(): Promise<void> {
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
+const MIGRATIONS = [
+  '001_init.sql',
+  '002_auth.sql',
+  '003_profile_editable.sql',
+  '003_demo_safety.sql',
+  '004_demo_sessions.sql',
+]
+
 export async function initTables(): Promise<void> {
-  const migrations = ['001_init.sql', '002_auth.sql', '003_profile_editable.sql']
-  for (const file of migrations) {
+  for (const file of MIGRATIONS) {
     const sqlPath = join(__dirname, '../../migrations', file)
     const sql = readFileSync(sqlPath, 'utf-8')
     await query(sql)
     console.log(`[postgres] migration applied: ${file}`)
   }
+  console.log('[postgres] tables ready')
 }
 
 export default pool

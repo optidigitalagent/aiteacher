@@ -1,8 +1,11 @@
 import { Router, type Request, type Response } from 'express'
 import { query } from '../db/postgres.js'
 import redis from '../db/redis.js'
+import authRoutes from './auth-routes.js'
 
 const router = Router()
+
+router.use(authRoutes)
 const START_TIME = Date.now()
 
 // ── GET /health ───────────────────────────────────────────────────────────────

@@ -1,0 +1,2092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Learning — AI Teacher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --purple: #7B8CFF;
+    --purple-light: #A18BFF;
+    --purple-dark: #5B6BDF;
+    --orange: #FFB38C;
+    --orange-dark: #FF8C5A;
+    --grad-primary: linear-gradient(135deg, #7B8CFF 0%, #A18BFF 100%);
+    --grad-cta: linear-gradient(135deg, #7B8CFF 0%, #FFB38C 100%);
+    --grad-bg: linear-gradient(160deg, #FFF9F3 0%, #F6F4FF 50%, #FFF4EE 100%);
+    --text-primary: #0F172A;
+    --text-secondary: #64748B;
+    --text-muted: #94A3B8;
+    --surface: #F6F7FB;
+    --surface-card: #FFFFFF;
+    --border: #E6EAF2;
+    --border-light: #EEF1F7;
+    --shadow-sm: 0px 4px 12px rgba(15,23,42,0.06);
+    --shadow-md: 0px 12px 24px rgba(15,23,42,0.08);
+    --shadow-lg: 0px 24px 48px rgba(15,23,42,0.12);
+    --radius-sm: 8px;
+    --radius-md: 16px;
+    --radius-lg: 24px;
+    --radius-xl: 32px;
+    --font: 'Plus Jakarta Sans', sans-serif;
+    --transition: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--font);
+    background: #FFFFFF;
+    color: var(--text-primary);
+    line-height: 1.5;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border-light);
+    transition: box-shadow 300ms var(--transition);
+  }
+  .header.scrolled { box-shadow: var(--shadow-sm); }
+
+  .header-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 32px;
+    height: 68px;
+    display: flex;
+    align-items: center;
+    gap: 32px;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: var(--grad-primary);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .logo-icon svg { width: 18px; height: 18px; fill: white; }
+  .logo-text {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
+  }
+
+  .header-nav {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .nav-item {
+    position: relative;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    transition: color 200ms, background 200ms;
+  }
+  .nav-item:hover { color: var(--text-primary); background: var(--surface); }
+  .nav-item.active { color: var(--purple); font-weight: 600; }
+  .nav-item.active::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 6px; height: 6px;
+    background: var(--purple);
+    border-radius: 50%;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  .notif-btn {
+    width: 40px; height: 40px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    transition: background 200ms, color 200ms;
+  }
+  .notif-btn:hover { background: var(--surface); color: var(--text-primary); }
+
+  .avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--grad-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: white;
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 0 0 2px var(--purple-light);
+    overflow: hidden;
+  }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: var(--grad-cta);
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: var(--font);
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: transform 200ms var(--transition), box-shadow 200ms var(--transition), opacity 200ms;
+    box-shadow: 0 4px 16px rgba(123,140,255,0.3);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .btn-primary:hover { transform: scale(1.02); box-shadow: 0 8px 24px rgba(123,140,255,0.4); }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary:disabled { opacity: 0.45; pointer-events: none; }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: white;
+    color: var(--purple);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: var(--font);
+    border: 1.5px solid var(--purple);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: transform 200ms var(--transition), background 200ms, box-shadow 200ms;
+    text-decoration: none;
+  }
+  .btn-secondary:hover { background: rgba(123,140,255,0.06); transform: scale(1.02); box-shadow: var(--shadow-sm); }
+  .btn-secondary:active { transform: scale(0.98); }
+
+  /* ── MAIN ── */
+  .page-bg {
+    background: var(--grad-bg);
+    min-height: 100vh;
+  }
+
+  .page-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 48px 32px 80px;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 40px;
+    align-items: center;
+    margin-bottom: 48px;
+  }
+
+  .hero-label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--purple);
+    margin-bottom: 12px;
+  }
+
+  .hero-title {
+    font-size: clamp(32px, 4vw, 48px);
+    font-weight: 800;
+    letter-spacing: -1.5px;
+    color: var(--text-primary);
+    line-height: 1.1;
+    margin-bottom: 14px;
+  }
+
+  .hero-subtitle {
+    font-size: 16px;
+    color: var(--text-secondary);
+    max-width: 500px;
+    line-height: 1.6;
+  }
+
+  .hero-visual {
+    position: relative;
+    width: 280px;
+    height: 200px;
+    flex-shrink: 0;
+  }
+
+  .sphere {
+    position: absolute;
+    border-radius: 50%;
+    animation: float 6s ease-in-out infinite;
+  }
+  .sphere-1 {
+    width: 80px; height: 80px;
+    background: linear-gradient(135deg, #FFB38C, #FF8C5A);
+    top: 20px; right: 60px;
+    animation-delay: 0s;
+    box-shadow: 0 16px 40px rgba(255,179,140,0.4);
+  }
+  .sphere-2 {
+    width: 52px; height: 52px;
+    background: linear-gradient(135deg, #A18BFF, #7B8CFF);
+    top: 80px; right: 20px;
+    animation-delay: -2s;
+    box-shadow: 0 12px 30px rgba(161,139,255,0.4);
+  }
+  .sphere-3 {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, #7B8CFF, #5B6BDF);
+    top: 10px; right: 150px;
+    animation-delay: -4s;
+    box-shadow: 0 8px 20px rgba(123,140,255,0.3);
+  }
+  .sphere-4 {
+    width: 24px; height: 24px;
+    background: linear-gradient(135deg, #FFB38C, #FFD4B8);
+    bottom: 30px; right: 100px;
+    animation-delay: -1s;
+    opacity: 0.7;
+  }
+
+  .hero-book {
+    position: absolute;
+    left: 0; bottom: 0;
+    width: 110px; height: 140px;
+    background: linear-gradient(135deg, #7B8CFF 0%, #A18BFF 100%);
+    border-radius: 4px 12px 12px 4px;
+    box-shadow: 0 20px 50px rgba(123,140,255,0.35), -4px 0 0 rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    animation: float 8s ease-in-out infinite;
+    animation-delay: -3s;
+  }
+  .hero-book-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: white;
+    text-align: center;
+    padding: 0 8px;
+    line-height: 1.2;
+  }
+  .hero-book-badge {
+    background: rgba(255,255,255,0.25);
+    border-radius: 20px;
+    padding: 3px 8px;
+    font-size: 9px;
+    font-weight: 700;
+    color: white;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+
+  /* ── STEP PREVIEW ── */
+  .step-preview {
+    background: white;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    padding: 20px 28px;
+    margin-bottom: 40px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    align-items: center;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .step-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    position: relative;
+  }
+
+  .step-num {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    transition: all 300ms;
+  }
+  .step-item.active .step-num {
+    background: var(--grad-primary);
+    border-color: transparent;
+    color: white;
+    box-shadow: 0 4px 12px rgba(123,140,255,0.35);
+  }
+  .step-item.done .step-num {
+    background: #22C55E;
+    border-color: transparent;
+    color: white;
+  }
+
+  .step-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .step-item.active .step-label { color: var(--purple); font-weight: 600; }
+  .step-item.done .step-label { color: #22C55E; }
+
+  .step-arrow {
+    color: var(--border);
+    font-size: 16px;
+    margin: 0 8px;
+    flex-shrink: 0;
+  }
+
+  /* ── SECTION LABEL ── */
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+
+  /* ── CONTINUE CARD ── */
+  .continue-card {
+    background: white;
+    border-radius: var(--radius-lg);
+    border: 1.5px solid var(--border-light);
+    padding: 24px 28px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 40px;
+    box-shadow: var(--shadow-md);
+    position: relative;
+    overflow: hidden;
+    cursor: default;
+    transition: box-shadow 300ms, transform 300ms var(--transition);
+  }
+  .continue-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+
+  .continue-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: var(--grad-cta);
+    border-radius: 0 2px 2px 0;
+  }
+
+  .continue-book-thumb {
+    width: 64px; height: 80px;
+    background: var(--grad-primary);
+    border-radius: 4px 8px 8px 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-sm);
+    flex-shrink: 0;
+  }
+  .continue-book-thumb svg { width: 28px; height: 28px; fill: white; opacity: 0.9; }
+
+  .continue-info { flex: 1; }
+  .continue-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    background: rgba(34,197,94,0.1);
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #16A34A;
+    margin-bottom: 8px;
+  }
+  .continue-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+  .continue-meta {
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .continue-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .progress-bar-wrap {
+    margin-top: 12px;
+    background: var(--surface);
+    border-radius: 100px;
+    height: 5px;
+    width: 200px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    border-radius: 100px;
+    background: var(--grad-cta);
+    transition: width 600ms var(--transition);
+  }
+
+  .continue-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+
+  /* ── BOOK GRID ── */
+  .content-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 40px;
+  }
+
+  .book-card {
+    background: white;
+    border-radius: var(--radius-lg);
+    border: 1.5px solid var(--border-light);
+    padding: 24px;
+    cursor: pointer;
+    transition: border-color 250ms, transform 300ms var(--transition), box-shadow 300ms var(--transition);
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: hidden;
+  }
+  .book-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); border-color: var(--border); }
+  .book-card.selected {
+    border-color: transparent;
+    background: linear-gradient(white, white) padding-box,
+                linear-gradient(135deg, var(--purple), var(--purple-light)) border-box;
+    border: 1.5px solid transparent;
+    box-shadow: 0 0 0 4px rgba(123,140,255,0.12), var(--shadow-md);
+    transform: translateY(-4px);
+  }
+
+  .book-card-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .book-cover {
+    width: 64px; height: 82px;
+    border-radius: 4px 8px 8px 4px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: -3px 3px 12px rgba(0,0,0,0.15);
+    position: relative;
+    overflow: hidden;
+  }
+  .book-cover-inner {
+    width: 100%; height: 100%;
+    background: var(--grad-primary);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    gap: 4px;
+  }
+  .book-cover-num {
+    font-size: 28px;
+    font-weight: 900;
+    color: white;
+    line-height: 1;
+  }
+  .book-cover-label {
+    font-size: 8px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.8);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: center;
+  }
+  .book-cover-circle {
+    position: absolute;
+    bottom: -8px;
+    right: -8px;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: rgba(255,179,140,0.5);
+  }
+
+  .book-info { flex: 1; }
+  .book-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: rgba(123,140,255,0.1);
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--purple);
+    margin-bottom: 6px;
+  }
+  .book-title { font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+  .book-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.4; }
+
+  .book-check {
+    position: absolute;
+    top: 16px; right: 16px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--grad-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: opacity 250ms, transform 250ms var(--transition);
+  }
+  .book-check svg { width: 12px; height: 12px; stroke: white; stroke-width: 2.5; fill: none; }
+  .book-card.selected .book-check { opacity: 1; transform: scale(1); }
+
+  .book-progress {
+    background: var(--surface);
+    border-radius: 100px;
+    height: 4px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+  .book-progress-fill {
+    height: 100%;
+    border-radius: 100px;
+    background: var(--grad-primary);
+  }
+  .book-progress-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* ── SECTION GRID ── */
+  .sections-panel {
+    background: white;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    overflow: hidden;
+    margin-bottom: 40px;
+    box-shadow: var(--shadow-sm);
+    transition: opacity 300ms, transform 300ms var(--transition);
+  }
+  .sections-panel.hidden { opacity: 0; pointer-events: none; transform: translateY(8px); }
+
+  .sections-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sections-header-title { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+  .sections-header-sub { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+
+  .sections-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1px;
+    background: var(--border-light);
+  }
+
+  .section-card {
+    background: white;
+    padding: 18px 20px;
+    cursor: pointer;
+    transition: background 200ms, box-shadow 200ms;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    position: relative;
+  }
+  .section-card:hover { background: #FAFBFF; }
+  .section-card.selected { background: linear-gradient(135deg, rgba(123,140,255,0.06) 0%, rgba(161,139,255,0.04) 100%); }
+  .section-card.disabled { opacity: 0.4; pointer-events: none; }
+
+  .section-num-badge {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--purple);
+    background: rgba(123,140,255,0.1);
+    padding: 3px 7px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .section-card.selected .section-num-badge {
+    background: var(--grad-primary);
+    color: white;
+  }
+
+  .section-info { flex: 1; min-width: 0; }
+  .section-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
+  .section-sub { font-size: 11px; color: var(--text-secondary); line-height: 1.3; }
+
+  .section-check {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--grad-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: opacity 250ms, transform 250ms var(--transition);
+  }
+  .section-check svg { width: 10px; height: 10px; stroke: white; stroke-width: 2.5; fill: none; }
+  .section-card.selected .section-check { opacity: 1; transform: scale(1); }
+
+  .section-glow {
+    position: absolute;
+    inset: 0;
+    border: 1.5px solid transparent;
+    border-radius: 0;
+    background: linear-gradient(white,white) padding-box,
+                linear-gradient(135deg,var(--purple),var(--purple-light)) border-box;
+    opacity: 0;
+    transition: opacity 250ms;
+    pointer-events: none;
+  }
+  .section-card.selected .section-glow { opacity: 1; }
+
+  /* ── TOPIC GRID ── */
+  .topic-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 40px;
+  }
+
+  .topic-card {
+    background: white;
+    border-radius: var(--radius-md);
+    border: 1.5px solid var(--border-light);
+    padding: 18px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    transition: transform 300ms var(--transition), box-shadow 300ms var(--transition), border-color 250ms;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: hidden;
+  }
+  .topic-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); border-color: var(--border); }
+  .topic-card.selected {
+    border-color: transparent;
+    background: linear-gradient(white,white) padding-box,
+                linear-gradient(135deg,var(--purple),var(--purple-light)) border-box;
+    border: 1.5px solid transparent;
+    box-shadow: 0 0 0 4px rgba(123,140,255,0.12), var(--shadow-md);
+    transform: translateY(-4px);
+  }
+
+  .topic-icon {
+    width: 36px; height: 36px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+    transition: background 250ms;
+  }
+  .topic-card.selected .topic-icon { background: rgba(123,140,255,0.15); }
+
+  .topic-info { flex: 1; min-width: 0; }
+  .topic-title { font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
+  .topic-sub { font-size: 11px; color: var(--text-secondary); line-height: 1.3; }
+  .topic-arrow { font-size: 12px; color: var(--text-muted); flex-shrink: 0; transition: transform 200ms, color 200ms; }
+  .topic-card:hover .topic-arrow, .topic-card.selected .topic-arrow { transform: translateX(3px); color: var(--purple); }
+
+  .topic-check {
+    position: absolute;
+    top: 10px; right: 10px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--grad-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: opacity 250ms, transform 250ms var(--transition);
+  }
+  .topic-check svg { width: 10px; height: 10px; stroke: white; stroke-width: 2.5; fill: none; }
+  .topic-card.selected .topic-check { opacity: 1; transform: scale(1); }
+
+  /* ── SEARCH ── */
+  .search-block {
+    margin-bottom: 40px;
+  }
+
+  .search-input-wrap {
+    position: relative;
+    margin-bottom: 12px;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 16px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    width: 20px; height: 20px;
+    pointer-events: none;
+  }
+
+  .search-input {
+    width: 100%;
+    height: 52px;
+    padding: 0 52px 0 48px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-md);
+    font-family: var(--font);
+    font-size: 15px;
+    color: var(--text-primary);
+    background: white;
+    outline: none;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 200ms, box-shadow 200ms;
+  }
+  .search-input::placeholder { color: var(--text-muted); }
+  .search-input:focus {
+    border-color: var(--purple);
+    box-shadow: 0 0 0 3px rgba(123,140,255,0.15), var(--shadow-sm);
+  }
+
+  .search-kbd {
+    position: absolute;
+    right: 14px; top: 50%;
+    transform: translateY(-50%);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    font-family: var(--font);
+  }
+
+  .chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chip {
+    padding: 7px 14px;
+    border-radius: 100px;
+    background: white;
+    border: 1.5px solid var(--border);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 200ms;
+  }
+  .chip:hover { border-color: var(--purple); color: var(--purple); background: rgba(123,140,255,0.05); }
+  .chip.selected {
+    background: var(--grad-primary);
+    border-color: transparent;
+    color: white;
+    font-weight: 600;
+  }
+
+  /* ── TWO COLUMN: TEACHER + VOICE ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 40px; }
+
+  .selector-block {
+    background: white;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-light);
+    padding: 24px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .selector-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .selector-subtitle { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+
+  .teacher-cards { display: flex; flex-direction: column; gap: 10px; }
+
+  .teacher-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    border: 1.5px solid var(--border-light);
+    cursor: pointer;
+    transition: all 200ms var(--transition);
+  }
+  .teacher-card:hover { border-color: var(--border); background: var(--surface); transform: translateX(2px); }
+  .teacher-card.selected {
+    border-color: transparent;
+    background: linear-gradient(white,white) padding-box,
+                linear-gradient(135deg,var(--purple),var(--purple-light)) border-box;
+    border: 1.5px solid transparent;
+    box-shadow: 0 0 0 3px rgba(123,140,255,0.1);
+  }
+
+  .teacher-avatar {
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    background: var(--grad-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    font-weight: 800;
+    color: white;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .teacher-info { flex: 1; }
+  .teacher-name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+  .teacher-style { font-size: 12px; color: var(--text-secondary); }
+  .teacher-tags { display: flex; gap: 4px; margin-top: 4px; }
+  .teacher-tag {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--purple);
+    background: rgba(123,140,255,0.08);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .teacher-radio {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 200ms;
+  }
+  .teacher-radio::after {
+    content: '';
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--grad-primary);
+    opacity: 0;
+    transition: opacity 200ms;
+  }
+  .teacher-card.selected .teacher-radio { border-color: var(--purple); }
+  .teacher-card.selected .teacher-radio::after { opacity: 1; }
+
+  /* VOICE */
+  .voice-cards { display: flex; flex-direction: column; gap: 10px; }
+
+  .voice-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    border: 1.5px solid var(--border-light);
+    cursor: pointer;
+    transition: all 200ms var(--transition);
+  }
+  .voice-card:hover { border-color: var(--border); background: var(--surface); }
+  .voice-card.selected {
+    border-color: transparent;
+    background: linear-gradient(white,white) padding-box,
+                linear-gradient(135deg,var(--purple),var(--orange)) border-box;
+    border: 1.5px solid transparent;
+    box-shadow: 0 0 0 3px rgba(123,140,255,0.1);
+  }
+
+  .voice-play {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 200ms;
+  }
+  .voice-card.selected .voice-play {
+    background: var(--grad-primary);
+    border-color: transparent;
+    box-shadow: 0 4px 12px rgba(123,140,255,0.3);
+  }
+  .voice-play svg { width: 12px; height: 12px; }
+  .voice-play svg path { fill: var(--text-secondary); transition: fill 200ms; }
+  .voice-card.selected .voice-play svg path { fill: white; }
+  .voice-card.playing .voice-play {
+    background: var(--grad-cta);
+    border-color: transparent;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(123,140,255,0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(123,140,255,0); }
+  }
+
+  .voice-info { flex: 1; }
+  .voice-name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+  .voice-tone { font-size: 12px; color: var(--text-secondary); }
+
+  .waveform {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 20px;
+    margin-top: 4px;
+  }
+  .wave-bar {
+    width: 2px;
+    border-radius: 1px;
+    background: var(--border);
+    transition: background 300ms, height 300ms;
+    animation: none;
+  }
+  .voice-card.selected .wave-bar { background: var(--purple-light); }
+  .voice-card.playing .wave-bar {
+    background: var(--purple);
+    animation: waveAnim 0.8s ease-in-out infinite;
+  }
+  .wave-bar:nth-child(2n) { animation-delay: 0.1s; }
+  .wave-bar:nth-child(3n) { animation-delay: 0.2s; }
+  .wave-bar:nth-child(4n) { animation-delay: 0.15s; }
+  @keyframes waveAnim {
+    0%,100% { transform: scaleY(1); }
+    50% { transform: scaleY(2.5); }
+  }
+
+  /* ── CTA BOTTOM ── */
+  .cta-section {
+    background: white;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border-light);
+    padding: 40px 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 32px;
+    box-shadow: var(--shadow-md);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cta-section::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(123,140,255,0.03) 0%, rgba(255,179,140,0.03) 100%);
+    pointer-events: none;
+  }
+
+  .cta-info { position: relative; }
+  .cta-title { font-size: 24px; font-weight: 800; color: var(--text-primary); margin-bottom: 6px; letter-spacing: -0.5px; }
+  .cta-sub { font-size: 14px; color: var(--text-secondary); }
+
+  .cta-selection-summary {
+    display: flex;
+    gap: 16px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+
+  .cta-sel-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .cta-sel-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+  }
+  .cta-sel-item.filled .cta-sel-dot { background: var(--grad-primary); }
+  .cta-sel-item.filled { color: var(--text-primary); font-weight: 600; }
+
+  .cta-btn-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; position: relative; }
+
+  .cta-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 32px;
+    background: var(--grad-cta);
+    color: white;
+    font-size: 16px;
+    font-weight: 700;
+    font-family: var(--font);
+    border: none;
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: transform 200ms var(--transition), box-shadow 200ms, opacity 300ms;
+    box-shadow: 0 8px 24px rgba(123,140,255,0.35);
+    white-space: nowrap;
+  }
+  .cta-btn:hover:not(:disabled) { transform: scale(1.02); box-shadow: 0 12px 32px rgba(123,140,255,0.45); }
+  .cta-btn:active:not(:disabled) { transform: scale(0.98); }
+  .cta-btn:disabled { background: #C8D0E1; box-shadow: none; cursor: not-allowed; }
+
+  .cta-btn.loading {
+    background: var(--grad-primary);
+    pointer-events: none;
+  }
+
+  .cta-hint { font-size: 12px; color: var(--text-muted); text-align: right; }
+
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── FOOTER ── */
+  footer {
+    background: white;
+    border-top: 1px solid var(--border-light);
+    padding: 48px 0 32px;
+  }
+  .footer-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 32px;
+    display: grid;
+    grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr;
+    gap: 40px;
+  }
+  .footer-brand-desc { font-size: 13px; color: var(--text-secondary); margin: 12px 0 16px; line-height: 1.6; max-width: 220px; }
+  .footer-socials { display: flex; gap: 10px; }
+  .footer-social {
+    width: 32px; height: 32px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    text-decoration: none;
+    color: var(--text-secondary);
+    transition: background 200ms, color 200ms;
+  }
+  .footer-social:hover { background: var(--surface); color: var(--purple); }
+  .footer-col-title { font-size: 12px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-primary); margin-bottom: 14px; }
+  .footer-links { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .footer-links li a { font-size: 13px; color: var(--text-secondary); text-decoration: none; transition: color 200ms; }
+  .footer-links li a:hover { color: var(--purple); }
+  .footer-bottom {
+    max-width: 1200px;
+    margin: 32px auto 0;
+    padding: 16px 32px 0;
+    border-top: 1px solid var(--border-light);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* ── FADE IN ── */
+  .fade-up {
+    opacity: 0;
+    transform: translateY(20px);
+    animation: fadeUp 500ms var(--transition) forwards;
+  }
+  @keyframes fadeUp {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .d1 { animation-delay: 0ms; }
+  .d2 { animation-delay: 80ms; }
+  .d3 { animation-delay: 160ms; }
+  .d4 { animation-delay: 240ms; }
+  .d5 { animation-delay: 320ms; }
+  .d6 { animation-delay: 400ms; }
+  .d7 { animation-delay: 480ms; }
+
+  /* ── DIVIDER ── */
+  .section-sep {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-light), transparent);
+    margin: 0 0 40px;
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    .two-col { grid-template-columns: 1fr; }
+    .hero { grid-template-columns: 1fr; }
+    .hero-visual { display: none; }
+    .footer-inner { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 640px) {
+    .page-container { padding: 24px 16px 60px; }
+    .header-inner { padding: 0 16px; }
+    .step-preview { display: none; }
+    .cta-section { flex-direction: column; align-items: stretch; padding: 24px; }
+    .cta-btn-wrap { align-items: stretch; }
+    .cta-btn { justify-content: center; }
+    .footer-inner { grid-template-columns: 1fr; gap: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header" id="header">
+  <div class="header-inner">
+    <a href="/" class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      </div>
+      <span class="logo-text">AI Teacher</span>
+    </a>
+
+    <nav class="header-nav">
+      <a href="/" class="nav-item">Home</a>
+      <a href="/learning" class="nav-item active">Learning</a>
+      <a href="/about" class="nav-item">About</a>
+      <a href="/pricing" class="nav-item">Pricing</a>
+      <a href="/support" class="nav-item">Support</a>
+    </nav>
+
+    <div class="header-actions">
+      <button class="notif-btn" aria-label="Notifications">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+      </button>
+      <div class="avatar" onclick="window.location='/profile'">J</div>
+      <button class="btn-primary" onclick="scrollToCTA()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        Start lesson
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- PAGE -->
+<div class="page-bg">
+  <main class="page-container">
+
+    <!-- HERO -->
+    <section class="hero fade-up d1">
+      <div class="hero-content">
+        <div class="hero-label">✦ Your learning hub</div>
+        <h1 class="hero-title">Choose how you<br>want to learn</h1>
+        <p class="hero-subtitle">Start from a book, pick a topic, or continue your lesson. Your AI teacher is ready.</p>
+      </div>
+      <div class="hero-visual">
+        <div class="sphere sphere-1"></div>
+        <div class="sphere sphere-2"></div>
+        <div class="sphere sphere-3"></div>
+        <div class="sphere sphere-4"></div>
+        <div class="hero-book">
+          <div class="hero-book-title">FOCUS 2</div>
+          <div class="hero-book-badge">Student Book</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP PREVIEW -->
+    <div class="step-preview fade-up d2" id="stepPreview">
+      <div class="step-item active" id="step1">
+        <div class="step-num">1</div>
+        <span class="step-label">Choose content</span>
+      </div>
+      <span class="step-arrow">›</span>
+      <div class="step-item" id="step2">
+        <div class="step-num">2</div>
+        <span class="step-label">Choose teacher</span>
+      </div>
+      <span class="step-arrow">›</span>
+      <div class="step-item" id="step3">
+        <div class="step-num">3</div>
+        <span class="step-label">Choose voice</span>
+      </div>
+      <span class="step-arrow">›</span>
+      <div class="step-item" id="step4">
+        <div class="step-num">4</div>
+        <span class="step-label">Start lesson</span>
+      </div>
+    </div>
+
+    <!-- CONTINUE CARD (returning user) -->
+    <div class="fade-up d2" id="continueSection">
+      <div class="section-label">Continue where you left off</div>
+      <div class="continue-card" id="continueCard">
+        <div class="continue-book-thumb">
+          <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        </div>
+        <div class="continue-info">
+          <div class="continue-badge">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
+            In progress
+          </div>
+          <div class="continue-title">Focus 2 Student Book — Section 1.3</div>
+          <div class="continue-meta">
+            <span class="continue-meta-item">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              25 min
+            </span>
+            <span class="continue-meta-item">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              Alex
+            </span>
+            <span class="continue-meta-item">Listening Practice</span>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" style="width: 60%"></div>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">60% complete</div>
+        </div>
+        <div class="continue-actions">
+          <button class="btn-primary" onclick="navigateToSetup('continue')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Continue
+          </button>
+          <button class="btn-secondary" onclick="openBook('focus2')">Open book</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-sep"></div>
+
+    <!-- BOOK SELECTION -->
+    <div class="fade-up d3">
+      <div class="section-label">1 — Select your book</div>
+      <div class="content-grid" id="bookGrid">
+
+        <div class="book-card" data-book="focus2" onclick="selectBook(this, 'focus2')">
+          <div class="book-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="book-card-top">
+            <div class="book-cover">
+              <div class="book-cover-inner">
+                <div class="book-cover-num">2</div>
+                <div class="book-cover-label">FOCUS<br>STUDENT</div>
+                <div class="book-cover-circle"></div>
+              </div>
+            </div>
+            <div class="book-info">
+              <div class="book-badge">★ Recommended</div>
+              <div class="book-title">Focus 2 Student Book</div>
+              <div class="book-desc">Grammar, speaking, listening. Intermediate level.</div>
+            </div>
+          </div>
+          <div class="book-progress">
+            <div class="book-progress-fill" style="width:60%"></div>
+          </div>
+          <div class="book-progress-label"><span>Progress</span><span>60%</span></div>
+        </div>
+
+        <div class="book-card" data-book="focus3" onclick="selectBook(this, 'focus3')">
+          <div class="book-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="book-card-top">
+            <div class="book-cover">
+              <div class="book-cover-inner" style="background:linear-gradient(135deg,#FF8C5A,#FFB38C);">
+                <div class="book-cover-num">3</div>
+                <div class="book-cover-label">FOCUS<br>STUDENT</div>
+                <div class="book-cover-circle"></div>
+              </div>
+            </div>
+            <div class="book-info">
+              <div class="book-badge">Upper Intermediate</div>
+              <div class="book-title">Focus 3 Student Book</div>
+              <div class="book-desc">Advanced grammar, writing, conversation skills.</div>
+            </div>
+          </div>
+          <div class="book-progress">
+            <div class="book-progress-fill" style="width:0%"></div>
+          </div>
+          <div class="book-progress-label"><span>Progress</span><span>Not started</span></div>
+        </div>
+
+        <div class="book-card" data-book="business" onclick="selectBook(this, 'business')">
+          <div class="book-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="book-card-top">
+            <div class="book-cover">
+              <div class="book-cover-inner" style="background:linear-gradient(135deg,#22C55E,#16A34A);">
+                <div class="book-cover-num" style="font-size:18px;">BIZ</div>
+                <div class="book-cover-label">ENGLISH<br>BUSINESS</div>
+                <div class="book-cover-circle"></div>
+              </div>
+            </div>
+            <div class="book-info">
+              <div class="book-badge" style="color:#16A34A;background:rgba(34,197,94,0.1)">Business</div>
+              <div class="book-title">Business English</div>
+              <div class="book-desc">Emails, presentations, meetings & negotiations.</div>
+            </div>
+          </div>
+          <div class="book-progress">
+            <div class="book-progress-fill" style="width:20%;background:linear-gradient(135deg,#22C55E,#16A34A)"></div>
+          </div>
+          <div class="book-progress-label"><span>Progress</span><span>20%</span></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- SECTION SELECTION -->
+    <div class="sections-panel fade-up d3 hidden" id="sectionsPanel">
+      <div class="sections-header">
+        <div>
+          <div class="sections-header-title" id="sectionsPanelTitle">Focus 2 Student Book — Sections</div>
+          <div class="sections-header-sub">Choose a section to practice</div>
+        </div>
+        <button class="btn-secondary" style="padding:8px 14px;font-size:13px;" onclick="clearBook()">Change book</button>
+      </div>
+      <div class="sections-grid" id="sectionsGrid"></div>
+    </div>
+
+    <!-- TOPIC GRID -->
+    <div class="fade-up d4">
+      <div class="section-label">Or choose a topic</div>
+      <div class="topic-grid">
+
+        <div class="topic-card" data-topic="present-simple" onclick="selectTopic(this,'present-simple','Present Simple')">
+          <div class="topic-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="topic-icon">📝</div>
+          <div class="topic-info">
+            <div class="topic-title">Present Simple</div>
+            <div class="topic-sub">Daily routines & facts</div>
+          </div>
+          <span class="topic-arrow">›</span>
+        </div>
+
+        <div class="topic-card" data-topic="present-perfect" onclick="selectTopic(this,'present-perfect','Present Perfect')">
+          <div class="topic-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="topic-icon">⏱️</div>
+          <div class="topic-info">
+            <div class="topic-title">Present Perfect</div>
+            <div class="topic-sub">Experience & recent events</div>
+          </div>
+          <span class="topic-arrow">›</span>
+        </div>
+
+        <div class="topic-card" data-topic="questions" onclick="selectTopic(this,'questions','Question Forms')">
+          <div class="topic-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="topic-icon">❓</div>
+          <div class="topic-info">
+            <div class="topic-title">Question Forms</div>
+            <div class="topic-sub">Wh- questions & yes/no</div>
+          </div>
+          <span class="topic-arrow">›</span>
+        </div>
+
+        <div class="topic-card" data-topic="listening" onclick="selectTopic(this,'listening','Listening Practice')">
+          <div class="topic-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="topic-icon">🎧</div>
+          <div class="topic-info">
+            <div class="topic-title">Listening Practice</div>
+            <div class="topic-sub">Audio comprehension</div>
+          </div>
+          <span class="topic-arrow">›</span>
+        </div>
+
+        <div class="topic-card" data-topic="tests" onclick="selectTopic(this,'tests','Tests & Exams')">
+          <div class="topic-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="topic-icon">📋</div>
+          <div class="topic-info">
+            <div class="topic-title">Tests & Exams</div>
+            <div class="topic-sub">Exam preparation</div>
+          </div>
+          <span class="topic-arrow">›</span>
+        </div>
+
+        <div class="topic-card" data-topic="business-basics" onclick="selectTopic(this,'business-basics','Business English Basics')">
+          <div class="topic-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="topic-icon">💼</div>
+          <div class="topic-info">
+            <div class="topic-title">Business English</div>
+            <div class="topic-sub">Emails, meetings, calls</div>
+          </div>
+          <span class="topic-arrow">›</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- SMART SEARCH -->
+    <div class="search-block fade-up d4">
+      <div class="section-label">Or search for anything</div>
+      <div class="search-input-wrap">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+        </svg>
+        <input
+          class="search-input"
+          id="searchInput"
+          type="text"
+          placeholder="What do you want to learn?"
+          oninput="handleSearchInput(this.value)"
+          onkeydown="handleSearchEnter(event)"
+        />
+        <span class="search-kbd">↵</span>
+      </div>
+      <div class="chips-row" id="chipsRow">
+        <span class="chip" onclick="selectChip(this, '50 useful phrases')">50 useful phrases</span>
+        <span class="chip" onclick="selectChip(this, 'Business English basics')">Business English basics</span>
+        <span class="chip" onclick="selectChip(this, 'How to ask questions')">How to ask questions</span>
+        <span class="chip" onclick="selectChip(this, 'English for traveling')">English for traveling</span>
+        <span class="chip" onclick="selectChip(this, 'Writing an email')">Writing an email</span>
+      </div>
+    </div>
+
+    <div class="section-sep"></div>
+
+    <!-- TEACHER + VOICE -->
+    <div class="two-col fade-up d5">
+
+      <!-- TEACHER -->
+      <div class="selector-block">
+        <div class="selector-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Choose your teacher
+        </div>
+        <div class="selector-subtitle">Your AI teacher style for this lesson</div>
+
+        <div class="teacher-cards">
+          <div class="teacher-card selected" data-teacher="alex" onclick="selectTeacher(this,'alex')">
+            <div class="teacher-avatar" style="background:linear-gradient(135deg,#7B8CFF,#A18BFF)">A</div>
+            <div class="teacher-info">
+              <div class="teacher-name">Alex</div>
+              <div class="teacher-style">Structured & precise</div>
+              <div class="teacher-tags">
+                <span class="teacher-tag">Clear</span>
+                <span class="teacher-tag">Methodical</span>
+              </div>
+            </div>
+            <div class="teacher-radio"></div>
+          </div>
+
+          <div class="teacher-card" data-teacher="emma" onclick="selectTeacher(this,'emma')">
+            <div class="teacher-avatar" style="background:linear-gradient(135deg,#FF8C5A,#FFB38C)">E</div>
+            <div class="teacher-info">
+              <div class="teacher-name">Emma</div>
+              <div class="teacher-style">Friendly & supportive</div>
+              <div class="teacher-tags">
+                <span class="teacher-tag">Warm</span>
+                <span class="teacher-tag">Encouraging</span>
+              </div>
+            </div>
+            <div class="teacher-radio"></div>
+          </div>
+
+          <div class="teacher-card" data-teacher="mia" onclick="selectTeacher(this,'mia')">
+            <div class="teacher-avatar" style="background:linear-gradient(135deg,#22C55E,#16A34A)">M</div>
+            <div class="teacher-info">
+              <div class="teacher-name">Mia</div>
+              <div class="teacher-style">Conversation-focused</div>
+              <div class="teacher-tags">
+                <span class="teacher-tag">Natural</span>
+                <span class="teacher-tag">Engaging</span>
+              </div>
+            </div>
+            <div class="teacher-radio"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VOICE -->
+      <div class="selector-block">
+        <div class="selector-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          Choose voice
+        </div>
+        <div class="selector-subtitle">The voice that reads lessons aloud</div>
+
+        <div class="voice-cards">
+          <div class="voice-card selected" data-voice="voice-a" onclick="selectVoice(this,'voice-a')">
+            <div class="voice-play" onclick="playVoice(event,'voice-a')">
+              <svg viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg>
+            </div>
+            <div class="voice-info">
+              <div class="voice-name">Voice A</div>
+              <div class="voice-tone">British · Calm</div>
+              <div class="waveform" id="waveform-voice-a">
+                <div class="wave-bar" style="height:8px"></div><div class="wave-bar" style="height:14px"></div><div class="wave-bar" style="height:10px"></div><div class="wave-bar" style="height:16px"></div><div class="wave-bar" style="height:8px"></div><div class="wave-bar" style="height:12px"></div><div class="wave-bar" style="height:18px"></div><div class="wave-bar" style="height:10px"></div><div class="wave-bar" style="height:14px"></div><div class="wave-bar" style="height:6px"></div><div class="wave-bar" style="height:12px"></div><div class="wave-bar" style="height:16px"></div><div class="wave-bar" style="height:8px"></div><div class="wave-bar" style="height:10px"></div><div class="wave-bar" style="height:14px"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="voice-card" data-voice="voice-b" onclick="selectVoice(this,'voice-b')">
+            <div class="voice-play" onclick="playVoice(event,'voice-b')">
+              <svg viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg>
+            </div>
+            <div class="voice-info">
+              <div class="voice-name">Voice B</div>
+              <div class="voice-tone">American · Energetic</div>
+              <div class="waveform" id="waveform-voice-b">
+                <div class="wave-bar" style="height:12px"></div><div class="wave-bar" style="height:18px"></div><div class="wave-bar" style="height:14px"></div><div class="wave-bar" style="height:20px"></div><div class="wave-bar" style="height:10px"></div><div class="wave-bar" style="height:16px"></div><div class="wave-bar" style="height:20px"></div><div class="wave-bar" style="height:14px"></div><div class="wave-bar" style="height:18px"></div><div class="wave-bar" style="height:8px"></div><div class="wave-bar" style="height:16px"></div><div class="wave-bar" style="height:20px"></div><div class="wave-bar" style="height:12px"></div><div class="wave-bar" style="height:14px"></div><div class="wave-bar" style="height:18px"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="voice-card" data-voice="voice-c" onclick="selectVoice(this,'voice-c')">
+            <div class="voice-play" onclick="playVoice(event,'voice-c')">
+              <svg viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg>
+            </div>
+            <div class="voice-info">
+              <div class="voice-name">Voice C</div>
+              <div class="voice-tone">Neutral · Clear</div>
+              <div class="waveform" id="waveform-voice-c">
+                <div class="wave-bar" style="height:10px"></div><div class="wave-bar" style="height:12px"></div><div class="wave-bar" style="height:10px"></div><div class="wave-bar" style="height:14px"></div><div class="wave-bar" style="height:8px"></div><div class="wave-bar" style="height:12px"></div><div class="wave-bar" style="height:14px"></div><div class="wave-bar" style="height:10px"></div><div class="wave-bar" style="height:12px"></div><div class="wave-bar" style="height:8px"></div><div class="wave-bar" style="height:10px"></div><div class="wave-bar" style="height:14px"></div><div class="wave-bar" style="height:8px"></div><div class="wave-bar" style="height:12px"></div><div class="wave-bar" style="height:10px"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CTA SECTION -->
+    <div class="cta-section fade-up d6" id="ctaSection">
+      <div class="cta-info">
+        <div class="cta-title" id="ctaTitle">Start lesson</div>
+        <div class="cta-sub" id="ctaSub">Select content, teacher, and voice to begin.</div>
+        <div class="cta-selection-summary" id="ctaSummary">
+          <div class="cta-sel-item" id="sum-content">
+            <div class="cta-sel-dot"></div>
+            <span id="sum-content-text">No content selected</span>
+          </div>
+          <div class="cta-sel-item" id="sum-teacher">
+            <div class="cta-sel-dot"></div>
+            <span>Teacher: Alex</span>
+          </div>
+          <div class="cta-sel-item filled" id="sum-voice">
+            <div class="cta-sel-dot"></div>
+            <span>Voice: Voice A</span>
+          </div>
+        </div>
+      </div>
+      <div class="cta-btn-wrap">
+        <button class="cta-btn" id="ctaBtn" disabled onclick="handleCTA()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <span id="ctaBtnText">Choose a lesson first</span>
+        </button>
+        <div class="cta-hint" id="ctaHint">Your AI teacher will personalize everything</div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-inner">
+    <div>
+      <a href="/" class="logo" style="display:inline-flex">
+        <div class="logo-icon"><svg viewBox="0 0 24 24" fill="white"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+        <span class="logo-text">AI Teacher</span>
+      </a>
+      <p class="footer-brand-desc">Your personal AI English teacher anytime, anywhere.</p>
+      <div class="footer-socials">
+        <a href="#" class="footer-social">𝕏</a>
+        <a href="#" class="footer-social">in</a>
+        <a href="#" class="footer-social">▶</a>
+        <a href="#" class="footer-social">♪</a>
+      </div>
+    </div>
+    <div>
+      <div class="footer-col-title">Product</div>
+      <ul class="footer-links">
+        <li><a href="/learning">Learning</a></li>
+        <li><a href="#">AI Teacher</a></li>
+        <li><a href="#">Progress</a></li>
+        <li><a href="/pricing">Pricing</a></li>
+      </ul>
+    </div>
+    <div>
+      <div class="footer-col-title">Resources</div>
+      <ul class="footer-links">
+        <li><a href="#">Blog</a></li>
+        <li><a href="#">Study guides</a></li>
+        <li><a href="#">Community</a></li>
+        <li><a href="#">Free lessons</a></li>
+      </ul>
+    </div>
+    <div>
+      <div class="footer-col-title">Company</div>
+      <ul class="footer-links">
+        <li><a href="/about">About us</a></li>
+        <li><a href="#">Careers</a></li>
+        <li><a href="#">Contact</a></li>
+        <li><a href="#">Press kit</a></li>
+      </ul>
+    </div>
+    <div>
+      <div class="footer-col-title">Support</div>
+      <ul class="footer-links">
+        <li><a href="/support">Help center</a></li>
+        <li><a href="#">Contact us</a></li>
+        <li><a href="#">Privacy policy</a></li>
+        <li><a href="#">Terms of service</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2025 AI Teacher. All rights reserved.</span>
+    <span>Made with ♥ for English learners</span>
+  </div>
+</footer>
+
+<script>
+// ── STATE ──
+const state = {
+  mode: null,           // 'book' | 'topic' | 'custom'
+  selectedBook: null,
+  selectedSection: null,
+  selectedTopic: null,
+  selectedTeacher: 'alex',
+  selectedVoice: 'voice-a',
+  searchValue: '',
+};
+
+// ── BOOK DATA ──
+const bookSections = {
+  focus2: [
+    { num: '0.1', title: 'Introduction', sub: 'Welcome & orientation', disabled: false },
+    { num: '1.1', title: 'Vocabulary', sub: 'Unit 1 key words & phrases', disabled: false },
+    { num: '1.2', title: 'Grammar', sub: 'Present Simple & Continuous', disabled: false },
+    { num: '1.3', title: 'Listening', sub: 'Audio comprehension tasks', disabled: false },
+    { num: '2.1', title: 'Vocabulary', sub: 'Unit 2 topic words', disabled: false },
+    { num: '2.2', title: 'Grammar', sub: 'Past Simple & Past Continuous', disabled: false },
+    { num: '2.3', title: 'Reading', sub: 'Reading comprehension', disabled: false },
+    { num: '3.1', title: 'Vocabulary', sub: 'Unit 3 key expressions', disabled: false },
+    { num: '3.2', title: 'Grammar', sub: 'Present Perfect', disabled: false },
+    { num: '3.3', title: 'Speaking', sub: 'Conversation & discussion', disabled: true },
+  ],
+  focus3: [
+    { num: '0.1', title: 'Introduction', sub: 'Course overview', disabled: false },
+    { num: '1.1', title: 'Vocabulary', sub: 'Advanced word building', disabled: false },
+    { num: '1.2', title: 'Grammar', sub: 'Perfect tenses review', disabled: false },
+    { num: '2.1', title: 'Writing', sub: 'Essay structure & style', disabled: false },
+    { num: '2.2', title: 'Listening', sub: 'Extended listening tasks', disabled: false },
+  ],
+  business: [
+    { num: '1.1', title: 'Emails', sub: 'Formal & informal writing', disabled: false },
+    { num: '1.2', title: 'Meetings', sub: 'Chairing & participating', disabled: false },
+    { num: '2.1', title: 'Presentations', sub: 'Structure & delivery', disabled: false },
+    { num: '2.2', title: 'Negotiations', sub: 'Language of negotiation', disabled: false },
+    { num: '3.1', title: 'Phone calls', sub: 'Professional telephone English', disabled: false },
+  ],
+};
+
+const bookTitles = {
+  focus2: 'Focus 2 Student Book',
+  focus3: 'Focus 3 Student Book',
+  business: 'Business English',
+};
+
+// ── BOOK SELECTION ──
+function selectBook(card, bookId) {
+  document.querySelectorAll('.book-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  state.selectedBook = bookId;
+  state.mode = 'book';
+  state.selectedSection = null;
+  state.selectedTopic = null;
+  clearTopicSelection();
+  clearChipSelection();
+  document.getElementById('searchInput').value = '';
+  showSections(bookId);
+  updateStepIndicator(1);
+  updateCTA();
+}
+
+function clearBook() {
+  document.querySelectorAll('.book-card').forEach(c => c.classList.remove('selected'));
+  state.selectedBook = null;
+  state.selectedSection = null;
+  state.mode = null;
+  hideSections();
+  updateCTA();
+}
+
+function openBook(bookId) {
+  const card = document.querySelector(`[data-book="${bookId}"]`);
+  if (card) selectBook(card, bookId);
+  document.getElementById('sectionsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── SECTIONS ──
+function showSections(bookId) {
+  const panel = document.getElementById('sectionsPanel');
+  const grid = document.getElementById('sectionsGrid');
+  const title = document.getElementById('sectionsPanelTitle');
+  title.textContent = bookTitles[bookId] + ' — Sections';
+  const sections = bookSections[bookId] || [];
+  grid.innerHTML = sections.map(s => `
+    <div class="section-card ${s.disabled ? 'disabled' : ''}" data-section="${s.num}" onclick="selectSection(this,'${s.num}','${s.title}')">
+      <div class="section-num-badge">${s.num}</div>
+      <div class="section-info">
+        <div class="section-title">${s.title}</div>
+        <div class="section-sub">${s.sub}</div>
+      </div>
+      <div class="section-check"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div class="section-glow"></div>
+    </div>
+  `).join('');
+  panel.classList.remove('hidden');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function hideSections() {
+  document.getElementById('sectionsPanel').classList.add('hidden');
+}
+
+function selectSection(card, sectionNum, sectionTitle) {
+  document.querySelectorAll('.section-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  state.selectedSection = { num: sectionNum, title: sectionTitle };
+  updateStepIndicator(2);
+  updateCTA();
+}
+
+// ── TOPIC SELECTION ──
+function selectTopic(card, topicId, topicTitle) {
+  clearBookSelection();
+  clearChipSelection();
+  document.getElementById('searchInput').value = '';
+  document.querySelectorAll('.topic-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  state.selectedTopic = topicTitle;
+  state.mode = 'topic';
+  state.selectedBook = null;
+  state.selectedSection = null;
+  hideSections();
+  updateStepIndicator(1);
+  updateCTA();
+}
+
+function clearTopicSelection() {
+  document.querySelectorAll('.topic-card').forEach(c => c.classList.remove('selected'));
+}
+
+function clearBookSelection() {
+  document.querySelectorAll('.book-card').forEach(c => c.classList.remove('selected'));
+  hideSections();
+}
+
+// ── SEARCH ──
+function handleSearchInput(value) {
+  state.searchValue = value;
+  if (value.trim()) {
+    clearTopicSelection();
+    clearBookSelection();
+    clearChipSelection();
+    state.selectedTopic = null;
+    state.selectedBook = null;
+    state.selectedSection = null;
+    state.mode = 'custom';
+    updateCTA();
+  } else {
+    state.mode = null;
+    updateCTA();
+  }
+}
+
+function handleSearchEnter(e) {
+  if (e.key === 'Enter' && state.searchValue.trim()) {
+    state.selectedTopic = state.searchValue.trim();
+    state.mode = 'custom';
+    updateCTA();
+  }
+}
+
+function selectChip(chip, value) {
+  clearChipSelection();
+  clearTopicSelection();
+  clearBookSelection();
+  document.getElementById('searchInput').value = '';
+  chip.classList.add('selected');
+  state.selectedTopic = value;
+  state.mode = 'custom';
+  state.selectedBook = null;
+  state.selectedSection = null;
+  hideSections();
+  updateStepIndicator(1);
+  updateCTA();
+}
+
+function clearChipSelection() {
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+}
+
+// ── TEACHER SELECTION ──
+function selectTeacher(card, teacherId) {
+  document.querySelectorAll('.teacher-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  state.selectedTeacher = teacherId;
+  updateStepIndicator(2);
+  updateCTA();
+}
+
+// ── VOICE SELECTION ──
+function selectVoice(card, voiceId) {
+  document.querySelectorAll('.voice-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  state.selectedVoice = voiceId;
+  updateStepIndicator(3);
+  updateCTA();
+}
+
+// ── PLAY VOICE ──
+let playingVoice = null;
+let playTimer = null;
+function playVoice(e, voiceId) {
+  e.stopPropagation();
+  if (playingVoice === voiceId) {
+    stopVoice();
+    return;
+  }
+  stopVoice();
+  playingVoice = voiceId;
+  const card = document.querySelector(`[data-voice="${voiceId}"]`);
+  if (card) card.classList.add('playing');
+  playTimer = setTimeout(stopVoice, 3000);
+}
+
+function stopVoice() {
+  if (playingVoice) {
+    const card = document.querySelector(`[data-voice="${playingVoice}"]`);
+    if (card) card.classList.remove('playing');
+    playingVoice = null;
+  }
+  if (playTimer) { clearTimeout(playTimer); playTimer = null; }
+}
+
+// ── STEP INDICATOR ──
+function updateStepIndicator(activeStep) {
+  const hasContent = !!(state.mode && (state.selectedBook || state.selectedTopic || state.searchValue.trim()));
+  const hasSection = !!(state.selectedSection || state.mode === 'topic' || state.mode === 'custom');
+
+  ['step1','step2','step3','step4'].forEach((id, i) => {
+    const el = document.getElementById(id);
+    el.classList.remove('active','done');
+  });
+
+  if (hasContent && hasSection) {
+    document.getElementById('step1').classList.add('done');
+    document.getElementById('step2').classList.add('done');
+    document.getElementById('step3').classList.add('done');
+    document.getElementById('step4').classList.add('active');
+  } else if (hasContent) {
+    document.getElementById('step1').classList.add('done');
+    document.getElementById('step2').classList.add('active');
+  } else {
+    document.getElementById('step1').classList.add('active');
+  }
+}
+
+// ── CTA UPDATE ──
+function updateCTA() {
+  const btn = document.getElementById('ctaBtn');
+  const btnText = document.getElementById('ctaBtnText');
+  const ctaTitle = document.getElementById('ctaTitle');
+  const ctaSub = document.getElementById('ctaSub');
+  const hint = document.getElementById('ctaHint');
+
+  const hasContent = !!(
+    (state.mode === 'book' && state.selectedSection) ||
+    (state.mode === 'topic' && state.selectedTopic) ||
+    (state.mode === 'custom' && state.searchValue.trim())
+  );
+  const hasTeacher = !!state.selectedTeacher;
+  const hasVoice = !!state.selectedVoice;
+  const allReady = hasContent && hasTeacher && hasVoice;
+
+  // Summary dots
+  const sumContent = document.getElementById('sum-content');
+  const sumContentText = document.getElementById('sum-content-text');
+  const sumTeacher = document.getElementById('sum-teacher');
+
+  if (hasContent) {
+    sumContent.classList.add('filled');
+    if (state.mode === 'book' && state.selectedSection) {
+      sumContentText.textContent = `${bookTitles[state.selectedBook]} · ${state.selectedSection.num} ${state.selectedSection.title}`;
+    } else if (state.selectedTopic) {
+      sumContentText.textContent = state.selectedTopic;
+    } else {
+      sumContentText.textContent = state.searchValue;
+    }
+  } else {
+    sumContent.classList.remove('filled');
+    sumContentText.textContent = 'No content selected';
+  }
+
+  if (hasTeacher) {
+    sumTeacher.classList.add('filled');
+    sumTeacher.querySelector('span').textContent = 'Teacher: ' + capitalize(state.selectedTeacher);
+  }
+
+  if (!hasContent) {
+    btn.disabled = true;
+    btnText.textContent = 'Choose a lesson first';
+    ctaTitle.textContent = 'Start lesson';
+    ctaSub.textContent = 'Select content, teacher, and voice to begin.';
+    hint.textContent = 'Your AI teacher will personalize everything';
+  } else if (!allReady) {
+    btn.disabled = true;
+    btnText.textContent = 'Complete setup';
+    ctaTitle.textContent = 'Almost ready';
+    ctaSub.textContent = 'Select a teacher and voice to continue.';
+  } else {
+    btn.disabled = false;
+    btnText.textContent = 'Start lesson';
+    ctaTitle.textContent = 'Ready to start!';
+    ctaSub.textContent = 'Your lesson is configured and ready.';
+    hint.textContent = 'AI will prepare your personalized lesson';
+  }
+}
+
+function capitalize(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+// ── CTA ACTION ──
+function handleCTA() {
+  const btn = document.getElementById('ctaBtn');
+  const btnText = document.getElementById('ctaBtnText');
+  btn.classList.add('loading');
+  btn.disabled = true;
+  btnText.textContent = 'Preparing lesson...';
+
+  // Insert spinner
+  const spinner = document.createElement('div');
+  spinner.className = 'spinner';
+  btn.insertBefore(spinner, btn.firstChild);
+  btn.querySelector('svg')?.remove();
+
+  const lessonData = {
+    mode: state.mode,
+    book: state.selectedBook,
+    section: state.selectedSection,
+    topic: state.selectedTopic || state.searchValue,
+    teacher: state.selectedTeacher,
+    voice: state.selectedVoice,
+  };
+
+  // Navigate to /setup with state
+  setTimeout(() => {
+    try {
+      window.history.pushState({ lesson: lessonData }, '', '/setup');
+      window.location.href = '/setup';
+    } catch(e) {
+      window.location.href = '/setup';
+    }
+  }, 600);
+}
+
+function navigateToSetup(type) {
+  if (type === 'continue') {
+    const lessonData = {
+      mode: 'book',
+      book: 'focus2',
+      section: { num: '1.3', title: 'Listening' },
+      teacher: 'alex',
+      voice: 'voice-a',
+      isContinue: true,
+    };
+    setTimeout(() => { window.location.href = '/setup'; }, 200);
+  }
+}
+
+function scrollToCTA() {
+  document.getElementById('ctaSection').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// ── HEADER SCROLL ──
+window.addEventListener('scroll', () => {
+  const header = document.getElementById('header');
+  if (window.scrollY > 10) header.classList.add('scrolled');
+  else header.classList.remove('scrolled');
+}, { passive: true });
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded', () => {
+  // Teacher already selected (Alex default)
+  updateCTA();
+  // Mark teacher as filled
+  const sumTeacher = document.getElementById('sum-teacher');
+  sumTeacher.classList.add('filled');
+});
+</script>
+</body>
+</html>
