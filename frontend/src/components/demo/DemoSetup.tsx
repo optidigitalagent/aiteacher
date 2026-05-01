@@ -198,7 +198,7 @@ export default function DemoSetup() {
       }
 
       if (!res.ok) {
-        if (json.code === 'DEMO_USED')       { sessionStorage.removeItem(STORAGE_KEY); navigate('/pricing'); return }
+        if (json.code === 'DEMO_USED')       { sessionStorage.removeItem(STORAGE_KEY); navigate('/pricing?from=demo_used'); return }
         if (json.code === 'UNAUTHENTICATED') { setShowAuth(true); return }
         if (json.code === 'RATE_LIMITED') {
           const mins = json.retryAfterSeconds ? Math.ceil(json.retryAfterSeconds / 60) : null
@@ -235,7 +235,7 @@ export default function DemoSetup() {
 
           <div className="p-8">
 
-            {/* Header: label + step dots */}
+            {/* Header: label + step dots + exit */}
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
                 <div className="w-6 h-6 rounded-lg bg-cls-accent-lgt flex items-center justify-center">
@@ -245,20 +245,31 @@ export default function DemoSetup() {
                 </div>
                 <span className="text-xs font-semibold tracking-widest text-cls-accent uppercase">AI Lesson Scan</span>
               </div>
-              {step < 5 && (
-                <div className="flex items-center gap-1.5">
-                  {STEPS.map((_, i) => (
-                    <div
-                      key={i}
-                      className={`h-2 rounded-full transition-all duration-500 ease-out ${
-                        i < step  ? 'w-6 bg-cls-accent'
-                        : i === step ? 'w-4 bg-cls-accent opacity-50'
-                        : 'w-2 bg-gray-200'
-                      }`}
-                    />
-                  ))}
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                {step < 5 && (
+                  <div className="flex items-center gap-1.5">
+                    {STEPS.map((_, i) => (
+                      <div
+                        key={i}
+                        className={`h-2 rounded-full transition-all duration-500 ease-out ${
+                          i < step  ? 'w-6 bg-cls-accent'
+                          : i === step ? 'w-4 bg-cls-accent opacity-50'
+                          : 'w-2 bg-gray-200'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={() => navigate('/')}
+                  className="w-7 h-7 flex items-center justify-center rounded-full text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-colors"
+                  aria-label="Exit demo setup"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Selected-answer chips */}
