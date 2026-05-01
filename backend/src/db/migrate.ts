@@ -6,9 +6,12 @@ import { checkConnection, query } from './postgres.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
+const MIGRATIONS = ['001_init.sql', '002_auth.sql', '003_profile_editable.sql']
+
 async function migrate(): Promise<void> {
   await checkConnection()
 
+<<<<<<< HEAD
   const migrationsDir = join(__dirname, '../../migrations')
   const files = readdirSync(migrationsDir)
     .filter(f => f.endsWith('.sql'))
@@ -20,6 +23,16 @@ async function migrate(): Promise<void> {
     await query(sql)
     console.log(`[migrate] done: ${file}`)
   }
+=======
+  for (const file of MIGRATIONS) {
+    const sqlPath = join(__dirname, '../../migrations', file)
+    const sql = readFileSync(sqlPath, 'utf-8')
+    console.log(`[migrate] running ${file}...`)
+    await query(sql)
+    console.log(`[migrate] ${file} done`)
+  }
+  console.log('[migrate] all migrations applied')
+>>>>>>> production/main
 
   process.exit(0)
 }

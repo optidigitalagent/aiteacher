@@ -1,7 +1,9 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import type { IncomingMessage, Server } from 'http'
 import { v4 as uuid } from 'uuid'
+import { URL } from 'url'
 import { query } from '../db/postgres.js'
+import { verifyToken } from '../auth/jwt.js'
 import redis, {
   LESSON_TTL,
   lessonStateKey,
@@ -100,6 +102,7 @@ const orchestrator = new LessonOrchestrator()
 interface ClientMeta {
   lessonId:        string | null
   studentId:       string | null
+  userId:          string | null
   lessonStartedAt: number | null
   lastSeen:        number
   heartbeatRef:    ReturnType<typeof setInterval>
@@ -125,20 +128,21 @@ async function handleLessonStart(
   meta: ClientMeta,
   config: LessonConfig,
 ): Promise<void> {
+  const effectiveStudentId = meta.studentId ?? config.studentId
   const lessonId = uuid()
   meta.lessonId        = lessonId
-  meta.studentId       = config.studentId
+  meta.studentId       = effectiveStudentId
   meta.lessonStartedAt = Date.now()
 
   await query(
     `INSERT INTO lessons (id, student_id, grammar_target, lesson_topic, textbook_unit)
      VALUES ($1, $2, $3, $4, $5)`,
-    [lessonId, config.studentId, config.grammarTarget, config.lessonTopic, config.textbookUnit],
+    [lessonId, effectiveStudentId, config.grammarTarget, config.lessonTopic, config.textbookUnit],
   )
 
   const initialState: LessonState = {
     lessonId,
-    studentId:      config.studentId,
+    studentId:      effectiveStudentId,
     phase:          'DIAGNOSTIC',
     mode:           'free',
     grammarTarget:  config.grammarTarget,
@@ -163,9 +167,9 @@ async function handleLessonStart(
   }
 
   const pipeline = redis.pipeline()
-  pipeline.set(lessonStateKey(lessonId),           JSON.stringify(initialState), 'EX', LESSON_TTL)
-  pipeline.set(lessonContextKey(lessonId),          JSON.stringify([]),            'EX', LESSON_TTL)
-  pipeline.set(activeSessionKey(config.studentId), lessonId,                     'EX', LESSON_TTL)
+  pipeline.set(lessonStateKey(lessonId),              JSON.stringify(initialState), 'EX', LESSON_TTL)
+  pipeline.set(lessonContextKey(lessonId),             JSON.stringify([]),            'EX', LESSON_TTL)
+  pipeline.set(activeSessionKey(effectiveStudentId),  lessonId,                     'EX', LESSON_TTL)
   await pipeline.exec()
 
   meta.stt = new DeepgramSTT((transcript) => {
@@ -192,9 +196,15 @@ async function handleFocusLessonStart(
     return
   }
 
+  const effectiveStudentId = meta.studentId ?? config.studentId
+  if (!effectiveStudentId) {
+    send(ws, { type: 'error', code: 'NO_STUDENT', message: 'No authenticated student.' })
+    return
+  }
+
   const lessonId = uuid()
   meta.lessonId        = lessonId
-  meta.studentId       = config.studentId
+  meta.studentId       = effectiveStudentId
   meta.lessonStartedAt = Date.now()
 
   // When a specific section is selected, use its metadata as the authoritative
@@ -210,12 +220,16 @@ async function handleFocusLessonStart(
   await query(
     `INSERT INTO lessons (id, student_id, grammar_target, lesson_topic, textbook_unit)
      VALUES ($1, $2, $3, $4, $5)`,
+<<<<<<< HEAD
     [lessonId, config.studentId, grammarTarget, lessonTopic, unitData.textbookUnit],
+=======
+    [lessonId, effectiveStudentId, grammarTarget, lessonTopic, unitData.textbookUnit],
+>>>>>>> production/main
   )
 
   const initialState: LessonState = {
     lessonId,
-    studentId:      config.studentId,
+    studentId:      effectiveStudentId,
     phase:          'DIAGNOSTIC',
     mode:           'focus',
     focusUnit:      config.unit,
@@ -242,9 +256,9 @@ async function handleFocusLessonStart(
   }
 
   const pipeline = redis.pipeline()
-  pipeline.set(lessonStateKey(lessonId),           JSON.stringify(initialState), 'EX', LESSON_TTL)
-  pipeline.set(lessonContextKey(lessonId),          JSON.stringify([]),            'EX', LESSON_TTL)
-  pipeline.set(activeSessionKey(config.studentId), lessonId,                     'EX', LESSON_TTL)
+  pipeline.set(lessonStateKey(lessonId),             JSON.stringify(initialState), 'EX', LESSON_TTL)
+  pipeline.set(lessonContextKey(lessonId),            JSON.stringify([]),            'EX', LESSON_TTL)
+  pipeline.set(activeSessionKey(effectiveStudentId), lessonId,                     'EX', LESSON_TTL)
   await pipeline.exec()
 
   meta.stt = new DeepgramSTT((transcript) => {
@@ -455,14 +469,43 @@ function getPhasesUpTo(phase: LessonPhase): LessonPhase[] {
 export function attachLessonWS(server: Server): void {
   const wss = new WebSocketServer({ server, path: '/lesson' })
 
-  wss.on('connection', (ws: WebSocket, _req: IncomingMessage) => {
+  wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
+    // ── JWT auth check ─────────────────────────────────────────────────────
+    let jwtStudentId: string | null = null
+    let jwtUserId:    string | null = null
+
+    try {
+      const rawUrl = req.url ?? ''
+      const urlObj = new URL(rawUrl, 'http://localhost')
+      const token  = urlObj.searchParams.get('token')
+
+      if (!token) {
+        ws.close(4001, 'Authentication required')
+        return
+      }
+
+      const payload = await verifyToken(token)
+      if (!payload) {
+        ws.close(4001, 'Invalid or expired token')
+        return
+      }
+
+      jwtStudentId = payload.studentId
+      jwtUserId    = payload.userId
+    } catch {
+      ws.close(4001, 'Auth error')
+      return
+    }
+    // ──────────────────────────────────────────────────────────────────────
+
     const heartbeatRef = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) ws.ping()
     }, HEARTBEAT_INTERVAL_MS)
 
     const meta: ClientMeta = {
       lessonId:        null,
-      studentId:       null,
+      studentId:       jwtStudentId,
+      userId:          jwtUserId,
       lessonStartedAt: null,
       lastSeen:        Date.now(),
       heartbeatRef,
@@ -472,7 +515,7 @@ export function attachLessonWS(server: Server): void {
     }
 
     clients.set(ws, meta)
-    console.log(`[ws] client connected, total=${clients.size}`)
+    console.log(`[ws] client connected (user=${jwtUserId}), total=${clients.size}`)
 
     ws.on('message', async (raw: Buffer) => {
       resetInactivityTimer(ws, meta)

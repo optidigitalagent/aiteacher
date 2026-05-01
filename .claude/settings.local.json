@@ -41,7 +41,13 @@
       "Bash(./node_modules/.bin/tsc --noEmit)",
       "PowerShell(cd D:\\\\aiteacher\\\\frontend; Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"npm run dev\" -WindowStyle Normal)",
       "PowerShell(Test-NetConnection *)",
+<<<<<<< HEAD
       "PowerShell(Start-Process \"http://localhost:3000\")"
+=======
+      "PowerShell(Start-Process \"http://localhost:3000\")",
+      "Read(//d/d/aiteacher/backend/src/**)",
+      "Read(//d/d/aiteacher/backend/src/api/**)"
+>>>>>>> production/main
     ]
   },
   "enabledMcpjsonServers": [

@@ -6,7 +6,8 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api': 'http://localhost:4000',
+      '/api':    'http://localhost:4000',
+      '/lesson': 'http://localhost:4000',
     },
   },
 })

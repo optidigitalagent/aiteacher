@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Teacher — Classroom</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background: #F5F5F7;
+  color: #1a1a2e;
+  overflow: hidden;
+}
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c5bff0; border-radius: 99px; }
+input, textarea, button { font-family: inherit; }
+input:focus, textarea:focus { outline: none; }
+
+/* ── ANIMATIONS ── */
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+.wave-bar {
+  display: inline-block; width: 2.5px; height: 18px;
+  background: #6E7CFB; border-radius: 99px; margin: 0 1.5px;
+  transform-origin: center;
+  animation: wave 0.9s ease-in-out infinite;
+}
+@keyframes halo-breathe {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+@keyframes aura-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+.pulse-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: rgba(110, 124, 251, 0.22);
+  animation: pulse-ring 2s ease-out infinite;
+  pointer-events: none;
+}
+.pulse-ring-2 { animation-delay: 0.65s; }
+.pulse-ring-3 { animation-delay: 1.3s; }
+
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-5px); opacity: 1; }
+}
+.typing-dot {
+  display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; background: #9B8CFF; margin: 0 2px;
+  animation: dot-bounce 1.3s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.slide-up { animation: slideUp 0.25s ease forwards; }
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-7px); }
+  40% { transform: translateX(7px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+.shake { animation: shake 0.4s ease; }
+
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ── LIGHTING ── */
+body::before {
+  content: "";
+  position: fixed;
+  top: -180px; left: -180px;
+  width: 750px; height: 750px;
+  background: radial-gradient(circle, rgba(255,190,110,0.38), rgba(255,160,80,0.18) 40%, transparent 70%);
+  filter: blur(80px);
+  z-index: 0; pointer-events: none;
+}
+body::after {
+  content: "";
+  position: fixed;
+  bottom: -120px; right: -120px;
+  width: 650px; height: 650px;
+  background: radial-gradient(circle, rgba(110,124,251,0.28), rgba(155,140,255,0.14) 40%, transparent 70%);
+  filter: blur(80px);
+  z-index: 0; pointer-events: none;
+}
+
+/* ── MIC GLOW PULSE ── */
+@keyframes pulseGlow {
+  0%   { box-shadow: 0 0 22px rgba(155,140,255,0.5), 0 10px 36px rgba(110,124,251,0.4); }
+  50%  { box-shadow: 0 0 55px rgba(255,184,107,0.65), 0 10px 48px rgba(155,140,255,0.55); }
+  100% { box-shadow: 0 0 22px rgba(155,140,255,0.5), 0 10px 36px rgba(110,124,251,0.4); }
+}
+
+/* ── CARD HOVER LIFT ── */
+.card-lift {
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ── MOCK DATA ── */
+const EXERCISES = [
+{ id: 'ex1', index: 4, total: 8, prompt: 'Complete the sentence with the correct form of the verb.', hint: 'Use Present Simple tense.', sentence: 'She ________ (go) to the gym every morning.', answer: 'goes' },
+{ id: 'ex2', index: 5, total: 8, prompt: 'Fill in the blank with the correct verb form.', hint: 'Third person singular needs -s or -es.', sentence: 'He ________ (watch) TV every evening.', answer: 'watches' },
+{ id: 'ex3', index: 6, total: 8, prompt: 'Complete the sentence correctly.', hint: "Negative form uses \"doesn't\".", sentence: "She ________ (not/like) spicy food.", answer: "doesn't like" }];
+
+
+const STEPS = [
+{ id: 's1', label: 'Warm up', status: 'done' },
+{ id: 's2', label: 'Grammar explanation', status: 'done' },
+{ id: 's3', label: 'Exercise 1', status: 'done' },
+{ id: 's4', label: 'Exercise 2', status: 'active' },
+{ id: 's5', label: 'Exercise 3', status: 'upcoming' },
+{ id: 's6', label: 'Speaking', status: 'upcoming' },
+{ id: 's7', label: 'Summary', status: 'upcoming' }];
+
+
+const INITIAL_MSGS = [
+{ id: 'm1', sender: 'ai', text: 'Welcome back, Alex! Ready to continue our lesson?' },
+{ id: 'm2', sender: 'user', text: "Yes, let's do it!" },
+{ id: 'm3', sender: 'ai', text: "Great! Let's look at the next exercise." },
+{ id: 'm4', sender: 'user', text: "I don't understand this one." },
+{ id: 'm5', sender: 'ai', isTyping: true }];
+
+
+/* ── HOOKS ── */
+function useLesson() {
+  const [idx, setIdx] = useState(0);
+  const [progress, setProgress] = useState(57);
+  const [steps, setSteps] = useState(STEPS);
+  const q = EXERCISES[idx] || EXERCISES[0];
+
+  const submitAnswer = useCallback((correct) => {
+    // TODO: connect backend POST /api/lesson/progress
+    if (correct) {
+      setProgress((p) => Math.min(100, p + 8));
+      setSteps((prev) => prev.map((s) =>
+      s.id === 's4' ? { ...s, status: 'done' } :
+      s.id === 's5' ? { ...s, status: 'active' } : s
+      ));
+    }
+  }, []);
+
+  return { question: q, progress, steps, submitAnswer };
+}
+
+function useChat() {
+  const [messages, setMessages] = useState(INITIAL_MSGS);
+
+  const pushAI = useCallback((text) => {
+    // TODO: connect backend WebSocket
+    const id = `m${Date.now()}`;
+    setMessages((prev) => [...prev.filter((m) => !m.isTyping),
+    { id: `typing-${id}`, sender: 'ai', isTyping: true }]
+    );
+    setTimeout(() => {
+      setMessages((prev) => [...prev.filter((m) => !m.isTyping),
+      { id, sender: 'ai', text }]
+      );
+    }, 1400);
+  }, []);
+
+  const pushUser = useCallback((text) => {
+    if (!text.trim()) return;
+    setMessages((prev) => [...prev.filter((m) => !m.isTyping),
+    { id: `m${Date.now()}`, sender: 'user', text }]
+    );
+  }, []);
+
+  const explainThis = useCallback(() => {
+    pushUser("I don't understand this.");
+    setTimeout(() => pushAI("No problem! Present Simple is used for habits. With 'she/he/it', add -s or -es to the verb. So 'go' becomes 'goes'."), 200);
+  }, [pushUser, pushAI]);
+
+  return { messages, pushUser, pushAI, explainThis };
+}
+
+function useVoice() {
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(true);
+  const [transcript, setTranscript] = useState('');
+
+  const toggle = useCallback(() => {
+    // TODO: connect backend getUserMedia
+    if (isListening) {setIsListening(false);return;}
+    setIsListening(true);setTranscript('');
+    setTimeout(() => {setTranscript('goes to the gym');setIsListening(false);}, 2500);
+  }, [isListening]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setIsSpeaking(false), 3500);
+    return () => clearTimeout(t);
+  }, []);
+
+  return { isListening, isSpeaking, transcript, toggle };
+}
+
+/* ── ICONS ── */
+const IcMic = ({ s = 24, c = 'white' }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><rect x="9" y="2" width="6" height="12" rx="3" fill={c} /><path d="M5 10a7 7 0 0 0 14 0" stroke={c} strokeWidth="2" strokeLinecap="round" fill="none" /><line x1="12" y1="19" x2="12" y2="22" stroke={c} strokeWidth="2" strokeLinecap="round" /><line x1="8" y1="22" x2="16" y2="22" stroke={c} strokeWidth="2" strokeLinecap="round" /></svg>;
+const IcSend = ({ s = 16, c = 'white' }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+const IcCheck = ({ s = 12, c = '#22c55e' }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke={c} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+const IcClose = ({ s = 14, c = '#aaa' }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke={c} strokeWidth="2" strokeLinecap="round" /></svg>;
+const ChatIcon = ({ s = 15, c = '#6E7CFB' }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+const IcBulb = ({ s = 13, c = '#f59e0b' }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M9 21h6M12 3a6 6 0 0 1 6 6c0 2.5-1.5 4.5-3 6H9c-1.5-1.5-3-3.5-3-6a6 6 0 0 1 6-6z" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+const IcSpark = ({ s = 13, c = 'white' }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M12 2l2.4 7.2H22l-6.2 4.5 2.4 7.3L12 17l-6.2 4L8.2 13.7 2 9.2h7.6z" fill={c} /></svg>;
+const IcQ = ({ s = 15, c = '#666' }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke={c} strokeWidth="2" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" stroke={c} strokeWidth="2" strokeLinecap="round" /><circle cx="12" cy="17" r="1" fill={c} /></svg>;
+const IcChev = ({ s = 12, c = '#aaa' }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+const IcExit = ({ s = 14, c = '#888' }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+
+/* ── TEACHER AVATAR ──
+   TODO: when teacher is speaking, render talking video via <video> tag:
+         <video src={selectedTeacher.speakingVideoUrl} autoPlay loop muted />
+   TODO: when teacher is silent, render static image:
+         <img src={selectedTeacher.avatarImageUrl} />
+   TODO: avatar media comes from selectedTeacher.avatarImageUrl / speakingVideoUrl
+         selectedTeacher shape: { id, name, avatarImageUrl, speakingVideoUrl, voiceId }
+   For now: SVG placeholder is rendered in all states.
+*/
+function Avatar({ state }) {
+  const glow = state === 'listening' ? 'rgba(34,197,94,0.35)' : state === 'speaking' ? 'rgba(110,124,251,0.4)' : 'rgba(155,140,255,0.25)';
+  return (
+    <div style={{ position: 'relative', width: 80, height: 80, flexShrink: 0 }}>
+      {/* Outer glow */}
+      <div style={{
+        position: 'absolute', inset: -14, borderRadius: '50%',
+        background: `radial-gradient(circle, ${glow} 0%, transparent 70%)`,
+        animation: 'halo-breathe 3s ease-in-out infinite',
+        filter: 'blur(6px)'
+      }} />
+      {/* Orbit ring */}
+      <div style={{
+        position: 'absolute', inset: -8, borderRadius: '50%',
+        border: '1px dashed rgba(110,124,251,0.2)',
+        animation: 'aura-spin 14s linear infinite'
+      }} />
+      {/* Inner ring */}
+      <div style={{
+        position: 'absolute', inset: -3, borderRadius: '50%',
+        border: '1.5px solid rgba(110,124,251,0.25)',
+        animation: 'halo-breathe 3s ease-in-out infinite',
+        animationDelay: '0.4s'
+      }} />
+      {/* Circle */}
+      <div style={{
+        width: 80, height: 80, borderRadius: '50%', overflow: 'hidden',
+        background: 'linear-gradient(160deg, #e8e0ff 0%, #f5eeff 50%, #fce7f3 100%)',
+        border: '2px solid rgba(255,255,255,0.9)',
+        boxShadow: '0 0 0 1px rgba(110,124,251,0.2), 0 12px 32px rgba(110,124,251,0.2)',
+        position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'center'
+      }}>
+        <svg width="82" height="96" viewBox="0 0 82 96" fill="none" style={{ position: 'absolute', bottom: 0 }}>
+          <ellipse cx="41" cy="34" rx="20" ry="23" fill="#f3d9c4" />
+          <path d="M21 29 Q23 11 41 10 Q59 11 61 29 Q57 19 41 18 Q25 19 21 29z" fill="#2d1b0e" />
+          <path d="M61 29 Q64 37 63 44 Q60 38 58 33z" fill="#2d1b0e" />
+          <path d="M21 29 Q18 37 19 44 Q22 38 24 33z" fill="#2d1b0e" />
+          <rect x="35" y="55" width="12" height="10" rx="3" fill="#f3d9c4" />
+          <path d="M10 96 Q12 68 24 64 Q34 61 41 62 Q48 61 58 64 Q70 68 72 96z" fill="#f8f8ff" />
+          <path d="M34 62 Q41 72 48 62" stroke="#e8e4f0" strokeWidth="1.5" fill="none" />
+        </svg>
+      </div>
+    </div>);
+
+}
+
+/* ════════════════════════════════════════
+   LEFT PANEL
+═══════════════════════════════════════ */
+function LeftPanel({ voiceState, onExplain }) {
+  const { isSpeaking, isListening } = voiceState;
+  const state = isListening ? 'listening' : isSpeaking ? 'speaking' : 'thinking';
+  const stateLabel = { listening: 'Listening', speaking: 'Speaking', thinking: 'Thinking' }[state];
+  const stateColor = { listening: '#22c55e', speaking: '#6E7CFB', thinking: '#9B8CFF' }[state];
+
+  return (
+    <div style={{
+      width: 170, display: 'flex', flexDirection: 'column', alignItems: 'center',
+      padding: '20px 14px 16px', gap: 10,
+      background: 'rgba(255,248,240,0.72)',
+      backdropFilter: 'blur(24px)',
+      WebkitBackdropFilter: 'blur(24px)',
+      borderRadius: 22,
+      boxShadow: '0 2px 0 rgba(255,255,255,0.9) inset, 0 12px 40px rgba(0,0,0,0.07), 0 2px 8px rgba(110,124,251,0.06)',
+      border: '1px solid rgba(255,255,255,0.65)',
+      height: '100%', minHeight: 0, overflow: 'hidden', maxHeight: '100%'
+    }}>
+      <Avatar state={state} />
+
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontWeight: 800, fontSize: 17, color: '#1a1a2e', letterSpacing: '-0.3px' }}>Sophie</div>
+        <div style={{ fontSize: 12, color: '#888', marginTop: 2, fontWeight: 500 }}>AI English Teacher</div>
+      </div>
+
+      {/* State badge */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 7,
+        background: `${stateColor}18`,
+        border: `1px solid ${stateColor}33`,
+        borderRadius: 99, padding: '6px 14px',
+        transition: 'all 0.4s ease'
+      }}>
+        <div style={{
+          width: 7, height: 7, borderRadius: '50%', background: stateColor,
+          boxShadow: `0 0 7px ${stateColor}`,
+          animation: 'halo-breathe 1.5s ease-in-out infinite'
+        }} />
+        <span style={{ fontSize: 12.5, color: stateColor, fontWeight: 700 }}>{stateLabel}</span>
+      </div>
+
+      {/* Waveform */}
+      <div style={{ display: 'flex', alignItems: 'center', height: 22, gap: 1.5 }}>
+        {Array.from({ length: 14 }, (_, i) =>
+        <span key={i} className="wave-bar" style={{
+          animationDelay: `${i * 0.065}s`,
+          height: [7, 11, 16, 9, 14, 8, 18, 12, 7, 15, 10, 17, 8, 12][i],
+          opacity: isSpeaking || isListening ? 1 : 0.18,
+          background: state === 'listening' ? '#22c55e' : '#6E7CFB',
+          transition: 'opacity 0.4s, background 0.4s'
+        }} />
+        )}
+      </div>
+
+      {/* Motivational */}
+      <div style={{
+        background: 'white', borderRadius: 12, padding: '10px 14px',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.05)',
+        width: '100%', border: '1px solid rgba(110,124,251,0.1)'
+      }}>
+        <div style={{ fontSize: 13, color: '#555', lineHeight: 1.6, textAlign: 'center', fontWeight: 500 }}>
+          Great progress today!<br />You're doing really well.
+        </div>
+      </div>
+
+      {/* Help card */}
+      <div style={{
+        width: '100%', background: 'white', borderRadius: 16, padding: '16px',
+        boxShadow: '0 6px 24px rgba(110,124,251,0.12)',
+        border: '1px solid rgba(110,124,251,0.12)'
+      }}>
+        <div style={{ fontWeight: 700, fontSize: 13, color: '#1a1a2e', marginBottom: 5 }}>Need help?</div>
+        <div style={{ fontSize: 12.5, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
+          I can explain this differently.
+        </div>
+        <button onClick={onExplain} style={{
+          width: '100%', padding: '10px 0', borderRadius: 11, border: 'none',
+          background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)',
+          color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+          boxShadow: '0 6px 20px rgba(110,124,251,0.35)',
+          transition: 'transform 0.15s, box-shadow 0.15s'
+        }}>
+          <IcSpark /> Explain this
+        </button>
+      </div>
+    </div>);
+
+}
+
+/* ════════════════════════════════════════
+   CENTER CARD
+═══════════════════════════════════════ */
+function CenterCard({ question, answer, feedback, onCheck, onHintToggle, showHint }) {
+  const [shakeKey, setShakeKey] = useState(0);
+  const prevFeedback = useRef(null);
+
+  useEffect(() => {
+    if (feedback === 'wrong' && prevFeedback.current !== 'wrong') {
+      setShakeKey((k) => k + 1);
+    }
+    prevFeedback.current = feedback;
+  }, [feedback]);
+
+  const parts = question.sentence.split('________');
+  const blankColor = feedback === 'correct' ? '#22c55e' : feedback === 'wrong' ? '#ef4444' : '#6E7CFB';
+
+  return (
+    <div style={{
+      width: '100%', maxWidth: 720,
+      background: 'rgba(255,255,255,0.88)', borderRadius: 24,
+      backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+      padding: '36px 40px',
+      boxShadow: '0 2px 0 rgba(255,255,255,1) inset, 0 20px 60px rgba(0,0,0,0.08), 0 40px 80px rgba(110,124,251,0.1)',
+      border: '1px solid rgba(255,255,255,0.7)',
+      outline: '1px solid rgba(110,124,251,0.07)',
+      display: 'flex', flexDirection: 'column', gap: 0,
+      transition: 'transform 0.22s ease, box-shadow 0.22s ease',
+      transform: 'translateY(-2px)'
+    }}>
+      {/* Badge */}
+      <div style={{ marginBottom: 22 }}>
+        <span style={{
+          background: 'linear-gradient(135deg, #ede9ff, #f0f0ff)',
+          color: '#6E7CFB', fontSize: 12, fontWeight: 700,
+          padding: '5px 14px', borderRadius: 99,
+          border: '1px solid rgba(110,124,251,0.2)'
+        }}>
+          Exercise {question.index} of {question.total}
+        </span>
+      </div>
+
+      {/* Title */}
+      <h2 style={{
+        fontSize: 26, fontWeight: 700, color: '#1a1a2e',
+        lineHeight: 1.35, marginBottom: 22, letterSpacing: '-0.4px'
+      }}>
+        {question.prompt}
+      </h2>
+
+      {/* Hint chip */}
+      <div style={{ marginBottom: 30 }}>
+        <button onClick={onHintToggle} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 7,
+          background: showHint ? '#fef9ee' : '#fafafa',
+          border: showHint ? '1px solid #fde68a' : '1px solid #e8e8e8',
+          borderRadius: 99, padding: '6px 14px', cursor: 'pointer',
+          color: showHint ? '#92400e' : '#666', fontSize: 12.5, fontWeight: 600,
+          transition: 'all 0.2s'
+        }}>
+          <IcBulb s={13} c={showHint ? '#f59e0b' : '#aaa'} />
+          {showHint ? question.hint : 'Show hint'}
+        </button>
+      </div>
+
+      {/* Sentence with blank */}
+      <div key={shakeKey} className={shakeKey > 0 ? 'shake' : ''} style={{
+        fontSize: 20, fontWeight: 600, color: '#1a1a2e',
+        lineHeight: 1.7, marginBottom: 28,
+        display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '0 6px'
+      }}>
+        <span>{parts[0]}</span>
+        <span style={{
+          display: 'inline-block', minWidth: 140, textAlign: 'center',
+          borderBottom: `2.5px solid ${blankColor}`,
+          paddingBottom: 2, color: blankColor,
+          fontSize: 20, fontStyle: answer ? 'normal' : 'italic', fontWeight: 700,
+          transition: 'color 0.2s, border-color 0.2s'
+        }}>
+          {answer || '\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0'}
+        </span>
+        <span>{parts[1]}</span>
+      </div>
+
+      {/* Feedback line */}
+      {feedback &&
+      <div className="slide-up" style={{
+        fontSize: 13.5, fontWeight: 700, marginBottom: 16,
+        color: feedback === 'correct' ? '#22c55e' : '#ef4444',
+        display: 'flex', alignItems: 'center', gap: 6
+      }}>
+          {feedback === 'correct' ?
+        <><IcCheck s={14} c="#22c55e" /> Correct! The answer is "{question.answer}".</> :
+        '✕ Not quite — try again or ask Sophie.'}
+        </div>
+      }
+
+      {/* Check button */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <button onClick={onCheck} disabled={!answer.trim()} style={{
+          padding: '14px 40px', borderRadius: 14, border: 'none',
+          background: !answer.trim() ?
+          '#f0f0f0' :
+          'linear-gradient(135deg, #6E7CFB 0%, #9B8CFF 60%, #FFB86B 100%)',
+          color: !answer.trim() ? '#bbb' : 'white',
+          fontWeight: 700, fontSize: 15, cursor: answer.trim() ? 'pointer' : 'not-allowed',
+          boxShadow: answer.trim() ? '0 8px 28px rgba(110,124,251,0.4), 0 2px 0 rgba(255,255,255,0.3) inset' : 'none',
+          transition: 'all 0.2s', letterSpacing: '-0.2px'
+        }}>
+          Check answer
+        </button>
+        <button onClick={onHintToggle} style={{
+          display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
+          cursor: 'pointer', color: '#888', fontSize: 13.5, fontWeight: 600,
+          padding: '10px', borderRadius: 10, transition: 'color 0.15s'
+        }}>
+          <IcBulb s={14} c="#f59e0b" /> Need a hint?
+        </button>
+      </div>
+    </div>);
+
+}
+
+/* ════════════════════════════════════════
+   SECTION PANEL (timeline column)
+   Backend integration points:
+   - TODO: currentSectionId  — from lesson session state
+   - TODO: currentExerciseId — active exercise being rendered in CenterCard
+   - TODO: completedExercises — array of exercise IDs the user passed
+   - TODO: activeExercise — the one currently shown (highlight in timeline)
+   - TODO: nextExercise — pre-fetched, ready to load after current completes
+   - TODO: progressPercent — from backend: completed_weight / total_weight * 100
+   Mock data (steps, progress) will be replaced by the above fields from:
+   GET /api/lesson/session/:sessionId/progress
+═══════════════════════════════════════ */
+function SectionPanel({ steps, progress, chatOpen, onOpenChat, onCloseChat }) {
+  // TODO: replace `steps` with structured lesson plan from backend
+  // Shape: [{ id, label, type: 'exercise'|'grammar'|'speaking', status: 'done'|'active'|'upcoming', exerciseId? }]
+
+  // TODO: replace `progress` with progressPercent from backend session state
+
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      background: 'rgba(255,255,255,0.72)',
+      backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+      borderRadius: 20,
+      boxShadow: '0 2px 0 rgba(255,255,255,0.9) inset, 0 10px 30px rgba(0,0,0,0.06)',
+      border: '1px solid rgba(255,255,255,0.7)',
+      overflow: 'hidden', height: '100%', minHeight: 0,
+      padding: '20px 16px'
+    }}>
+      {/* TODO: replace hardcoded labels with: bookName, sectionNumber, sectionTitle, topicTitle */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 3 }}>Section 1.2</div>
+      <div style={{ fontSize: 15, fontWeight: 800, color: '#1a1a2e', letterSpacing: '-0.3px', marginBottom: 18 }}>Present Simple</div>
+
+      {/* Timeline — steps reflect completedExercises / activeExercise / nextExercise */}
+      <div style={{ position: 'relative', flex: 1, overflowY: 'auto' }}>
+        <div style={{
+          position: 'absolute', left: 11, top: 12, bottom: 12,
+          width: 1.5, borderRadius: 99,
+          background: `linear-gradient(to bottom, #22c55e ${(steps.filter((s) => s.status === 'done').length / steps.length * 100).toFixed()}%, #e8e8f0 ${(steps.filter((s) => s.status === 'done').length / steps.length * 100).toFixed()}%)`,
+          zIndex: 0
+        }} />
+        {steps.map((step, i) => {
+          const done = step.status === 'done', active = step.status === 'active';
+          return (
+            <div key={step.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '7px 8px 7px 0', position: 'relative', zIndex: 1,
+              borderRadius: 9,
+              background: active ? 'rgba(110,124,251,0.07)' : 'transparent',
+              marginBottom: 2
+            }}>
+              <div style={{
+                width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: done ? 'linear-gradient(135deg,#4ade80,#22c55e)' : active ? 'linear-gradient(135deg,#6E7CFB,#9B8CFF)' : 'white',
+                border: !done && !active ? '1.5px solid #e0e0e8' : 'none',
+                boxShadow: done ? '0 2px 8px rgba(34,197,94,0.3)' : active ? '0 2px 8px rgba(110,124,251,0.35)' : 'none'
+              }}>
+                {done ? <IcCheck s={10} c="white" /> : <span style={{ fontSize: 9, fontWeight: 700, color: active ? 'white' : '#bbb' }}>{i + 1}</span>}
+              </div>
+              <span style={{
+                fontSize: 12.5, fontWeight: active ? 700 : done ? 500 : 400,
+                color: active ? '#6E7CFB' : done ? '#666' : '#aaa', lineHeight: 1.2
+              }}>{step.label}</span>
+              {active && <div style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: '#6E7CFB', boxShadow: '0 0 6px rgba(110,124,251,0.7)', animation: 'halo-breathe 1.5s ease-in-out infinite' }} />}
+            </div>);
+        })}
+      </div>
+
+      {/* Progress — TODO: driven by progressPercent from backend */}
+      <div style={{ marginTop: 16, flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span style={{ fontSize: 11.5, color: '#888', fontWeight: 600 }}>Your progress</span>
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: '#1a1a2e' }}>{progress}%</span>
+        </div>
+        <div style={{ height: 5, background: '#ede9ff', borderRadius: 99, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg,#6E7CFB,#9B8CFF)', borderRadius: 99, boxShadow: '0 2px 6px rgba(110,124,251,0.4)', transition: 'width 0.8s ease' }} />
+        </div>
+      </div>
+
+      {/* Chat toggle button — always visible at bottom */}
+      {!chatOpen ? (
+        <button onClick={onOpenChat} style={{
+          marginTop: 14, width: '100%', padding: '9px', borderRadius: 11,
+          border: '1.5px solid rgba(110,124,251,0.2)', background: 'rgba(110,124,251,0.05)',
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+          color: '#6E7CFB', fontSize: 12.5, fontWeight: 700, transition: 'all 0.2s',
+          flexShrink: 0
+        }}>
+          <ChatIcon s={13} c="#6E7CFB" /> Open Chat
+        </button>
+      ) : (
+        <button onClick={onCloseChat} style={{
+          marginTop: 14, width: '100%', padding: '8px 10px', borderRadius: 11,
+          border: '1.5px solid rgba(110,124,251,0.15)', background: 'transparent',
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          color: '#aaa', fontSize: 12, fontWeight: 600, transition: 'all 0.2s',
+          flexShrink: 0
+        }}>
+          <ChatIcon s={12} c="#bbb" /> Hide chat
+        </button>
+      )}
+    </div>);
+
+}
+
+
+
+/* ════════════════════════════════════════
+   CHAT PANEL — RIGHT SIDEBAR
+   Sits in the grid between Center and SectionPanel.
+   Read-only: BottomBar is the only input.
+═══════════════════════════════════════ */
+function ChatPanel({ messages, onHide }) {
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    if (bottomRef.current) {
+      const c = bottomRef.current.parentElement;
+      c.scrollTop = c.scrollHeight;
+    }
+  }, [messages]);
+
+  return (
+    <div className="slide-up" style={{
+      display: 'flex', flexDirection: 'column',
+      background: 'rgba(255,255,255,0.88)',
+      backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+      borderRadius: 20,
+      boxShadow: '0 2px 0 rgba(255,255,255,0.9) inset, 0 12px 40px rgba(0,0,0,0.07)',
+      border: '1px solid rgba(255,255,255,0.7)',
+      height: '100%', minHeight: 0, overflow: 'hidden'
+    }}>
+
+      {/* Header */}
+      <div style={{
+        padding: '14px 16px 12px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        borderBottom: '1px solid rgba(110,124,251,0.08)',
+        flexShrink: 0
+      }}>
+        <span style={{ fontWeight: 800, fontSize: 15, color: '#1a1a2e', letterSpacing: '-0.2px' }}>Chat</span>
+
+        {/* Close button — X icon, clean */}
+        <button
+          onClick={onHide}
+          title="Close chat"
+          style={{
+            width: 28, height: 28,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(110,124,251,0.08)',
+            border: '1.5px solid rgba(110,124,251,0.15)',
+            borderRadius: 8, cursor: 'pointer',
+            transition: 'all 0.15s'
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(110,124,251,0.16)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(110,124,251,0.08)'; }}
+        >
+          <IcClose s={13} c="#6E7CFB" />
+        </button>
+      </div>
+
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {messages.map((msg) =>
+        <div key={msg.id} style={{
+          display: 'flex', flexDirection: msg.sender === 'user' ? 'row-reverse' : 'row',
+          gap: 7, alignItems: 'flex-end', animation: 'msgIn 0.25s ease'
+        }}>
+          {msg.sender === 'ai' &&
+            <div style={{
+              width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+              background: 'linear-gradient(135deg,#ede9ff,#fce7f3)',
+              border: '1.5px solid rgba(110,124,251,0.2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 9, fontWeight: 800, color: '#6E7CFB'
+            }}>S</div>
+          }
+          <div style={{ maxWidth: '82%' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: '#ccc', marginBottom: 3, textAlign: msg.sender === 'user' ? 'right' : 'left' }}>
+              {msg.sender === 'ai' ? 'Sophie' : 'You'}
+            </div>
+            <div style={{
+              padding: '8px 11px',
+              borderRadius: msg.sender === 'user' ? '13px 13px 4px 13px' : '13px 13px 13px 4px',
+              background: msg.sender === 'user' ? 'linear-gradient(135deg,#6E7CFB,#9B8CFF)' : 'white',
+              color: msg.sender === 'user' ? 'white' : '#1a1a2e',
+              fontSize: 12.5, lineHeight: 1.55, fontWeight: 500,
+              boxShadow: msg.sender === 'ai' ? '0 2px 8px rgba(0,0,0,0.06)' : '0 4px 12px rgba(110,124,251,0.25)',
+              border: msg.sender === 'ai' ? '1px solid #f0eeff' : 'none'
+            }}>
+              {msg.isTyping ?
+                <div style={{ display: 'flex', gap: 3, padding: '2px', alignItems: 'center' }}>
+                  <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
+                </div> :
+                msg.text}
+            </div>
+          </div>
+        </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Footer hint */}
+      <div style={{
+        padding: '8px 14px 11px',
+        borderTop: '1px solid rgba(110,124,251,0.07)',
+        flexShrink: 0
+      }}>
+        <span style={{ fontSize: 11, color: '#c5c0d8', fontWeight: 500, fontStyle: 'italic' }}>
+          Use the main input below to write.
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   BOTTOM CONTROLS — SINGLE INPUT
+   This is the ONLY input in the classroom.
+   Handles: exercise answers, chat messages, voice transcript, lesson commands.
+   TODO: onSubmit routes to backend which decides message type based on lessonState.
+═══════════════════════════════════════ */
+function BottomBar({ isListening, onToggleMic, value, onChange, onSubmit, onExplain }) {
+  const inputRef = useRef(null);
+
+  const handleKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {e.preventDefault();onSubmit();}
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 100,
+      display: 'flex', alignItems: 'center', gap: 14,
+      background: 'rgba(255,255,255,0.78)',
+      backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
+      borderRadius: 99,
+      padding: '12px 20px 12px 16px',
+      boxShadow: '0 2px 0 rgba(255,255,255,0.95) inset, 0 4px 6px rgba(0,0,0,0.03), 0 20px 50px rgba(0,0,0,0.1), 0 0 0 1px rgba(255,255,255,0.4)',
+      width: 'auto', maxWidth: 780, minWidth: 680
+    }}>
+      {/* I don't understand */}
+      <button onClick={onExplain} style={{
+        display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0,
+        background: 'none', border: '1.5px solid #e8e8f0', borderRadius: 99,
+        padding: '10px 18px', cursor: 'pointer',
+        color: '#555', fontSize: 13.5, fontWeight: 600,
+        transition: 'all 0.2s', whiteSpace: 'nowrap'
+      }}>
+        <IcQ s={14} c="#888" />
+        I don't understand
+      </button>
+
+      {/* MIC — 72px, center */}
+      <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
+        {isListening &&
+        <>
+            <div className="pulse-ring" />
+            <div className="pulse-ring pulse-ring-2" />
+            <div className="pulse-ring pulse-ring-3" />
+          </>
+        }
+        <button onClick={onToggleMic} style={{
+          position: 'absolute', inset: 0, borderRadius: '50%', border: 'none',
+          background: 'linear-gradient(145deg, #6E7CFB 0%, #9B8CFF 55%, #FFB86B 100%)',
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: isListening ?
+          '0 0 0 4px rgba(110,124,251,0.35), 0 0 50px rgba(255,184,107,0.7), 0 10px 36px rgba(110,124,251,0.55)' :
+          undefined,
+          animation: isListening ? 'none' : 'pulseGlow 2.4s ease-in-out infinite',
+          transition: 'box-shadow 0.2s'
+        }}>
+          <IcMic s={26} />
+        </button>
+      </div>
+
+      {/* Text input — ONLY INPUT */}
+      <div style={{
+        flex: 1, display: 'flex', alignItems: 'center',
+        background: '#F5F5F7', borderRadius: 99, padding: '0 8px 0 18px',
+        border: '1.5px solid rgba(110,124,251,0.15)',
+        transition: 'border-color 0.2s, box-shadow 0.2s',
+        minWidth: 0
+      }}
+      onFocus={(e) => {e.currentTarget.style.borderColor = 'rgba(110,124,251,0.45)';e.currentTarget.style.boxShadow = '0 0 0 3px rgba(110,124,251,0.12)';}}
+      onBlur={(e) => {e.currentTarget.style.borderColor = 'rgba(110,124,251,0.15)';e.currentTarget.style.boxShadow = 'none';}}>
+        
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={handleKey}
+          placeholder="Type your answer…"
+          style={{
+            flex: 1, border: 'none', background: 'transparent',
+            padding: '13px 0', fontSize: 15, color: '#1a1a2e',
+            fontFamily: 'Plus Jakarta Sans, sans-serif',
+            minWidth: 0
+          }} />
+        
+        <button onClick={onSubmit} style={{
+          width: 40, height: 40, borderRadius: 99, border: 'none', flexShrink: 0,
+          background: value.trim() ?
+          'linear-gradient(135deg, #1a1a2e, #2d2d4e)' :
+          '#e8e8f0',
+          cursor: value.trim() ? 'pointer' : 'default',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: value.trim() ? '0 4px 12px rgba(26,26,46,0.3)' : 'none',
+          transition: 'all 0.2s'
+        }}>
+          <IcSend s={15} c={value.trim() ? 'white' : '#bbb'} />
+        </button>
+      </div>
+    </div>);
+
+}
+
+/* ════════════════════════════════════════
+   TOP NAV
+═══════════════════════════════════════ */
+function TopNav() {
+  return (
+    <div style={{
+      height: 56, background: 'rgba(255,255,255,0.72)',
+      backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)',
+      borderBottom: '1px solid rgba(255,255,255,0.45)',
+      boxShadow: '0 1px 0 rgba(110,124,251,0.07)',
+      display: 'flex', alignItems: 'center', padding: '0 32px',
+      boxShadow: '0 1px 0 rgba(0,0,0,0.04)',
+      flexShrink: 0, position: 'sticky', top: 0, zIndex: 50
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: 260, flexShrink: 0 }}>
+        <div style={{ flexShrink: 0,
+          width: 30, height: 30, borderRadius: 9,
+          background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontWeight: 900, fontSize: 11, color: 'white', letterSpacing: '-0.5px',
+          boxShadow: '0 3px 10px rgba(110,124,251,0.4)'
+        }}>Ai</div>
+        <span style={{ fontWeight: 800, fontSize: 15, color: '#1a1a2e', letterSpacing: '-0.3px', whiteSpace: 'nowrap' }}>AI Teacher</span>
+      </div>
+
+      {/* TODO: replace hardcoded values with backend fields:
+          bookName, sectionNumber, sectionTitle, topicTitle
+          from GET /api/lesson/session/:sessionId → { section, topic }
+      */}
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 14, color: '#1a1a2e', fontWeight: 700 }}>Section 1.2</span>
+        <span style={{ fontSize: 14, color: '#c5c5d5', fontWeight: 400 }}>•</span>
+        <span style={{ fontSize: 14, color: '#1a1a2e', fontWeight: 700 }}>Present Simple</span>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: 260, justifyContent: 'flex-end' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 7,
+          padding: '5px 12px', borderRadius: 10, background: '#f5f5f7', cursor: 'pointer',
+          border: '1px solid #ebebf0'
+        }}>
+          <div style={{
+            width: 24, height: 24, borderRadius: '50%',
+            background: 'linear-gradient(135deg, #a78bfa, #7c3aed)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 9, fontWeight: 800, color: 'white'
+          }}>A</div>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a2e' }}>Alex</span>
+          <IcChev />
+        </div>
+        <button style={{
+          display: 'flex', alignItems: 'center', gap: 6, background: 'none',
+          border: '1.5px solid #e8e8f0', borderRadius: 9, padding: '6px 13px',
+          cursor: 'pointer', color: '#888', fontSize: 13, fontWeight: 600
+        }}>
+          <IcExit /> Exit
+        </button>
+      </div>
+    </div>);
+
+}
+
+/* ════════════════════════════════════════
+   ROOT
+═══════════════════════════════════════ */
+function App() {
+  const { question, progress, steps, submitAnswer } = useLesson();
+  const { messages, pushUser, pushAI, explainThis } = useChat();
+  const { isListening, isSpeaking, transcript, toggle } = useVoice();
+
+  const [answer, setAnswer] = useState('');
+  const [feedback, setFeedback] = useState(null);
+  const [showHint, setShowHint] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true);
+
+  // Voice transcript fills input
+  useEffect(() => {if (transcript) setAnswer(transcript);}, [transcript]);
+
+  // Reset on question change
+  useEffect(() => {setAnswer('');setFeedback(null);setShowHint(false);}, [question.id]);
+
+  const handleCheck = useCallback(() => {
+    if (!answer.trim()) return;
+    const correct = answer.trim().toLowerCase() === question.answer.toLowerCase();
+    setFeedback(correct ? 'correct' : 'wrong');
+    submitAnswer(correct);
+    pushUser(answer);
+    setTimeout(() => pushAI(correct ?
+    `"${answer}" is correct! Well done.` :
+    `Not quite. Remember: ${question.hint}`
+    ), 200);
+  }, [answer, question, submitAnswer, pushUser, pushAI]);
+
+  const handleSubmit = () => {
+    if (!answer.trim()) return;
+
+    // TODO: backend will decide whether this text is an exercise answer,
+    // chat message, translation request, or lesson command based on lesson state.
+    // POST /api/lesson/input { text: answer, lessonStateId, exerciseId }
+    // Response will carry: { type: 'exercise_answer' | 'chat_message' | 'lesson_command', ... }
+    //
+    // For now: mock behavior — text always treated as exercise answer + echoed to chat.
+    handleCheck();
+    // Clear after submit
+    setTimeout(() => {setAnswer('');setFeedback(null);}, 1800);
+  };
+
+  const handleExplain = () => {
+    // TODO: teachingOverlay / teachingCard flow:
+    // 1. User clicks "I don't understand" → POST /api/lesson/explain { exerciseId, lessonStateId }
+    // 2. Backend returns: { explanationCard: { title, body, ruleTable?, examples[] } }
+    // 3. Set explanationState = { active: true, card: explanationCard }
+    // 4. CenterCard hides, TeachingCard renders in center area instead
+    // 5. User clicks "OK, I understand" → explanationState = { active: false }
+    // 6. CenterCard returns with same exercise
+    // For now: mock explain behavior — pushes a message to chat.
+    explainThis();
+  };
+
+  return (
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'linear-gradient(160deg, #f0eeff 0%, #F5F5F7 40%, #fff5ee 100%)', overflow: 'hidden' }}>
+
+      {/* JSX light blobs — visible in all renderers */}
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: -160, left: -160, width: 700, height: 700, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,185,100,0.35) 0%, rgba(255,160,70,0.15) 45%, transparent 70%)', filter: 'blur(60px)' }} />
+        <div style={{ position: 'absolute', bottom: -120, right: -120, width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, rgba(110,124,251,0.28) 0%, rgba(155,140,255,0.12) 45%, transparent 70%)', filter: 'blur(60px)' }} />
+        <div style={{ position: 'absolute', top: '35%', left: '38%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(155,140,255,0.12) 0%, transparent 70%)', filter: 'blur(80px)' }} />
+      </div>
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <TopNav />
+
+        {/* MAIN GRID
+            Closed: [Teacher 170px] [Center 1fr] [Section 220px]
+            Open:   [Teacher 170px] [Center 1fr] [Chat 220px] [Section 150px]
+            Chat slides in to the LEFT of SectionPanel — feels like it grows from the center.
+        */}
+        <div style={{
+          flex: 1, minHeight: 0,
+          display: 'grid',
+          gridTemplateColumns: chatOpen
+            ? '170px 1fr 220px 150px'
+            : '170px 1fr 220px',
+          alignItems: 'stretch',
+          gap: 14,
+          padding: '16px 20px',
+          paddingBottom: 110,
+          overflow: 'hidden',
+          transition: 'grid-template-columns 0.32s cubic-bezier(0.4,0,0.2,1)'
+        }}>
+          {/* LEFT — teacher */}
+          <LeftPanel voiceState={{ isSpeaking, isListening }} onExplain={handleExplain} />
+
+          {/* CENTER — exercise */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', minWidth: 0 }}>
+            <CenterCard
+              question={question}
+              answer={answer}
+              feedback={feedback}
+              onCheck={handleCheck}
+              onHintToggle={() => setShowHint((h) => !h)}
+              showHint={showHint} />
+          </div>
+
+          {/* CHAT — appears between center and section when open */}
+          {chatOpen &&
+            <ChatPanel
+              messages={messages}
+              onHide={() => setChatOpen(false)} />
+          }
+
+          {/* SECTION TIMELINE — always visible, shrinks when chat opens */}
+          <SectionPanel steps={steps} progress={progress} chatOpen={chatOpen} onOpenChat={() => setChatOpen(true)} onCloseChat={() => setChatOpen(false)} />
+        </div>
+
+        {/* BOTTOM — SINGLE INPUT */}
+        <BottomBar
+          isListening={isListening}
+          onToggleMic={toggle}
+          value={answer}
+          onChange={setAnswer}
+          onSubmit={handleSubmit}
+          onExplain={handleExplain} />
+        
+      </div>
+    </div>);
+
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

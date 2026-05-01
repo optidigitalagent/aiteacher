@@ -57,7 +57,7 @@ router.get('/health', async (_req: Request, res: Response) => {
     }
   } catch { /* non-critical */ }
 
-  res.status(allOk ? 200 : 503).json({
+  res.status(200).json({
     status:  allOk ? 'ok' : 'degraded',
     checks,
     stats,

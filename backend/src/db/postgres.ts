@@ -1,5 +1,9 @@
 import pg from 'pg'
+<<<<<<< HEAD
 import { readFileSync, readdirSync } from 'fs'
+=======
+import { readFileSync } from 'fs'
+>>>>>>> production/main
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import 'dotenv/config'
@@ -56,6 +60,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 export async function initTables(): Promise<void> {
+<<<<<<< HEAD
   const migrationsDir = join(__dirname, '../../migrations')
   const files = readdirSync(migrationsDir)
     .filter(f => f.endsWith('.sql'))
@@ -66,6 +71,15 @@ export async function initTables(): Promise<void> {
     console.log(`[postgres] migration: ${file}`)
   }
   console.log('[postgres] tables ready')
+=======
+  const migrations = ['001_init.sql', '002_auth.sql', '003_profile_editable.sql']
+  for (const file of migrations) {
+    const sqlPath = join(__dirname, '../../migrations', file)
+    const sql = readFileSync(sqlPath, 'utf-8')
+    await query(sql)
+    console.log(`[postgres] migration applied: ${file}`)
+  }
+>>>>>>> production/main
 }
 
 export default pool
