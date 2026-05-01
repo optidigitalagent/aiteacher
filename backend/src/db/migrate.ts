@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'fs'
+import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import 'dotenv/config'
@@ -6,24 +6,17 @@ import { checkConnection, query } from './postgres.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-const MIGRATIONS = ['001_init.sql', '002_auth.sql', '003_profile_editable.sql']
+const MIGRATIONS = [
+  '001_init.sql',
+  '002_auth.sql',
+  '003_profile_editable.sql',
+  '003_demo_safety.sql',
+  '004_demo_sessions.sql',
+]
 
 async function migrate(): Promise<void> {
   await checkConnection()
 
-<<<<<<< HEAD
-  const migrationsDir = join(__dirname, '../../migrations')
-  const files = readdirSync(migrationsDir)
-    .filter(f => f.endsWith('.sql'))
-    .sort()
-
-  for (const file of files) {
-    console.log(`[migrate] running ${file}...`)
-    const sql = readFileSync(join(migrationsDir, file), 'utf-8')
-    await query(sql)
-    console.log(`[migrate] done: ${file}`)
-  }
-=======
   for (const file of MIGRATIONS) {
     const sqlPath = join(__dirname, '../../migrations', file)
     const sql = readFileSync(sqlPath, 'utf-8')
@@ -32,7 +25,6 @@ async function migrate(): Promise<void> {
     console.log(`[migrate] ${file} done`)
   }
   console.log('[migrate] all migrations applied')
->>>>>>> production/main
 
   process.exit(0)
 }

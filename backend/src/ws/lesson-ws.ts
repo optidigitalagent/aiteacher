@@ -220,11 +220,7 @@ async function handleFocusLessonStart(
   await query(
     `INSERT INTO lessons (id, student_id, grammar_target, lesson_topic, textbook_unit)
      VALUES ($1, $2, $3, $4, $5)`,
-<<<<<<< HEAD
-    [lessonId, config.studentId, grammarTarget, lessonTopic, unitData.textbookUnit],
-=======
     [lessonId, effectiveStudentId, grammarTarget, lessonTopic, unitData.textbookUnit],
->>>>>>> production/main
   )
 
   const initialState: LessonState = {

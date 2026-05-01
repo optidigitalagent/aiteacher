@@ -1,4 +1,4 @@
-const TOKEN_KEY = 'ai_teacher_token'
+const TOKEN_KEY = 'auth_token'
 const API_BASE  = import.meta.env.VITE_API_URL ?? ''
 
 export function getStoredToken(): string | null {

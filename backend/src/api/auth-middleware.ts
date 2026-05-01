@@ -1,19 +1,11 @@
 import { createHmac } from 'crypto'
 import type { Request, Response, NextFunction } from 'express'
+import type { JwtPayload } from '../auth/jwt.js'
 
 export interface AuthUser {
   userId: string
   email:  string
   name:   string
-}
-
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace Express {
-    interface Request {
-      user?: AuthUser
-    }
-  }
 }
 
 interface TokenPayload {
@@ -80,6 +72,6 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Invalid or expired token' })
     return
   }
-  req.user = { userId: payload.sub, email: payload.email, name: payload.name }
+  req.user = { userId: payload.sub, studentId: '', email: payload.email, name: payload.name } as JwtPayload
   next()
 }

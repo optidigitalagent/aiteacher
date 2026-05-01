@@ -3,13 +3,6 @@
 @tailwind utilities;
 
 @layer base {
-<<<<<<< HEAD
-  html, body, #root {
-    height: 100%;
-    background-color: #F5F5F7;
-  }
-}
-=======
   html {
     scroll-behavior: smooth;
   }
@@ -126,4 +119,3 @@
 
 .cls-slide-up { animation: cls-slide-up 0.25s ease forwards; }
 .cls-shake    { animation: cls-shake 0.4s ease; }
->>>>>>> production/main

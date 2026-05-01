@@ -1,25 +1,3 @@
-<<<<<<< HEAD
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import LessonRoom          from './components/LessonRoom/LessonRoom'
-import DemoSetup           from './components/demo/DemoSetup'
-import HomePage            from './pages/HomePage'
-import DemoClassroomPage   from './pages/DemoClassroomPage'
-import AuthCallbackPage    from './pages/AuthCallbackPage'
-import PricingPage         from './pages/PricingPage'
-
-export default function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/"                   element={<HomePage />} />
-        <Route path="/lesson"             element={<LessonRoom />} />
-        <Route path="/demo/setup"         element={<DemoSetup />} />
-        <Route path="/demo/classroom/:id" element={<DemoClassroomPage />} />
-        <Route path="/auth/callback"      element={<AuthCallbackPage />} />
-        <Route path="/pricing"            element={<PricingPage />} />
-      </Routes>
-    </BrowserRouter>
-=======
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import Layout from './components/shared/Layout'
@@ -31,6 +9,8 @@ import PricingPage from './pages/PricingPage'
 import SupportPage from './pages/SupportPage'
 import AuthCallbackPage from './pages/AuthCallbackPage'
 import ClassroomLayout from './features/classroom/components/ClassroomLayout'
+import DemoSetup from './components/demo/DemoSetup'
+import DemoClassroomPage from './pages/DemoClassroomPage'
 
 export default function App() {
   return (
@@ -55,11 +35,14 @@ export default function App() {
           {/* Classroom — full-screen, no Header/Footer */}
           <Route path="/classroom/:sessionId" element={<ClassroomLayout />} />
 
+          {/* Demo flow — full-screen, no Header/Footer */}
+          <Route path="/demo/setup" element={<DemoSetup />} />
+          <Route path="/demo/classroom/:id" element={<DemoClassroomPage />} />
+
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
->>>>>>> production/main
   )
 }

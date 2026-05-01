@@ -11,10 +11,7 @@ export const LessonConfigSchema = z.object({
 })
 
 // Focus textbook mode: student picks a section (e.g. "1.2"), backend derives unit
-<<<<<<< HEAD
-=======
 // studentId is optional — authenticated requests use the JWT's studentId
->>>>>>> production/main
 export const FocusLessonConfigSchema = z.object({
   studentId: z.string().uuid().optional(),
   unit:      z.number().int().min(1).max(12),
@@ -90,11 +87,7 @@ export interface OutboundExercise {
     exerciseNumber?: number    // textbook exercise number
     instruction?:    string    // what the student must do
     skillFocus?:     string    // grammar/skill being practiced
-<<<<<<< HEAD
-    items?:          string[]  // all exercise items for card display
-=======
     items?:          string[]  // sub-items for multi-part exercises
->>>>>>> production/main
   }
 }
 

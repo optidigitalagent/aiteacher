@@ -57,29 +57,6 @@ const PORT         = Number(process.env.PORT ?? 4000)
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000'
 
 async function main(): Promise<void> {
-<<<<<<< HEAD
-  await checkPostgres()
-  await initTables()
-  await checkRedis()
-  setupOpenAI()
-
-  const app = express()
-
-  // CORS — allow frontend origin to call the API
-  app.use((req, res, next) => {
-    const origin  = req.headers.origin ?? ''
-    const allowed = new Set([
-      process.env.FRONTEND_URL ?? 'http://localhost:3000',
-      'http://localhost:3000',
-    ])
-    if (allowed.has(origin)) res.setHeader('Access-Control-Allow-Origin', origin)
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    res.setHeader('Access-Control-Allow-Credentials', 'true')
-    if (req.method === 'OPTIONS') { res.status(204).end(); return }
-    next()
-  })
-=======
   const app = express()
 
   // ── CORS ───────────────────────────────────────────────────────────────────
@@ -91,7 +68,6 @@ async function main(): Promise<void> {
     next()
   })
   app.options('*', (_req: Request, res: Response): void => { res.sendStatus(204) })
->>>>>>> production/main
 
   app.use(express.json())
   app.use(authRoutes)
