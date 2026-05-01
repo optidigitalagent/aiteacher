@@ -24,12 +24,18 @@ interface TokenPayload {
   exp:   number
 }
 
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET
+  if (!secret) throw new Error('[jwt] JWT_SECRET environment variable is not set')
+  return secret
+}
+
 function b64u(s: string): string {
   return Buffer.from(s).toString('base64url')
 }
 
 function sign(payload: TokenPayload): string {
-  const secret = process.env.JWT_SECRET ?? 'fallback-dev-secret'
+  const secret = getJwtSecret()
   const header = b64u(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
   const body   = b64u(JSON.stringify(payload))
   const sig    = createHmac('sha256', secret).update(`${header}.${body}`).digest('base64url')
@@ -38,7 +44,7 @@ function sign(payload: TokenPayload): string {
 
 export function verifyToken(token: string): TokenPayload | null {
   try {
-    const secret = process.env.JWT_SECRET ?? 'fallback-dev-secret'
+    const secret = getJwtSecret()
     const parts  = token.split('.')
     const header = parts[0]
     const body   = parts[1]

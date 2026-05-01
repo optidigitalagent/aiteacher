@@ -2,13 +2,22 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { setStoredToken } from '../lib/auth'
 
+function safeReturnTo(raw: string | null): string {
+  if (!raw) return '/demo/setup'
+  const t = raw.trim()
+  if (!t.startsWith('/')) return '/demo/setup'
+  if (t.startsWith('//')) return '/demo/setup'
+  if (t.includes('://')) return '/demo/setup'
+  return t
+}
+
 export default function AuthCallbackPage() {
   const navigate = useNavigate()
 
   useEffect(() => {
     const params   = new URLSearchParams(window.location.search)
     const token    = params.get('token')
-    const returnTo = params.get('returnTo') ?? '/demo/setup'
+    const returnTo = safeReturnTo(params.get('returnTo'))
 
     if (token) {
       setStoredToken(token)

@@ -4,6 +4,7 @@ import DemoSetup           from './components/demo/DemoSetup'
 import HomePage            from './pages/HomePage'
 import DemoClassroomPage   from './pages/DemoClassroomPage'
 import AuthCallbackPage    from './pages/AuthCallbackPage'
+import PricingPage         from './pages/PricingPage'
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
         <Route path="/demo/setup"         element={<DemoSetup />} />
         <Route path="/demo/classroom/:id" element={<DemoClassroomPage />} />
         <Route path="/auth/callback"      element={<AuthCallbackPage />} />
+        <Route path="/pricing"            element={<PricingPage />} />
       </Routes>
     </BrowserRouter>
   )

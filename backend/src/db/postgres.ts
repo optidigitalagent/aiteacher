@@ -1,5 +1,5 @@
 import pg from 'pg'
-import { readFileSync } from 'fs'
+import { readFileSync, readdirSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import 'dotenv/config'
@@ -57,9 +57,13 @@ const __dirname = dirname(__filename)
 
 export async function initTables(): Promise<void> {
   const migrationsDir = join(__dirname, '../../migrations')
-  for (const file of ['001_init.sql', '002_users_demo.sql']) {
+  const files = readdirSync(migrationsDir)
+    .filter(f => f.endsWith('.sql'))
+    .sort()
+  for (const file of files) {
     const sql = readFileSync(join(migrationsDir, file), 'utf-8')
     await query(sql)
+    console.log(`[postgres] migration: ${file}`)
   }
   console.log('[postgres] tables ready')
 }

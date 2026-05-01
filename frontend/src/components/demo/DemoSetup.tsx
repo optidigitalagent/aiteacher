@@ -174,24 +174,43 @@ export default function DemoSetup() {
     const token = getStoredToken()
     if (!token) { setShowAuth(true); return }
 
+    // Soft device signal — never used for blocking, only abuse logging
+    let deviceId = localStorage.getItem('demo_device_id')
+    if (!deviceId) {
+      deviceId = crypto.randomUUID()
+      localStorage.setItem('demo_device_id', deviceId)
+    }
+
     setSubmitting(true)
     setError(null)
     try {
       const res  = await fetch(`${API_BASE}/demo/start`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body:    JSON.stringify(data),
+        body:    JSON.stringify({ ...data, deviceId }),
       })
-      const json = await res.json() as { demoSessionId?: string; nextRoute?: string; code?: string; message?: string }
+      const json = await res.json() as {
+        demoSessionId?: string
+        nextRoute?:     string
+        code?:          string
+        message?:       string
+        retryAfterSeconds?: number
+      }
 
       if (!res.ok) {
-        if (json.code === 'DEMO_USED')        { sessionStorage.removeItem(STORAGE_KEY); navigate('/lesson'); return }
-        if (json.code === 'UNAUTHENTICATED')  { setShowAuth(true); return }
+        if (json.code === 'DEMO_USED')       { sessionStorage.removeItem(STORAGE_KEY); navigate('/pricing'); return }
+        if (json.code === 'UNAUTHENTICATED') { setShowAuth(true); return }
+        if (json.code === 'RATE_LIMITED') {
+          const mins = json.retryAfterSeconds ? Math.ceil(json.retryAfterSeconds / 60) : null
+          setError(mins ? `Too many attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.` : 'Too many attempts. Please wait a moment.')
+          return
+        }
         setError(json.message ?? 'Something went wrong. Please try again.')
         return
       }
       sessionStorage.removeItem(STORAGE_KEY)
-      navigate(json.nextRoute ?? `/demo/classroom/${json.demoSessionId ?? ''}`)
+      const route = json.nextRoute ?? `/demo/classroom/${json.demoSessionId ?? ''}`
+      navigate(route, { state: { calibration: data } })
     } catch {
       setError('Network error. Check your connection and try again.')
     } finally {
