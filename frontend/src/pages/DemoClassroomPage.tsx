@@ -103,15 +103,14 @@ export default function DemoClassroomPage() {
   const [completedSteps, setCompletedSteps] = useState<string[]>([])
   const [showLeaveModal, setShowLeaveModal] = useState(false)
 
-  const bottomRef          = useRef<HTMLDivElement>(null)
-  const didInit            = useRef(false)
+  const bottomRef           = useRef<HTMLDivElement>(null)
+  const didInit             = useRef(false)
   const currentTeacherMsgId = useRef<string | null>(null)
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80)
   }, [])
 
-  // Append text to the active teacher bubble, or start a new one
   const appendToTeacher = useCallback((text: string) => {
     const existingId = currentTeacherMsgId.current
     if (existingId) {
@@ -128,9 +127,8 @@ export default function DemoClassroomPage() {
     scrollToBottom()
   }, [scrollToBottom])
 
-  // Play a sequence of messages, merging chunks into ONE teacher bubble
   const playMessages = useCallback(async (msgs: TeacherMessage[]) => {
-    currentTeacherMsgId.current = null  // each playMessages call starts a fresh bubble
+    currentTeacherMsgId.current = null
     for (const msg of msgs) {
       await sleep(msg.delay > 0 ? Math.min(msg.delay, 1600) : 0)
       setTyping(true)
@@ -143,7 +141,6 @@ export default function DemoClassroomPage() {
     }
   }, [appendToTeacher, scrollToBottom])
 
-  // Load session
   useEffect(() => {
     if (didInit.current || !id || !token) return
     didInit.current = true
@@ -186,7 +183,8 @@ export default function DemoClassroomPage() {
 
   async function handleSubmit() {
     if (!session || !currentStep || submitting) return
-    if (currentStep.type === 'text_input' && inputValue.trim().length < currentStep.minLength) return
+    // Frontend only blocks empty strings — backend validates per-step constraints
+    if (currentStep.type === 'text_input' && inputValue.trim().length === 0) return
     if (currentStep.type === 'mcq' && selectedOption === null) return
 
     const answer = currentStep.type === 'mcq' ? String(selectedOption) : inputValue.trim()
@@ -195,7 +193,7 @@ export default function DemoClassroomPage() {
       : answer
 
     const studentSnapshot = displayAnswer
-    currentTeacherMsgId.current = null  // next teacher messages get a fresh bubble
+    currentTeacherMsgId.current = null
 
     setMessages(prev => [...prev, { from: 'student', text: displayAnswer, id: uid() }])
     setInputValue('')
@@ -327,7 +325,7 @@ export default function DemoClassroomPage() {
           onLeave={() => setShowLeaveModal(true)}
         />
 
-        {/* Mobile step strip */}
+        {/* Mobile step strip — shown only on small screens */}
         <div className="lg:hidden" style={{ background: 'rgba(255,255,255,0.85)', borderBottom: '1px solid rgba(0,0,0,0.05)', padding: '8px 16px', display: 'flex', gap: 6 }}>
           {STEP_KEYS.map(key => {
             const done   = completedSteps.includes(key)
@@ -343,87 +341,85 @@ export default function DemoClassroomPage() {
           })}
         </div>
 
-        {/* Desktop 3-column grid */}
+        {/* ── DESKTOP: 3-column layout ─────────────────────────────────────── */}
         <div
-          className="grid grid-cols-1 lg:grid-cols-[170px_1fr_200px]"
-          style={{ flex: 1, minHeight: 0, gap: 14, padding: '14px 20px', overflow: 'hidden' }}
+          className="hidden lg:grid"
+          style={{
+            flex: 1, minHeight: 0,
+            gridTemplateColumns: '170px 1fr 300px',
+            gap: 14, padding: '14px 20px',
+            overflow: 'hidden',
+          }}
         >
-          {/* Left: teacher panel — desktop only */}
-          <div className="hidden lg:block" style={{ height: '100%' }}>
-            <TeacherPanel
-              voiceState={{ isListening: false, isSpeaking, transcript: '' }}
-              onExplain={() => {}}
-              teacherName="Alex"
-            />
-          </div>
+          {/* LEFT: teacher panel */}
+          <TeacherPanel
+            voiceState={{ isListening: false, isSpeaking, transcript: '' }}
+            onExplain={() => {}}
+            teacherName="Alex"
+          />
 
-          {/* Center: chat area */}
-          <div style={{
-            background: 'rgba(255,255,255,0.75)',
-            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            borderRadius: 20,
-            border: '1px solid rgba(255,255,255,0.7)',
-            boxShadow: '0 2px 0 rgba(255,255,255,0.9) inset, 0 10px 30px rgba(0,0,0,0.06)',
-            display: 'flex', flexDirection: 'column',
-            overflow: 'hidden', minHeight: 0,
-          }}>
-            {/* Messages */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 8px' }}>
-              {messages.map(msg => (
-                <DemoChatBubble key={msg.id} msg={msg} />
-              ))}
+          {/* CENTER: main task / exercise card */}
+          <DemoTaskCard
+            phase={phase}
+            currentStep={currentStep}
+            selectedOption={selectedOption}
+            onSelectOption={setSelected}
+            onSubmit={handleSubmit}
+            submitting={submitting}
+            typing={typing}
+          />
 
-              {typing && (
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 12 }}>
-                  <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 10, fontWeight: 800, flexShrink: 0 }}>A</div>
-                  <div style={{ background: 'white', borderRadius: '14px 14px 14px 3px', padding: '10px 14px', border: '1px solid #f0f0f8', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                    <span className="cls-typing-dot" />
-                    <span className="cls-typing-dot" />
-                    <span className="cls-typing-dot" />
-                  </div>
-                </div>
-              )}
-              <div ref={bottomRef} />
+          {/* RIGHT: chat + progress + input */}
+          <DemoChatSidebar
+            messages={messages}
+            typing={typing}
+            bottomRef={bottomRef}
+            phase={phase}
+            currentStep={currentStep}
+            inputValue={inputValue}
+            onChange={setInputValue}
+            onSubmit={handleSubmit}
+            submitting={submitting}
+            lessonSteps={lessonSteps}
+            progress={progress}
+          />
+        </div>
+
+        {/* ── MOBILE: stacked layout ────────────────────────────────────────── */}
+        <div
+          className="lg:hidden"
+          style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8, padding: '8px 12px 12px', overflow: 'hidden' }}
+        >
+          {/* Compact task card at top when a step is active */}
+          {phase === 'lesson' && currentStep && (
+            <div style={{ flexShrink: 0 }}>
+              <DemoTaskCard
+                phase={phase}
+                currentStep={currentStep}
+                selectedOption={selectedOption}
+                onSelectOption={setSelected}
+                onSubmit={handleSubmit}
+                submitting={submitting}
+                typing={typing}
+                compact
+              />
             </div>
-
-            {/* Input area */}
-            <div style={{ borderTop: '1px solid rgba(0,0,0,0.05)', padding: '12px 16px', flexShrink: 0 }}>
-              {phase === 'lesson' && currentStep && (
-                <>
-                  {currentStep.type === 'mcq' && currentStep.options ? (
-                    <McqInput
-                      prompt={currentStep.prompt}
-                      options={currentStep.options}
-                      selected={selectedOption}
-                      onSelect={setSelected}
-                      onSubmit={handleSubmit}
-                      submitting={submitting}
-                    />
-                  ) : (
-                    <TextInput
-                      value={inputValue}
-                      onChange={setInputValue}
-                      onSubmit={handleSubmit}
-                      placeholder={currentStep.placeholder ?? 'Type your answer…'}
-                      minLength={currentStep.minLength}
-                      submitting={submitting}
-                    />
-                  )}
-                </>
-              )}
-              {(phase === 'intro' || (phase === 'lesson' && !currentStep)) && (
-                <div style={{ textAlign: 'center', color: '#bbb', fontSize: 13, padding: '6px 0' }}>
-                  Listening to your teacher…
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Right: progress panel — desktop only */}
-          <div className="hidden lg:block" style={{ height: '100%' }}>
-            <DemoProgressPanel
-              steps={lessonSteps}
+          )}
+          {/* Chat panel fills remaining space */}
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <DemoChatSidebar
+              messages={messages}
+              typing={typing}
+              bottomRef={bottomRef}
+              phase={phase}
+              currentStep={currentStep}
+              inputValue={inputValue}
+              onChange={setInputValue}
+              onSubmit={handleSubmit}
+              submitting={submitting}
+              lessonSteps={lessonSteps}
               progress={progress}
+              hideProgress
             />
           </div>
         </div>
@@ -453,13 +449,11 @@ function DemoHeader({ activeStepLabel, onLeave }: { activeStepLabel: string; onL
       position: 'sticky', top: 0, zIndex: 50,
       gap: 12,
     }}>
-      {/* Logo */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 11, color: 'white', letterSpacing: '-0.5px', boxShadow: '0 3px 10px rgba(110,124,251,0.4)' }}>Ai</div>
         <span style={{ fontWeight: 800, fontSize: 15, color: '#1a1a2e', letterSpacing: '-0.3px', whiteSpace: 'nowrap' }}>AI Teacher</span>
       </div>
 
-      {/* Center: Live demo badge + current step */}
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 99, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: '#16a34a' }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', display: 'inline-block', animation: 'cls-halo-breathe 1.5s ease-in-out infinite' }} />
@@ -469,7 +463,6 @@ function DemoHeader({ activeStepLabel, onLeave }: { activeStepLabel: string; onL
         <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a2e' }}>{activeStepLabel}</span>
       </div>
 
-      {/* Teacher chip + exit */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 9, background: '#f5f5f7', border: '1px solid #ebebf0' }}>
           <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: 'white' }}>A</div>
@@ -486,92 +479,382 @@ function DemoHeader({ activeStepLabel, onLeave }: { activeStepLabel: string; onL
   )
 }
 
-// ── DemoProgressPanel ─────────────────────────────────────────────────────────
+// ── DemoTaskCard — CENTER panel ───────────────────────────────────────────────
 
-const IC_CHECK = (
-  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-    <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-)
+function DemoTaskCard({
+  phase, currentStep, selectedOption, onSelectOption, onSubmit, submitting, typing, compact,
+}: {
+  phase: string
+  currentStep: StepContent | null
+  selectedOption: number | null
+  onSelectOption: (i: number) => void
+  onSubmit: () => void
+  submitting: boolean
+  typing: boolean
+  compact?: boolean
+}) {
+  const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-function DemoProgressPanel({ steps, progress }: { steps: LessonStep[]; progress: number }) {
-  const donePct = `${progress}%`
+  function handleSelectMcq(i: number) {
+    if (submitting) return
+    onSelectOption(i)
+    if (autoTimer.current) clearTimeout(autoTimer.current)
+    autoTimer.current = setTimeout(onSubmit, 650)
+  }
+
+  const cardStyle: React.CSSProperties = {
+    width: '100%',
+    background: 'rgba(255,255,255,0.88)',
+    borderRadius: compact ? 16 : 24,
+    backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+    padding: compact ? '16px 18px' : '36px 40px',
+    boxShadow: '0 2px 0 rgba(255,255,255,1) inset, 0 20px 60px rgba(0,0,0,0.08), 0 40px 80px rgba(110,124,251,0.06)',
+    border: '1px solid rgba(255,255,255,0.7)',
+    outline: '1px solid rgba(110,124,251,0.06)',
+  }
+
+  const wrapStyle: React.CSSProperties = compact
+    ? {}
+    : { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', overflow: 'hidden' }
+
+  // ── Waiting / Intro ────────────────────────────────────────────────────────
+
+  if (phase === 'intro' || (phase === 'lesson' && !currentStep)) {
+    if (compact) return null
+    return (
+      <div style={wrapStyle}>
+        <div style={{ ...cardStyle, maxWidth: 560, textAlign: 'center' }}>
+          <div style={{ fontSize: 36, marginBottom: 16 }}>👋</div>
+          <p style={{ fontSize: 18, color: '#1a1a2e', fontWeight: 800, margin: '0 0 8px', letterSpacing: '-0.3px' }}>
+            Welcome to your AI lesson
+          </p>
+          <p style={{ fontSize: 14, color: '#888', margin: '0 0 20px', lineHeight: 1.6 }}>
+            {typing ? 'Alex is speaking…' : 'Your exercise will appear here once the intro is done.'}
+          </p>
+          {typing && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 5 }}>
+              <span className="cls-typing-dot" />
+              <span className="cls-typing-dot" />
+              <span className="cls-typing-dot" />
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  if (!currentStep) return null
+
+  // ── Grammar MCQ ───────────────────────────────────────────────────────────
+
+  if (currentStep.type === 'mcq' && currentStep.options) {
+    return (
+      <div style={wrapStyle}>
+        <div style={{ ...cardStyle, maxWidth: compact ? undefined : 680 }}>
+          {/* Badge */}
+          <div style={{ marginBottom: compact ? 12 : 20 }}>
+            <span style={{
+              background: 'linear-gradient(135deg, #ede9ff, #f0f0ff)',
+              color: '#6E7CFB', fontSize: 11, fontWeight: 700,
+              padding: '4px 12px', borderRadius: 99,
+              border: '1px solid rgba(110,124,251,0.2)',
+            }}>
+              Grammar
+            </span>
+          </div>
+
+          {/* Instruction */}
+          {!compact && (
+            <p style={{ fontSize: 13, color: '#aaa', fontWeight: 600, margin: '0 0 18px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Complete the sentence
+            </p>
+          )}
+
+          {/* Sentence / prompt */}
+          {currentStep.prompt && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(110,124,251,0.06), rgba(155,140,255,0.04))',
+              borderRadius: compact ? 12 : 16,
+              padding: compact ? '10px 14px' : '18px 22px',
+              marginBottom: compact ? 12 : 28,
+              border: '1px solid rgba(110,124,251,0.12)',
+            }}>
+              <p style={{
+                fontSize: compact ? 15 : 22, fontWeight: 700, color: '#1a1a2e',
+                margin: 0, lineHeight: 1.5, letterSpacing: '-0.2px',
+              }}>
+                {currentStep.prompt}
+              </p>
+            </div>
+          )}
+
+          {/* Options grid */}
+          {!compact && (
+            <p style={{ fontSize: 12, color: '#aaa', fontWeight: 600, margin: '0 0 12px' }}>
+              Tap the correct option:
+            </p>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: compact ? 8 : 12 }}>
+            {currentStep.options.map((opt, i) => (
+              <button
+                key={i}
+                onClick={() => handleSelectMcq(i)}
+                disabled={submitting}
+                style={{
+                  padding: compact ? '10px 14px' : '14px 18px',
+                  borderRadius: 14, textAlign: 'left',
+                  fontSize: compact ? 13 : 15, fontWeight: 600,
+                  cursor: submitting ? 'default' : 'pointer',
+                  transition: 'all 0.15s',
+                  background: selectedOption === i
+                    ? 'linear-gradient(135deg, #6E7CFB, #9B8CFF)'
+                    : 'rgba(245,245,247,0.9)',
+                  color: selectedOption === i ? 'white' : '#374151',
+                  border: selectedOption === i ? 'none' : '1px solid #e5e7eb',
+                  boxShadow: selectedOption === i
+                    ? '0 4px 14px rgba(110,124,251,0.35)'
+                    : '0 1px 3px rgba(0,0,0,0.04)',
+                  transform: selectedOption === i ? 'scale(1.02)' : 'scale(1)',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}
+              >
+                <span style={{
+                  fontSize: compact ? 10 : 12, fontWeight: 800,
+                  opacity: selectedOption === i ? 0.8 : 0.5,
+                  flexShrink: 0, minWidth: 16,
+                }}>
+                  {String.fromCharCode(65 + i)})
+                </span>
+                {opt}
+              </button>
+            ))}
+          </div>
+
+          {submitting && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, color: '#9B8CFF', fontSize: 13, fontWeight: 600 }}>
+              <span className="animate-spin" style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid #9B8CFF', borderTopColor: 'transparent', borderRadius: '50%' }} />
+              Checking…
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Text input steps: warm-up, speaking, writing ──────────────────────────
+
+  const stepMeta: Record<string, { label: string; icon: string; color: string; bg: string; border: string }> = {
+    warm_up:      { label: 'Warm-up',  icon: '💬', color: '#6E7CFB', bg: 'linear-gradient(135deg, #ede9ff, #f0f0ff)', border: 'rgba(110,124,251,0.2)' },
+    speaking_task:{ label: 'Speaking', icon: '🗣',  color: '#16a34a', bg: 'linear-gradient(135deg, #dcfce7, #f0fdf4)', border: 'rgba(34,197,94,0.25)'    },
+    writing_task: { label: 'Writing',  icon: '✏️',  color: '#d97706', bg: 'linear-gradient(135deg, #fff7ed, #fffbeb)', border: 'rgba(217,119,6,0.25)'    },
+  }
+
+  const meta = stepMeta[currentStep.key] ?? stepMeta['warm_up']!
+
+  return (
+    <div style={wrapStyle}>
+      <div style={{ ...cardStyle, maxWidth: compact ? undefined : 680 }}>
+        {/* Step badge */}
+        <div style={{ marginBottom: compact ? 12 : 22 }}>
+          <span style={{
+            background: meta.bg,
+            color: meta.color,
+            fontSize: 11, fontWeight: 700,
+            padding: '4px 12px', borderRadius: 99,
+            border: `1px solid ${meta.border}`,
+          }}>
+            {meta.icon} {meta.label}
+          </span>
+        </div>
+
+        {/* Prompt */}
+        {currentStep.prompt ? (
+          <p style={{
+            fontSize: compact ? 17 : 26,
+            fontWeight: 800,
+            color: '#1a1a2e',
+            lineHeight: 1.35,
+            margin: 0,
+            letterSpacing: '-0.4px',
+            marginBottom: compact ? 0 : 28,
+          }}>
+            {currentStep.prompt}
+          </p>
+        ) : (
+          <p style={{ fontSize: compact ? 14 : 18, color: '#aaa', margin: 0, fontStyle: 'italic' }}>
+            Listen to the teacher and respond when ready.
+          </p>
+        )}
+
+        {/* Desktop hint pointing to chat input */}
+        {!compact && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            background: 'rgba(110,124,251,0.06)', borderRadius: 10,
+            padding: '8px 14px', border: '1px solid rgba(110,124,251,0.1)',
+            marginTop: 24,
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6E7CFB" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+            <span style={{ fontSize: 13, color: '#6E7CFB', fontWeight: 600 }}>
+              Type your answer in the chat on the right
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── DemoChatSidebar — RIGHT panel ─────────────────────────────────────────────
+
+function DemoChatSidebar({
+  messages, typing, bottomRef, phase, currentStep,
+  inputValue, onChange, onSubmit, submitting, lessonSteps, progress, hideProgress,
+}: {
+  messages: DemoChatMsg[]
+  typing: boolean
+  bottomRef: React.RefObject<HTMLDivElement>
+  phase: string
+  currentStep: StepContent | null
+  inputValue: string
+  onChange: (v: string) => void
+  onSubmit: () => void
+  submitting: boolean
+  lessonSteps: LessonStep[]
+  progress: number
+  hideProgress?: boolean
+}) {
+  const [focused, setFocused] = useState(false)
+  const canSubmit = inputValue.trim().length > 0 && !submitting
+  const showTextInput = phase === 'lesson' && currentStep?.type === 'text_input'
 
   return (
     <div style={{
       display: 'flex', flexDirection: 'column',
-      background: 'rgba(255,255,255,0.72)',
+      background: 'rgba(255,255,255,0.75)',
       backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
       borderRadius: 20,
-      boxShadow: '0 2px 0 rgba(255,255,255,0.9) inset, 0 10px 30px rgba(0,0,0,0.06)',
       border: '1px solid rgba(255,255,255,0.7)',
+      boxShadow: '0 2px 0 rgba(255,255,255,0.9) inset, 0 10px 30px rgba(0,0,0,0.06)',
       overflow: 'hidden', height: '100%', minHeight: 0,
-      padding: '20px 16px',
     }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 3 }}>Demo Lesson</div>
-      <div style={{ fontSize: 14, fontWeight: 800, color: '#1a1a2e', letterSpacing: '-0.3px', marginBottom: 6, lineHeight: 1.25 }}>Free AI Session</div>
-      <div style={{ fontSize: 11, color: '#aaa', fontWeight: 600, marginBottom: 14 }}>
-        {steps.filter(s => s.status === 'done').length} / {steps.length} steps
+      {/* Compact progress strip — desktop only */}
+      {!hideProgress && (
+        <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid rgba(0,0,0,0.05)', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#aaa', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Demo Lesson</span>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: '#1a1a2e' }}>
+              {lessonSteps.filter(s => s.status === 'done').length}/{lessonSteps.length} steps
+            </span>
+          </div>
+          <div style={{ height: 4, background: '#ede9ff', borderRadius: 99, overflow: 'hidden', marginBottom: 8 }}>
+            <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg, #6E7CFB, #9B8CFF)', borderRadius: 99, boxShadow: '0 2px 4px rgba(110,124,251,0.3)', transition: 'width 0.8s ease' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {lessonSteps.map(step => {
+              const done   = step.status === 'done'
+              const active = step.status === 'active'
+              return (
+                <div key={step.id} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                  <div style={{ width: '100%', height: 3, borderRadius: 99, background: done ? '#6E7CFB' : active ? 'rgba(110,124,251,0.4)' : '#e8e8f0', transition: 'background 0.4s' }} />
+                  <span style={{ fontSize: 8.5, fontWeight: 700, color: done ? '#6E7CFB' : active ? '#6E7CFB' : '#ccc', opacity: active ? 1 : 0.8 }}>
+                    {done ? '✓' : step.label.slice(0, 5)}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Chat header */}
+      <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid rgba(110,124,251,0.06)', flexShrink: 0 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: '#1a1a2e', letterSpacing: '-0.2px' }}>Chat</span>
+        <span style={{ fontSize: 11, color: '#bbb', marginLeft: 8 }}>with Alex</span>
       </div>
 
-      {/* Timeline */}
-      <div style={{ position: 'relative', flex: 1, overflowY: 'auto' }}>
-        <div style={{
-          position: 'absolute', left: 11, top: 12, bottom: 12,
-          width: 1.5, borderRadius: 99,
-          background: `linear-gradient(to bottom, #22c55e ${donePct}, #e8e8f0 ${donePct})`,
-          zIndex: 0,
-        }} />
-        {steps.map((step, i) => {
-          const done   = step.status === 'done'
-          const active = step.status === 'active'
-          return (
-            <div key={step.id} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '7px 8px 7px 0', position: 'relative', zIndex: 1,
-              borderRadius: 9,
-              background: active ? 'rgba(110,124,251,0.07)' : 'transparent',
-              marginBottom: 2,
-            }}>
-              <div style={{
-                width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: done   ? 'linear-gradient(135deg,#4ade80,#22c55e)' :
-                            active ? 'linear-gradient(135deg,#6E7CFB,#9B8CFF)'  : 'white',
-                border: !done && !active ? '1.5px solid #e0e0e8' : 'none',
-                boxShadow: done   ? '0 2px 8px rgba(34,197,94,0.3)'    :
-                           active ? '0 2px 8px rgba(110,124,251,0.35)' : 'none',
-              }}>
-                {done
-                  ? IC_CHECK
-                  : <span style={{ fontSize: 9, fontWeight: 700, color: active ? 'white' : '#bbb' }}>{i + 1}</span>
-                }
-              </div>
-              <span style={{
-                fontSize: 12.5,
-                fontWeight: active ? 700 : done ? 500 : 400,
-                color: active ? '#6E7CFB' : done ? '#666' : '#aaa',
-                lineHeight: 1.2,
-              }}>
-                {step.label}
-              </span>
-              {active && (
-                <div style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: '#6E7CFB', boxShadow: '0 0 6px rgba(110,124,251,0.7)', animation: 'cls-halo-breathe 1.5s ease-in-out infinite' }} />
-              )}
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 12px 8px' }}>
+        {messages.length === 0 && !typing && (
+          <div style={{ textAlign: 'center', padding: '24px 12px', color: '#ccc', fontSize: 12, fontStyle: 'italic' }}>
+            Your conversation will appear here.
+          </div>
+        )}
+        {messages.map(msg => (
+          <DemoChatBubble key={msg.id} msg={msg} />
+        ))}
+
+        {typing && (
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginBottom: 10 }}>
+            <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 9, fontWeight: 800, flexShrink: 0 }}>A</div>
+            <div style={{ background: 'white', borderRadius: '12px 12px 12px 3px', padding: '8px 12px', border: '1px solid #f0f0f8', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+              <span className="cls-typing-dot" />
+              <span className="cls-typing-dot" />
+              <span className="cls-typing-dot" />
             </div>
-          )
-        })}
+          </div>
+        )}
+        <div ref={bottomRef} />
       </div>
 
-      {/* Progress bar */}
-      <div style={{ marginTop: 16, flexShrink: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ fontSize: 11.5, color: '#888', fontWeight: 600 }}>Progress</span>
-          <span style={{ fontSize: 11.5, fontWeight: 800, color: '#1a1a2e' }}>{progress}%</span>
-        </div>
-        <div style={{ height: 5, background: '#ede9ff', borderRadius: 99, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg,#6E7CFB,#9B8CFF)', borderRadius: 99, boxShadow: '0 2px 6px rgba(110,124,251,0.4)', transition: 'width 0.8s ease' }} />
-        </div>
+      {/* Input area */}
+      <div style={{ borderTop: '1px solid rgba(0,0,0,0.05)', padding: '10px 12px', flexShrink: 0 }}>
+        {showTextInput ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <div style={{
+              flex: 1,
+              background: focused ? 'white' : '#f8f8fa',
+              borderRadius: 14,
+              border: `1.5px solid ${focused ? 'rgba(110,124,251,0.45)' : 'rgba(110,124,251,0.15)'}`,
+              boxShadow: focused ? '0 0 0 3px rgba(110,124,251,0.1)' : 'none',
+              transition: 'all 0.2s', padding: '2px 8px 2px 10px',
+            }}>
+              <textarea
+                value={inputValue}
+                onChange={e => onChange(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && canSubmit) { e.preventDefault(); onSubmit() } }}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+                placeholder={currentStep?.placeholder ?? 'Type your answer…'}
+                rows={2}
+                disabled={submitting}
+                style={{
+                  width: '100%', resize: 'none', border: 'none', background: 'transparent',
+                  fontSize: 13, color: '#1a1a2e', lineHeight: 1.5, padding: '7px 0',
+                  fontFamily: 'inherit', outline: 'none',
+                }}
+              />
+            </div>
+            <button
+              onClick={onSubmit}
+              disabled={!canSubmit}
+              style={{
+                width: 40, height: 40, borderRadius: 12, border: 'none', flexShrink: 0,
+                background: canSubmit ? 'linear-gradient(135deg, #6E7CFB, #9B8CFF)' : '#e8e8f0',
+                cursor: canSubmit ? 'pointer' : 'default',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: canSubmit ? '0 4px 14px rgba(110,124,251,0.4)' : 'none',
+                transition: 'all 0.2s', alignSelf: 'flex-end',
+              }}
+            >
+              {submitting ? (
+                <span className="animate-spin" style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%' }} />
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={canSubmit ? 'white' : '#bbb'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              )}
+            </button>
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', color: '#c0c0ce', fontSize: 12, padding: '4px 0', fontStyle: 'italic' }}>
+            {phase === 'lesson' && currentStep?.type === 'mcq'
+              ? 'Choose from the exercise card →'
+              : 'Listening to your teacher…'}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -582,10 +865,10 @@ function DemoProgressPanel({ steps, progress }: { steps: LessonStep[]; progress:
 function DemoChatBubble({ msg }: { msg: DemoChatMsg }) {
   if (msg.from === 'teacher') {
     return (
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 12 }} className="cls-slide-up">
-        <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 10, fontWeight: 800, flexShrink: 0 }}>A</div>
-        <div style={{ background: 'white', borderRadius: '16px 16px 16px 4px', padding: '12px 16px', maxWidth: '78%', border: '1px solid #f0f0f8', boxShadow: '0 2px 10px rgba(0,0,0,0.04)' }}>
-          <p style={{ fontSize: 14, color: '#1a1a2e', lineHeight: 1.6, margin: 0 }} dangerouslySetInnerHTML={{ __html: bold(msg.text) }} />
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginBottom: 10 }} className="cls-slide-up">
+        <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 9, fontWeight: 800, flexShrink: 0 }}>A</div>
+        <div style={{ background: 'white', borderRadius: '13px 13px 13px 4px', padding: '9px 13px', maxWidth: '82%', border: '1px solid #f0f0f8', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+          <p style={{ fontSize: 13, color: '#1a1a2e', lineHeight: 1.6, margin: 0 }} dangerouslySetInnerHTML={{ __html: bold(msg.text) }} />
         </div>
       </div>
     )
@@ -593,9 +876,9 @@ function DemoChatBubble({ msg }: { msg: DemoChatMsg }) {
 
   if (msg.from === 'student') {
     return (
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }} className="cls-slide-up">
-        <div style={{ background: 'linear-gradient(135deg, #6E7CFB, #7b8cfb)', borderRadius: '16px 16px 4px 16px', padding: '12px 16px', maxWidth: '78%', boxShadow: '0 4px 16px rgba(110,124,251,0.25)' }}>
-          <p style={{ fontSize: 14, color: 'white', lineHeight: 1.6, margin: 0 }}>{msg.text}</p>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }} className="cls-slide-up">
+        <div style={{ background: 'linear-gradient(135deg, #6E7CFB, #7b8cfb)', borderRadius: '13px 13px 4px 13px', padding: '9px 13px', maxWidth: '82%', boxShadow: '0 4px 14px rgba(110,124,251,0.25)' }}>
+          <p style={{ fontSize: 13, color: 'white', lineHeight: 1.6, margin: 0 }}>{msg.text}</p>
         </div>
       </div>
     )
@@ -606,176 +889,53 @@ function DemoChatBubble({ msg }: { msg: DemoChatMsg }) {
   const isWrong   = msg.correct === false
 
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 12 }} className="cls-slide-up">
-      <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 10, fontWeight: 800, flexShrink: 0 }}>A</div>
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginBottom: 10 }} className="cls-slide-up">
+      <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 9, fontWeight: 800, flexShrink: 0 }}>A</div>
       <div style={{
-        borderRadius: '16px 16px 16px 4px', padding: '14px 16px', maxWidth: '84%', boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+        borderRadius: '13px 13px 13px 4px', padding: '11px 13px', maxWidth: '86%', boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
         background: isCorrect ? '#f0fdf4' : isWrong ? '#fff7ed' : '#eff6ff',
         border: `1px solid ${isCorrect ? '#bbf7d0' : isWrong ? '#fed7aa' : '#bfdbfe'}`,
       }}>
         {msg.correct !== null && (
-          <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6, color: isCorrect ? '#16a34a' : '#d97706' }}>
+          <div style={{ fontSize: 11, fontWeight: 800, marginBottom: 5, color: isCorrect ? '#16a34a' : '#d97706' }}>
             {isCorrect ? '✓ Correct!' : "✗ Not quite — here's the fix:"}
           </div>
         )}
 
-        <p style={{ fontSize: 14, color: '#1a1a2e', lineHeight: 1.6, margin: 0 }}>{msg.message}</p>
+        <p style={{ fontSize: 13, color: '#1a1a2e', lineHeight: 1.6, margin: 0 }}>{msg.message}</p>
 
         {/* Before/After correction card */}
         {msg.correction && msg.studentText && (
-          <div style={{ marginTop: 10, borderRadius: 12, overflow: 'hidden', border: '1px solid #e5e7eb' }}>
-            <div style={{ padding: '8px 12px', background: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
+          <div style={{ marginTop: 8, borderRadius: 10, overflow: 'hidden', border: '1px solid #e5e7eb' }}>
+            <div style={{ padding: '7px 10px', background: '#fef2f2', borderBottom: '1px solid #fecaca' }}>
               <p style={{ fontSize: 10, fontWeight: 700, color: '#f87171', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 2px' }}>You said</p>
-              <p style={{ fontSize: 13, color: '#dc2626', textDecoration: 'line-through', margin: 0 }}>{msg.studentText}</p>
+              <p style={{ fontSize: 12, color: '#dc2626', textDecoration: 'line-through', margin: 0 }}>{msg.studentText}</p>
             </div>
-            <div style={{ padding: '8px 12px', background: '#f0fdf4' }}>
+            <div style={{ padding: '7px 10px', background: '#f0fdf4' }}>
               <p style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 2px' }}>Better version</p>
-              <p style={{ fontSize: 13, color: '#15803d', fontWeight: 600, margin: 0 }}>{msg.correction}</p>
+              <p style={{ fontSize: 12, color: '#15803d', fontWeight: 600, margin: 0 }}>{msg.correction}</p>
             </div>
           </div>
         )}
         {msg.correction && !msg.studentText && (
-          <div style={{ marginTop: 10, padding: '8px 12px', background: '#f0fdf4', borderRadius: 10, border: '1px solid #bbf7d0' }}>
+          <div style={{ marginTop: 8, padding: '7px 10px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
             <p style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 2px' }}>Better version</p>
-            <p style={{ fontSize: 13, color: '#15803d', fontWeight: 600, margin: 0 }}>{msg.correction}</p>
+            <p style={{ fontSize: 12, color: '#15803d', fontWeight: 600, margin: 0 }}>{msg.correction}</p>
           </div>
         )}
 
         {msg.score !== null && msg.score !== undefined && (
-          <div style={{ marginTop: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontSize: 11, color: '#64748b' }}>Score</span>
-              <span style={{ fontSize: 11, fontWeight: 800, color: '#1a1a2e' }}>{msg.score}/10</span>
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+              <span style={{ fontSize: 10, color: '#64748b' }}>Score</span>
+              <span style={{ fontSize: 10, fontWeight: 800, color: '#1a1a2e' }}>{msg.score}/10</span>
             </div>
-            <div style={{ height: 5, background: '#e2e8f0', borderRadius: 99, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${((msg.score) / 10) * 100}%`, background: 'linear-gradient(90deg, #6E7CFB, #9B8CFF)', borderRadius: 99, transition: 'width 0.7s ease' }} />
+            <div style={{ height: 4, background: '#e2e8f0', borderRadius: 99, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${(msg.score / 10) * 100}%`, background: 'linear-gradient(90deg, #6E7CFB, #9B8CFF)', borderRadius: 99, transition: 'width 0.7s ease' }} />
             </div>
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-// ── McqInput ──────────────────────────────────────────────────────────────────
-
-function McqInput({
-  prompt, options, selected, onSelect, onSubmit, submitting,
-}: {
-  prompt?: string; options: string[]; selected: number | null
-  onSelect: (i: number) => void; onSubmit: () => void; submitting: boolean
-}) {
-  const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  function handleSelect(i: number) {
-    if (submitting) return
-    onSelect(i)
-    if (autoTimer.current) clearTimeout(autoTimer.current)
-    autoTimer.current = setTimeout(onSubmit, 650)
-  }
-
-  return (
-    <div>
-      {/* Show the sentence/context so student doesn't need to scroll up */}
-      {prompt && (
-        <div style={{ background: 'linear-gradient(135deg, rgba(110,124,251,0.06), rgba(155,140,255,0.04))', borderRadius: 12, padding: '10px 14px', marginBottom: 10, border: '1px solid rgba(110,124,251,0.12)' }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: '#9B8CFF', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px' }}>Complete the sentence</p>
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#1a1a2e', margin: 0, lineHeight: 1.5 }}>{prompt}</p>
-        </div>
-      )}
-      <p style={{ fontSize: 11, fontWeight: 600, color: '#aaa', marginBottom: 8 }}>Tap the correct option:</p>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        {options.map((opt, i) => (
-          <button
-            key={i}
-            onClick={() => handleSelect(i)}
-            disabled={submitting}
-            style={{
-              padding: '10px 12px', borderRadius: 14, textAlign: 'left',
-              fontSize: 13, fontWeight: 600, cursor: submitting ? 'default' : 'pointer',
-              transition: 'all 0.15s',
-              background: selected === i
-                ? 'linear-gradient(135deg, #6E7CFB, #9B8CFF)'
-                : 'rgba(245,245,247,0.9)',
-              color: selected === i ? 'white' : '#374151',
-              border: selected === i ? 'none' : '1px solid #e5e7eb',
-              boxShadow: selected === i ? '0 4px 14px rgba(110,124,251,0.35)' : '0 1px 3px rgba(0,0,0,0.04)',
-              transform: selected === i ? 'scale(1.02)' : 'scale(1)',
-            }}
-          >
-            {opt}
-          </button>
-        ))}
-      </div>
-      {submitting && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, color: '#9B8CFF', fontSize: 12, fontWeight: 600 }}>
-          <span className="animate-spin" style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid #9B8CFF', borderTopColor: 'transparent', borderRadius: '50%' }} />
-          Checking…
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── TextInput ─────────────────────────────────────────────────────────────────
-
-function TextInput({
-  value, onChange, onSubmit, placeholder, minLength, submitting,
-}: {
-  value: string; onChange: (v: string) => void; onSubmit: () => void
-  placeholder: string; minLength: number; submitting: boolean
-}) {
-  const canSubmit = value.trim().length >= minLength && !submitting
-  const [focused, setFocused] = useState(false)
-
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-      <div style={{
-        flex: 1, display: 'flex', alignItems: 'flex-end',
-        background: focused ? 'white' : '#f8f8fa',
-        borderRadius: 16,
-        border: `1.5px solid ${focused ? 'rgba(110,124,251,0.45)' : 'rgba(110,124,251,0.15)'}`,
-        boxShadow: focused ? '0 0 0 3px rgba(110,124,251,0.1)' : 'none',
-        transition: 'all 0.2s', padding: '2px 8px 2px 12px',
-      }}>
-        <textarea
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && canSubmit) { e.preventDefault(); onSubmit() } }}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          placeholder={placeholder}
-          rows={2}
-          disabled={submitting}
-          style={{
-            flex: 1, resize: 'none', border: 'none', background: 'transparent',
-            fontSize: 14, color: '#1a1a2e', lineHeight: 1.5, padding: '8px 0',
-            fontFamily: 'inherit', outline: 'none',
-          }}
-        />
-      </div>
-      <button
-        onClick={onSubmit}
-        disabled={!canSubmit}
-        style={{
-          width: 44, height: 44, borderRadius: 14, border: 'none', flexShrink: 0,
-          background: canSubmit
-            ? 'linear-gradient(135deg, #6E7CFB, #9B8CFF)'
-            : '#e8e8f0',
-          cursor: canSubmit ? 'pointer' : 'default',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: canSubmit ? '0 4px 16px rgba(110,124,251,0.4)' : 'none',
-          transition: 'all 0.2s', alignSelf: 'flex-end',
-        }}
-      >
-        {submitting ? (
-          <span className="animate-spin" style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%' }} />
-        ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={canSubmit ? 'white' : '#bbb'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 12h14M12 5l7 7-7 7" />
-          </svg>
-        )}
-      </button>
     </div>
   )
 }
@@ -853,13 +1013,11 @@ function ResultScreen({
         <div style={{ background: 'white', borderRadius: 28, boxShadow: '0 32px 80px rgba(0,0,0,0.12)', overflow: 'hidden' }}>
           <div style={{ height: 4, background: 'linear-gradient(90deg, #6E7CFB, #9B8CFF, #a78bfa)' }} />
           <div style={{ padding: '32px 28px' }}>
-            {/* Complete badge */}
             <div style={{ textAlign: 'center', marginBottom: 24 }}>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f0fdf4', color: '#16a34a', borderRadius: 99, padding: '6px 16px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 20 }}>
                 ✓ Demo lesson complete
               </div>
 
-              {/* Score + level */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, marginBottom: 16 }}>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 52, fontWeight: 900, color: scoreColor, lineHeight: 1 }}>{result.score}</div>
@@ -872,7 +1030,7 @@ function ResultScreen({
                 </div>
               </div>
 
-              <div className={`h-2 bg-gray-100 rounded-full overflow-hidden`}>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full bg-gradient-to-r ${scoreGrad}`}
                   style={{ width: `${result.score}%`, transition: 'width 1.2s cubic-bezier(0.4,0,0.2,1)' }}
@@ -880,13 +1038,11 @@ function ResultScreen({
               </div>
             </div>
 
-            {/* Teacher message */}
             <div style={{ background: 'linear-gradient(135deg, #f8f7ff, #fff8f4)', borderRadius: 18, padding: '16px', marginBottom: 20, display: 'flex', gap: 12 }}>
               <div style={{ width: 36, height: 36, borderRadius: 11, background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>A</div>
               <p style={{ fontSize: 14, color: '#374151', lineHeight: 1.65, margin: 0 }}>{result.teacher_message}</p>
             </div>
 
-            {/* Strengths + areas */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
               <div style={{ background: '#f0fdf4', borderRadius: 18, padding: '14px' }}>
                 <p style={{ fontSize: 9, fontWeight: 800, color: '#16a34a', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 8px' }}>Your strengths</p>
@@ -908,7 +1064,6 @@ function ResultScreen({
               </div>
             </div>
 
-            {/* CTA */}
             <button
               onClick={onNavigate}
               style={{ width: '100%', padding: '16px', borderRadius: 18, border: 'none', background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)', color: 'white', fontSize: 15, fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 28px rgba(110,124,251,0.4)', transition: 'all 0.2s', letterSpacing: '-0.2px' }}
