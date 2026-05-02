@@ -124,9 +124,8 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         index: 2,
         type: 'text_input',
         teacherMessages: [
-          { text: tone.encouragement[0] ?? "Good.", delay: 0 },
-          { text: "Now I want to hear you speak — or write — more freely.", delay: 900 },
-          { text: topic.speakingPrompt, delay: 1700 },
+          { text: "Now let's move to something more personal.", delay: 0 },
+          { text: topic.speakingPrompt, delay: 900 },
         ],
         prompt: topic.speakingPrompt,
         placeholder: topic.speakingPlaceholder,
@@ -140,9 +139,8 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         index: 3,
         type: 'text_input',
         teacherMessages: [
-          { text: tone.encouragement[1] ?? "Well done.", delay: 0 },
-          { text: "One last task — a bit more writing this time.", delay: 900 },
-          { text: topic.writingPrompt, delay: 1700 },
+          { text: "Final task — let's do some writing.", delay: 0 },
+          { text: topic.writingPrompt, delay: 900 },
         ],
         prompt: topic.writingPrompt,
         placeholder: topic.writingPlaceholder,

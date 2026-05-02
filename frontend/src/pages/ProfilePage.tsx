@@ -457,28 +457,43 @@ function TestsCard({ tests }: { tests: unknown[] }) {
 
 // ─── Achievements Card ────────────────────────────────────────────────────────
 
-function AchievementsCard({ achievements }: { achievements: unknown[] }) {
+function AchievementsCard({ achievements, demoCompleted }: { achievements: unknown[]; demoCompleted: boolean }) {
   const [hovered, setHovered] = useState(false)
   return (
     <div onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={{ ...S.card, transform: hovered ? 'translateY(-2px)' : 'none', boxShadow: hovered ? '0 8px 24px rgba(123,140,255,0.1)' : '0 2px 16px rgba(123,140,255,0.06)' }}>
       <div style={S.sectionLabel}>Milestones</div>
       <h2 style={S.sectionTitle}>Achievements</h2>
-      {achievements.length === 0 ? (
-        <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* Demo completion achievement */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: demoCompleted ? 'linear-gradient(135deg, rgba(123,140,255,0.06), rgba(161,139,255,0.04))' : '#FAFAFA', borderRadius: 14, border: demoCompleted ? '1px solid rgba(123,140,255,0.18)' : '1px solid #F0EEF8', opacity: demoCompleted ? 1 : 0.6 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: demoCompleted ? 'linear-gradient(135deg, #7B8CFF, #A18BFF)' : 'rgba(161,139,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🎓</div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>First AI Demo</div>
+            <div style={{ fontSize: 12, color: demoCompleted ? '#7B8CFF' : '#94A3B8', marginTop: 2 }}>
+              {demoCompleted ? 'Completed your free AI demo lesson.' : 'Start your free demo lesson to unlock.'}
+            </div>
+          </div>
+          <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700, flexShrink: 0, color: demoCompleted ? '#22c55e' : '#94A3B8' }}>
+            {demoCompleted ? '✓' : '🔒'}
+          </div>
+        </div>
+
+        {/* First paid lesson achievement */}
+        {achievements.length === 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: '#FAFAFA', borderRadius: 14, border: '1px solid #F0EEF8', opacity: 0.6 }}>
             <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(161,139,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🏆</div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>First AI Lesson</div>
-              <div style={{ fontSize: 12, color: '#94A3B8', marginTop: 2 }}>Complete your first lesson to unlock this achievement.</div>
+              <div style={{ fontSize: 12, color: '#94A3B8', marginTop: 2 }}>Complete your first full lesson to unlock this achievement.</div>
             </div>
             <div style={{ marginLeft: 'auto', fontSize: 13, color: '#94A3B8', fontWeight: 600, flexShrink: 0 }}>🔒</div>
           </div>
-        </>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* future: render achievement items */}
-        </div>
-      )}
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* future: render achievement items */}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -685,7 +700,10 @@ export default function ProfilePage() {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
           <TestsCard tests={pd?.completedTests ?? []} />
-          <AchievementsCard achievements={pd?.achievements ?? []} />
+          <AchievementsCard
+            achievements={pd?.achievements ?? []}
+            demoCompleted={(authProfile?.demoLessonsCompleted ?? 0) > 0}
+          />
         </div>
 
         <AIInsightsCard insights={pd?.insights ?? []} lessonsCompleted={stats.lessonsCompleted} />
