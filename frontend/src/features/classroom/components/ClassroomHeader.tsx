@@ -4,10 +4,12 @@ import { IcChev, IcExit } from './icons'
 import type { LessonSessionMetadata } from '../../../types/lessonTypes'
 
 interface ClassroomHeaderProps {
-  meta?: LessonSessionMetadata | null
+  meta?:    LessonSessionMetadata | null
+  isDemo?:  boolean
+  onExit?:  () => void
 }
 
-export default function ClassroomHeader({ meta }: ClassroomHeaderProps) {
+export default function ClassroomHeader({ meta, isDemo, onExit }: ClassroomHeaderProps) {
   const navigate = useNavigate()
   const [showExitConfirm, setShowExitConfirm] = useState(false)
 
@@ -40,11 +42,24 @@ export default function ClassroomHeader({ meta }: ClassroomHeaderProps) {
           </span>
         </div>
 
-        {/* Section title — from session metadata */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 14, color: '#1a1a2e', fontWeight: 700 }}>{sectionLabel}</span>
-          <span style={{ fontSize: 14, color: '#c5c5d5', fontWeight: 400 }}>•</span>
-          <span style={{ fontSize: 14, color: '#1a1a2e', fontWeight: 700 }}>{topicLabel}</span>
+        {/* Center — demo badge or section/topic label */}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
+          {isDemo ? (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)',
+              borderRadius: 99, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: '#16a34a',
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', display: 'inline-block', animation: 'cls-halo-breathe 1.5s ease-in-out infinite' }} />
+              Live demo
+            </span>
+          ) : (
+            <>
+              <span style={{ fontSize: 14, color: '#1a1a2e', fontWeight: 700 }}>{sectionLabel}</span>
+              <span style={{ fontSize: 14, color: '#c5c5d5', fontWeight: 400 }}>•</span>
+              <span style={{ fontSize: 14, color: '#1a1a2e', fontWeight: 700 }}>{topicLabel}</span>
+            </>
+          )}
         </div>
 
         {/* Right: teacher chip + exit */}
@@ -64,7 +79,7 @@ export default function ClassroomHeader({ meta }: ClassroomHeaderProps) {
             <IcChev />
           </div>
           <button
-            onClick={() => setShowExitConfirm(true)}
+            onClick={() => onExit ? onExit() : setShowExitConfirm(true)}
             style={{
               display: 'flex', alignItems: 'center', gap: 6, background: 'none',
               border: '1.5px solid #e8e8f0', borderRadius: 9, padding: '6px 13px',
