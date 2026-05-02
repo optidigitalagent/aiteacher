@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import type { FeedbackState, TeachingCardData } from '../types'
 import type { LessonSessionMetadata } from '../../../types/lessonTypes'
 import { useLessonSession }  from '../hooks/useLessonSession'
 import { useClassroomChat }  from '../hooks/useClassroomChat'
 import { useVoiceSession }   from '../hooks/useVoiceSession'
+import { useDemoSession }    from '../hooks/useDemoSession'
 import ClassroomHeader       from './ClassroomHeader'
 import TeacherPanel          from './TeacherPanel'
 import ExercisePanel         from './ExercisePanel'
@@ -12,6 +13,8 @@ import SectionProgressPanel  from './SectionProgressPanel'
 import ChatPanel             from './ChatPanel'
 import BottomControls        from './BottomControls'
 import TeachingOverlay       from './TeachingOverlay'
+import DemoStepCenter        from './DemoStepCenter'
+import DemoResultOverlay     from './DemoResultOverlay'
 import {
   createClassroomSocket,
   sendMessage,
@@ -19,27 +22,27 @@ import {
 } from '../services/classroomSocket'
 import { useAuth, getStoredToken } from '../../../context/AuthContext'
 
-// Env fallbacks (used when no route state is present, e.g. direct URL access)
 const LESSON_UNIT = Number(import.meta.env.VITE_LESSON_UNIT ?? 1)
 const ENV_SECTION = import.meta.env.VITE_LESSON_SECTION as string | undefined
 
-export default function ClassroomLayout() {
+export type ClassroomMode = 'demo' | 'paid'
+
+export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
+  const { demoId } = useParams<{ sessionId?: string; demoId?: string }>()
   const location    = useLocation()
   const navigate    = useNavigate()
   const { isAuthenticated, isAuthLoading } = useAuth()
   const sessionMeta = (location.state as LessonSessionMetadata | null) ?? null
 
-  // Resolve section from route state, falling back to env var
+  const isDemoMode    = mode === 'demo'
   const resolvedSection = sessionMeta?.sectionNumber ?? ENV_SECTION
 
   const wsRef = useRef<WebSocket | null>(null)
-
-  // Stable send — reads wsRef at call time, never stale
   const send = useCallback((payload: object) => {
     sendMessage(wsRef.current, payload)
   }, [])
 
-  // ── Hooks ─────────────────────────────────────────────────────────────────
+  // ── Production hooks (always called — rules of hooks) ────────────────────
   const {
     question, progress, steps,
     submitAnswer, onExercise, onPhaseChange,
@@ -54,6 +57,65 @@ export default function ClassroomLayout() {
     onAudioChunk, onTranscript, setSpeaking,
   } = useVoiceSession({ send })
 
+  // ── Demo voice — Web Speech API (no WebSocket needed) ────────────────────
+  // Minimal local interface so we don't rely on `SpeechRecognition` global type
+  type WebSpeechRec = {
+    continuous: boolean; interimResults: boolean; lang: string
+    onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null
+    onend: (() => void) | null
+    onerror: (() => void) | null
+    start(): void; stop(): void
+  }
+  const [demoListening,  setDemoListening]  = useState(false)
+  const demoSpeechRef = useRef<WebSpeechRec | null>(null)
+
+  const toggleDemoMic = useCallback(() => {
+    if (demoListening) {
+      demoSpeechRef.current?.stop()
+      demoSpeechRef.current = null
+      setDemoListening(false)
+      return
+    }
+    const w = window as unknown as Record<string, unknown>
+    const SpeechRecCtor = (w['SpeechRecognition'] ?? w['webkitSpeechRecognition']) as
+      (new () => WebSpeechRec) | undefined
+    if (!SpeechRecCtor) {
+      console.warn('[demo voice] SpeechRecognition not supported')
+      return
+    }
+    const rec = new SpeechRecCtor()
+    rec.continuous     = false
+    rec.interimResults = true
+    rec.lang           = 'en-US'
+    rec.onresult = (e) => {
+      let text = ''
+      for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript
+      setAnswer(text)
+    }
+    const cleanup = () => { setDemoListening(false); demoSpeechRef.current = null }
+    rec.onend   = cleanup
+    rec.onerror = cleanup
+    try {
+      rec.start()
+      setDemoListening(true)
+      demoSpeechRef.current = rec
+    } catch {
+      console.warn('[demo voice] start failed')
+    }
+  }, [demoListening])
+
+  // ── Demo session hook (always called, enabled only in demo mode) ──────────
+  const storedToken  = getStoredToken()
+  const demoEnabled  = isDemoMode && !isAuthLoading && isAuthenticated
+  const onDemoNotFound = useCallback(() => navigate('/'), [navigate])
+
+  const demo = useDemoSession({
+    demoId:     demoId ?? '',
+    token:      storedToken ?? '',
+    enabled:    demoEnabled,
+    onNotFound: onDemoNotFound,
+  })
+
   // ── Local UI state ────────────────────────────────────────────────────────
   const [answer,          setAnswer]          = useState('')
   const [feedback,        setFeedback]        = useState<FeedbackState>(null)
@@ -61,39 +123,31 @@ export default function ClassroomLayout() {
   const [chatOpen,        setChatOpen]        = useState(true)
   const [teachingCard,    setTeachingCard]    = useState<TeachingCardData | null>(null)
   const [confirmedAnswer, setConfirmedAnswer] = useState('')
-  // True once the backend has sent the first message — resolves the preparing state
   const [lessonStarted,   setLessonStarted]   = useState(false)
 
-  // Keep a ref so WS handler always reads the latest answer without stale closure
   const answerRef = useRef('')
   useEffect(() => { answerRef.current = answer }, [answer])
 
-  // ── WS message handler (ref pattern — WS created once, handler always fresh) ──
+  // ── WS message handler ────────────────────────────────────────────────────
   const onMessageRef = useRef<(msg: BackendMessage) => void>(() => {})
   onMessageRef.current = (msg: BackendMessage) => {
     switch (msg.type) {
-
       case 'ai_text':
         if (!lessonStarted) setLessonStarted(true)
         setSpeaking(true)
         clearTyping()
         pushAI(msg.text)
         break
-
       case 'audio_chunk':
         onAudioChunk(msg.data)
         break
-
       case 'exercise':
         onExercise(msg.exercise)
-        // Reset UI for the new exercise (answer + feedback cleared by useEffect below)
         setTeachingCard(null)
         break
-
       case 'phase_change':
         onPhaseChange(msg.from, msg.to)
         break
-
       case 'feedback':
         setFeedback(msg.correct ? 'correct' : 'wrong')
         if (msg.correct) {
@@ -101,76 +155,60 @@ export default function ClassroomLayout() {
           setTimeout(() => setAnswer(''), 1800)
         }
         break
-
       case 'transcript':
         onTranscript(msg.text)
         break
-
       case 'teaching_card':
         setTeachingCard({ title: 'Explanation', body: msg.displayText })
         break
-
       case 'section_card':
-        // TODO: integrate with platform router — surface section grammar overview
         break
-
       case 'lesson_end':
-        // TODO: integrate with platform router — redirect to lesson summary page
         break
-
       case 'error':
-        console.error('[Classroom WS] error from backend:', msg.code, msg.message)
+        console.error('[Classroom WS] error:', msg.code, msg.message)
         break
-
       default: {
-        const unknown = (msg as { type: string }).type
-        console.warn('[Classroom UNKNOWN] unhandled event type:', unknown, msg)
+        const u = (msg as { type: string }).type
+        console.warn('[Classroom UNKNOWN]', u, msg)
         break
       }
     }
   }
 
-  // ── Connect WS once auth is confirmed ────────────────────────────────────
+  // ── Connect WS once auth is confirmed (skipped in demo mode) ─────────────
   useEffect(() => {
-    // Wait for auth state to resolve before connecting
     if (isAuthLoading) return
-
-    // Redirect unauthenticated users away from Classroom
     if (!isAuthenticated) {
       navigate('/learning', { replace: true })
       return
     }
+    if (isDemoMode) return  // demo uses REST API via useDemoSession
 
     const token = getStoredToken()
     const ws = createClassroomSocket(
       (msg) => onMessageRef.current(msg),
       () => {
-        // Start lesson immediately on connect — use session metadata if available
         sendMessage(ws, {
           type:    'focus_lesson_start',
           payload: {
             unit: LESSON_UNIT,
-            ...(resolvedSection        ? { section:   resolvedSection }            : {}),
-            ...(sessionMeta?.teacherId ? { teacherId: sessionMeta.teacherId }      : {}),
-            ...(sessionMeta?.voiceId   ? { voiceId:   sessionMeta.voiceId }        : {}),
+            ...(resolvedSection        ? { section:   resolvedSection }       : {}),
+            ...(sessionMeta?.teacherId ? { teacherId: sessionMeta.teacherId } : {}),
+            ...(sessionMeta?.voiceId   ? { voiceId:   sessionMeta.voiceId }   : {}),
           },
         })
       },
-      () => {
-        // TODO: integrate with platform router — show reconnection UI
-      },
+      () => {},
       token ?? undefined,
     )
     wsRef.current = ws
     return () => { ws.close() }
-  }, [isAuthLoading, isAuthenticated])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAuthLoading, isAuthenticated, isDemoMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Side effects ──────────────────────────────────────────────────────────
-
-  // Voice transcript auto-fills the text input
   useEffect(() => { if (transcript) setAnswer(transcript) }, [transcript])
 
-  // Reset answer, feedback, hint when a new exercise arrives
   useEffect(() => {
     setAnswer('')
     setFeedback(null)
@@ -179,29 +217,34 @@ export default function ClassroomLayout() {
   }, [question?.id])
 
   // ── Event handlers ────────────────────────────────────────────────────────
-
   const handleCheck = useCallback(() => {
     if (!answer.trim() || !question) return
     pushUser(answer)
     setTyping()
     submitAnswer(answer)
-    // answer cleared by feedback handler on correct, or by exercise change
   }, [answer, question, pushUser, setTyping, submitAnswer])
 
   const handleSubmit = useCallback(() => {
+    if (isDemoMode) {
+      if (!answer.trim()) return
+      const a = answer
+      setAnswer('')
+      demo.handleTextSubmit(a)
+      return
+    }
     if (!answer.trim()) return
     if (question) {
       handleCheck()
     } else {
-      // No active exercise — free text message to teacher
       pushUser(answer)
       setTyping()
       send({ type: 'text_message', text: answer })
       setAnswer('')
     }
-  }, [answer, question, handleCheck, pushUser, setTyping, send])
+  }, [isDemoMode, answer, demo.handleTextSubmit, question, handleCheck, pushUser, setTyping, send])
 
   const handleExplain = useCallback(() => {
+    if (isDemoMode) return
     const lastAiText = messages
       .filter((m) => m.sender === 'ai' && !m.isTyping && m.text)
       .slice(-1)[0]?.text
@@ -211,14 +254,13 @@ export default function ClassroomLayout() {
       lastExercise:       question?.sentence,
       studentLastAnswer:  answerRef.current || undefined,
     })
-  }, [send, messages, question])
+  }, [isDemoMode, send, messages, question])
 
-  // Expose confirmedAnswer to ExercisePanel via merged question object
   const questionForPanel = question
     ? { ...question, answer: confirmedAnswer }
     : null
 
-  // ── Auth loading / redirect guard ────────────────────────────────────────
+  // ── Guards ────────────────────────────────────────────────────────────────
   if (isAuthLoading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#F5F5F7' }}>
@@ -231,6 +273,19 @@ export default function ClassroomLayout() {
     )
   }
 
+  if (isDemoMode && demo.phase === 'error') {
+    return (
+      <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg,#f0eeff 0%,#F5F5F7 40%,#fff5ee 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ background: 'white', borderRadius: 24, padding: 32, maxWidth: 360, width: '100%', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.12)' }}>
+          <p style={{ color: '#64748B', marginBottom: 16 }}>{demo.error ?? 'Could not load your lesson.'}</p>
+          <button onClick={() => window.location.reload()} style={{ padding: '10px 24px', background: 'linear-gradient(135deg,#6E7CFB,#9B8CFF)', color: 'white', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+            Try again
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{
@@ -238,7 +293,7 @@ export default function ClassroomLayout() {
       background: 'linear-gradient(160deg, #f0eeff 0%, #F5F5F7 40%, #fff5ee 100%)',
       overflow: 'hidden',
     }}>
-      {/* Light blobs */}
+      {/* Ambient blobs */}
       <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: -160, left: -160, width: 700, height: 700, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,185,100,0.35) 0%, rgba(255,160,70,0.15) 45%, transparent 70%)', filter: 'blur(60px)' }} />
         <div style={{ position: 'absolute', bottom: -120, right: -120, width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, rgba(110,124,251,0.28) 0%, rgba(155,140,255,0.12) 45%, transparent 70%)', filter: 'blur(60px)' }} />
@@ -246,12 +301,12 @@ export default function ClassroomLayout() {
       </div>
 
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <ClassroomHeader meta={sessionMeta} />
+        <ClassroomHeader
+          meta={isDemoMode ? null : sessionMeta}
+          isDemo={isDemoMode}
+          onExit={isDemoMode ? () => demo.setShowLeaveModal(true) : undefined}
+        />
 
-        {/*
-          Chat closed: [Teacher 170px] [Center 1fr] [Section 220px]
-          Chat open:   [Teacher 170px] [Center 1fr] [Chat 220px] [Section 150px]
-        */}
         <div style={{
           flex: 1, minHeight: 0,
           display: 'grid',
@@ -265,15 +320,28 @@ export default function ClassroomLayout() {
         }}>
           {/* Left — teacher avatar + voice state */}
           <TeacherPanel
-            voiceState={{ isListening, isSpeaking, transcript }}
+            voiceState={{
+              isListening: isDemoMode ? demoListening : isListening,
+              isSpeaking:  isDemoMode ? demo.isSpeaking : isSpeaking,
+              transcript:  isDemoMode ? '' : transcript,
+            }}
             onExplain={handleExplain}
             teacherName={sessionMeta?.teacherName}
             teacherAvatarUrl={sessionMeta?.teacherAvatarUrl}
           />
 
-          {/* Center — exercise card, teaching overlay, or waiting state */}
+          {/* Center — exercise, demo step, teaching overlay, or waiting state */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', minWidth: 0 }}>
-            {teachingCard ? (
+            {isDemoMode ? (
+              <DemoStepCenter
+                phase={demo.phase}
+                currentStep={demo.currentStep}
+                selectedOption={demo.selectedOption}
+                onMcqSelect={demo.handleMcqSelect}
+                submitting={demo.submitting}
+                isSpeaking={demo.isSpeaking}
+              />
+            ) : teachingCard ? (
               <TeachingOverlay card={teachingCard} onDismiss={() => setTeachingCard(null)} />
             ) : questionForPanel ? (
               <ExercisePanel
@@ -285,42 +353,102 @@ export default function ClassroomLayout() {
                 onHintToggle={() => setShowHint((h) => !h)}
               />
             ) : !lessonStarted ? (
-              <div style={{
-                textAlign: 'center', color: '#aaa',
-                fontSize: 15, fontWeight: 500, lineHeight: 1.6,
-              }}>
+              <div style={{ textAlign: 'center', color: '#aaa', fontSize: 15, fontWeight: 500, lineHeight: 1.6 }}>
                 Your teacher is preparing the lesson…
               </div>
             ) : null}
           </div>
 
-          {/* Chat panel — appears when open */}
+          {/* Chat panel */}
           {chatOpen && (
-            <ChatPanel messages={messages} onHide={() => setChatOpen(false)} />
+            <ChatPanel
+              messages={isDemoMode ? demo.chatMessages : messages}
+              onHide={() => setChatOpen(false)}
+            />
           )}
 
-          {/* Section timeline — always visible */}
+          {/* Section / demo progress timeline */}
           <SectionProgressPanel
-            steps={steps}
-            progress={progress}
+            steps={isDemoMode ? demo.steps : steps}
+            progress={isDemoMode ? demo.progress : progress}
             chatOpen={chatOpen}
             onOpenChat={() => setChatOpen(true)}
             onCloseChat={() => setChatOpen(false)}
-            sectionNumber={sessionMeta?.sectionNumber}
-            sectionTopic={sessionMeta?.sectionTopic ?? sessionMeta?.sectionTitle}
-            exerciseCount={sessionMeta?.exerciseCount}
+            sectionNumber={isDemoMode ? undefined : sessionMeta?.sectionNumber}
+            sectionTopic={isDemoMode ? 'Demo Lesson' : (sessionMeta?.sectionTopic ?? sessionMeta?.sectionTitle)}
+            exerciseCount={isDemoMode ? 4 : sessionMeta?.exerciseCount}
           />
         </div>
 
-        {/* Bottom — SINGLE INPUT for all lesson interactions */}
+        {/* Single input bar for all lesson interactions */}
         <BottomControls
-          isListening={isListening}
+          isListening={isDemoMode ? demoListening : isListening}
           value={answer}
           onChange={setAnswer}
           onSubmit={handleSubmit}
-          onToggleMic={toggle}
+          onToggleMic={isDemoMode ? toggleDemoMic : toggle}
           onExplain={handleExplain}
         />
+      </div>
+
+      {/* Demo overlays */}
+      {isDemoMode && demo.phase === 'complete' && demo.finalResult && (
+        <DemoResultOverlay
+          result={demo.finalResult}
+          interestArea={demo.interestArea}
+          onNavigate={() => navigate('/pricing?from=demo_complete')}
+        />
+      )}
+      {isDemoMode && demo.showLeaveModal && (
+        <DemoLeaveModal
+          onStay={() => demo.setShowLeaveModal(false)}
+          onLeave={() => navigate('/')}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Demo leave guard — only used when isDemoMode ──────────────────────────────
+function DemoLeaveModal({ onStay, onLeave }: { onStay: () => void; onLeave: () => void }) {
+  return (
+    <div
+      onClick={onStay}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'white', borderRadius: 24, padding: '32px 28px',
+          maxWidth: 420, width: '100%',
+          boxShadow: '0 32px 64px rgba(15,23,42,0.22)',
+        }}
+      >
+        <div style={{ fontSize: 28, marginBottom: 12 }}>⚠️</div>
+        <div style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', marginBottom: 10 }}>
+          Leave your free demo lesson?
+        </div>
+        <div style={{ fontSize: 14, color: '#64748B', lineHeight: 1.65, marginBottom: 24 }}>
+          Your free demo lesson can only be started <strong>once</strong>. If you leave now, you may lose access to this free attempt.
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={onStay}
+            style={{ flex: 1, padding: '12px 0', borderRadius: 14, border: '1.5px solid #E6EAF2', background: 'white', color: '#0F172A', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+          >
+            Stay in lesson
+          </button>
+          <button
+            onClick={onLeave}
+            style={{ flex: 1, padding: '12px 0', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg,#EF4444,#DC2626)', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+          >
+            Leave anyway
+          </button>
+        </div>
       </div>
     </div>
   )
