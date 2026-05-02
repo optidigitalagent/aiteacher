@@ -220,7 +220,12 @@ router.post('/demo/start', requireAuth, async (req: Request, res: Response) => {
         demo_started_at:        string | null
         demo_lessons_completed: number
       }>(
-        'SELECT demo_started_at, demo_lessons_completed FROM users WHERE id = $1 FOR UPDATE',
+        `SELECT u.demo_started_at,
+                COALESCE(ulp.demo_lessons_completed, 0) AS demo_lessons_completed
+         FROM users u
+         LEFT JOIN user_lesson_profiles ulp ON ulp.user_id = u.id
+         WHERE u.id = $1
+         FOR UPDATE OF u`,
         [userId],
       )
 
