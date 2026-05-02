@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { setStoredToken } from '../lib/auth'
+import { useAuth } from '../context/AuthContext'
 
 function safeReturnTo(raw: string | null): string {
   if (!raw) return '/demo/setup'
@@ -12,7 +13,8 @@ function safeReturnTo(raw: string | null): string {
 }
 
 export default function AuthCallbackPage() {
-  const navigate = useNavigate()
+  const navigate    = useNavigate()
+  const { refreshUser } = useAuth()
 
   useEffect(() => {
     const params   = new URLSearchParams(window.location.search)
@@ -20,12 +22,19 @@ export default function AuthCallbackPage() {
     const returnTo = safeReturnTo(params.get('returnTo'))
 
     if (token) {
+      // 1. persist token to localStorage
       setStoredToken(token)
-      navigate(returnTo, { replace: true })
+      console.log('[auth] token stored, initialising session...')
+      // 2. populate AuthContext React state (user/profile/token) BEFORE
+      //    navigating so the target page already sees isAuthenticated=true
+      refreshUser().then(() => {
+        console.log('[auth] session ready, redirecting to', returnTo)
+        navigate(returnTo, { replace: true })
+      })
     } else {
       navigate('/', { replace: true })
     }
-  }, [navigate])
+  }, [navigate, refreshUser])
 
   return (
     <div className="min-h-screen bg-[#F5F5F7] flex items-center justify-center">
