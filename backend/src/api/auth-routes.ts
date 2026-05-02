@@ -161,6 +161,73 @@ router.get('/auth/me', requireAuth, async (req: Request, res: Response) => {
   }
 })
 
+// ── GET /api/me ───────────────────────────────────────────────────────────────
+// Primary endpoint used by AuthContext.fetchMe — returns { authenticated, user, profile }
+router.get('/api/me', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const r = await query<{
+      id:                    string
+      email:                 string
+      name:                  string
+      avatar_url:            string | null
+      display_name:          string | null
+      avatar_emoji:          string | null
+      level:                 string
+      rank:                  string
+      xp:                    number
+      lessons_completed:     number
+      demo_lessons_completed: number
+      current_book:          string | null
+      current_section:       string | null
+      subscription_status:   string
+    }>(
+      `SELECT u.id, u.email, u.name, u.avatar_url,
+              COALESCE(ulp.display_name,          NULL)          AS display_name,
+              COALESCE(ulp.avatar_emoji,           NULL)          AS avatar_emoji,
+              COALESCE(ulp.level,                 'Beginner')    AS level,
+              COALESCE(ulp.rank,                  'New Learner') AS rank,
+              COALESCE(ulp.xp,                    0)             AS xp,
+              COALESCE(ulp.lessons_completed,     0)             AS lessons_completed,
+              COALESCE(ulp.demo_lessons_completed, 0)            AS demo_lessons_completed,
+              ulp.current_book,
+              ulp.current_section,
+              COALESCE(ulp.subscription_status,   'free')        AS subscription_status
+       FROM users u
+       LEFT JOIN user_lesson_profiles ulp ON ulp.user_id = u.id
+       WHERE u.id = $1`,
+      [req.user!.userId],
+    )
+    if (!r.rows.length) {
+      res.status(401).json({ authenticated: false })
+      return
+    }
+    const row = r.rows[0]!
+    res.json({
+      authenticated: true,
+      user: {
+        id:        row.id,
+        email:     row.email,
+        name:      row.name,
+        avatarUrl: row.avatar_url,
+      },
+      profile: {
+        displayName:          row.display_name,
+        avatarEmoji:          row.avatar_emoji,
+        level:                row.level,
+        rank:                 row.rank,
+        xp:                   Number(row.xp),
+        lessonsCompleted:     Number(row.lessons_completed),
+        demoLessonsCompleted: Number(row.demo_lessons_completed),
+        currentBook:          row.current_book,
+        currentSection:       row.current_section,
+        subscriptionStatus:   row.subscription_status,
+      },
+    })
+  } catch {
+    res.status(500).json({ authenticated: false, error: 'Internal error' })
+  }
+})
+
 // ── POST /demo/start ──────────────────────────────────────────────────────────
 router.post('/demo/start', requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.userId
