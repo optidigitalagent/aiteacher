@@ -12,7 +12,7 @@ console.log('[auth] GOOGLE_CLIENT_SECRET loaded:', CLIENT_SECRET ? 'YES' : 'NO â
 console.log('[auth] GOOGLE_CALLBACK_URL:', CALLBACK_URL)
 console.log('[auth] FRONTEND_URL:', FRONTEND_URL)
 
-export function buildGoogleAuthUrl(): string {
+export function buildGoogleAuthUrl(state?: string): string {
   const params = new URLSearchParams({
     client_id:     CLIENT_ID,
     redirect_uri:  CALLBACK_URL,
@@ -21,6 +21,7 @@ export function buildGoogleAuthUrl(): string {
     access_type:   'offline',
     prompt:        'select_account',
   })
+  if (state) params.set('state', state)
   return `https://accounts.google.com/o/oauth2/v2/auth?${params}`
 }
 

@@ -1,14 +1,10 @@
 import { Router, type Request, type Response } from 'express'
-import { createToken, requireAuth } from './auth-middleware.js'
+import { requireAuth } from '../auth/middleware.js'
+import { buildGoogleAuthUrl, handleGoogleCallback, FRONTEND_URL } from '../auth/google-oauth.js'
 import { query, withTransaction } from '../db/postgres.js'
 import redis from '../db/redis.js'
 
 const router = Router()
-
-const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID     ?? ''
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET ?? ''
-const GOOGLE_CALLBACK_URL  = process.env.GOOGLE_CALLBACK_URL  ?? 'http://localhost:4000/auth/google/callback'
-const FRONTEND_URL         = process.env.FRONTEND_URL         ?? 'http://localhost:3000'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -102,76 +98,23 @@ class DemoUsedError extends Error {
 
 // ── GET /auth/google ──────────────────────────────────────────────────────────
 router.get('/auth/google', (req: Request, res: Response) => {
-  if (!GOOGLE_CLIENT_ID) {
-    res.status(503).json({ error: 'Google OAuth not configured on this server.' })
-    return
-  }
   const returnTo = sanitizeReturnTo(req.query.returnTo)
   const state    = Buffer.from(JSON.stringify({ returnTo })).toString('base64url')
-  const params   = new URLSearchParams({
-    client_id:     GOOGLE_CLIENT_ID,
-    redirect_uri:  GOOGLE_CALLBACK_URL,
-    response_type: 'code',
-    scope:         'openid email profile',
-    state,
-  })
-  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`)
+  res.redirect(buildGoogleAuthUrl(state))
 })
 
 // ── GET /auth/google/callback ─────────────────────────────────────────────────
-interface GoogleTokenResp { access_token?: string }
-interface GoogleUserInfo  { sub?: string; email?: string; name?: string; picture?: string }
-
 router.get('/auth/google/callback', async (req: Request, res: Response) => {
   const code  = req.query.code
   const state = req.query.state
 
   if (!code || typeof code !== 'string') {
-    res.status(400).send('Missing authorization code')
+    res.redirect(`${FRONTEND_URL}/auth/callback?auth_error=missing_code`)
     return
   }
 
   try {
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id:     GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        code,
-        redirect_uri:  GOOGLE_CALLBACK_URL,
-        grant_type:    'authorization_code',
-      }).toString(),
-    })
-    const tokenData = await tokenRes.json() as GoogleTokenResp
-    if (!tokenData.access_token) {
-      res.status(400).send('OAuth token exchange failed')
-      return
-    }
-
-    const userRes  = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` },
-    })
-    const userInfo = await userRes.json() as GoogleUserInfo
-    if (!userInfo.sub || !userInfo.email) {
-      res.status(400).send('Failed to get user info from Google')
-      return
-    }
-
-    const r = await query<{ id: string }>(
-      `INSERT INTO users (google_id, email, name, avatar_url)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (google_id) DO UPDATE
-         SET name = EXCLUDED.name, avatar_url = EXCLUDED.avatar_url, updated_at = NOW()
-       RETURNING id`,
-      [userInfo.sub, userInfo.email, userInfo.name ?? userInfo.email, userInfo.picture ?? null],
-    )
-    const userId = r.rows[0]?.id
-    if (!userId) { res.status(500).send('Failed to create user'); return }
-
-    await ensureStudentForUser(userId)
-
-    const token = createToken({ userId, email: userInfo.email, name: userInfo.name ?? userInfo.email })
+    const token = await handleGoogleCallback(code)
 
     let returnTo = '/demo/setup'
     if (state && typeof state === 'string') {
@@ -184,7 +127,7 @@ router.get('/auth/google/callback', async (req: Request, res: Response) => {
     res.redirect(`${FRONTEND_URL}/auth/callback?token=${encodeURIComponent(token)}&returnTo=${encodeURIComponent(returnTo)}`)
   } catch (err) {
     console.error('[auth] Google callback error:', err instanceof Error ? err.message : err)
-    res.status(500).send('Authentication failed. Please try again.')
+    res.redirect(`${FRONTEND_URL}/auth/callback?auth_error=oauth_failed`)
   }
 })
 
@@ -200,8 +143,11 @@ router.get('/auth/me', requireAuth, async (req: Request, res: Response) => {
       demo_started_at:        string | null
       student_id:             string | null
     }>(
-      `SELECT id, email, name, avatar_url, demo_lessons_completed, demo_started_at, student_id
-       FROM users WHERE id = $1`,
+      `SELECT u.id, u.email, u.name, u.avatar_url, u.demo_started_at, u.student_id,
+              COALESCE(ulp.demo_lessons_completed, 0) AS demo_lessons_completed
+       FROM users u
+       LEFT JOIN user_lesson_profiles ulp ON ulp.user_id = u.id
+       WHERE u.id = $1`,
       [req.user!.userId],
     )
     if (!r.rows.length) { res.status(404).json({ error: 'User not found' }); return }
