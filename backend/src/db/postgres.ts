@@ -61,6 +61,7 @@ const MIGRATIONS = [
   '003_profile_editable.sql',
   '003_demo_safety.sql',
   '004_demo_sessions.sql',
+  '005_demo_engine.sql',
 ]
 
 export async function initTables(): Promise<void> {

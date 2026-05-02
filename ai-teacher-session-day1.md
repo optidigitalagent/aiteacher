@@ -1,583 +1,475 @@
-<<<<<<< HEAD
-You are a Senior Full-Stack Debugging Engineer.                                                              
+You are continuing implementation of the AI Teacher Demo Lesson Engine.                                      
                                                                                                                
-  Fix ONLY the production "Start Lesson" failure in AI Teacher.                                                
+  Role:                                                                                                        
+  Principal Product Architect + AI Systems Designer + Conversion-Focused Learning Experience Designer.         
                                                                                                                
-  ==================================================                                                           
-  CONTEXT                                                                                                      
-  ==================================================                                                           
+  IMPORTANT:                                                                                                   
+  Backend implementation (Step 1) is COMPLETE.                                                                 
                                                                                                                
-  AI Teacher is deployed on Railway.                                                                           
+  You MUST NOT redo backend.                                                                                   
+  You MUST NOT redesign architecture.                                                                          
+  You MUST NOT change core endpoints.                                                                          
                                                                                                                
-  Backend:                                                                                                     
-  https://aiteacher-production-bda7.up.railway.app                                                             
-                                                                                                               
-  Frontend:                                                                                                    
-  https://fortunate-miracle-production-0854.up.railway.app                                                     
-                                                                                                               
-  Current working systems:                                                                                     
-  - Railway backend is online                                                                                  
-  - Railway frontend is online                                                                                 
-  - PostgreSQL works                                                                                           
-  - Redis works                                                                                                
-  - Google OAuth works                                                                                         
-  - JWT login works                                                                                            
-  - user stays authenticated                                                                                   
-  - /api/me works                                                                                              
-  - profile works                                                                                              
-                                                                                                               
-  Current broken system:                                                                                       
-  Clicking "Start Lesson" fails.                                                                               
-                                                                                                               
-  Browser Network shows:                                                                                       
-  - request name: start                                                                                        
-  - status: 405                                                                                                
-  - type: fetch                                                                                                
-                                                                                                               
-  User sees:                                                                                                   
-  "Failed to start lesson. Please try again."                                                                  
-                                                                                                               
-  Backend logs do NOT show lesson start handling.                                                              
+  Your job is to:                                                                                              
+  FINALIZE the Demo Lesson so it becomes a HIGH-CONVERSION PRODUCT EXPERIENCE.                                 
                                                                                                                
   ==================================================                                                           
-  PROBLEM                                                                                                      
+  CORE PRODUCT GOAL (CRITICAL)                                                                                 
   ==================================================                                                           
                                                                                                                
-  This is likely an API route mismatch.                                                                        
+  This is NOT just a demo.                                                                                     
                                                                                                                
-  Possible causes:                                                                                             
-  1. frontend calls wrong endpoint                                                                             
-  2. frontend calls correct path but wrong HTTP method                                                         
-  3. backend route exists but is mounted under different prefix                                                
-  4. backend returns 405 because route/method is not aligned                                                   
-  5. frontend still uses relative URL for lesson start instead of VITE_API_URL                                 
-  6. lesson start API helper does not send Authorization token                                                 
+  This is the MAIN conversion mechanism of the entire platform.                                                
                                                                                                                
-  ==================================================                                                           
-  STRICT RULES                                                                                                 
-  ==================================================                                                           
+  The demo lesson must:                                                                                        
                                                                                                                
-  DO NOT:                                                                                                      
-  - change Google OAuth                                                                                        
-  - change AuthContext unless directly required for token usage                                                
-  - change Profile page                                                                                        
-  - change UI design                                                                                           
-  - change Classroom UX                                                                                        
-  - change lesson FSM                                                                                          
-  - change AI prompts                                                                                          
-  - touch STT/TTS/RAG                                                                                          
-  - change database schema                                                                                     
-  - implement payments                                                                                         
-  - implement demo lesson                                                                                      
-  - add anti-abuse now                                                                                         
-  - create duplicate uncontrolled lesson endpoints                                                             
+  - feel like real AI teaching                                                                                 
+  - create emotional engagement                                                                                
+  - show visible progress                                                                                      
+  - make the user feel:                                                                                        
+    “I actually improved in 5 minutes”                                                                         
+  - build trust                                                                                                
+  - naturally lead to payment                                                                                  
                                                                                                                
-  ONLY fix Start Lesson API wiring.                                                                            
+  If it feels like:                                                                                            
+  - robotic                                                                                                    
+  - cheap                                                                                                      
+  - repetitive                                                                                                 
+  - ограниченный тупо ради лимитов                                                                             
+                                                                                                               
+  → it FAILS.                                                                                                  
                                                                                                                
   ==================================================                                                           
-  MANDATORY INVESTIGATION                                                                                      
+  CRITICAL CONSTRAINT                                                                                          
   ==================================================                                                           
                                                                                                                
-  1. Inspect frontend lesson start call:                                                                       
-     - Learning page                                                                                           
-     - lessonStartApi                                                                                          
-     - any api/client helper                                                                                   
+  You must achieve HIGH perceived intelligence with LOW actual cost.                                           
                                                                                                                
-  Find:                                                                                                        
-  - exact URL used                                                                                             
-  - exact method used                                                                                          
-  - whether API_BASE / VITE_API_URL is used                                                                    
-  - whether Authorization: Bearer <token> is sent                                                              
-  - request payload shape                                                                                      
+  This is the core challenge.                                                                                  
                                                                                                                
-  2. Inspect backend lesson start route:                                                                       
-     - route file                                                                                              
-     - method                                                                                                  
-     - mounted prefix                                                                                          
-     - auth middleware                                                                                         
-     - expected payload                                                                                        
+  You must NOT:                                                                                                
                                                                                                                
-  Find final real endpoint, for example:                                                                       
-  - POST /lesson/start                                                                                         
-  - POST /api/lesson/start                                                                                     
-  - POST /start                                                                                                
-  - something else                                                                                             
+  - increase AI calls                                                                                          
+  - introduce free chat                                                                                        
+  - introduce uncontrolled responses                                                                           
+  - break limits                                                                                               
                                                                                                                
-  3. Compare frontend vs backend:                                                                              
-     - path                                                                                                    
-     - method                                                                                                  
-     - headers                                                                                                 
-     - body                                                                                                    
+  You MUST:                                                                                                    
                                                                                                                
-  4. Fix the smallest mismatch.                                                                                
+  - simulate intelligence using structure                                                                      
+  - use script + dynamic injection                                                                             
+  - maximize perceived personalization                                                                         
                                                                                                                
   ==================================================                                                           
-  REQUIRED BEHAVIOR                                                                                            
+  KEY IDEA YOU MUST IMPLEMENT                                                                                  
   ==================================================                                                           
                                                                                                                
-  When authenticated user clicks Start Lesson:                                                                 
+  The demo lesson MUST USE calibration data from DemoSetup.                                                    
                                                                                                                
-  Frontend must call the real backend endpoint using production API base:                                      
+  This is NOT optional.                                                                                        
                                                                                                                
-  `${VITE_API_URL}/...correct-path...`                                                                         
+  User choices:                                                                                                
+  - interestArea                                                                                               
+  - teacherStyle                                                                                               
+  - speakingConfidence                                                                                         
+  - demoMission                                                                                                
                                                                                                                
-  Request must include:                                                                                        
+  must DIRECTLY influence:                                                                                     
                                                                                                                
-  Authorization: Bearer <auth_token>                                                                           
-  Content-Type: application/json                                                                               
+  - teacher tone                                                                                               
+  - exercises                                                                                                  
+  - prompts                                                                                                    
+  - difficulty                                                                                                 
+  - feedback style                                                                                             
+  - final result                                                                                               
                                                                                                                
-  Payload must include selected lesson metadata:                                                               
-  - mode                                                                                                       
-  - bookId                                                                                                     
-  - bookTitle if available                                                                                     
-  - sectionId                                                                                                  
-  - sectionNumber                                                                                              
-  - sectionTitle/topic                                                                                         
-  - teacherId                                                                                                  
-  - teacherName                                                                                                
-  - voiceId                                                                                                    
-  - exerciseCount if available                                                                                 
+  User must FEEL:                                                                                              
                                                                                                                
-  Backend must:                                                                                                
-  - require auth                                                                                               
-  - use userId from JWT/session                                                                                
-  - create lesson session owned by authenticated user                                                          
-  - return sessionId                                                                                           
-  - not trust frontend userId                                                                                  
-  - return structured error if blocked                                                                         
-                                                                                                               
-  Frontend must:                                                                                               
-  - navigate to /classroom/:sessionId on success                                                               
-  - show safe error on failure                                                                                 
-  - not infinitely retry                                                                                       
+  “This lesson was made for me.”                                                                               
                                                                                                                
   ==================================================                                                           
-  IMPORTANT SECURITY RULE                                                                                      
+  CRITICAL UX REQUIREMENTS                                                                                     
   ==================================================                                                           
                                                                                                                
-  Do NOT loosen auth to make the request pass.                                                                 
+  You must upgrade DemoClassroomPage behavior.                                                                 
                                                                                                                
-  If 401/403 appears, fix token/header wiring.                                                                 
-  Do not make lesson start public.                                                                             
+  It must feel like:                                                                                           
                                                                                                                
-  NO AUTH = NO LESSON SESSION.                                                                                 
+  AI is thinking, reacting, teaching.                                                                          
+                                                                                                               
+  Implement:                                                                                                   
+                                                                                                               
+  1. Teacher message chunking:                                                                                 
+     - break responses into parts                                                                              
+     - show them progressively                                                                                 
+     - simulate thinking                                                                                       
+                                                                                                               
+  2. Correction moments:                                                                                       
+     MUST be visually clear:                                                                                   
+                                                                                                               
+     Before:                                                                                                   
+     "I like play games"                                                                                       
+                                                                                                               
+     After:                                                                                                    
+     "I like playing games"                                                                                    
+                                                                                                               
+     Highlight improvement.                                                                                    
+                                                                                                               
+  3. Progress feeling:                                                                                         
+     After each step show:                                                                                     
+     - improvement                                                                                             
+     - feedback                                                                                                
+     - confidence growth                                                                                       
+                                                                                                               
+  4. Avoid dead feeling:                                                                                       
+     - no long empty states                                                                                    
+     - no “submit → nothing happens”                                                                           
+                                                                                                               
+  5. Make user talk:                                                                                           
+     - at least 2–3 meaningful responses                                                                       
                                                                                                                
   ==================================================                                                           
-  ACCEPTANCE CHECKLIST                                                                                         
+  INTELLIGENCE SIMULATION STRATEGY                                                                             
   ==================================================                                                           
                                                                                                                
-  - Network request is no longer 405                                                                           
-  - Start Lesson sends request to backend domain, not frontend domain                                          
-  - request uses POST                                                                                          
-  - Authorization header is present                                                                            
-  - backend logs show lesson start handling                                                                    
-  - backend returns sessionId                                                                                  
-  - frontend navigates to /classroom/:sessionId                                                                
-  - unauthenticated user still sees AuthGate                                                                   
-  - direct unauthenticated POST remains blocked                                                                
-  - no UI redesign                                                                                             
-  - no unrelated changes                                                                                       
+  You must NOT rely on AI for everything.                                                                      
+                                                                                                               
+  Instead:                                                                                                     
+                                                                                                               
+  Use:                                                                                                         
+                                                                                                               
+  - script skeleton                                                                                            
+  - topic packs                                                                                                
+  - modifiers                                                                                                  
+  - structured evaluation                                                                                      
+                                                                                                               
+  Make it FEEL like:                                                                                           
+                                                                                                               
+  AI adapts live.                                                                                              
                                                                                                                
   ==================================================                                                           
-  OUTPUT REQUIRED                                                                                              
+  CRITICAL IMPROVEMENT TASKS                                                                                   
   ==================================================                                                           
                                                                                                                
-  Report:                                                                                                      
-  1. Exact root cause                                                                                          
-  2. Frontend URL/method before fix                                                                            
-  3. Backend real endpoint                                                                                     
-  4. Files changed                                                                                             
-  5. Whether Authorization header was fixed                                                                    
-  6. Git commands to push  here is what already done  Report                                                   
+  Refine current implementation:                                                                               
+                                                                                                               
+  1. Make topic packs more expressive:                                                                         
+     - not generic sentences                                                                                   
+     - more human prompts                                                                                      
+     - more engaging phrasing                                                                                  
+                                                                                                               
+  2. Improve teacher tone system:                                                                              
+     - Friendly coach = supportive                                                                             
+     - Real tutor = precise                                                                                    
+     - Challenge trainer = pushy                                                                               
+                                                                                                               
+  3. Improve speaking tasks:                                                                                   
+     - must feel real-life                                                                                     
+     - not textbook boring                                                                                     
+                                                                                                               
+  4. Improve final result:                                                                                     
+     It MUST feel like:                                                                                        
+                                                                                                               
+     “This is MY profile”                                                                                      
+                                                                                                               
+     Not generic.                                                                                              
+                                                                                                               
+  ==================================================                                                           
+  FINAL RESULT (VERY IMPORTANT)                                                                                
+  ==================================================                                                           
+                                                                                                               
+  The result screen must:                                                                                      
+                                                                                                               
+  - summarize user ability                                                                                     
+  - highlight progress                                                                                         
+  - give emotional reinforcement                                                                               
+  - suggest next step                                                                                          
+                                                                                                               
+  Example tone:                                                                                                
+                                                                                                               
+  “You already explain your thoughts clearly.                                                                  
+  Now we just need to improve your grammar and confidence.”                                                    
+                                                                                                               
+  NOT:                                                                                                         
+                                                                                                               
+  “You are A2. Improve grammar.”                                                                               
+                                                                                                               
+  ==================================================                                                           
+  PRICING TRANSITION                                                                                           
+  ==================================================                                                           
+                                                                                                               
+  Transition must feel natural.                                                                                
+                                                                                                               
+  NOT forced.                                                                                                  
+                                                                                                               
+  User must feel:                                                                                              
+                                                                                                               
+  “I want to continue”                                                                                         
+                                                                                                               
+  Implement:                                                                                                   
+                                                                                                               
+  - soft CTA                                                                                                   
+  - continuity of learning path                                                                                
+  - reference previous performance                                                                             
+                                                                                                               
+  ==================================================                                                           
+  ANTI-ABUSE (DO NOT BREAK)                                                                                    
+  ==================================================                                                           
+                                                                                                               
+  Keep:                                                                                                        
+                                                                                                               
+  - max AI calls = 3–4                                                                                         
+  - spam detection BEFORE AI                                                                                   
+  - max retries                                                                                                
+  - strict session ownership                                                                                   
+                                                                                                               
+  ==================================================                                                           
+  TECHNICAL VALIDATION                                                                                         
+  ==================================================                                                           
+                                                                                                               
+  You MUST verify:                                                                                             
+                                                                                                               
+  - all API calls use VITE_API_URL                                                                             
+  - Authorization header present                                                                               
+  - no relative API calls                                                                                      
+  - no frontend AI calls                                                                                       
+  - no broken routes                                                                                           
+                                                                                                               
+  ==================================================                                                           
+  OUTPUT REQUIREMENTS                                                                                          
+  ==================================================                                                           
+                                                                                                               
+  Do NOT output long explanations.                                                                             
+                                                                                                               
+  Instead output:                                                                                              
+                                                                                                               
+  1. Improvements made                                                                                         
+  2. Files modified                                                                                            
+  3. UX improvements added                                                                                     
+  4. Any backend adjustments (if minimal)                                                                      
+  5. Build results                                                                                             
+  6. Git commands                                                                                              
+                                                                                                               
+  ==================================================                                                           
+  FINAL GOAL                                                                                                   
+  ==================================================                                                           
+                                                                                                               
+  Deliver:                                                                                                     
+                                                                                                               
+  A demo lesson that:                                                                                          
+                                                                                                               
+  - feels like AI                                                                                              
+  - feels personal                                                                                             
+  - feels useful                                                                                               
+  - feels like progress                                                                                        
+  - makes user WANT next lesson                                                                                
+                                                                                                               
+  WITHOUT increasing cost.                                                                                     
+                                                                                                               
+  Proceed. here is what already done Step 1 complete. Here's what was built:                                   
                                                                                                                
                                                                                                                
                                                                                                                
-    1. Root cause                                                                                              
+    Files created:                                                                                             
                                                                                                                
+    - backend/migrations/005_demo_engine.sql — adds 9 columns to demo_sessions (step tracking, AI call         
+  counter,                                                                                                     
+    scores, final result)                                                                                      
                                                                                                                
-    AuthContext.tsx:53 called fetch('/api/me', ...) — a relative URL. In local dev, Vite's proxy               
-  (vite.config.ts                                                                                              
-    lines 8-11) silently forwarded /api/* to localhost:4000. In production, the frontend is a static build on  
-  a                                                                                                            
-    separate Railway domain with no proxy — so /api/me hit the frontend nginx and returned 404. fetchMe        
-  returned                                                                                                     
-    false, and refreshUser then deleted the token it had just stored, leaving localStorage empty and the user  
-    unauthenticated.                                                                                           
+    - backend/src/demo/script-data.ts — 6 topic packs, 4 teacher tones, 4 grammar packs (one per mission),     
+    confidence/mission intros                                                                                  
                                                                                                                
-    Same bug existed in ProfilePage.tsx for /api/profile (two calls).                                          
+    - backend/src/demo/lesson-engine.ts — buildIntro(), buildStep(), checkSpam(), evaluateMcqServerSide(),     
+  types                                                                                                        
+    - backend/src/demo/evaluator.ts — 3 compact OpenAI calls: evaluateSpeaking(), evaluateWriting(),           
+    generateFinalResult()                                                                                      
+    - backend/src/api/demo-routes.ts — GET /demo/session/:id + POST /demo/answer with full                     
+    auth/ownership/spam/AI-limit guards                                                                        
+    - frontend/src/pages/DemoClassroomPage.tsx — full rewrite: chat UI, typing indicator, MCQ + text input,    
+    result screen with CTA                                                                                     
                                                                                                                
-    2. Files changed                                                                                           
+    Files modified:                                                                                            
+    - backend/src/index.ts — mounts demoRoutes                                                                 
+    - backend/src/db/postgres.ts — adds 005_demo_engine.sql to migration list                                  
                                                                                                                
+    Endpoints:                                                                                                 
+    - GET /demo/session/:id → loads session + intro messages + current step                                    
+    - POST /demo/answer → validates → evaluates (AI or server-side) → advances step → on last step             
+  auto-generates                                                                                               
+     final result                                                                                              
                                                                                                                
-  ┌─────────────────────────────────────────┬───────────────────────────────────────────────────────────────┐  
-    │                  File                   │                            Change                              
-  │                                                                                                            
+    AI calls per session: warm_up (0) + grammar_mcq (0) + speaking (1) + writing (1) + final result (1) = 3    
+  calls                                                                                                        
+     max, with 4th as reserve.                                                                                 
                                                                                                                
-  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤  
-    │ frontend/src/context/AuthContext.tsx    │ Added API_BASE = import.meta.env.VITE_API_URL ?? '', prefixed  
-  │                                                                                                            
-    │                                         │  /api/me                                                       
-  │                                                                                                            
+    Both tsc --noEmit checks pass with no errors.                                                              
                                                                                                                
-  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤  
-    │ frontend/src/pages/ProfilePage.tsx      │ Added API_BASE, prefixed both /api/profile calls               
-  │                                                                                                            
-                                                                                                               
-  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤  
-    │ frontend/src/pages/AuthCallbackPage.tsx │ Added console.log('[auth] callback token found:', !!token)     
-  │                                                                                                            
-                                                                                                               
-  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤  
-    │ backend/src/api/auth-routes.ts          │ Added safe success log (no token printed)                      
-  │                                                                                                            
-                                                                                                               
-  └─────────────────────────────────────────┴───────────────────────────────────────────────────────────────┘  
-                                                                                                               
-    3. Redirect chain (unchanged — was already correct)                                                        
-                                                                                                               
-    /auth/google → Google → /auth/google/callback → FRONTEND_URL/auth/callback?token=<jwt>                     
-                                                                                                               
-    4. Token storage key                                                                                       
-                                                                                                               
-    auth_token (localStorage) — identical in AuthContext, storeToken, and AuthCallbackPage.                    
-                                                                                                               
-    5. Required Railway action (mandatory before fix works)                                                    
-                                                                                                               
-    In Railway → Frontend service → Variables, add a build-time env var:                                       
-                                                                                                               
-    VITE_API_URL = https://aiteacher-production-bda7.up.railway.app                                            
-                                                                                                               
-    Then trigger a redeploy of the frontend service (Railway must rebuild with this var so Vite bakes it into  
-  the                                                                                                          
-     bundle). Without this, import.meta.env.VITE_API_URL is undefined, API_BASE falls back to '', and the      
-    relative-URL bug remains.                                                                                  
-  ⎿  ⧉ Selected 1 lines from c:\Users\Admin\Downloads\aiteacher\backend\.env in Visual Studio Code
+    ---                                                                                                        
+    Ready for your confirmation to proceed to Step 2: run a full build check and review the frontend visually. 
 
-● Let me investigate the frontend lesson start code and backend routes simultaneously.
+● Let me read the current implementation before making improvements.
 
-● Explore(Investigate lesson start API wiring)                                                                 
-  ⎿  Done (24 tool uses · 58.9k tokens · 52s)                                                                
-  (ctrl+o to expand)                                                                                           
-                                                                                                             
-● Good analysis. Let me read the key files directly to confirm before making any changes.                      
+  Read 2 files (ctrl+o to expand)                                                                              
+  ⎿  Loaded frontend\CLAUDE.md               
                                                                                                                
-  Searched for 1 pattern, read 2 files (ctrl+o to expand)                                                      
+● Now let me read the backend files.      
                                                                                                                
-● Root cause confirmed. Line 21 of lessonStartApi.ts uses a bare /lesson/start — no base URL. In production,   
-  that POST hits the frontend nginx (which only handles GET for SPA routing) → 405. Let me verify the backend  
-  route path quickly, then apply the fix.                                                                      
+  Read 2 files (ctrl+o to expand)                                                                              
                                                                                                                
-  Searched for 1 pattern (ctrl+o to expand)                                                                    
+● Let me also read the routes and the demo-routes files.                                                       
                                                                                                                
-● Backend is POST /lesson/start mounted at root — path matches. The only bug is the missing API_BASE prefix in 
-  lessonStartApi.ts. Applying the fix now.                                                                     
-                                                                                          
-● Update(frontend\src\services\lessonStartApi.ts)                                                              
-  ⎿  Added 2 lines                                                                                             
-      1  import { getStoredToken } from '../context/AuthContext'                                               
-      2                                                                                                        
-      3 +const API_BASE = import.meta.env.VITE_API_URL ?? ''                                            
-      4 +                                                                                                      
-      5  export interface LessonStartPayload {
-      6    mode:          'textbook' | 'topic'                                                                 
-      7    bookId:        string                            
-  ⎿  You've hit your limit · resets 5:20pm (Europe/Kiev)                                                     
-     /upgrade to increase your usage limit.      
+  Read 1 file (ctrl+o to expand)                                                          
+                                                                                                               
+● Good picture of the full codebase. Starting the implementation now — 4 files to change.                      
+                                                                                                               
+● Update(backend\src\api\demo-routes.ts)                                                                       
+                                                                                                               
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Edit file                                                                                                     
+ backend\src\api\demo-routes.ts                                                                                
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 124          stepIndex: totalSteps,                                                                           
 
-     You are continuing an interrupted coding session.
+  Read 2 files (ctrl+o to expand)
+  ⎿  Loaded frontend\CLAUDE.md
+
+● Now let me read the backend files.
+
+  Read 2 files (ctrl+o to expand)
+
+● Let me also read the routes and the demo-routes files.
+
+  Read 1 file (ctrl+o to expand)
+
+● Good picture of the full codebase. Starting the implementation now — 4 files to change.
+
+● Update(backend\src\api\demo-routes.ts)
+  ⎿  Added 4 lines
+      124          stepIndex: totalSteps,
+      125          totalSteps,                                                            
+      126          isComplete: true,
+      127 +        interestArea: session.interest_area,                                                        
+      128 +        demoMission: session.demo_mission,                                                   
+      129          intro,                                                                                      
+      130          currentStep: null,                                                                        
+      131          finalResult: session.final_result,
+     ...
+      141        stepIndex: session.step_index,
+      142        totalSteps,
+      143        isComplete: false,
+      144 +      interestArea: session.interest_area,                                                   
+      145 +      demoMission: session.demo_mission,                                                     
+      146        intro,
+      147        currentStep,
+      148        finalResult: null,
+  ⎿  You've hit your limit · resets 12:10am (Europe/Kiev)
+     /upgrade to increase your usage limit.   
+     Continue from current state.
+
+DO NOT restart analysis.
+DO NOT redesign architecture.
+DO NOT rewrite backend.
+
+Backend Demo Engine is already implemented and validated.
+
+Your task:
+FINALIZE Demo Lesson UX and conversion quality.
 
 ==================================================
-CONTEXT (CRITICAL)
+GOAL
 ==================================================
 
-Below is the FULL terminal log from the previous session.
+Turn the demo lesson into a HIGH-CONVERSION experience.
 
-It includes:
-- all commands executed
-- all files modified
-- all code changes
-- reasoning steps
-
-This is NOT a new task.
-This is a CONTINUATION.
-
-==================================================
-PREVIOUS SESSION LOG
-==================================================
-
-[PASTE FULL TERMINAL OUTPUT HERE — EXACTLY AS IS]
-
-==================================================
-CURRENT STATE
-==================================================
-
-The system is partially fixed.
-
-Already working:
-- deployment (Railway)
-- auth (Google OAuth + JWT)
-- /api/me works
-- frontend ↔ backend connection fixed (VITE_API_URL)
-- user authentication persists
-
-Current problem NOT fixed yet:
-
-👉 Start Lesson fails (HTTP 405)
-
-We already determined:
-- backend is alive
-- request reaches server
-- endpoint mismatch exists OR wrong method OR wrong path
-
-==================================================
-TASK
-==================================================
-
-Continue EXACTLY from where you left off.
-
-DO NOT restart analysis from scratch.
-
-DO:
-
-1. Identify where you stopped in the previous log
-2. Continue debugging the Start Lesson failure
-3. Finish aligning frontend ↔ backend API
+User must feel:
+- “I improved”
+- “This AI understands me”
+- “I want to continue”
 
 ==================================================
 STRICT RULES
 ==================================================
 
 DO NOT:
-- redo auth system
-- change OAuth
-- modify unrelated files
-- refactor project
-- redesign UI
-- touch working endpoints (/api/me etc.)
-- introduce new architecture
-
-ONLY:
-- fix lesson start API mismatch
+- increase AI calls
+- add free chat
+- touch paid lesson system
+- touch existing Classroom core
+- break limits or auth
 
 ==================================================
-EXPECTED OUTPUT
+FOCUS TASKS
 ==================================================
 
-1. What was already done (short recap)
-2. What exact step you are continuing from
-3. Exact root cause (if now clear)
-4. Minimal code changes required
-5. Exact files to edit
+1. Improve DemoClassroomPage UX:
+
+- simulate real conversation
+- teacher messages appear in chunks
+- no dead states
+- smooth progression between steps
+
+2. Add strong correction moments:
+
+Show clearly:
+
+Before:
+incorrect sentence
+
+After:
+correct sentence
+
+Make improvement visible.
+
+3. Use calibration data FULLY:
+
+- interestArea → affects tasks
+- teacherStyle → affects tone
+- speakingConfidence → affects difficulty
+- demoMission → affects feedback + result
+
+User must feel personalization.
+
+4. Improve speaking tasks:
+
+- make them feel real (not textbook)
+- short, natural prompts
+
+5. Improve final result screen:
+
+- not generic
+- must feel personal
+- highlight strengths + weaknesses
+- show progress during lesson
+
+6. Improve transition to pricing:
+
+- smooth
+- based on user performance
+- motivating, not forced
+
+==================================================
+VALIDATION
+==================================================
+
+Ensure:
+
+- all API calls use VITE_API_URL
+- Authorization header is used
+- no relative API calls
+- no frontend AI calls
+- demo limits enforced
+
+==================================================
+OUTPUT
+==================================================
+
+Return:
+
+1. What you improved
+2. Files changed
+3. UX improvements added
+4. Any small backend tweaks (if needed)
+5. Build results
 6. Git commands
 
-==================================================
-IMPORTANT
-==================================================
-
-Treat previous log as SOURCE OF TRUTH.
-
-Do NOT guess project structure.
-Use what is shown in logs.
-
-Continue step-by-step until Start Lesson works.If you restart analysis from scratch, you are doing it wrong.
-Continue from last meaningful step in the log.
-=======
-name my frontend file AI_Classroom.html You are a Principal Frontend Architect.                              
-                                                                                                               
-  I added the finished Classroom UI HTML file to the project root.                                             
-                                                                                                               
-  Your task:                                                                                                   
-  Prepare this frontend for backend integration.                                                               
-                                                                                                               
-  DO NOT connect backend yet.                                                                                  
-  DO NOT redesign UI.                                                                                          
-  DO NOT change visual layout.                                                                                 
-  DO NOT add features.                                                                                         
-                                                                                                               
-  What to do:                                                                                                  
-                                                                                                               
-  1. Find the Classroom HTML file in the project root.                                                         
-  2. Analyze it.                                                                                               
-  3. Extract it into proper React structure inside the existing frontend app.                                  
-                                                                                                               
-  Create / update:                                                                                             
-                                                                                                               
-  frontend/src/features/classroom/                                                                             
-    components/                                                                                                
-      ClassroomLayout.tsx                                                                                      
-      ClassroomHeader.tsx                                                                                      
-      TeacherPanel.tsx                                                                                         
-      TeacherAvatar.tsx                                                                                        
-      ExercisePanel.tsx                                                                                        
-      SectionProgressPanel.tsx                                                                                 
-      ChatPanel.tsx                                                                                            
-      BottomControls.tsx                                                                                       
-      TeachingOverlay.tsx                                                                                      
-    hooks/                                                                                                     
-      useLessonSession.ts                                                                                      
-      useClassroomChat.ts                                                                                      
-      useVoiceSession.ts                                                                                       
-    services/                                                                                                  
-      lessonApi.ts                                                                                             
-      classroomSocket.ts                                                                                       
-      voiceApi.ts                                                                                              
-    types.ts                                                                                                   
-    mockData.ts                                                                                                
-                                                                                                               
-  Rules:                                                                                                       
-  - Keep UI visually identical to the HTML mock.                                                               
-  - Keep mock data working for now.                                                                            
-  - Remove duplicate/old classroom components only if they conflict.                                           
-  - Do not break existing Vite app.                                                                            
-  - Do not touch backend.                                                                                      
-  - Add TODO comments where backend will connect later.                                                        
-                                                                                                               
-  Important product rules:                                                                                     
-  - One input only: BottomControls.                                                                            
-  - Chat is read-only; no chat input inside ChatPanel.                                                         
-  - Frontend is passive; backend will control lesson flow later.                                               
-  - Mic button = voice mode toggle.                                                                            
-  - I don’t understand will later request teaching_card from backend.                                          
-                                                                                                               
-  Output:                                                                                                      
-  1. Files created/changed                                                                                     
-  2. Where the route/page is mounted                                                                           
-  3. How to run/test frontend                                                                                  
-  4. Backend TODO points                                                                                       
-
-● Let me start by reading the HTML file and exploring the existing frontend structure.
-
-  Searched for 1 pattern, read 1 file (ctrl+o to expand)                                                       
-                        
-● Now let me read the key existing frontend files to understand the current structure.                         
-                                                 
-  Read 4 files (ctrl+o to expand)                                                                              
-                                                                                                               
-● Now let me read the remaining existing components.                                                           
-                                                                                                               
-  Read 4 files (ctrl+o to expand)                                                                              
-                                                                                                               
-● Let me read a few more files to complete my understanding.                                                   
-                                                                                                               
-  Read 4 files (ctrl+o to expand)                                                                              
-                                                                                                               
-● I have a complete picture of both the HTML mock and the existing frontend. Let me now create all the files.  
-  I'll batch the writes to run in parallel.                                                                    
-                                                                                                               
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Create file                                                                                                   
- frontend\src\features\classroom\types.ts                                                                      
-╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
-   1 export type AvatarState = 'listening' | 'speaking' | 'thinking'
-   2                                                                                                           
-   3 export type StepStatus = 'done' | 'active' | 'upcoming'
-   4                                                       
-   5 export type FeedbackState = 'correct' | 'wrong' | null
-   6 
-   7 export interface Exercise {
-   8   id:       string       
-   9   index:    number
-  10   total:    number
-  11   prompt:   string
-  12   hint:     string
-  13   sentence: string  // contains "________" placeholder
-  14   answer:   string
-  15 }
-  16
-  17 export interface LessonStep {
-  18   id:     string
-  19   label:  string
-  20   status: StepStatus
-  21 }
-  22
-  23 export type MessageSender = 'ai' | 'user'
-  24
-  25 export interface ChatMessage {
-  26   id:        string
-  25 export interface ChatMessage {
-  26   id:        string
-  27   sender:    MessageSender
-  28   text?:     string
-  29   isTyping?: boolean
-  30 }                            
-  31                       
-  32 export interface VoiceState {
-  33   isListening: boolean
-  34   isSpeaking:  boolean
-  35   transcript:  string
-  36 }                                  
-  37                     
-  38 export interface TeachingCardData {
-  39   title:      string    
-  40   body:       string  
-  41   ruleTable?: string[][]
-  42   examples?:  string[]                                                                                    
-  43 }                          
-╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
- Do you want to create types.ts?                          
- ❯ 1. Yes
-   2. Yes, allow all edits during this session (shift+tab)
-   3. No                     
-
- Esc to cancel · Tab to amend
-● Now let me read the key existing frontend files to understand the current structure.
-
-  Read 4 files (ctrl+o to expand)
-
-● Now let me read the remaining existing components.
-
-  Read 4 files (ctrl+o to expand)
-
-● Let me read a few more files to complete my understanding.
-
-  Read 4 files (ctrl+o to expand)
-
-● I have a complete picture of both the HTML mock and the existing frontend. Let me now create all the files.
-  I'll batch the writes to run in parallel.
-
-● Write(frontend\src\features\classroom\types.ts)
-  ⎿  Wrote 43 lines to frontend\src\features\classroom\types.ts
-       1 export type AvatarState = 'listening' | 'speaking' | 'thinking'
-       2                                                                                  
-       3 export type StepStatus = 'done' | 'active' | 'upcoming'
-       4                                                                                                       
-       5 export type FeedbackState = 'correct' | 'wrong' | null
-       6                                                                                                       
-       7 export interface Exercise {                                                                         
-       8   id:       string
-       9   index:    number
-      10   total:    number
-     … +33 lines (ctrl+o to expand)
-  ⎿  You've hit your limit · resets 8:30pm (Europe/Kiev)
-     /upgrade to increase your usage limit.     
-
-     Continue from the last state.
-
-You were working on integrating the Classroom frontend into a proper React architecture.
-
-DO NOT restart.
-DO NOT redesign.
-DO NOT repeat analysis.
-
-Pick up exactly where you stopped.
-
-Current goal:
-
-* finish extracting Classroom HTML into React components
-* ensure structure is under /features/classroom/
-* keep UI identical
-* keep mock logic working
-
-Then prepare next step:
-
-* mark all backend integration points with TODO
-* ensure single input system (BottomControls only)
-* ensure ChatPanel has NO input
-
-Work step-by-step until the frontend structure is complete and stable.
-
-Output only:
-
-* what you completed
-* what remains (if anything)
->>>>>>> production/main
+Proceed directly.
