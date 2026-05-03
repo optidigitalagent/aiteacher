@@ -2,6 +2,72 @@ import OpenAI from 'openai'
 import type { DemoSession, FinalResult, ScoreRecord } from './lesson-engine.js'
 import { TOPIC_PACKS, GRAMMAR_PACKS } from './script-data.js'
 
+// ── Rule-based fallbacks (used when AI is unavailable or limit reached) ────────
+
+export function buildRuleBasedSpeakingFeedback(answer: string): ScoreRecord {
+  const words = answer.trim().split(/\s+/).filter(Boolean)
+  const wordCount = words.length
+  const hasPersonal = /\b(i|my|me)\b/i.test(answer)
+  const hasPast = /\b(was|were|went|did|had|saw|felt|loved|enjoyed|found|visited|tried|made|thought|said)\b/i.test(answer)
+
+  if (wordCount >= 25 && hasPersonal && hasPast) {
+    return {
+      score: 7,
+      feedback: "You're describing past experiences naturally — that's a real skill. Next time, try adding one more specific detail or feeling to make it even stronger.",
+    }
+  }
+  if (wordCount >= 12 && hasPersonal) {
+    return {
+      score: 5,
+      feedback: hasPast
+        ? "You're on the right track. Add more specific detail — what exactly happened, and how did it make you feel?"
+        : "Good start. Try including a past event — tell me what happened and when.",
+    }
+  }
+  if (wordCount >= 5) {
+    return {
+      score: 4,
+      feedback: "That's a start — I need 2–3 full sentences to properly assess your speaking. Try expanding with a reason or example.",
+    }
+  }
+  return {
+    score: 3,
+    feedback: "Very brief. Give me 2–3 full sentences about the topic — I want to see how you actually use English.",
+  }
+}
+
+export function buildRuleBasedWritingFeedback(answer: string): ScoreRecord {
+  const wordCount = answer.trim().split(/\s+/).filter(Boolean).length
+  const hasBecause = /\bbecause\b/i.test(answer)
+  const hasConnectors = /\b(however|therefore|although|also|firstly|finally|moreover|furthermore|in addition)\b/i.test(answer)
+  const hasExamples = /\b(for example|for instance|such as)\b/i.test(answer)
+
+  if (wordCount >= 40 && (hasBecause || hasConnectors) && (hasExamples || hasConnectors)) {
+    return {
+      score: 7,
+      feedback: "Solid structure — you're connecting ideas clearly. Try varying your sentence length to improve the flow.",
+    }
+  }
+  if (wordCount >= 25 && (hasBecause || hasConnectors)) {
+    return {
+      score: 6,
+      feedback: "You're using linking words — that's the right instinct. Add a concrete example or a second reason to give it more depth.",
+    }
+  }
+  if (wordCount >= 15) {
+    return {
+      score: 5,
+      feedback: !hasBecause && !hasConnectors
+        ? "Add 'because' or 'however' to connect your ideas — it makes your writing sound significantly more sophisticated."
+        : "You have the right ideas. Try adding a specific example to back them up.",
+    }
+  }
+  return {
+    score: 3,
+    feedback: "Too brief for a writing task. I need at least 3 sentences with reasons and examples to give useful feedback.",
+  }
+}
+
 // Lazy singleton — only initialised on first AI call
 let _client: OpenAI | null = null
 function getClient(): OpenAI {
@@ -68,12 +134,17 @@ Interest area: ${topic.label}`
 
     return {
       score: typeof parsed.score === 'number' ? Math.min(10, Math.max(0, parsed.score)) : 6,
-      feedback: typeof parsed.feedback === 'string' ? parsed.feedback : "Good effort! Keep going.",
+      feedback: typeof parsed.feedback === 'string' ? parsed.feedback : "Try to say a bit more next time — more detail always helps.",
       correction: typeof parsed.correction === 'string' && parsed.correction !== 'null' ? parsed.correction : undefined,
     }
   } catch (err) {
-    console.error('[evaluator] speaking eval failed:', err instanceof Error ? err.message : err)
-    return { score: 6, feedback: "Good effort! Let's keep moving.", correction: undefined }
+    const isRateLimit = err != null && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 429
+    if (isRateLimit) {
+      console.warn('[evaluator] rate limit — using rule-based speaking fallback')
+    } else {
+      console.error('[evaluator] speaking eval failed:', err instanceof Error ? err.message : err)
+    }
+    return buildRuleBasedSpeakingFeedback(answer)
   }
 }
 
@@ -118,12 +189,17 @@ Interest area: ${topic.label}`
 
     return {
       score: typeof parsed.score === 'number' ? Math.min(10, Math.max(0, parsed.score)) : 6,
-      feedback: typeof parsed.feedback === 'string' ? parsed.feedback : "Well done! Good ideas here.",
+      feedback: typeof parsed.feedback === 'string' ? parsed.feedback : "Try expanding your ideas with reasons and examples next time.",
       correction: typeof parsed.correction === 'string' && parsed.correction !== 'null' ? parsed.correction : undefined,
     }
   } catch (err) {
-    console.error('[evaluator] writing eval failed:', err instanceof Error ? err.message : err)
-    return { score: 6, feedback: "Well done! Good ideas here.", correction: undefined }
+    const isRateLimit = err != null && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 429
+    if (isRateLimit) {
+      console.warn('[evaluator] rate limit — using rule-based writing fallback')
+    } else {
+      console.error('[evaluator] writing eval failed:', err instanceof Error ? err.message : err)
+    }
+    return buildRuleBasedWritingFeedback(answer)
   }
 }
 
@@ -153,6 +229,8 @@ Rules:
 - Do NOT use phrases like "You showed real potential" or "Keep practising" alone — be more specific
 - Total response under 160 words.`
 
+  const speakFollowUp = (session.answers['speaking_followup'] ?? '').slice(0, 100)
+
   const userPrompt = `Student profile:
 - Interest area: ${session.interest_area}
 - Grammar target: ${grammar.target}
@@ -163,14 +241,15 @@ Rules:
 - Demo mission: ${session.demo_mission}
 - Teacher style: ${session.teacher_style}
 - Speaking answer: "${(session.answers['speaking_task'] ?? '').slice(0, 200)}"
+${speakFollowUp ? `- Speaking follow-up: "${speakFollowUp}"` : ''}
 - Writing answer: "${(session.answers['writing_task'] ?? '').slice(0, 200)}"`
 
   const fallback: FinalResult = {
     level: 'B1',
     score: 65,
-    strengths: ['communicating ideas', 'vocabulary range'],
+    strengths: ['expressing personal ideas', 'vocabulary range'],
     areas_to_improve: ['grammar accuracy', 'sentence variety'],
-    teacher_message: "You showed real potential today! Keep practising and you'll make fast progress.",
+    teacher_message: "You communicate your ideas in English — that's already a real foundation. The next step is making your sentences smoother and more precise. The full course is built for exactly where you are now.",
   }
 
   try {

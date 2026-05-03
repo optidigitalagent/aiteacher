@@ -21,6 +21,8 @@ export interface DemoSession {
   scores: Record<string, ScoreRecord>
   final_result: FinalResult | null
   ai_calls_used: number
+  abuse_flags: number
+  answer_attempts_total: number
   started_lesson_at: string | null
   completed_at: string | null
 }
@@ -60,7 +62,7 @@ export interface IntroContent {
   messages: Array<{ text: string; delay: number }>
 }
 
-const TOTAL_STEPS = 4
+const TOTAL_STEPS = 6
 
 export function getTotalSteps(): number {
   return TOTAL_STEPS
@@ -104,10 +106,25 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         maxRetries: 2,
       }
 
-    case 1: // grammar_mcq
+    case 1: // warm_up_followup
+      return {
+        key: 'warm_up_followup',
+        index: 1,
+        type: 'text_input',
+        teacherMessages: [
+          { text: "Good — quick follow-up:", delay: 0 },
+          { text: topic.warmUpFollowUpQuestion, delay: 900 },
+        ],
+        prompt: topic.warmUpFollowUpQuestion,
+        placeholder: topic.warmUpFollowUpPlaceholder,
+        minLength: 5,
+        maxRetries: 2,
+      }
+
+    case 2: // grammar_mcq
       return {
         key: 'grammar_mcq',
-        index: 1,
+        index: 2,
         type: 'mcq',
         teacherMessages: [
           { text: tone.transition, delay: 0 },
@@ -120,13 +137,13 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         maxRetries: 2,
       }
 
-    case 2: // speaking_task
+    case 3: // speaking_task
       return {
         key: 'speaking_task',
-        index: 2,
+        index: 3,
         type: 'text_input',
         teacherMessages: [
-          { text: "Good — now something more personal.", delay: 0 },
+          { text: "Now let's hear you actually speak.", delay: 0 },
           { text: topic.speakingPrompt, delay: 1100 },
         ],
         prompt: topic.speakingPrompt,
@@ -135,13 +152,28 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         maxRetries: 2,
       }
 
-    case 3: // writing_task
+    case 4: // speaking_followup
       return {
-        key: 'writing_task',
-        index: 3,
+        key: 'speaking_followup',
+        index: 4,
         type: 'text_input',
         teacherMessages: [
-          { text: "Last one — this one shows me how you actually think.", delay: 0 },
+          { text: "One more thing about that:", delay: 0 },
+          { text: topic.speakingFollowUpQuestion, delay: 900 },
+        ],
+        prompt: topic.speakingFollowUpQuestion,
+        placeholder: topic.speakingFollowUpPlaceholder,
+        minLength: 5,
+        maxRetries: 2,
+      }
+
+    case 5: // writing_task
+      return {
+        key: 'writing_task',
+        index: 5,
+        type: 'text_input',
+        teacherMessages: [
+          { text: "Last one — this is where I see how you actually think in writing.", delay: 0 },
           { text: topic.writingPrompt, delay: 1200 },
         ],
         prompt: topic.writingPrompt,
@@ -201,20 +233,48 @@ export function buildWarmUpFeedback(session: DemoSession, answer: string): strin
   const tone = TEACHER_TONES[session.teacher_style] ?? TEACHER_TONES['friendly_coach']!
   const wordCount = answer.trim().split(/\s+/).filter(Boolean).length
 
-  // Very short — prompt for a real sentence
   if (wordCount <= 3) {
     const word = answer.trim()
     const cap = word.charAt(0).toUpperCase() + word.slice(1)
-    return `${cap} — good start. Now try one full sentence with that idea. For example: "I really like ${word} because..." — that gives me something real to work with.`
+    return `${cap} — that's a start. Now give me one full sentence with that idea. For example: "I really like ${word} because..." — that gives me something real to work with.`
   }
 
-  // Strong, detailed answer
-  if (wordCount >= 20) {
-    const pick = tone.encouragement[0] ?? "That's excellent!"
-    return `${pick} Really solid — I can see you have genuine opinions here. That's exactly the kind of answer we build on.`
-  }
-
-  // Medium answer — tone-matched encouragement
   const idx = Math.floor(Math.random() * tone.encouragement.length)
-  return tone.encouragement[idx] ?? "Thanks for that!"
+  return tone.encouragement[idx] ?? "Got it — that gives me a useful picture."
+}
+
+export function buildFollowUpFeedback(session: DemoSession, answer: string, stepKey: string): string {
+  const tone = TEACHER_TONES[session.teacher_style] ?? TEACHER_TONES['friendly_coach']!
+  const wordCount = answer.trim().split(/\s+/).filter(Boolean).length
+
+  if (wordCount <= 3) {
+    return "Tell me a bit more — one full sentence would be great."
+  }
+
+  const idx = Math.floor(Math.random() * tone.encouragement.length)
+  if (stepKey === 'speaking_followup') {
+    return tone.encouragement[idx] ?? "Useful — that adds real context."
+  }
+  return tone.encouragement[idx] ?? "Got it — that gives me a better picture."
+}
+
+export function buildConfusedHint(session: DemoSession, stepKey: string, retryCount: number): string {
+  const topic = TOPIC_PACKS[session.interest_area] ?? TOPIC_PACKS['school_life']!
+
+  if (retryCount >= 2) {
+    const raw =
+      stepKey === 'speaking_task'   ? topic.speakingPlaceholder :
+      stepKey === 'speaking_followup' ? topic.speakingFollowUpPlaceholder :
+      topic.writingPlaceholder
+    const example = raw.replace(/^e\.g\.\s*/i, '')
+    return `Try something like: "${example}" — just put it in your own words, it doesn't have to be perfect.`
+  }
+
+  if (stepKey === 'speaking_task' || stepKey === 'speaking_followup') {
+    return `No problem — describe something real from your experience. Start with "I…" and tell me what happened or what you think.`
+  }
+  if (stepKey === 'writing_task') {
+    return `Take your time. Start with one clear idea and add a reason — even 2–3 sentences is a solid start.`
+  }
+  return `No problem — even one full sentence is fine. Try starting with "I think…" or "In my opinion…"`
 }

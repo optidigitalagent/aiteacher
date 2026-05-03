@@ -11,9 +11,11 @@ interface Props {
 }
 
 const STEP_META: Record<string, { label: string; icon: string; color: string; bg: string; border: string }> = {
-  warm_up:       { label: 'Warm-up',  icon: '💬', color: '#6E7CFB', bg: 'linear-gradient(135deg,#ede9ff,#f0f0ff)', border: 'rgba(110,124,251,0.2)' },
-  speaking_task: { label: 'Speaking', icon: '🗣',  color: '#16a34a', bg: 'linear-gradient(135deg,#dcfce7,#f0fdf4)', border: 'rgba(34,197,94,0.25)'   },
-  writing_task:  { label: 'Writing',  icon: '✏️',  color: '#d97706', bg: 'linear-gradient(135deg,#fff7ed,#fffbeb)', border: 'rgba(217,119,6,0.25)'   },
+  warm_up:           { label: 'Warm-up',  icon: '💬', color: '#6E7CFB', bg: 'linear-gradient(135deg,#ede9ff,#f0f0ff)', border: 'rgba(110,124,251,0.2)' },
+  warm_up_followup:  { label: 'Warm-up',  icon: '💬', color: '#6E7CFB', bg: 'linear-gradient(135deg,#ede9ff,#f0f0ff)', border: 'rgba(110,124,251,0.2)' },
+  speaking_task:     { label: 'Speaking', icon: '🗣',  color: '#16a34a', bg: 'linear-gradient(135deg,#dcfce7,#f0fdf4)', border: 'rgba(34,197,94,0.25)'  },
+  speaking_followup: { label: 'Speaking', icon: '🗣',  color: '#16a34a', bg: 'linear-gradient(135deg,#dcfce7,#f0fdf4)', border: 'rgba(34,197,94,0.25)'  },
+  writing_task:      { label: 'Writing',  icon: '✏️',  color: '#d97706', bg: 'linear-gradient(135deg,#fff7ed,#fffbeb)', border: 'rgba(217,119,6,0.25)'  },
 }
 
 const CARD: CSSProperties = {

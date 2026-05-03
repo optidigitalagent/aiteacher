@@ -293,7 +293,8 @@ export function useDemoSession({
           :                                 'upcoming',
   }))
 
-  const progress = Math.round((completedSteps.length / DEMO_STEP_KEYS.length) * 100)
+  const mainStepsCompleted = completedSteps.filter(k => (DEMO_STEP_KEYS as readonly string[]).includes(k)).length
+  const progress = Math.round((mainStepsCompleted / DEMO_STEP_KEYS.length) * 100)
 
   return {
     chatMessages, steps, progress, isSpeaking, lessonStarted,
