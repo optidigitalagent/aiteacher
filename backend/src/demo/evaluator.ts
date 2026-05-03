@@ -36,13 +36,21 @@ export async function evaluateSpeaking(
   const topic = TOPIC_PACKS[session.interest_area] ?? TOPIC_PACKS['school_life']!
 
   const systemPrompt = `You are an English teacher evaluating a student's spoken response.
-Return ONLY valid JSON: {"score": 0-10, "feedback": "1-2 sentence encouraging comment", "correction": "corrected version or null if fine"}
-Keep feedback under 30 words. Be warm and specific. Score 7+ means good.`
+Return ONLY valid JSON: {"score": 0-10, "feedback": "string", "correction": "string or null"}
 
-  const userPrompt = `Topic prompt: "${topic.speakingPrompt}"
+Rules:
+- Be SPECIFIC — reference what the student actually said or the topic they mentioned
+- NEVER start with generic phrases like "Great effort!", "Good attempt!", "Well done!" — be direct and honest
+- If answer is 1-3 words only (a topic name, single noun): score 3-4, say "[Word] — good topic. Try a full sentence: 'I [verb] [word] because...' — give me something real to work with."
+- If answer is not English / gibberish / keyboard smash: score 1-2, say "I couldn't follow that as English. Try one clear sentence — even a simple one counts."
+- correction: an improved full sentence version of what they said. Set to null ONLY if their grammar was already correct and complete.
+- Keep feedback under 40 words total.`
+
+  const userPrompt = `Prompt given to student: "${topic.speakingPrompt}"
 Student answer: "${answer}"
 Student confidence level: ${session.speaking_confidence}
-Teacher style: ${session.teacher_style}`
+Teacher style: ${session.teacher_style}
+Interest area: ${topic.label}`
 
   try {
     const res = await getClient().chat.completions.create({
@@ -78,13 +86,21 @@ export async function evaluateWriting(
   const topic = TOPIC_PACKS[session.interest_area] ?? TOPIC_PACKS['school_life']!
 
   const systemPrompt = `You are an English teacher evaluating a student's written response.
-Return ONLY valid JSON: {"score": 0-10, "feedback": "2-3 sentence comment on content and language", "correction": "improved version of 1 key sentence, or null"}
-Keep feedback under 50 words. Be specific and encouraging.`
+Return ONLY valid JSON: {"score": 0-10, "feedback": "string", "correction": "string or null"}
+
+Rules:
+- Be SPECIFIC — mention what they actually wrote or the idea they expressed
+- Give ONE concrete improvement: e.g. "Use 'however' instead of 'but' to sound more formal" or "Add a reason after your main point"
+- NEVER be generic — "Good ideas!" alone is not acceptable
+- correction: an improved version of 1-2 of their sentences showing the upgrade. null only if already excellent.
+- If the answer is not English / gibberish: score 1, say "That doesn't read as English to me. Write 2-3 real sentences — even simple ones."
+- Keep feedback under 60 words total.`
 
   const userPrompt = `Writing prompt: "${topic.writingPrompt}"
 Student answer: "${answer}"
-Student confidence level: ${session.speaking_confidence}
-Teacher style: ${session.teacher_style}`
+Student confidence: ${session.speaking_confidence}
+Teacher style: ${session.teacher_style}
+Interest area: ${topic.label}`
 
   try {
     const res = await getClient().chat.completions.create({
@@ -126,13 +142,19 @@ Return ONLY valid JSON:
 {
   "level": "A2|B1|B2",
   "score": 1-100,
-  "strengths": ["max 2 short phrases"],
-  "areas_to_improve": ["max 2 short phrases"],
-  "teacher_message": "2-3 sentence personal message to the student"
+  "strengths": ["max 2 SPECIFIC short phrases based on what they actually did well"],
+  "areas_to_improve": ["max 2 SPECIFIC short phrases based on their actual errors"],
+  "teacher_message": "2-3 sentences: acknowledge something SPECIFIC from their answers, name the level, and give a concrete motivating next step"
 }
-Keep teacher_message warm, honest, and motivating. Total response under 150 words.`
+
+Rules:
+- strengths and areas_to_improve must reference actual performance, not generic phrases
+- teacher_message must feel personal — mention their interest area or something they said
+- Do NOT use phrases like "You showed real potential" or "Keep practising" alone — be more specific
+- Total response under 160 words.`
 
   const userPrompt = `Student profile:
+- Interest area: ${session.interest_area}
 - Grammar target: ${grammar.target}
 - Grammar MCQ: ${grammarCorrect ? 'correct' : 'incorrect'}
 - Speaking score: ${speakScore}/10
@@ -140,8 +162,8 @@ Keep teacher_message warm, honest, and motivating. Total response under 150 word
 - Speaking confidence: ${session.speaking_confidence}
 - Demo mission: ${session.demo_mission}
 - Teacher style: ${session.teacher_style}
-- Speaking answer excerpt: "${(session.answers['speaking_task'] ?? '').slice(0, 150)}"
-- Writing answer excerpt: "${(session.answers['writing_task'] ?? '').slice(0, 150)}"`
+- Speaking answer: "${(session.answers['speaking_task'] ?? '').slice(0, 200)}"
+- Writing answer: "${(session.answers['writing_task'] ?? '').slice(0, 200)}"`
 
   const fallback: FinalResult = {
     level: 'B1',

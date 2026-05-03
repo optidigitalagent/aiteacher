@@ -65,9 +65,12 @@ function buildFeedbackText(
 ): string {
   let text = fb.message
   if (fb.correction) {
-    text += studentText
-      ? `\n\nYou said: "${studentText}" → Better: "${fb.correction}"`
-      : `\n\nBetter version: "${fb.correction}"`
+    text += '\n\n'
+    if (studentText) {
+      text += `✗ "${studentText}"\n✓ "${fb.correction}"`
+    } else {
+      text += `Try: "${fb.correction}"`
+    }
   }
   if (fb.score != null) text += `\n\nScore: ${fb.score}/10`
   return text
@@ -129,13 +132,13 @@ export function useDemoSession({
   const playMessages = useCallback(async (msgs: TeacherMessage[]) => {
     currentTeacherMsgRef.current = null
     for (const msg of msgs) {
-      if (msg.delay > 0) await sleep(Math.min(msg.delay, 1600))
+      if (msg.delay > 0) await sleep(Math.min(msg.delay, 2600))
       setChatMessages((prev) => [
         ...prev.filter((m) => !m.isTyping),
         { id: 'typing', sender: 'ai', isTyping: true },
       ])
       setIsSpeaking(true)
-      await sleep(Math.min(400 + msg.text.length * 8, 1400))
+      await sleep(Math.min(800 + msg.text.length * 16, 3200))
       setIsSpeaking(false)
       pushTeacher(msg.text)
     }
@@ -181,10 +184,10 @@ export function useDemoSession({
         isComplete:  boolean
       }
 
-      await sleep(350)
+      await sleep(500)
       setChatMessages((prev) => [...prev, { id: 'typing', sender: 'ai', isTyping: true }])
       setIsSpeaking(true)
-      await sleep(900)
+      await sleep(1200)
       setIsSpeaking(false)
 
       setChatMessages((prev) => [
@@ -195,13 +198,14 @@ export function useDemoSession({
       setCompletedSteps((prev) => [...prev, step.key])
 
       if (j.isComplete && j.finalResult) {
-        await sleep(1400)
+        await sleep(2000)
         setFinalResult(j.finalResult)
         setPhase('complete')
         return
       }
 
       if (j.nextStep) {
+        await sleep(2000)
         setCurrentStep(j.nextStep)
         await playMessages(j.nextStep.teacherMessages)
       }

@@ -58,22 +58,28 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   } = useVoiceSession({ send })
 
   // ── Demo voice — Web Speech API (no WebSocket needed) ────────────────────
-  // Minimal local interface so we don't rely on `SpeechRecognition` global type
+  type SpeechAlt = { transcript: string }
+  type SpeechResult = ArrayLike<SpeechAlt> & { isFinal: boolean }
   type WebSpeechRec = {
     continuous: boolean; interimResults: boolean; lang: string
-    onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null
+    onresult: ((e: { results: ArrayLike<SpeechResult> }) => void) | null
     onend: (() => void) | null
     onerror: (() => void) | null
     start(): void; stop(): void
   }
-  const [demoListening,  setDemoListening]  = useState(false)
-  const demoSpeechRef = useRef<WebSpeechRec | null>(null)
+  const [demoListening,     setDemoListening]     = useState(false)
+  const demoSpeechRef    = useRef<WebSpeechRec | null>(null)
+  const demoTranscriptRef = useRef('')
+  const demoMicTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Stable ref to demo.handleTextSubmit — populated after demo is declared below
+  const demoSubmitRef = useRef<(t: string) => void>(() => {})
 
   const toggleDemoMic = useCallback(() => {
     if (demoListening) {
+      if (demoMicTimerRef.current) { clearTimeout(demoMicTimerRef.current); demoMicTimerRef.current = null }
       demoSpeechRef.current?.stop()
-      demoSpeechRef.current = null
-      setDemoListening(false)
+      // onend will fire and handle auto-submit
       return
     }
     const w = window as unknown as Record<string, unknown>
@@ -83,22 +89,40 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       console.warn('[demo voice] SpeechRecognition not supported')
       return
     }
+    demoTranscriptRef.current = ''
     const rec = new SpeechRecCtor()
-    rec.continuous     = false
+    rec.continuous     = true
     rec.interimResults = true
     rec.lang           = 'en-US'
     rec.onresult = (e) => {
-      let text = ''
-      for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript
-      setAnswer(text)
+      let collected = ''
+      for (let i = 0; i < e.results.length; i++) {
+        collected += (e.results[i]![0] as SpeechAlt).transcript
+      }
+      demoTranscriptRef.current = collected
+      setAnswer(collected)
     }
-    const cleanup = () => { setDemoListening(false); demoSpeechRef.current = null }
-    rec.onend   = cleanup
-    rec.onerror = cleanup
+    rec.onend = () => {
+      setDemoListening(false)
+      demoSpeechRef.current = null
+      if (demoMicTimerRef.current) { clearTimeout(demoMicTimerRef.current); demoMicTimerRef.current = null }
+      const finalText = demoTranscriptRef.current.trim()
+      if (finalText) {
+        // Brief pause so state settles, then auto-submit
+        setTimeout(() => { demoSubmitRef.current(finalText) }, 250)
+      }
+    }
+    rec.onerror = () => {
+      setDemoListening(false)
+      demoSpeechRef.current = null
+      if (demoMicTimerRef.current) { clearTimeout(demoMicTimerRef.current); demoMicTimerRef.current = null }
+    }
     try {
       rec.start()
       setDemoListening(true)
       demoSpeechRef.current = rec
+      // Auto-stop after 60 seconds
+      demoMicTimerRef.current = setTimeout(() => { rec.stop() }, 60000)
     } catch {
       console.warn('[demo voice] start failed')
     }
@@ -115,6 +139,15 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     enabled:    demoEnabled,
     onNotFound: onDemoNotFound,
   })
+
+  // Wire demoSubmitRef now that demo is available
+  useEffect(() => {
+    demoSubmitRef.current = (text: string) => {
+      if (!text.trim()) return
+      setAnswer('')
+      demo.handleTextSubmit(text)
+    }
+  }, [demo.handleTextSubmit])
 
   // ── Local UI state ────────────────────────────────────────────────────────
   const [answer,          setAnswer]          = useState('')
@@ -310,7 +343,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         <div style={{
           flex: 1, minHeight: 0,
           display: 'grid',
-          gridTemplateColumns: chatOpen ? '170px 1fr 220px 150px' : '170px 1fr 220px',
+          gridTemplateColumns: chatOpen ? '160px 1fr 265px 148px' : '160px 1fr 148px',
           alignItems: 'stretch',
           gap: 14,
           padding: '16px 20px',

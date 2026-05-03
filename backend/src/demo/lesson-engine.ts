@@ -70,13 +70,15 @@ export function buildIntro(session: DemoSession): IntroContent {
   const tone = TEACHER_TONES[session.teacher_style] ?? TEACHER_TONES['friendly_coach']!
   const confidenceNote = CONFIDENCE_INTROS[session.speaking_confidence] ?? ''
   const missionNote = MISSION_INTROS[session.demo_mission] ?? ''
+  const topic = TOPIC_PACKS[session.interest_area] ?? TOPIC_PACKS['school_life']!
 
   return {
     messages: [
       { text: tone.greeting, delay: 0 },
-      { text: missionNote, delay: 1200 },
-      { text: confidenceNote, delay: 2200 },
-      { text: "Let's start with a quick introduction.", delay: 3000 },
+      { text: missionNote, delay: 1600 },
+      { text: confidenceNote, delay: 3000 },
+      { text: `I saw you're interested in ${topic.label} — I'll use that in today's tasks. It makes the whole thing more real.`, delay: 4400 },
+      { text: "Let's start.", delay: 5600 },
     ],
   }
 }
@@ -93,8 +95,8 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         index: 0,
         type: 'text_input',
         teacherMessages: [
-          { text: `I'd love to know a bit more about you first.`, delay: 0 },
-          { text: topic.warmUpQuestion, delay: 900 },
+          { text: `Before we get into the exercises, I want to hear from you.`, delay: 0 },
+          { text: topic.warmUpQuestion, delay: 1100 },
         ],
         prompt: topic.warmUpQuestion,
         placeholder: topic.warmUpPlaceholder,
@@ -109,8 +111,8 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         type: 'mcq',
         teacherMessages: [
           { text: tone.transition, delay: 0 },
-          { text: `Let's check a grammar point — **${grammar.target}**.`, delay: 800 },
-          { text: grammar.explanation, delay: 1600 },
+          { text: `Quick grammar check — ${grammar.target}. One sentence, four options.`, delay: 1000 },
+          { text: grammar.explanation, delay: 2000 },
         ],
         prompt: grammar.question,
         options: grammar.options.map((o, i) => `${['A', 'B', 'C', 'D'][i]}) ${o}`),
@@ -124,8 +126,8 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         index: 2,
         type: 'text_input',
         teacherMessages: [
-          { text: "Now let's move to something more personal.", delay: 0 },
-          { text: topic.speakingPrompt, delay: 900 },
+          { text: "Good — now something more personal.", delay: 0 },
+          { text: topic.speakingPrompt, delay: 1100 },
         ],
         prompt: topic.speakingPrompt,
         placeholder: topic.speakingPlaceholder,
@@ -139,8 +141,8 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         index: 3,
         type: 'text_input',
         teacherMessages: [
-          { text: "Final task — let's do some writing.", delay: 0 },
-          { text: topic.writingPrompt, delay: 900 },
+          { text: "Last one — this one shows me how you actually think.", delay: 0 },
+          { text: topic.writingPrompt, delay: 1200 },
         ],
         prompt: topic.writingPrompt,
         placeholder: topic.writingPlaceholder,
@@ -195,7 +197,24 @@ export function evaluateMcqServerSide(
   return { correct: false, feedback: grammar.wrongExplanation }
 }
 
-export function buildWarmUpFeedback(session: DemoSession): string {
+export function buildWarmUpFeedback(session: DemoSession, answer: string): string {
   const tone = TEACHER_TONES[session.teacher_style] ?? TEACHER_TONES['friendly_coach']!
-  return tone.encouragement[Math.floor(Math.random() * tone.encouragement.length)] ?? "Thanks for that!"
+  const wordCount = answer.trim().split(/\s+/).filter(Boolean).length
+
+  // Very short — prompt for a real sentence
+  if (wordCount <= 3) {
+    const word = answer.trim()
+    const cap = word.charAt(0).toUpperCase() + word.slice(1)
+    return `${cap} — good start. Now try one full sentence with that idea. For example: "I really like ${word} because..." — that gives me something real to work with.`
+  }
+
+  // Strong, detailed answer
+  if (wordCount >= 20) {
+    const pick = tone.encouragement[0] ?? "That's excellent!"
+    return `${pick} Really solid — I can see you have genuine opinions here. That's exactly the kind of answer we build on.`
+  }
+
+  // Medium answer — tone-matched encouragement
+  const idx = Math.floor(Math.random() * tone.encouragement.length)
+  return tone.encouragement[idx] ?? "Thanks for that!"
 }

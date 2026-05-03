@@ -221,7 +221,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         res.status(422).json({ code: 'INVALID_ANSWER', message: getSpamMessage(spam.reason) })
         return
       }
-      feedbackMessage = buildWarmUpFeedback(session)
+      feedbackMessage = buildWarmUpFeedback(session, answer)
       score = { feedback: feedbackMessage }
 
     } else if (stepKey === 'grammar_mcq') {

@@ -24,6 +24,18 @@ export default function DemoResultOverlay({ result, interestArea, onNavigate }: 
       : 'linear-gradient(90deg,#fb923c,#ef4444)'
   const topicName = TOPIC_LABELS[interestArea] ?? 'your interests'
 
+  const ctaText = result.score >= 70
+    ? `Continue at this level — ${topicName} lessons ready →`
+    : result.score >= 50
+      ? `Build on this — get your personalised ${topicName} plan →`
+      : `Start improving now — your personalised plan is ready →`
+
+  const footerText = result.score >= 70
+    ? 'Your next lesson locks in this progress — cancel anytime'
+    : result.score >= 50
+      ? 'Alex has your full lesson plan ready — cancel anytime'
+      : 'Small steps, fast progress — your first real lesson is free to try'
+
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 300,
@@ -49,7 +61,7 @@ export default function DemoResultOverlay({ result, interestArea, onNavigate }: 
                 padding: '6px 16px', fontSize: 11, fontWeight: 800,
                 textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 20,
               }}>
-                ✓ Demo lesson complete
+                ✓ Lesson complete · {topicName}
               </div>
 
               {/* Score + Level */}
@@ -122,16 +134,16 @@ export default function DemoResultOverlay({ result, interestArea, onNavigate }: 
             <button
               onClick={onNavigate}
               style={{
-                width: '100%', padding: 16, borderRadius: 18, border: 'none',
+                width: '100%', padding: '16px 20px', borderRadius: 18, border: 'none',
                 background: 'linear-gradient(135deg,#6E7CFB,#9B8CFF)',
                 color: 'white', fontSize: 15, fontWeight: 800, cursor: 'pointer',
                 boxShadow: '0 8px 28px rgba(110,124,251,0.4)', transition: 'all 0.2s', letterSpacing: '-0.2px',
               }}
             >
-              Keep improving with {topicName} →
+              {ctaText}
             </button>
             <p style={{ textAlign: 'center', fontSize: 12, color: '#94a3b8', marginTop: 10 }}>
-              Your next lesson is already personalised · cancel anytime
+              {footerText}
             </p>
           </div>
         </div>

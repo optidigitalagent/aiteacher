@@ -41,21 +41,30 @@ export default function DemoStepCenter({ phase, currentStep, selectedOption, onM
   if (phase === 'intro' || (phase === 'lesson' && !currentStep)) {
     return (
       <div style={WRAP}>
-        <div style={{ ...CARD, maxWidth: 560, textAlign: 'center' }}>
-          <div style={{ fontSize: 36, marginBottom: 16 }}>👋</div>
-          <p style={{ fontSize: 18, fontWeight: 800, color: '#1a1a2e', margin: '0 0 8px', letterSpacing: '-0.3px' }}>
-            Welcome to your AI lesson
+        <div style={{ ...CARD, maxWidth: 520, textAlign: 'center' }}>
+          <div style={{
+            width: 52, height: 52, borderRadius: 16, margin: '0 auto 20px',
+            background: 'linear-gradient(135deg,#6E7CFB,#9B8CFF)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'white', fontSize: 22, fontWeight: 800,
+            boxShadow: '0 8px 24px rgba(110,124,251,0.35)',
+          }}>A</div>
+          <p style={{ fontSize: 17, fontWeight: 800, color: '#1a1a2e', margin: '0 0 8px', letterSpacing: '-0.3px' }}>
+            Alex is preparing your lesson
           </p>
-          <p style={{ fontSize: 14, color: '#888', margin: '0 0 20px', lineHeight: 1.6 }}>
-            {isSpeaking ? 'Alex is speaking…' : 'Your exercise will appear here once the intro is done.'}
+          <p style={{ fontSize: 13, color: '#94a3b8', margin: '0 0 20px', lineHeight: 1.6 }}>
+            {isSpeaking ? 'Listen to the introduction…' : 'Your first exercise will appear here shortly.'}
           </p>
-          {isSpeaking && (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 5 }}>
-              {[0, 1, 2].map((i) => (
-                <span key={i} className="cls-typing-dot" style={{ animationDelay: `${i * 0.15}s` }} />
-              ))}
-            </div>
-          )}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 5 }}>
+            {[0, 1, 2].map((i) => (
+              <span key={i} style={{
+                display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+                background: isSpeaking ? '#6E7CFB' : '#d1d5db',
+                animation: isSpeaking ? `pulse 1.2s ease-in-out ${i * 0.2}s infinite` : 'none',
+              }} />
+            ))}
+          </div>
+          <style>{`@keyframes pulse { 0%,80%,100%{transform:scale(0.7);opacity:0.4} 40%{transform:scale(1);opacity:1} }`}</style>
         </div>
       </div>
     )
@@ -159,27 +168,21 @@ export default function DemoStepCenter({ phase, currentStep, selectedOption, onM
         </div>
 
         {currentStep.prompt ? (
-          <h2 style={{ fontSize: 26, fontWeight: 800, color: '#1a1a2e', lineHeight: 1.35, margin: '0 0 24px', letterSpacing: '-0.4px' }}>
+          <h2 style={{ fontSize: 24, fontWeight: 800, color: '#1a1a2e', lineHeight: 1.4, margin: '0 0 28px', letterSpacing: '-0.3px' }}>
             {currentStep.prompt}
           </h2>
         ) : (
-          <p style={{ fontSize: 18, color: '#aaa', margin: '0 0 24px', fontStyle: 'italic' }}>
-            Listen to the teacher and respond when ready.
+          <p style={{ fontSize: 16, color: '#94a3b8', margin: '0 0 24px', fontStyle: 'italic' }}>
+            Listen to Alex and respond when ready.
           </p>
         )}
 
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          background: 'rgba(110,124,251,0.06)', borderRadius: 10,
-          padding: '8px 14px', border: '1px solid rgba(110,124,251,0.1)',
-        }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6E7CFB" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 5v14M5 12l7 7 7-7" />
-          </svg>
-          <span style={{ fontSize: 13, color: '#6E7CFB', fontWeight: 600 }}>
-            Type your answer in the bar below
-          </span>
-        </div>
+        {submitting && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6E7CFB', fontSize: 13, fontWeight: 600 }}>
+            <span style={{ display: 'inline-block', width: 13, height: 13, border: '2px solid #9B8CFF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+            Alex is reading your answer…
+          </div>
+        )}
       </div>
     </div>
   )
