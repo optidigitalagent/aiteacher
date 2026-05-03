@@ -12,6 +12,9 @@ const MIGRATIONS = [
   '003_profile_editable.sql',
   '003_demo_safety.sql',
   '004_demo_sessions.sql',
+  '005_demo_engine.sql',
+  '006_abuse_tracking.sql',
+  '007_reset_inprogress.sql',
 ]
 
 async function migrate(): Promise<void> {

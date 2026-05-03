@@ -2,15 +2,105 @@ import type { DemoSession, FinalResult } from './lesson-engine.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type InputClass = 'VALID' | 'CONFUSED' | 'SHORT' | 'GIBBERISH'
+export type InputClass =
+  | 'VALID'
+  | 'VALID_WEAK_ENGLISH'
+  | 'CONFUSED'
+  | 'VOCAB_HELP'
+  | 'SHORT'
+  | 'GIBBERISH'
+  | 'REPETITION_SPAM'
 
 export interface ClassifyResult {
   cls: InputClass
   reason: string
   message: string
+  correction?: string
 }
 
-// ─── Confusion phrase dictionary ──────────────────────────────────────────────
+// ─── Lesson vocabulary: canonical name + misspelling aliases ──────────────────
+
+const VOCAB_CANONICAL: Record<string, string> = {
+  major: 'major', mager: 'major', majour: 'major',
+  spoiler: 'spoiler', spoilers: 'spoiler', spoiller: 'spoiler', spoler: 'spoiler',
+  recommend: 'recommend', recomend: 'recommend', reccomend: 'recommend',
+  convince: 'convince', convise: 'convince', convice: 'convince',
+  convinc: 'convince', convnce: 'convince', convise2: 'convince',
+  scene: 'scene', sceen: 'scene',
+  acting: 'acting',
+  worth: 'worth', worht: 'worth',
+  comedy: 'comedy', comedies: 'comedy', comdey: 'comedy', comidy: 'comedy',
+  plot: 'plot',
+  episode: 'episode',
+  sequel: 'sequel',
+  mechanic: 'mechanic', mechanics: 'mechanic',
+  spoil: 'spoiler',
+}
+
+const VOCAB_EXPLANATIONS: Record<string, { explanation: string; example: string; taskHint: string }> = {
+  major: {
+    explanation: "'Major' means very important or big.",
+    example: "In this task, 'without major spoilers' means: don't reveal the most important parts of the story.",
+    taskHint: "Try again: describe one scene, but don't tell the ending.",
+  },
+  spoiler: {
+    explanation: "A 'spoiler' is information that reveals key plot details before someone has seen the film or show.",
+    example: "Example: 'Don't spoil the ending!' means don't tell me what happens.",
+    taskHint: "Try again: describe a scene or moment, leaving out the ending.",
+  },
+  convince: {
+    explanation: "'Convince' means to make someone believe something or want to do something.",
+    example: "Example: 'This movie will convince you to watch more comedies.'",
+    taskHint: "Try: 'You should watch ___ because ___.'"
+  },
+  recommend: {
+    explanation: "'Recommend' means to suggest something you think is good for someone.",
+    example: "Example: 'I recommend this film because the story is amazing.'",
+    taskHint: "Try: 'I would recommend ___ because ___.'",
+  },
+  scene: {
+    explanation: "A 'scene' is one moment or short sequence of action in a film or show.",
+    example: "Example: 'There's a great scene where the hero finally confronts the villain.'",
+    taskHint: "Try: 'There's a scene where ___ and it works because ___.'",
+  },
+  acting: {
+    explanation: "'Acting' is the performance of the actors — how well they play their roles.",
+    example: "Example: 'The acting in this film is incredible — the lead actor is very convincing.'",
+    taskHint: "Try: 'The acting is great because the actor ___.'",
+  },
+  worth: {
+    explanation: "'Worth' means deserving of your time, money, or effort.",
+    example: "Example: 'This film is worth watching because the plot is original.'",
+    taskHint: "Try: 'It's worth watching because ___.'",
+  },
+  comedy: {
+    explanation: "A 'comedy' is a film or show that is funny and meant to make you laugh.",
+    example: "Example: 'I love watching comedies when I want to relax.'",
+    taskHint: "Try describing a comedy you've seen or would recommend.",
+  },
+  plot: {
+    explanation: "The 'plot' is the story of a film or show — what happens from beginning to end.",
+    example: "Example: 'The plot of this series is very complex — you need to pay attention.'",
+    taskHint: "Try describing the plot in 1–2 sentences.",
+  },
+  episode: {
+    explanation: "An 'episode' is one part of a TV series — like one chapter in a book.",
+    example: "Example: 'I watched three episodes last night and couldn't stop.'",
+    taskHint: "Try using the word in a full sentence.",
+  },
+  sequel: {
+    explanation: "A 'sequel' is a second film or show that continues the story of the first.",
+    example: "Example: 'The sequel was even better than the original.'",
+    taskHint: "Try using the word in a full sentence.",
+  },
+  mechanic: {
+    explanation: "A 'mechanic' in games means a rule or feature that controls how the game works.",
+    example: "Example: 'The crafting mechanic lets you build your own weapons.'",
+    taskHint: "Try describing a mechanic you like or want to design.",
+  },
+}
+
+// ─── Confusion phrases ────────────────────────────────────────────────────────
 
 const CONFUSION_PHRASES = [
   "i don't understand",
@@ -32,23 +122,120 @@ const CONFUSION_PHRASES = [
   "help me",
 ]
 
-// ─── Input classifier (rule-based, zero AI cost) ──────────────────────────────
+// ─── Vocabulary help detection ────────────────────────────────────────────────
+
+function detectVocabWord(text: string): string | null {
+  const lower = text.toLowerCase().trim()
+
+  // Mixed language / Cyrillic: "Convince что это", "major что значит", "убедить"
+  if (/[а-яёА-ЯЁ]/.test(text)) {
+    const engToken = lower.match(/\b([a-z]{3,})\b/)
+    if (engToken) {
+      const canonical = VOCAB_CANONICAL[engToken[1] ?? '']
+      if (canonical) return canonical
+    }
+    // Pure Russian or no known word — treat as confused
+    return '__confused__'
+  }
+
+  // "what is major", "what is a major", "what's major", "what does major mean"
+  const whatIs = lower.match(/^(?:what(?:'s| is| are| does?))\s+(?:a |an |the )?(\w+)/)
+  if (whatIs) {
+    const word = whatIs[1] ?? ''
+    return VOCAB_CANONICAL[word] ?? null
+  }
+
+  // "major meaning", "major definition"
+  const meaningOf = lower.match(/^(\w+)\s+(?:meaning|means?|definition|defined)/)
+  if (meaningOf) {
+    const word = meaningOf[1] ?? ''
+    return VOCAB_CANONICAL[word] ?? null
+  }
+
+  // "I don't understand convince", "I don't understand what major means"
+  const dontUnderstand = lower.match(/(?:don'?t|dont)\s+understand\s+(?:what\s+)?(?:a |an |the )?(\w+)/)
+  if (dontUnderstand) {
+    const word = dontUnderstand[1] ?? ''
+    return VOCAB_CANONICAL[word] ?? null
+  }
+
+  // Single known vocab word with optional question mark: "convince?" or "major?"
+  const singleWord = lower.match(/^([a-z]{3,})\?*$/)
+  if (singleWord) {
+    const word = singleWord[1] ?? ''
+    return VOCAB_CANONICAL[word] ?? null
+  }
+
+  return null
+}
+
+function buildVocabMessage(canonical: string): string {
+  if (canonical === '__confused__') {
+    return "No problem — try writing in English. Even a simple sentence like 'I think...' or 'I like...' works great."
+  }
+  const entry = VOCAB_EXPLANATIONS[canonical]
+  if (!entry) return "Good question! Try a full sentence using that word."
+  return `Good question. ${entry.explanation}\n${entry.example}\n${entry.taskHint}`
+}
+
+// ─── Repetition spam detection ────────────────────────────────────────────────
+
+function isRepetitionSpam(words: string[]): boolean {
+  if (words.length < 4) return false
+  const counts = new Map<string, number>()
+  for (const w of words) {
+    const key = w.toLowerCase()
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  const maxCount = Math.max(...counts.values())
+  // Any word repeated 3+ times in a 4+ word message
+  if (maxCount >= 3) return true
+  // Very few unique words relative to total (e.g. "big chicken big chicken big chicken")
+  if (words.length >= 6 && counts.size / words.length < 0.45) return true
+  return false
+}
+
+// ─── Double negative detection ────────────────────────────────────────────────
+
+function detectDoubleNegative(text: string): string | null {
+  const hasNegation = /\b(don'?t|doesn'?t|didn'?t|can'?t|won'?t|wasn'?t|haven'?t|hasn'?t|not)\b/i.test(text)
+  if (!hasNegation) return null
+
+  const hasDoubleNeg = /\b(nothing|nobody|nowhere|no one|never)\b/i.test(text)
+  if (!hasDoubleNeg) return null
+
+  let corrected = text
+    .replace(/\bnothing\b/gi, 'anything')
+    .replace(/\bnobody\b/gi, 'anybody')
+    .replace(/\bnowhere\b/gi, 'anywhere')
+    .replace(/\bno one\b/gi, 'anyone')
+
+  // "I can't never" → "I can't ever" — only after negation
+  if (/\b(don'?t|doesn'?t|didn'?t|can'?t|won'?t|wasn'?t|haven'?t|hasn'?t)\b/i.test(text)) {
+    corrected = corrected.replace(/\bnever\b/gi, 'ever')
+  }
+
+  return corrected !== text ? corrected.trim() : null
+}
+
+// ─── Main classifier (rule-based, zero AI cost) ───────────────────────────────
 
 export function classifyInput(answer: string, minLength: number): ClassifyResult {
   const trimmed = answer.trim()
   const lower = trimmed.toLowerCase()
   const words = trimmed.split(/\s+/).filter(Boolean)
 
-  // 1. Length
-  if (trimmed.length < minLength) {
-    const hint =
-      words.length === 1
-        ? `Give me a full sentence — try: "I really like ${words[0] ?? 'it'} because..."`
-        : 'Write a bit more — at least one full sentence!'
-    return { cls: 'SHORT', reason: 'below_min_length', message: hint }
+  // 1. Vocabulary help (highest priority — catches Cyrillic, "what is X", misspellings)
+  const vocabWord = detectVocabWord(trimmed)
+  if (vocabWord) {
+    return {
+      cls: 'VOCAB_HELP',
+      reason: 'vocab_question',
+      message: buildVocabMessage(vocabWord),
+    }
   }
 
-  // 2. Confusion detection (check before gibberish — confused messages have alpha)
+  // 2. Confusion detection (before length — confused messages have alpha)
   if (['?', 'what', 'huh', 'hmm', 'idk'].includes(lower)) {
     return {
       cls: 'CONFUSED',
@@ -64,7 +251,25 @@ export function classifyInput(answer: string, minLength: number): ClassifyResult
     }
   }
 
-  // 3. Full-string repeated single char: "aaaaaaa", "......."
+  // 3. Length
+  if (trimmed.length < minLength) {
+    const hint =
+      words.length === 1
+        ? `Give me a full sentence — try: "I really like ${words[0] ?? 'it'} because..."`
+        : 'Write a bit more — at least one full sentence!'
+    return { cls: 'SHORT', reason: 'below_min_length', message: hint }
+  }
+
+  // 4. Repetition spam: same word 3+ times or very low vocabulary diversity
+  if (isRepetitionSpam(words)) {
+    return {
+      cls: 'REPETITION_SPAM',
+      reason: 'word_repetition',
+      message: "I couldn't understand that — try a real sentence.",
+    }
+  }
+
+  // 5. Full-string repeated single character: "aaaaaaa"
   if (/^(.)\1{4,}$/.test(trimmed)) {
     return {
       cls: 'GIBBERISH',
@@ -73,7 +278,7 @@ export function classifyInput(answer: string, minLength: number): ClassifyResult
     }
   }
 
-  // 4. Per-word repeated single char: "aaa bbb ccc"
+  // 6. Per-word repeated single char: "aaa bbb ccc"
   const repeatedCharWords = words.filter(w => w.length >= 2 && /^(.)\1+$/.test(w))
   if (repeatedCharWords.length >= Math.ceil(words.length * 0.6)) {
     return {
@@ -83,17 +288,17 @@ export function classifyInput(answer: string, minLength: number): ClassifyResult
     }
   }
 
-  // 5. All same word repeated: "ok ok ok ok"
+  // 7. All same single word: "ok ok ok ok" → repetition spam
   const uniqueWords = new Set(words.map(w => w.toLowerCase()))
   if (words.length >= 3 && uniqueWords.size === 1) {
     return {
-      cls: 'SHORT',
+      cls: 'REPETITION_SPAM',
       reason: 'single_word_repeat',
-      message: "Try a full sentence — what do you actually think?",
+      message: "I couldn't understand that — try a real sentence.",
     }
   }
 
-  // 6. Low alpha ratio — mostly numbers/symbols
+  // 8. Low alpha ratio — mostly numbers/symbols
   const alphaCount = (trimmed.match(/[a-zA-Z]/g) ?? []).length
   if (trimmed.length > 8 && alphaCount / trimmed.length < 0.25) {
     return {
@@ -103,7 +308,7 @@ export function classifyInput(answer: string, minLength: number): ClassifyResult
     }
   }
 
-  // 7. Low vowel ratio — keyboard consonant mash: "asdf ghj klq wer"
+  // 9. Low vowel ratio — keyboard consonant mash: "asdf ghj klq"
   const vowelCount = (trimmed.match(/[aeiouAEIOU]/g) ?? []).length
   if (alphaCount > 10 && vowelCount / alphaCount < 0.12) {
     return {
@@ -113,7 +318,7 @@ export function classifyInput(answer: string, minLength: number): ClassifyResult
     }
   }
 
-  // 8. Tiny character alphabet stretched over a long string
+  // 10. Tiny character alphabet over a long string
   const noSpaceChars = trimmed.replace(/\s+/g, '').toLowerCase()
   const uniqueChars = new Set(noSpaceChars.split(''))
   if (noSpaceChars.length > 15 && uniqueChars.size <= 4) {
@@ -124,7 +329,18 @@ export function classifyInput(answer: string, minLength: number): ClassifyResult
     }
   }
 
-  // 9. Too few words for tasks that require substance
+  // 11. Double negative → VALID_WEAK_ENGLISH with correction (retry, not skip)
+  const corrected = detectDoubleNegative(trimmed)
+  if (corrected) {
+    return {
+      cls: 'VALID_WEAK_ENGLISH',
+      reason: 'double_negative',
+      message: `Almost. In English, we avoid double negatives here.\nBetter: "${corrected}"\nTry again — one more sentence about the topic.`,
+      correction: corrected,
+    }
+  }
+
+  // 12. Too few words for tasks requiring substance
   if (words.length <= 2 && minLength >= 10) {
     return {
       cls: 'SHORT',
@@ -151,7 +367,7 @@ export function buildEarlyResult(session: DemoSession, dueToAbuse: boolean): Fin
   const rawScore = hasPartial ? Math.round(((speakScore + writeScore) / 2) * 10) : 50
 
   const teacherMessage = dueToAbuse
-    ? "I can see you're still finding your footing — that's completely normal! The full course starts exactly where you are and builds step by step, at your own pace."
+    ? "Let's stop here for now. You can come back when you're ready to practise seriously."
     : "You've been putting in real effort today. The full course is where we build on this together — I'll give you personalised practice to level up fast."
 
   return {

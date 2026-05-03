@@ -229,9 +229,9 @@ export function evaluateMcqServerSide(
   return { correct: false, feedback: grammar.wrongExplanation }
 }
 
-export function buildWarmUpFeedback(session: DemoSession, answer: string): string {
-  const tone = TEACHER_TONES[session.teacher_style] ?? TEACHER_TONES['friendly_coach']!
-  const wordCount = answer.trim().split(/\s+/).filter(Boolean).length
+export function buildWarmUpFeedback(_session: DemoSession, answer: string): string {
+  const words = answer.trim().split(/\s+/).filter(Boolean)
+  const wordCount = words.length
 
   if (wordCount <= 3) {
     const word = answer.trim()
@@ -239,23 +239,26 @@ export function buildWarmUpFeedback(session: DemoSession, answer: string): strin
     return `${cap} — that's a start. Now give me one full sentence with that idea. For example: "I really like ${word} because..." — that gives me something real to work with.`
   }
 
-  const idx = Math.floor(Math.random() * tone.encouragement.length)
-  return tone.encouragement[idx] ?? "Got it — that gives me a useful picture."
+  // Neutral acknowledgment — never use scripted encouragement for warm-up
+  // since we can't verify quality without AI at this step
+  const hasPersonal = /\b(i|my|me)\b/i.test(answer)
+  if (wordCount >= 15 && hasPersonal) {
+    return "Got it — that gives me a useful picture of where you are."
+  }
+  return "Okay, I've got something to work with. Let's keep going."
 }
 
-export function buildFollowUpFeedback(session: DemoSession, answer: string, stepKey: string): string {
-  const tone = TEACHER_TONES[session.teacher_style] ?? TEACHER_TONES['friendly_coach']!
+export function buildFollowUpFeedback(_session: DemoSession, answer: string, stepKey: string): string {
   const wordCount = answer.trim().split(/\s+/).filter(Boolean).length
 
   if (wordCount <= 3) {
     return "Tell me a bit more — one full sentence would be great."
   }
 
-  const idx = Math.floor(Math.random() * tone.encouragement.length)
   if (stepKey === 'speaking_followup') {
-    return tone.encouragement[idx] ?? "Useful — that adds real context."
+    return "Useful — that adds real context to what you said."
   }
-  return tone.encouragement[idx] ?? "Got it — that gives me a better picture."
+  return "Got it — that gives me a better picture."
 }
 
 export function buildConfusedHint(session: DemoSession, stepKey: string, retryCount: number): string {

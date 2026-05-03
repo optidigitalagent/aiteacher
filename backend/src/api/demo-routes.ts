@@ -5,7 +5,6 @@ import redis from '../db/redis.js'
 import {
   buildIntro,
   buildStep,
-  checkSpam,
   evaluateMcqServerSide,
   buildWarmUpFeedback,
   buildFollowUpFeedback,
@@ -210,7 +209,7 @@ router.get('/demo/session/:id', requireAuth, async (req: Request, res: Response)
     })
   } catch (err) {
     console.error('[demo/session] error:', err instanceof Error ? err.message : err)
-    res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to load session' })
+    res.status(500).json({ code: 'SESSION_LOAD_FAILED', message: 'Could not load demo session' })
   }
 })
 
@@ -263,23 +262,47 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
     let correctionMessage: string | undefined
 
     if (stepKey === 'warm_up') {
-      // No AI — rule-based spam check + scripted feedback
-      const spam = checkSpam(answer, expectedStep.minLength)
-      if (spam.spam) {
-        res.status(422).json({ code: 'INVALID_ANSWER', message: getSpamMessage(spam.reason) })
+      // Classify first — vocab help and spam must not advance step
+      const classified = classifyInput(answer, expectedStep.minLength)
+      if (classified.cls === 'VOCAB_HELP') {
+        console.log('[demo-ai] skipped reason=VOCAB_HELP step=warm_up')
+        res.status(422).json({ code: 'VOCAB_HELP', message: classified.message })
         return
       }
+      if (classified.cls === 'GIBBERISH' || classified.cls === 'REPETITION_SPAM') {
+        res.status(422).json({ code: 'INVALID_ANSWER', message: "I couldn't understand that — try a real sentence." })
+        return
+      }
+      if (classified.cls === 'SHORT' || classified.cls === 'CONFUSED') {
+        res.status(422).json({ code: 'INVALID_ANSWER', message: classified.message })
+        return
+      }
+      // VALID or VALID_WEAK_ENGLISH — advance with feedback (warm_up is calibration only)
       feedbackMessage = buildWarmUpFeedback(session, answer)
+      if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
+        correctionMessage = classified.correction
+      }
       score = { feedback: feedbackMessage }
 
     } else if (stepKey === 'warm_up_followup') {
-      // Rule-based, no AI, light spam check
-      const spam = checkSpam(answer, expectedStep.minLength)
-      if (spam.spam) {
-        res.status(422).json({ code: 'INVALID_ANSWER', message: getSpamMessage(spam.reason) })
+      const classified = classifyInput(answer, expectedStep.minLength)
+      if (classified.cls === 'VOCAB_HELP') {
+        console.log('[demo-ai] skipped reason=VOCAB_HELP step=warm_up_followup')
+        res.status(422).json({ code: 'VOCAB_HELP', message: classified.message })
+        return
+      }
+      if (classified.cls === 'GIBBERISH' || classified.cls === 'REPETITION_SPAM') {
+        res.status(422).json({ code: 'INVALID_ANSWER', message: "I couldn't understand that — try a real sentence." })
+        return
+      }
+      if (classified.cls === 'SHORT' || classified.cls === 'CONFUSED') {
+        res.status(422).json({ code: 'INVALID_ANSWER', message: classified.message })
         return
       }
       feedbackMessage = buildFollowUpFeedback(session, answer, 'warm_up_followup')
+      if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
+        correctionMessage = classified.correction
+      }
       score = { feedback: feedbackMessage }
 
     } else if (stepKey === 'grammar_mcq') {
@@ -295,30 +318,47 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       correctionMessage = undefined
 
     } else if (stepKey === 'speaking_followup') {
-      // Rule-based follow-up — classify but no abuse tracking
+      // Rule-based follow-up — classify, handle vocab help, no abuse tracking
       const classified = classifyInput(answer, expectedStep.minLength)
-      if (classified.cls !== 'VALID') {
+      if (classified.cls === 'VOCAB_HELP') {
+        console.log('[demo-ai] skipped reason=VOCAB_HELP step=speaking_followup')
+        res.status(422).json({ code: 'VOCAB_HELP', message: classified.message })
+        return
+      }
+      if (classified.cls !== 'VALID' && classified.cls !== 'VALID_WEAK_ENGLISH') {
         res.status(422).json({ code: 'INVALID_ANSWER', message: classified.message })
         return
       }
       feedbackMessage = buildFollowUpFeedback(session, answer, 'speaking_followup')
+      if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
+        correctionMessage = classified.correction
+      }
       score = { feedback: feedbackMessage }
 
     } else if (stepKey === 'speaking_task' || stepKey === 'writing_task') {
       // ── Classification + abuse guard + per-step retry loop ────────────────
       const classified = classifyInput(answer, expectedStep.minLength)
 
+      // Vocabulary help: explain and retry, never count as abuse, never call AI
+      if (classified.cls === 'VOCAB_HELP') {
+        console.log('[demo-ai] skipped reason=VOCAB_HELP step=' + stepKey)
+        res.status(422).json({ code: 'VOCAB_HELP', message: classified.message })
+        return
+      }
+
       if (classified.cls !== 'VALID') {
         let abuseFlags: number
         let totalAttempts: number
         let stepRetries: number
 
-        if (classified.cls === 'GIBBERISH') {
+        // Gibberish and repetition spam both count as abuse flags
+        if (classified.cls === 'GIBBERISH' || classified.cls === 'REPETITION_SPAM') {
           const updated = await incrementAbuse(sessionId)
           abuseFlags    = updated.abuse_flags
           totalAttempts = updated.answer_attempts_total
           stepRetries   = await incrementStepRetries(sessionId, stepKey)
         } else {
+          // CONFUSED, SHORT, VALID_WEAK_ENGLISH — count as attempts only
           const updated = await incrementAttempts(sessionId)
           abuseFlags    = session.abuse_flags
           totalAttempts = updated.answer_attempts_total
@@ -338,21 +378,26 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
           return
         }
 
-        // Force-advance confused/short students after 3 attempts on same step
-        if (classified.cls !== 'GIBBERISH' && stepRetries >= 3) {
+        // Force-advance confused/short/weak students after 3 attempts on same step
+        const isSpamClass = classified.cls === 'GIBBERISH' || classified.cls === 'REPETITION_SPAM'
+        if (!isSpamClass && stepRetries >= 3) {
           await clearStepRetries(sessionId, stepKey)
           score = { score: 3, feedback: "Let's keep going — you'll get more practice with this in the full course.", skipped: true }
           feedbackMessage = score.feedback!
           // fall through to saveAnswer
         } else {
-          // Dynamic message: gibberish gets escalating warnings, confused/short get rephrasing + examples
-          const msg = classified.cls === 'GIBBERISH'
-            ? getGibberishMessage(abuseFlags)
-            : classified.cls === 'CONFUSED'
-            ? buildConfusedHint(session, stepKey, stepRetries)
-            : stepRetries >= 2
-            ? buildConfusedHint(session, stepKey, stepRetries)
-            : classified.message
+          let msg: string
+          if (isSpamClass) {
+            msg = getGibberishMessage(abuseFlags)
+          } else if (classified.cls === 'VALID_WEAK_ENGLISH') {
+            // Grammar correction with retry prompt (do not advance step)
+            msg = classified.message
+          } else if (classified.cls === 'CONFUSED') {
+            msg = buildConfusedHint(session, stepKey, stepRetries)
+          } else {
+            // SHORT — after 2 retries give an example
+            msg = stepRetries >= 2 ? buildConfusedHint(session, stepKey, stepRetries) : classified.message
+          }
           res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
           return
         }
@@ -363,16 +408,20 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
 
         if (stepKey === 'speaking_task') {
           if (session.ai_calls_used >= MAX_AI_CALLS) {
+            console.log('[demo-ai] skipped reason=budget_exhausted step=speaking_task')
             score = buildRuleBasedSpeakingFeedback(answer)
           } else {
+            console.log('[demo-ai] calling purpose=speaking_eval')
             await incrementAiCalls(sessionId)
             const trimmedAnswer = answer.slice(0, SPEAKING_MAX_CHARS)
             score = await evaluateSpeaking(trimmedAnswer, { ...session, ai_calls_used: session.ai_calls_used + 1 })
           }
         } else {
           if (session.ai_calls_used >= MAX_AI_CALLS) {
+            console.log('[demo-ai] skipped reason=budget_exhausted step=writing_task')
             score = buildRuleBasedWritingFeedback(answer)
           } else {
+            console.log('[demo-ai] calling purpose=writing_eval')
             await incrementAiCalls(sessionId)
             const trimmedAnswer = answer.slice(0, WRITING_MAX_CHARS)
             score = await evaluateWriting(trimmedAnswer, { ...session, ai_calls_used: session.ai_calls_used + 1 })
@@ -404,15 +453,17 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
     if (isLastStep) {
       const freshSession = await loadSession(sessionId, userId)
       if (freshSession && freshSession.ai_calls_used < MAX_AI_CALLS) {
+        console.log('[demo-ai] calling purpose=final_result')
         await incrementAiCalls(sessionId)
         finalResult = await generateFinalResult(freshSession)
       } else {
+        console.log('[demo-ai] skipped reason=budget_exhausted purpose=final_result')
         finalResult = {
           level: 'B1',
           score: 65,
           strengths: ['communicating ideas', 'effort and persistence'],
           areas_to_improve: ['grammar accuracy', 'sentence variety'],
-          teacher_message: "You showed real potential today! Keep practising and you'll make fast progress.",
+          teacher_message: "You engaged in English today — that's the starting point. The full course builds exactly on where you are now, step by step.",
         }
       }
       await saveFinalResult(sessionId, finalResult)
@@ -495,19 +546,9 @@ router.post('/demo/dev-reset', requireAuth, async (req: Request, res: Response):
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function getSpamMessage(reason: string | undefined): string {
-  switch (reason) {
-    case 'too_short':        return 'Please write a bit more!'
-    case 'too_long':         return 'Please keep your answer under 500 characters.'
-    case 'repeated_chars':   return "That looks like a test — give me a real answer!"
-    case 'low_alpha_ratio':  return 'Please write in English!'
-    default:                 return 'Please give a proper answer.'
-  }
-}
-
 function getGibberishMessage(abuseFlags: number): string {
   if (abuseFlags <= 1) return "I couldn't follow that — try a real sentence, even a simple one."
-  return "Let's keep it real — I want to help you improve. Write one sentence about the topic."
+  return "Let's keep it meaningful — I want to help you improve. Write one sentence about the topic."
 }
 
 export default router
