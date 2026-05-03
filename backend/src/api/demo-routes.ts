@@ -351,6 +351,10 @@ router.post('/demo/dev-reset', requireAuth, async (req: Request, res: Response):
     return
   }
 
+  // Derive IP exactly as /demo/start does so we can clear the matching key
+  const ip = (req.headers['x-forwarded-for'] as string | undefined)
+    ?.split(',')[0]?.trim() ?? req.socket.remoteAddress ?? 'unknown'
+
   try {
     await withTransaction(async (client) => {
       await client.query(
@@ -369,9 +373,13 @@ router.post('/demo/dev-reset', requireAuth, async (req: Request, res: Response):
       )
     })
 
+    // Clear BOTH rate-limit keys that /demo/start checks in order.
+    // Previously only the user key was cleared; the IP key remained and
+    // blocked the very next start attempt ("Too many attempts, try again in Xm").
     await redis.del(`demo:user:${userId}:attempts`)
+    await redis.del(`demo:ip:${ip}`)
 
-    console.log(`[demo/dev-reset] reset ok: user=${userId}`)
+    console.log(`[demo/dev-reset] reset ok: user=${userId} ip=${ip}`)
     res.json({ ok: true })
   } catch (err) {
     console.error('[demo/dev-reset] error:', err instanceof Error ? err.message : err)
