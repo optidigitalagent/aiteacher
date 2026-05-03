@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express'
 import { requireAuth } from '../auth/middleware.js'
-import { query } from '../db/postgres.js'
+import { query, withTransaction } from '../db/postgres.js'
+import redis from '../db/redis.js'
 import {
   buildIntro,
   buildStep,
@@ -323,6 +324,58 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
   } catch (err) {
     console.error('[demo/answer] error:', err instanceof Error ? err.message : err)
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to process answer' })
+  }
+})
+
+// ── POST /demo/dev-reset ──────────────────────────────────────────────────────
+// Tester-only: resets the caller's own demo state so they can replay the demo.
+// Requires DEMO_TEST_RESET_ENABLED=true AND caller email in DEMO_TESTER_EMAILS.
+// Never resets another user. Normal one-time lock is unaffected for everyone else.
+
+router.post('/demo/dev-reset', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  if (process.env.DEMO_TEST_RESET_ENABLED !== 'true') {
+    res.status(404).json({ error: 'Not found' })
+    return
+  }
+
+  const userId = req.user!.userId
+  const email  = req.user!.email
+
+  const allowedEmails = (process.env.DEMO_TESTER_EMAILS ?? '')
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean)
+
+  if (!allowedEmails.includes(email.toLowerCase())) {
+    res.status(403).json({ code: 'FORBIDDEN', message: 'Not a tester account' })
+    return
+  }
+
+  try {
+    await withTransaction(async (client) => {
+      await client.query(
+        'UPDATE users SET demo_started_at = NULL WHERE id = $1',
+        [userId],
+      )
+      await client.query(
+        `UPDATE demo_sessions
+         SET status = 'reset', completed_at = NULL, updated_at = NOW()
+         WHERE user_id = $1`,
+        [userId],
+      )
+      await client.query(
+        'UPDATE user_lesson_profiles SET demo_lessons_completed = 0 WHERE user_id = $1',
+        [userId],
+      )
+    })
+
+    await redis.del(`demo:user:${userId}:attempts`)
+
+    console.log(`[demo/dev-reset] reset ok: user=${userId}`)
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('[demo/dev-reset] error:', err instanceof Error ? err.message : err)
+    res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Reset failed' })
   }
 })
 
