@@ -35,6 +35,12 @@ const VOCAB_CANONICAL: Record<string, string> = {
   sequel: 'sequel',
   mechanic: 'mechanic', mechanics: 'mechanic',
   spoil: 'spoiler',
+  // gaming topic words
+  competitively: 'competitively', competitive: 'competitively', competitiv: 'competitively',
+  mechanic2: 'mechanic',
+  // general lesson words
+  fluent: 'fluent', fluently: 'fluent',
+  challenge: 'challenge', challenging: 'challenge',
 }
 
 const VOCAB_EXPLANATIONS: Record<string, { explanation: string; example: string; taskHint: string }> = {
@@ -98,6 +104,21 @@ const VOCAB_EXPLANATIONS: Record<string, { explanation: string; example: string;
     example: "Example: 'The crafting mechanic lets you build your own weapons.'",
     taskHint: "Try describing a mechanic you like or want to design.",
   },
+  competitively: {
+    explanation: "'Competitively' means playing with the aim of winning — working seriously to be better than others.",
+    example: "Example: 'I play this game competitively — I study strategies and compete online.'",
+    taskHint: "Try answering: would you play it competitively, or is it more of a personal thing for you?",
+  },
+  fluent: {
+    explanation: "Being 'fluent' in a language means you can speak it easily and naturally, without hesitating.",
+    example: "Example: 'She speaks French fluently — she lived in Paris for years.'",
+    taskHint: "Try using this in a sentence about your own language goals.",
+  },
+  challenge: {
+    explanation: "A 'challenge' is something difficult that requires effort — but it's also an opportunity to improve.",
+    example: "Example: 'Learning grammar is a challenge, but it gets easier with practice.'",
+    taskHint: "Try describing a challenge you've faced or are facing.",
+  },
 }
 
 // ─── Confusion phrases ────────────────────────────────────────────────────────
@@ -124,8 +145,25 @@ const CONFUSION_PHRASES = [
 
 // ─── Vocabulary help detection ────────────────────────────────────────────────
 
-function detectVocabWord(text: string): string | null {
+export function detectVocabWord(text: string): string | null {
   const lower = text.toLowerCase().trim()
+
+  // "translate me X", "translate X", "translation of X", "translate this X"
+  const translateMatch = lower.match(/^(?:translate(?:\s+me)?(?:\s+this)?|translation\s+of)\s+(?:a |an |the )?(\w+)/)
+  if (translateMatch) {
+    const word = translateMatch[1] ?? ''
+    const canonical = VOCAB_CANONICAL[word]
+    if (canonical) return canonical
+    // Unknown word — signal confused so caller can give a generic help response
+    return '__confused__'
+  }
+
+  // "how to say X", "how do I say X", "how do you say X", "how to use X"
+  const howToSay = lower.match(/^how\s+(?:to\s+(?:say|use)|do\s+(?:i|you|we)\s+say)\s+(?:a |an |the )?(\w+)/)
+  if (howToSay) {
+    const word = howToSay[1] ?? ''
+    return VOCAB_CANONICAL[word] ?? null
+  }
 
   // Mixed language / Cyrillic: "Convince что это", "major что значит", "убедить"
   if (/[а-яёА-ЯЁ]/.test(text)) {
@@ -168,6 +206,8 @@ function detectVocabWord(text: string): string | null {
 
   return null
 }
+
+export { VOCAB_EXPLANATIONS }
 
 function buildVocabMessage(canonical: string): string {
   if (canonical === '__confused__') {

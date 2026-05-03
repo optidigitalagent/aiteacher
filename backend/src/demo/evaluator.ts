@@ -79,6 +79,8 @@ function getClient(): OpenAI {
   return _client
 }
 
+export function getOpenAIClient(): OpenAI { return getClient() }
+
 const MODEL = 'gpt-4o'
 
 // ── Shared JSON parse helper ──────────────────────────────────────────────────

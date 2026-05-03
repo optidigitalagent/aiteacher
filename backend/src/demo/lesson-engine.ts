@@ -252,13 +252,13 @@ export function buildFollowUpFeedback(_session: DemoSession, answer: string, ste
   const wordCount = answer.trim().split(/\s+/).filter(Boolean).length
 
   if (wordCount <= 3) {
-    return "Tell me a bit more — one full sentence would be great."
+    return "Tell me a bit more — give me a full sentence with that idea."
   }
 
   if (stepKey === 'speaking_followup') {
-    return "Useful — that adds real context to what you said."
+    return "Useful — that rounds out your answer. Let's move to the final task now."
   }
-  return "Got it — that gives me a better picture."
+  return "Got it — that gives me a better picture. Let's keep going."
 }
 
 export function buildConfusedHint(session: DemoSession, stepKey: string, retryCount: number): string {

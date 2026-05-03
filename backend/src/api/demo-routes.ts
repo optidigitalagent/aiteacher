@@ -19,18 +19,44 @@ import {
   generateFinalResult,
   buildRuleBasedSpeakingFeedback,
   buildRuleBasedWritingFeedback,
+  getOpenAIClient,
 } from '../demo/evaluator.js'
-import { classifyInput, buildEarlyResult } from '../demo/abuse-guard.js'
+import {
+  classifyInput,
+  buildEarlyResult,
+  detectVocabWord,
+  VOCAB_EXPLANATIONS,
+} from '../demo/abuse-guard.js'
 
 const router = Router()
 
-const MAX_AI_CALLS = 4
+const MAX_AI_CALLS        = 4
 // Abuse thresholds
 const ABUSE_FLAG_LIMIT    = 3   // gibberish submissions before early termination
-const ATTEMPTS_LIMIT      = 8   // total rejected submissions (short/confused/gibberish) on AI steps
-// Max chars forwarded to AI — keeps token cost low
+const ATTEMPTS_LIMIT      = 8   // total rejected submissions on AI steps
+// Per-session feature limits (tracked in Redis)
+const HELP_REQUESTS_LIMIT = 5
+const TRANSLATE_LIMIT     = 10
+// Max chars forwarded to AI
 const SPEAKING_MAX_CHARS  = 300
 const WRITING_MAX_CHARS   = 400
+const TRANSLATE_MAX_CHARS = 500
+const HELP_MAX_CHARS      = 160
+
+// ── Conversation safety guard ─────────────────────────────────────────────────
+// Appends the step question if the message doesn't already end with one.
+// This ensures every teacher response requires a user action.
+function ensureTeacherContinues(msg: string, stepPrompt: string): string {
+  const t = msg.trim()
+  return t.endsWith('?') ? t : (stepPrompt ? `${t}\n\n${stepPrompt}` : t)
+}
+
+// ── Simple stable hash for cache keys ────────────────────────────────────────
+function simpleHash(s: string): string {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0
+  return Math.abs(h).toString(16)
+}
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
@@ -262,22 +288,29 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
     let correctionMessage: string | undefined
 
     if (stepKey === 'warm_up') {
-      // Classify first — vocab help and spam must not advance step
       const classified = classifyInput(answer, expectedStep.minLength)
+      const stepPrompt = expectedStep.prompt ?? ''
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=warm_up')
-        res.status(422).json({ code: 'VOCAB_HELP', message: classified.message })
+        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt) })
         return
       }
       if (classified.cls === 'GIBBERISH' || classified.cls === 'REPETITION_SPAM') {
-        res.status(422).json({ code: 'INVALID_ANSWER', message: "I couldn't understand that — try a real sentence." })
+        const msg = ensureTeacherContinues("I couldn't understand that — try a real sentence.", stepPrompt)
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
         return
       }
-      if (classified.cls === 'SHORT' || classified.cls === 'CONFUSED') {
-        res.status(422).json({ code: 'INVALID_ANSWER', message: classified.message })
+      if (classified.cls === 'CONFUSED') {
+        const msg = ensureTeacherContinues(buildConfusedHint(session, 'warm_up', 0), stepPrompt)
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
         return
       }
-      // VALID or VALID_WEAK_ENGLISH — advance with feedback (warm_up is calibration only)
+      if (classified.cls === 'SHORT') {
+        const msg = ensureTeacherContinues(classified.message, stepPrompt)
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+        return
+      }
+      // VALID or VALID_WEAK_ENGLISH — advance (warm_up is calibration only)
       feedbackMessage = buildWarmUpFeedback(session, answer)
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
         correctionMessage = classified.correction
@@ -286,17 +319,25 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
 
     } else if (stepKey === 'warm_up_followup') {
       const classified = classifyInput(answer, expectedStep.minLength)
+      const stepPrompt = expectedStep.prompt ?? ''
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=warm_up_followup')
-        res.status(422).json({ code: 'VOCAB_HELP', message: classified.message })
+        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt) })
         return
       }
       if (classified.cls === 'GIBBERISH' || classified.cls === 'REPETITION_SPAM') {
-        res.status(422).json({ code: 'INVALID_ANSWER', message: "I couldn't understand that — try a real sentence." })
+        const msg = ensureTeacherContinues("I couldn't understand that — try a real sentence.", stepPrompt)
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
         return
       }
-      if (classified.cls === 'SHORT' || classified.cls === 'CONFUSED') {
-        res.status(422).json({ code: 'INVALID_ANSWER', message: classified.message })
+      if (classified.cls === 'CONFUSED') {
+        const msg = ensureTeacherContinues(buildConfusedHint(session, 'warm_up_followup', 0), stepPrompt)
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+        return
+      }
+      if (classified.cls === 'SHORT') {
+        const msg = ensureTeacherContinues(classified.message, stepPrompt)
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
         return
       }
       feedbackMessage = buildFollowUpFeedback(session, answer, 'warm_up_followup')
@@ -318,15 +359,18 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       correctionMessage = undefined
 
     } else if (stepKey === 'speaking_followup') {
-      // Rule-based follow-up — classify, handle vocab help, no abuse tracking
       const classified = classifyInput(answer, expectedStep.minLength)
+      const stepPrompt = expectedStep.prompt ?? ''
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=speaking_followup')
-        res.status(422).json({ code: 'VOCAB_HELP', message: classified.message })
+        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt) })
         return
       }
       if (classified.cls !== 'VALID' && classified.cls !== 'VALID_WEAK_ENGLISH') {
-        res.status(422).json({ code: 'INVALID_ANSWER', message: classified.message })
+        const hint = classified.cls === 'CONFUSED'
+          ? buildConfusedHint(session, 'speaking_followup', 0)
+          : classified.message
+        res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(hint, stepPrompt) })
         return
       }
       feedbackMessage = buildFollowUpFeedback(session, answer, 'speaking_followup')
@@ -336,13 +380,13 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       score = { feedback: feedbackMessage }
 
     } else if (stepKey === 'speaking_task' || stepKey === 'writing_task') {
-      // ── Classification + abuse guard + per-step retry loop ────────────────
       const classified = classifyInput(answer, expectedStep.minLength)
+      const stepPrompt = expectedStep.prompt ?? ''
 
       // Vocabulary help: explain and retry, never count as abuse, never call AI
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=' + stepKey)
-        res.status(422).json({ code: 'VOCAB_HELP', message: classified.message })
+        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt) })
         return
       }
 
@@ -351,21 +395,18 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         let totalAttempts: number
         let stepRetries: number
 
-        // Gibberish and repetition spam both count as abuse flags
         if (classified.cls === 'GIBBERISH' || classified.cls === 'REPETITION_SPAM') {
           const updated = await incrementAbuse(sessionId)
           abuseFlags    = updated.abuse_flags
           totalAttempts = updated.answer_attempts_total
           stepRetries   = await incrementStepRetries(sessionId, stepKey)
         } else {
-          // CONFUSED, SHORT, VALID_WEAK_ENGLISH — count as attempts only
           const updated = await incrementAttempts(sessionId)
           abuseFlags    = session.abuse_flags
           totalAttempts = updated.answer_attempts_total
           stepRetries   = await incrementStepRetries(sessionId, stepKey)
         }
 
-        // Early termination overrides everything
         if (abuseFlags >= ABUSE_FLAG_LIMIT || totalAttempts >= ATTEMPTS_LIMIT) {
           const earlyResult = buildEarlyResult(session, abuseFlags >= ABUSE_FLAG_LIMIT)
           await saveFinalResult(sessionId, earlyResult)
@@ -378,7 +419,6 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
           return
         }
 
-        // Force-advance confused/short/weak students after 3 attempts on same step
         const isSpamClass = classified.cls === 'GIBBERISH' || classified.cls === 'REPETITION_SPAM'
         if (!isSpamClass && stepRetries >= 3) {
           await clearStepRetries(sessionId, stepKey)
@@ -388,15 +428,15 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         } else {
           let msg: string
           if (isSpamClass) {
-            msg = getGibberishMessage(abuseFlags)
+            msg = ensureTeacherContinues(getGibberishMessage(abuseFlags), stepPrompt)
           } else if (classified.cls === 'VALID_WEAK_ENGLISH') {
-            // Grammar correction with retry prompt (do not advance step)
-            msg = classified.message
+            msg = ensureTeacherContinues(classified.message, stepPrompt)
           } else if (classified.cls === 'CONFUSED') {
-            msg = buildConfusedHint(session, stepKey, stepRetries)
+            msg = ensureTeacherContinues(buildConfusedHint(session, stepKey, stepRetries), stepPrompt)
           } else {
-            // SHORT — after 2 retries give an example
-            msg = stepRetries >= 2 ? buildConfusedHint(session, stepKey, stepRetries) : classified.message
+            // SHORT
+            const base = stepRetries >= 2 ? buildConfusedHint(session, stepKey, stepRetries) : classified.message
+            msg = ensureTeacherContinues(base, stepPrompt)
           }
           res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
           return
@@ -483,6 +523,173 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
   } catch (err) {
     console.error('[demo/answer] error:', err instanceof Error ? err.message : err)
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to process answer' })
+  }
+})
+
+// ── POST /demo/help ───────────────────────────────────────────────────────────
+// Student asks for help understanding a word or phrase.
+// Does NOT advance the lesson step. Max 5 requests per session. No AI cost.
+
+router.post('/demo/help', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.userId
+  const body = req.body as Record<string, unknown>
+
+  const sessionId = typeof body['sessionId'] === 'string' ? body['sessionId'] : null
+  const textRaw   = typeof body['text']      === 'string' ? body['text']      : null
+
+  if (!sessionId || textRaw === null) {
+    res.status(400).json({ code: 'INVALID_REQUEST', message: 'sessionId and text required' })
+    return
+  }
+
+  const text = textRaw.trim().slice(0, HELP_MAX_CHARS)
+
+  if (!text) {
+    res.status(400).json({ code: 'INVALID_REQUEST', message: 'text cannot be empty' })
+    return
+  }
+
+  try {
+    const session = await loadSession(sessionId, userId)
+    if (!session) {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Session not found' })
+      return
+    }
+
+    if (session.status === 'completed') {
+      res.status(409).json({ code: 'ALREADY_COMPLETED', message: 'Session completed' })
+      return
+    }
+
+    // Rate limit
+    const helpKey = `demo:help:${sessionId}`
+    const helpCount = await redis.incr(helpKey)
+    if (helpCount === 1) await redis.expire(helpKey, 14400)
+
+    if (helpCount > HELP_REQUESTS_LIMIT) {
+      res.status(429).json({ code: 'HELP_LIMIT_REACHED', message: "Help limit reached for this session. Try answering in your own words — even a simple sentence counts." })
+      return
+    }
+
+    // Prompt injection guard
+    if (/ignore\s+(previous|all|above|prior)\s+instructions?/i.test(text)) {
+      console.log('[demo-help] blocked reason=injection')
+      res.status(422).json({ code: 'INVALID_HELP', message: "I couldn't understand that — try typing one word or a short phrase you want explained." })
+      return
+    }
+
+    // Spam/gibberish guard on the help text itself
+    const cls = classifyInput(text, 2)
+    if (cls.cls === 'GIBBERISH' || cls.cls === 'REPETITION_SPAM') {
+      console.log('[demo-help] blocked reason=gibberish')
+      res.status(422).json({ code: 'INVALID_HELP', message: "I couldn't understand that help request — try one short word or sentence." })
+      return
+    }
+
+    // Try vocab detection first (template-based, free)
+    const vocabWord = detectVocabWord(text)
+    if (vocabWord && vocabWord !== '__confused__') {
+      const entry = VOCAB_EXPLANATIONS[vocabWord]
+      if (entry) {
+        console.log('[demo-help] mode=template word=' + vocabWord)
+        const currentStep = buildStep(session, session.step_index)
+        const stepPrompt = currentStep?.prompt ?? ''
+        const base = `${entry.explanation}\n${entry.example}\n${entry.taskHint}`
+        res.json({ message: ensureTeacherContinues(base, stepPrompt) })
+        return
+      }
+    }
+
+    // Generic fallback — no AI call for help (keeps demo cost-safe)
+    console.log('[demo-help] mode=generic')
+    const currentStep = buildStep(session, session.step_index)
+    const stepPrompt = currentStep?.prompt ?? ''
+    const wordClean = text.replace(/[^a-zA-Z\s]/g, '').trim().split(/\s+/).slice(0, 3).join(' ')
+    const base = wordClean
+      ? `Good question. Try to use "${wordClean}" in a full sentence — even a simple attempt helps a lot.`
+      : "Good question — try using it in a simple sentence. Even a short attempt tells me a lot."
+    res.json({ message: ensureTeacherContinues(base, stepPrompt) })
+  } catch (err) {
+    console.error('[demo/help] error:', err instanceof Error ? err.message : err)
+    res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Help request failed' })
+  }
+})
+
+// ── POST /demo/translate ──────────────────────────────────────────────────────
+// Translates a teacher message for the student.
+// Max 10 per session. Cached. Requires session ownership.
+
+router.post('/demo/translate', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.userId
+  const body   = req.body as Record<string, unknown>
+
+  const sessionId      = typeof body['sessionId']      === 'string' ? body['sessionId']      : null
+  const textRaw        = typeof body['text']           === 'string' ? body['text']           : null
+  const targetLanguage = typeof body['targetLanguage'] === 'string' ? body['targetLanguage'] : 'ru'
+
+  if (!sessionId || textRaw === null) {
+    res.status(400).json({ code: 'INVALID_REQUEST', message: 'sessionId and text required' })
+    return
+  }
+
+  if (!['uk', 'ru'].includes(targetLanguage)) {
+    res.status(400).json({ code: 'INVALID_REQUEST', message: 'targetLanguage must be uk or ru' })
+    return
+  }
+
+  const text = textRaw.trim().slice(0, TRANSLATE_MAX_CHARS)
+
+  if (!text) {
+    res.status(400).json({ code: 'INVALID_REQUEST', message: 'text cannot be empty' })
+    return
+  }
+
+  try {
+    const session = await loadSession(sessionId, userId)
+    if (!session) {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Session not found' })
+      return
+    }
+
+    // Rate limit
+    const xlateKey = `demo:translate:${sessionId}`
+    const xlateCount = await redis.incr(xlateKey)
+    if (xlateCount === 1) await redis.expire(xlateKey, 14400)
+
+    if (xlateCount > TRANSLATE_LIMIT) {
+      res.status(429).json({ code: 'TRANSLATE_LIMIT_REACHED', message: "Translation limit reached for this session." })
+      return
+    }
+
+    // Cache check — avoids re-charging API for the same message
+    const cacheKey = `demo:xlat:${simpleHash(text)}:${targetLanguage}`
+    const cached = await redis.get(cacheKey)
+    if (cached) {
+      console.log('[demo-translate] cache_hit=true')
+      res.json({ translation: cached })
+      return
+    }
+
+    console.log('[demo-translate] cache_hit=false')
+    const langName = targetLanguage === 'uk' ? 'Ukrainian' : 'Russian'
+
+    const aiResult = await getOpenAIClient().chat.completions.create({
+      model:       'gpt-4o-mini',
+      max_tokens:  200,
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: `Translate the following English text to ${langName}. Return only the translation, nothing else. Preserve line breaks.` },
+        { role: 'user',   content: text },
+      ],
+    })
+
+    const translation = aiResult.choices[0]?.message?.content?.trim() ?? text
+    await redis.set(cacheKey, translation, 'EX', 3600)
+
+    res.json({ translation })
+  } catch (err) {
+    console.error('[demo/translate] error:', err instanceof Error ? err.message : err)
+    res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Translation failed' })
   }
 })
 

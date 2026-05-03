@@ -37,23 +37,25 @@ export interface DemoFinalResult {
 export type DemoPhase = 'loading' | 'intro' | 'lesson' | 'complete' | 'error'
 
 export interface UseDemoSessionReturn {
-  chatMessages:      ChatMessage[]
-  steps:             LessonStep[]
-  progress:          number
-  isSpeaking:        boolean
-  lessonStarted:     boolean
-  phase:             DemoPhase
-  currentStep:       DemoStepContent | null
-  finalResult:       DemoFinalResult | null
-  interestArea:      string
-  submitting:        boolean
-  selectedOption:    number | null
-  setSelectedOption: (i: number | null) => void
-  handleTextSubmit:  (answer: string) => void
-  handleMcqSelect:   (i: number) => void
-  showLeaveModal:    boolean
-  setShowLeaveModal: (v: boolean) => void
-  error:             string | null
+  chatMessages:           ChatMessage[]
+  steps:                  LessonStep[]
+  progress:               number
+  isSpeaking:             boolean
+  lessonStarted:          boolean
+  phase:                  DemoPhase
+  currentStep:            DemoStepContent | null
+  finalResult:            DemoFinalResult | null
+  interestArea:           string
+  submitting:             boolean
+  selectedOption:         number | null
+  setSelectedOption:      (i: number | null) => void
+  handleTextSubmit:       (answer: string) => void
+  handleMcqSelect:        (i: number) => void
+  handleHelpRequest:      (text: string) => void
+  handleTranslateMessage: (messageId: string, text: string, lang: string) => Promise<string | null>
+  showLeaveModal:         boolean
+  setShowLeaveModal:      (v: boolean) => void
+  error:                  string | null
 }
 
 function uid() { return Math.random().toString(36).slice(2) }
@@ -273,6 +275,65 @@ export function useDemoSession({
     void submitAnswer(answer.trim(), answer.trim())
   }, [submitAnswer])
 
+  const handleHelpRequest = useCallback((text: string) => {
+    const sid = sessionIdRef.current
+    if (!sid) return
+    const trimmed = text.trim().slice(0, 160)
+    if (!trimmed) return
+
+    currentTeacherMsgRef.current = null
+    setChatMessages((prev) => [
+      ...prev.filter((m) => !m.isTyping),
+      { id: uid(), sender: 'user', text: `❓ ${trimmed}` },
+    ])
+
+    void (async () => {
+      try {
+        setChatMessages((prev) => [...prev, { id: 'typing', sender: 'ai', isTyping: true }])
+        setIsSpeaking(true)
+        const res = await fetch(`${API_BASE}/demo/help`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body:    JSON.stringify({ sessionId: sid, text: trimmed }),
+        })
+        await sleep(800)
+        setIsSpeaking(false)
+        const j = (await res.json()) as { message?: string }
+        setChatMessages((prev) => [
+          ...prev.filter((m) => !m.isTyping),
+          { id: uid(), sender: 'ai', text: j.message ?? "I couldn't process that help request." },
+        ])
+      } catch {
+        setIsSpeaking(false)
+        setChatMessages((prev) => [
+          ...prev.filter((m) => !m.isTyping),
+          { id: uid(), sender: 'ai', text: "Help request failed. Please try again." },
+        ])
+      }
+    })()
+  }, [token])
+
+  const handleTranslateMessage = useCallback(async (
+    _messageId: string,
+    text: string,
+    lang: string,
+  ): Promise<string | null> => {
+    const sid = sessionIdRef.current
+    if (!sid) return null
+    try {
+      const res = await fetch(`${API_BASE}/demo/translate`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ sessionId: sid, text: text.slice(0, 500), targetLanguage: lang }),
+      })
+      if (!res.ok) return null
+      const j = (await res.json()) as { translation?: string }
+      return j.translation ?? null
+    } catch {
+      return null
+    }
+  }, [token])
+
   const handleMcqSelect = useCallback((i: number) => {
     if (submittingRef.current) return
     setSelectedOption(i)
@@ -301,6 +362,7 @@ export function useDemoSession({
     phase, currentStep, finalResult, interestArea,
     submitting, selectedOption, setSelectedOption,
     handleTextSubmit, handleMcqSelect,
+    handleHelpRequest, handleTranslateMessage,
     showLeaveModal, setShowLeaveModal, error,
   }
 }

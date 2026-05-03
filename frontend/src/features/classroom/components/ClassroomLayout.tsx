@@ -157,6 +157,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const [teachingCard,    setTeachingCard]    = useState<TeachingCardData | null>(null)
   const [confirmedAnswer, setConfirmedAnswer] = useState('')
   const [lessonStarted,   setLessonStarted]   = useState(false)
+  // Demo help input
+  const [showHelpInput,   setShowHelpInput]   = useState(false)
+  const [helpInputValue,  setHelpInputValue]  = useState('')
 
   const answerRef = useRef('')
   useEffect(() => { answerRef.current = answer }, [answer])
@@ -277,7 +280,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   }, [isDemoMode, answer, demo.handleTextSubmit, question, handleCheck, pushUser, setTyping, send])
 
   const handleExplain = useCallback(() => {
-    if (isDemoMode) return
+    if (isDemoMode) {
+      setShowHelpInput(prev => !prev)
+      if (!showHelpInput) setHelpInputValue('')
+      return
+    }
     const lastAiText = messages
       .filter((m) => m.sender === 'ai' && !m.isTyping && m.text)
       .slice(-1)[0]?.text
@@ -287,7 +294,15 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       lastExercise:       question?.sentence,
       studentLastAnswer:  answerRef.current || undefined,
     })
-  }, [isDemoMode, send, messages, question])
+  }, [isDemoMode, showHelpInput, send, messages, question])
+
+  const handleHelpSubmit = useCallback(() => {
+    const text = helpInputValue.trim()
+    if (!text) return
+    setHelpInputValue('')
+    setShowHelpInput(false)
+    demo.handleHelpRequest(text)
+  }, [helpInputValue, demo])
 
   const questionForPanel = question
     ? { ...question, answer: confirmedAnswer }
@@ -397,6 +412,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
             <ChatPanel
               messages={isDemoMode ? demo.chatMessages : messages}
               onHide={() => setChatOpen(false)}
+              isDemoMode={isDemoMode}
+              onTranslate={isDemoMode
+                ? (msgId, text) => demo.handleTranslateMessage(msgId, text, 'ru')
+                : undefined
+              }
             />
           )}
 
@@ -421,6 +441,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           onSubmit={handleSubmit}
           onToggleMic={isDemoMode ? toggleDemoMic : toggle}
           onExplain={handleExplain}
+          showHelpInput={isDemoMode ? showHelpInput : false}
+          helpInputValue={helpInputValue}
+          onHelpChange={setHelpInputValue}
+          onHelpSubmit={handleHelpSubmit}
+          onHelpClose={() => setShowHelpInput(false)}
         />
       </div>
 

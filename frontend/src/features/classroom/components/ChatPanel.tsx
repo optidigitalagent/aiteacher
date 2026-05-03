@@ -1,18 +1,18 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '../types'
 import { IcClose } from './icons'
 
 interface Props {
-  messages: ChatMessage[]
-  onHide:   () => void
+  messages:     ChatMessage[]
+  onHide:       () => void
+  isDemoMode?:  boolean
+  onTranslate?: (messageId: string, text: string) => Promise<string | null>
 }
 
-// ChatPanel is READ-ONLY.
-// The only input in the classroom is BottomControls.
-// TODO: messages fed via WebSocket: { type: 'ai_text', text: string } → pushed here
-
-export default function ChatPanel({ messages, onHide }: Props) {
+export default function ChatPanel({ messages, onHide, isDemoMode, onTranslate }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [translatedMsgs, setTranslatedMsgs] = useState<Record<string, { text: string; showing: boolean }>>({})
+  const [translatingId, setTranslatingId] = useState<string | null>(null)
 
   useEffect(() => {
     if (bottomRef.current) {
@@ -20,6 +20,21 @@ export default function ChatPanel({ messages, onHide }: Props) {
       if (container) container.scrollTop = container.scrollHeight
     }
   }, [messages])
+
+  const handleTranslateClick = async (msgId: string, text: string) => {
+    const existing = translatedMsgs[msgId]
+    if (existing) {
+      setTranslatedMsgs(prev => ({ ...prev, [msgId]: { ...existing, showing: !existing.showing } }))
+      return
+    }
+    if (!onTranslate) return
+    setTranslatingId(msgId)
+    const translated = await onTranslate(msgId, text)
+    setTranslatingId(null)
+    if (translated) {
+      setTranslatedMsgs(prev => ({ ...prev, [msgId]: { text: translated, showing: true } }))
+    }
+  }
 
   return (
     <div className="cls-slide-up" style={{
@@ -57,50 +72,78 @@ export default function ChatPanel({ messages, onHide }: Props) {
         </button>
       </div>
 
-      {/* Messages — no input here; BottomControls is the only input */}
+      {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {messages.map(msg => (
-          <div key={msg.id} style={{
-            display: 'flex', flexDirection: msg.sender === 'user' ? 'row-reverse' : 'row',
-            gap: 7, alignItems: 'flex-end', animation: 'cls-msg-in 0.25s ease',
-          }}>
-            {msg.sender === 'ai' && (
-              <div style={{
-                width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
-                background: 'linear-gradient(135deg,#ede9ff,#fce7f3)',
-                border: '1.5px solid rgba(110,124,251,0.2)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 9, fontWeight: 800, color: '#6E7CFB',
-              }}>S</div>
-            )}
-            <div style={{ maxWidth: '82%' }}>
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: '#ccc', marginBottom: 3, textAlign: msg.sender === 'user' ? 'right' : 'left' }}>
-                {msg.sender === 'ai' ? 'Sophie' : 'You'}
-              </div>
-              <div style={{
-                padding: '8px 11px',
-                borderRadius: msg.sender === 'user' ? '13px 13px 4px 13px' : '13px 13px 13px 4px',
-                background: msg.sender === 'user' ? 'linear-gradient(135deg,#6E7CFB,#9B8CFF)' : 'white',
-                color: msg.sender === 'user' ? 'white' : '#1a1a2e',
-                fontSize: 12.5, lineHeight: 1.55, fontWeight: 500,
-                boxShadow: msg.sender === 'ai' ? '0 2px 8px rgba(0,0,0,0.06)' : '0 4px 12px rgba(110,124,251,0.25)',
-                border: msg.sender === 'ai' ? '1px solid #f0eeff' : 'none',
-              }}>
-                {msg.isTyping ? (
-                  <div style={{ display: 'flex', gap: 3, padding: '2px', alignItems: 'center' }}>
-                    <span className="cls-typing-dot" />
-                    <span className="cls-typing-dot" />
-                    <span className="cls-typing-dot" />
-                  </div>
-                ) : msg.text}
+        {messages.map(msg => {
+          const translated = translatedMsgs[msg.id]
+          const displayText = translated?.showing ? translated.text : msg.text
+          const isTranslating = translatingId === msg.id
+
+          return (
+            <div key={msg.id} style={{
+              display: 'flex', flexDirection: msg.sender === 'user' ? 'row-reverse' : 'row',
+              gap: 7, alignItems: 'flex-end', animation: 'cls-msg-in 0.25s ease',
+            }}>
+              {msg.sender === 'ai' && (
+                <div style={{
+                  width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                  background: 'linear-gradient(135deg,#ede9ff,#fce7f3)',
+                  border: '1.5px solid rgba(110,124,251,0.2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 9, fontWeight: 800, color: '#6E7CFB',
+                }}>S</div>
+              )}
+              <div style={{ maxWidth: '82%' }}>
+                <div style={{
+                  fontSize: 10.5, fontWeight: 700, color: '#ccc', marginBottom: 3,
+                  textAlign: msg.sender === 'user' ? 'right' : 'left',
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  flexDirection: msg.sender === 'user' ? 'row-reverse' : 'row',
+                }}>
+                  {msg.sender === 'ai' ? 'Sophie' : 'You'}
+                  {/* Translate button — only on AI messages in demo mode */}
+                  {isDemoMode && msg.sender === 'ai' && !msg.isTyping && msg.text && onTranslate && (
+                    <button
+                      onClick={() => void handleTranslateClick(msg.id, msg.text ?? '')}
+                      title={translated?.showing ? 'Show original' : 'Translate'}
+                      style={{
+                        background: translated?.showing ? 'rgba(110,124,251,0.12)' : 'none',
+                        border: translated?.showing ? '1px solid rgba(110,124,251,0.3)' : '1px solid rgba(200,200,210,0.5)',
+                        borderRadius: 5, padding: '1px 5px',
+                        fontSize: 10, cursor: 'pointer', color: '#9B8CFF',
+                        transition: 'all 0.15s', lineHeight: 1.4,
+                        opacity: isTranslating ? 0.5 : 1,
+                      }}
+                    >
+                      {isTranslating ? '…' : translated?.showing ? '🇬🇧' : '🌐'}
+                    </button>
+                  )}
+                </div>
+                <div style={{
+                  padding: '8px 11px',
+                  borderRadius: msg.sender === 'user' ? '13px 13px 4px 13px' : '13px 13px 13px 4px',
+                  background: msg.sender === 'user' ? 'linear-gradient(135deg,#6E7CFB,#9B8CFF)' : 'white',
+                  color: msg.sender === 'user' ? 'white' : '#1a1a2e',
+                  fontSize: 12.5, lineHeight: 1.55, fontWeight: 500,
+                  boxShadow: msg.sender === 'ai' ? '0 2px 8px rgba(0,0,0,0.06)' : '0 4px 12px rgba(110,124,251,0.25)',
+                  border: msg.sender === 'ai' ? '1px solid #f0eeff' : 'none',
+                  whiteSpace: 'pre-wrap',
+                }}>
+                  {msg.isTyping ? (
+                    <div style={{ display: 'flex', gap: 3, padding: '2px', alignItems: 'center' }}>
+                      <span className="cls-typing-dot" />
+                      <span className="cls-typing-dot" />
+                      <span className="cls-typing-dot" />
+                    </div>
+                  ) : displayText}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
         <div ref={bottomRef} />
       </div>
 
-      {/* Footer hint — reminds user that input is at the bottom */}
       <div style={{ padding: '8px 14px 11px', borderTop: '1px solid rgba(110,124,251,0.07)', flexShrink: 0 }}>
         <span style={{ fontSize: 11, color: '#c5c0d8', fontWeight: 500, fontStyle: 'italic' }}>
           Use the main input below to write.
