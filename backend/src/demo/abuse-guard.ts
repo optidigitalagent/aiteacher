@@ -269,19 +269,49 @@ function hasWordSaladPattern(words: string[]): boolean {
 }
 
 // ─── Repetition spam detection ────────────────────────────────────────────────
+// Function words (articles, pronouns, modals, prepositions, conjunctions).
+// These are deliberately excluded from spam counting — learner English
+// naturally repeats "I would like to... I would like to..." without being spam.
+
+const FUNCTION_WORDS_FOR_SPAM = new Set([
+  'i', 'me', 'my', 'we', 'us', 'our', 'you', 'your', 'he', 'she', 'him', 'her',
+  'it', 'its', 'they', 'them', 'their',
+  'a', 'an', 'the',
+  'is', 'are', 'was', 'were', 'be', 'been', 'being', 'am',
+  'to', 'of', 'in', 'on', 'at', 'by', 'for', 'with', 'from', 'into', 'about',
+  'and', 'or', 'but', 'so', 'yet', 'nor',
+  'that', 'this', 'these', 'those',
+  'not', 'no', 'never', 'ever',
+  'would', 'will', 'can', 'could', 'should', 'shall', 'may', 'might', 'must',
+  'have', 'has', 'had', 'do', 'does', 'did',
+  'there', 'here', 'also', 'just', 'very', 'really', 'quite',
+])
 
 function isRepetitionSpam(words: string[]): boolean {
   if (words.length < 4) return false
-  const counts = new Map<string, number>()
-  for (const w of words) {
-    const key = w.toLowerCase()
-    counts.set(key, (counts.get(key) ?? 0) + 1)
+
+  const lowerWords = words.map(w => w.toLowerCase())
+  const contentWords = lowerWords.filter(w => !FUNCTION_WORDS_FOR_SPAM.has(w))
+
+  // If input has 4+ unique content words it carries real meaning — not spam.
+  // Covers "I would like go to Bulgaria I would like to stay in hotel..." etc.
+  const uniqueContent = new Set(contentWords)
+  if (uniqueContent.size >= 4) return false
+
+  // Count content-word repetitions only
+  const contentCounts = new Map<string, number>()
+  for (const w of contentWords) {
+    contentCounts.set(w, (contentCounts.get(w) ?? 0) + 1)
   }
-  const maxCount = Math.max(...counts.values())
-  // Any word repeated 3+ times in a 4+ word message
-  if (maxCount >= 3) return true
-  // Very few unique words relative to total (e.g. "big chicken big chicken big chicken")
-  if (words.length >= 6 && counts.size / words.length < 0.45) return true
+
+  // A content word repeated 4+ times = real spam ("free free free free chicken")
+  if (contentCounts.size > 0 && Math.max(...contentCounts.values()) >= 4) return true
+
+  // Very low vocabulary diversity across the whole message (fallback)
+  const allCounts = new Map<string, number>()
+  for (const w of lowerWords) allCounts.set(w, (allCounts.get(w) ?? 0) + 1)
+  if (words.length >= 8 && allCounts.size / words.length < 0.35) return true
+
   return false
 }
 

@@ -97,29 +97,35 @@ export function canUseDemoAI(
 }
 
 // ── TTS / Voice cost policy ───────────────────────────────────────────────────
-// OpenAI TTS: ~$15/1M chars. At 800 chars/demo = $0.000012 per demo.
-// BUT only if voice is limited to HIGH-VALUE messages. If every message is voiced,
-// a full demo (20+ teacher messages × avg 80 chars = 1600 chars) costs $0.000024 —
-// still within $0.05, BUT at scale (100 demos × 1600 chars) = $0.0024, acceptable.
-// The risk is developer error: accidentally voicing EVERY response type, including
-// cached/scripted messages that should use pre-recorded audio instead.
+// OpenAI TTS: ~$15/1M chars.
+//
+// Budget target: ≤ $0.05 per demo total.
+// TTS at 1600 chars/demo = $0.000024 — negligible vs AI text cost (~$0.008).
 //
 // ALLOWED message types for TTS (configure via DEMO_TTS_ALLOWED_MESSAGE_TYPES):
-//   greeting       — first personalized greeting (if not pre-recorded)
-//   key_correction — important personalized grammar correction
-//   final_result   — motivational end-of-demo message
+//   greeting           — personalized welcome
+//   main_prompt        — step instruction / task question
+//   follow_up_question — follow-up after feedback or MCQ
+//   key_correction     — important grammar correction (legacy / generic)
+//   speaking_feedback  — feedback on speaking task
+//   writing_feedback   — feedback on writing task
+//   final_result       — motivational end-of-demo message
 //
-// NEVER voice automatically:
-//   help responses, spam warnings, retry prompts, translation output,
-//   long explanations, any cached or scripted static message (use pre-recorded audio).
+// NEVER voice automatically (cost/UX guard):
+//   spam_warning, help_reply, translate_result, retry_template,
+//   long_explanation, generic_transition
 //
+// Default caps: 6 calls / 1600 chars per session.
 // IMPLEMENTATION NOTE: call canUseDemoTTS() before every TTS API call.
-// Track chars_used and calls_used in Redis: demo:tts:{sessionId}
+// Track chars_used and calls_used in Redis: demo:tts:usage:{sessionId}
 
 export const DEMO_TTS_CONFIG = {
-  maxCharsPerSession: parseInt(process.env.DEMO_TTS_MAX_CHARS_PER_SESSION ?? '800',  10),
-  maxCallsPerSession: parseInt(process.env.DEMO_TTS_MAX_CALLS_PER_SESSION  ?? '3',   10),
-  allowedMessageTypes: (process.env.DEMO_TTS_ALLOWED_MESSAGE_TYPES ?? 'greeting,key_correction,final_result').split(','),
+  maxCharsPerSession: parseInt(process.env.DEMO_TTS_MAX_CHARS_PER_SESSION ?? '1600', 10),
+  maxCallsPerSession: parseInt(process.env.DEMO_TTS_MAX_CALLS_PER_SESSION  ?? '6',   10),
+  allowedMessageTypes: (
+    process.env.DEMO_TTS_ALLOWED_MESSAGE_TYPES ??
+    'greeting,main_prompt,follow_up_question,key_correction,speaking_feedback,writing_feedback,final_result'
+  ).split(','),
   cacheEnabled: process.env.DEMO_TTS_CACHE_ENABLED !== 'false',
 } as const
 

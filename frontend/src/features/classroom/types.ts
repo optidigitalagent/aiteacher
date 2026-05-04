@@ -23,10 +23,11 @@ export interface LessonStep {
 export type MessageSender = 'ai' | 'user'
 
 export interface ChatMessage {
-  id:        string
-  sender:    MessageSender
-  text?:     string
-  isTyping?: boolean
+  id:           string
+  sender:       MessageSender
+  text?:        string
+  isTyping?:    boolean
+  messageType?: string  // voice-eligible: 'greeting' | 'main_prompt' | 'follow_up_question' | 'key_correction' | 'speaking_feedback' | 'writing_feedback' | 'final_result'
 }
 
 export interface VoiceState {

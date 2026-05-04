@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChatMessage, LessonStep } from '../types'
+import { playAudioChunk } from '../services/voiceApi'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -36,6 +37,8 @@ export interface DemoFinalResult {
 
 export type DemoPhase = 'loading' | 'intro' | 'lesson' | 'complete' | 'error'
 
+export type VoicePlayState = 'loading' | 'playing' | 'done' | 'error'
+
 export interface UseDemoSessionReturn {
   chatMessages:           ChatMessage[]
   steps:                  LessonStep[]
@@ -56,6 +59,12 @@ export interface UseDemoSessionReturn {
   showLeaveModal:         boolean
   setShowLeaveModal:      (v: boolean) => void
   error:                  string | null
+  // Voice
+  voiceMuted:             boolean
+  toggleVoiceMuted:       () => void
+  voiceStates:            Record<string, VoicePlayState>
+  voiceMessages:          Record<string, { type: string; text: string }>
+  handlePlayAudio:        (messageId: string, messageType: string, text: string) => Promise<void>
 }
 
 function uid() { return Math.random().toString(36).slice(2) }
@@ -103,6 +112,12 @@ export function useDemoSession({
   const [lessonStarted,  setLessonStarted]  = useState(false)
   const [sessionId,      setSessionId]      = useState<string | null>(null)
 
+  // Voice state
+  const [voiceMuted,        setVoiceMuted]        = useState(false)
+  const [voiceStates,       setVoiceStates]       = useState<Record<string, VoicePlayState>>({})
+  const [voiceMessages,     setVoiceMessages]     = useState<Record<string, { type: string; text: string }>>({})
+  const [pendingVoicePlay,  setPendingVoicePlay]  = useState<{ id: string; type: string; text: string } | null>(null)
+
   // Refs keep async callbacks always fresh without re-creating them
   const didInit              = useRef(false)
   const submittingRef        = useRef(false)
@@ -110,10 +125,12 @@ export function useDemoSession({
   const sessionIdRef         = useRef<string | null>(null)
   const currentTeacherMsgRef = useRef<string | null>(null)
   const mcqTimerRef          = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const voiceMutedRef        = useRef(false)
 
   useEffect(() => { submittingRef.current  = submitting  }, [submitting])
   useEffect(() => { currentStepRef.current = currentStep }, [currentStep])
   useEffect(() => { sessionIdRef.current   = sessionId   }, [sessionId])
+  useEffect(() => { voiceMutedRef.current  = voiceMuted  }, [voiceMuted])
 
   const pushTeacher = useCallback((text: string) => {
     const existing = currentTeacherMsgRef.current
@@ -145,6 +162,52 @@ export function useDemoSession({
       pushTeacher(msg.text)
     }
   }, [pushTeacher])
+
+  // ── Voice: fetch and play TTS audio for a teacher message ────────────────────
+  const handlePlayAudio = useCallback(async (messageId: string, messageType: string, text: string) => {
+    const sid = sessionIdRef.current
+    if (!sid) return
+    setVoiceStates(prev => ({ ...prev, [messageId]: 'loading' }))
+    try {
+      const res = await fetch(`${API_BASE}/demo/tts`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ sessionId: sid, messageId, messageType, messageText: text }),
+      })
+      if (!res.ok) {
+        setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
+        return
+      }
+      const j = (await res.json()) as { audio?: string }
+      if (!j.audio) {
+        setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
+        return
+      }
+      setVoiceStates(prev => ({ ...prev, [messageId]: 'playing' }))
+      await playAudioChunk(j.audio)
+      setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
+    } catch {
+      setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
+    }
+  }, [token])
+
+  const toggleVoiceMuted = useCallback(() => setVoiceMuted(prev => !prev), [])
+
+  // ── Register a message for voice + schedule auto-play ────────────────────────
+  const scheduleVoice = useCallback((id: string, type: string, text: string) => {
+    setVoiceMessages(prev => ({ ...prev, [id]: { type, text } }))
+    setPendingVoicePlay({ id, type, text })
+  }, [])
+
+  // ── Auto-play effect — fires when pendingVoicePlay is set ───────────────────
+  useEffect(() => {
+    if (!pendingVoicePlay) return
+    const { id, type, text } = pendingVoicePlay
+    setPendingVoicePlay(null)
+    if (!voiceMutedRef.current) {
+      void handlePlayAudio(id, type, text)
+    }
+  }, [pendingVoicePlay, handlePlayAudio])
 
   // Core submit — reads from refs to avoid stale closures in async callbacks
   const submitAnswer = useCallback(async (answerStr: string, displayAnswer: string) => {
@@ -192,10 +255,29 @@ export function useDemoSession({
       await sleep(1200)
       setIsSpeaking(false)
 
+      // Feedback voice type — specific per step so TTS budget can track separately
+      const feedbackMsgType = step.key === 'speaking_task' ? 'speaking_feedback'
+        : step.key === 'writing_task' ? 'writing_feedback'
+        : undefined
+
+      const feedbackId   = uid()
+      const feedbackText = buildFeedbackText(j.feedback, displayAnswer)
+
       setChatMessages((prev) => [
         ...prev.filter((m) => !m.isTyping),
-        { id: uid(), sender: 'ai', text: buildFeedbackText(j.feedback, displayAnswer) },
+        {
+          id:     feedbackId,
+          sender: 'ai',
+          text:   feedbackText,
+          ...(feedbackMsgType ? { messageType: feedbackMsgType } : {}),
+        },
       ])
+
+      if (feedbackMsgType) {
+        // Use raw message (not the formatted text with ✗/✓ symbols) for TTS
+        scheduleVoice(feedbackId, feedbackMsgType, j.feedback.message.slice(0, 400))
+      }
+
       setSelectedOption(null)
       setCompletedSteps((prev) => [...prev, step.key])
 
@@ -210,6 +292,15 @@ export function useDemoSession({
         await sleep(2000)
         setCurrentStep(j.nextStep)
         await playMessages(j.nextStep.teacherMessages)
+        // Tag next-step prompt for voice (follow-up question / main task instruction)
+        const nextBubbleId = currentTeacherMsgRef.current
+        if (nextBubbleId && j.nextStep.teacherMessages.length > 0) {
+          const nextText = j.nextStep.teacherMessages.map(m => m.text).join(' ').slice(0, 300)
+          setChatMessages(prev => prev.map(m =>
+            m.id === nextBubbleId ? { ...m, messageType: 'follow_up_question' } : m,
+          ))
+          scheduleVoice(nextBubbleId, 'follow_up_question', nextText)
+        }
       }
     } catch {
       setChatMessages((prev) => [
@@ -219,7 +310,7 @@ export function useDemoSession({
     } finally {
       setSubmitting(false)
     }
-  }, [token, playMessages])
+  }, [token, playMessages, scheduleVoice])
 
   // Session init — runs once after enabled + auth
   useEffect(() => {
@@ -256,19 +347,39 @@ export function useDemoSession({
 
         setPhase('intro')
         await playMessages(data.intro.messages)
+
+        // Tag intro bubble for greeting voice
+        const introBubbleId = currentTeacherMsgRef.current
+        if (introBubbleId && data.intro.messages.length > 0) {
+          const introTtsText = data.intro.messages.map(m => m.text).join(' ').slice(0, 400)
+          setChatMessages(prev => prev.map(m =>
+            m.id === introBubbleId ? { ...m, messageType: 'greeting' } : m,
+          ))
+          scheduleVoice(introBubbleId, 'greeting', introTtsText)
+        }
+
         setLessonStarted(true)
         setPhase('lesson')
 
         if (data.currentStep) {
           setCurrentStep(data.currentStep)
           await playMessages(data.currentStep.teacherMessages)
+          // Tag initial step instruction for voice
+          const stepBubbleId = currentTeacherMsgRef.current
+          if (stepBubbleId && data.currentStep.teacherMessages.length > 0) {
+            const stepText = data.currentStep.teacherMessages.map(m => m.text).join(' ').slice(0, 300)
+            setChatMessages(prev => prev.map(m =>
+              m.id === stepBubbleId ? { ...m, messageType: 'main_prompt' } : m,
+            ))
+            scheduleVoice(stepBubbleId, 'main_prompt', stepText)
+          }
         }
       } catch {
         setError('Could not load your lesson. Please refresh.')
         setPhase('error')
       }
     })()
-  }, [enabled, demoId, token, onNotFound, playMessages]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enabled, demoId, token, onNotFound, playMessages, scheduleVoice]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTextSubmit = useCallback((answer: string) => {
     if (!answer.trim() || currentStepRef.current?.type === 'mcq') return
@@ -364,5 +475,7 @@ export function useDemoSession({
     handleTextSubmit, handleMcqSelect,
     handleHelpRequest, handleTranslateMessage,
     showLeaveModal, setShowLeaveModal, error,
+    voiceMuted, toggleVoiceMuted,
+    voiceStates, voiceMessages, handlePlayAudio,
   }
 }
