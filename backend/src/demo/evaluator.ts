@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import type { DemoSession, FinalResult, ScoreRecord } from './lesson-engine.js'
 import { TOPIC_PACKS, GRAMMAR_PACKS } from './script-data.js'
+import { DEMO_AI_CONFIG } from './ai-config.js'
 
 // ── Rule-based fallbacks (used when AI is unavailable or limit reached) ────────
 
@@ -81,7 +82,8 @@ function getClient(): OpenAI {
 
 export function getOpenAIClient(): OpenAI { return getClient() }
 
-const MODEL = 'gpt-4o'
+// Model resolved at runtime — configurable via OPENAI_DEMO_MODEL env var
+function getModel(): string { return DEMO_AI_CONFIG.model }
 
 // ── Shared JSON parse helper ──────────────────────────────────────────────────
 
@@ -122,8 +124,8 @@ Interest area: ${topic.label}`
 
   try {
     const res = await getClient().chat.completions.create({
-      model: MODEL,
-      max_tokens: 200,
+      model: getModel(),
+      max_tokens: DEMO_AI_CONFIG.maxOutputTokensPerCall,
       temperature: 0.4,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -146,6 +148,7 @@ Interest area: ${topic.label}`
     } else {
       console.error('[evaluator] speaking eval failed:', err instanceof Error ? err.message : err)
     }
+    console.log('[demo-ai] fallback reason=quota_or_error purpose=speaking_eval')
     return buildRuleBasedSpeakingFeedback(answer)
   }
 }
@@ -177,8 +180,8 @@ Interest area: ${topic.label}`
 
   try {
     const res = await getClient().chat.completions.create({
-      model: MODEL,
-      max_tokens: 200,
+      model: getModel(),
+      max_tokens: DEMO_AI_CONFIG.maxOutputTokensPerCall,
       temperature: 0.4,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -201,6 +204,7 @@ Interest area: ${topic.label}`
     } else {
       console.error('[evaluator] writing eval failed:', err instanceof Error ? err.message : err)
     }
+    console.log('[demo-ai] fallback reason=quota_or_error purpose=writing_eval')
     return buildRuleBasedWritingFeedback(answer)
   }
 }
@@ -256,8 +260,8 @@ ${speakFollowUp ? `- Speaking follow-up: "${speakFollowUp}"` : ''}
 
   try {
     const res = await getClient().chat.completions.create({
-      model: MODEL,
-      max_tokens: 300,
+      model: getModel(),
+      max_tokens: DEMO_AI_CONFIG.maxOutputTokensPerCall,
       temperature: 0.5,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -277,6 +281,43 @@ ${speakFollowUp ? `- Speaking follow-up: "${speakFollowUp}"` : ''}
     }
   } catch (err) {
     console.error('[evaluator] final result failed:', err instanceof Error ? err.message : err)
+    console.log('[demo-ai] fallback reason=quota_or_error purpose=final_result')
     return fallback
+  }
+}
+
+// ── Unclear meaning inference (AI call for word-salad input) ──────────────────
+// Very cheap call (~150 input + 70 output tokens). Used once per unclear attempt.
+
+export async function inferMeaning(
+  answer: string,
+  session: DemoSession,
+  stepKey: string,
+): Promise<string> {
+  const topic = TOPIC_PACKS[session.interest_area] ?? TOPIC_PACKS['school_life']!
+  const prompt = stepKey === 'writing_task' ? topic.writingPrompt : topic.speakingPrompt
+
+  try {
+    const res = await getClient().chat.completions.create({
+      model: getModel(),
+      max_tokens: 80,
+      temperature: 0.3,
+      messages: [
+        {
+          role: 'system',
+          content: `You are an English teacher. A student tried to answer a question but their English is unclear.
+Infer their most likely intended meaning and write ONE clear, natural English sentence capturing what they meant.
+Return ONLY the inferred sentence. Max 20 words. Keep it simple and direct.`,
+        },
+        {
+          role: 'user',
+          content: `Question: "${prompt}"\nStudent's attempt: "${answer.slice(0, 200)}"`,
+        },
+      ],
+    })
+    return res.choices[0]?.message?.content?.trim() ?? answer
+  } catch (err) {
+    console.error('[evaluator] inferMeaning failed:', err instanceof Error ? err.message : err)
+    return answer
   }
 }

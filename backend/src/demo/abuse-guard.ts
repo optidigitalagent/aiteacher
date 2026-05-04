@@ -5,6 +5,7 @@ import type { DemoSession, FinalResult } from './lesson-engine.js'
 export type InputClass =
   | 'VALID'
   | 'VALID_WEAK_ENGLISH'
+  | 'POSSIBLE_MEANING_UNCLEAR'
   | 'CONFUSED'
   | 'VOCAB_HELP'
   | 'SHORT'
@@ -218,6 +219,34 @@ function buildVocabMessage(canonical: string): string {
   return `Good question. ${entry.explanation}\n${entry.example}\n${entry.taskHint}`
 }
 
+// ─── Yes/no confirmation intent detection ────────────────────────────────────
+// Used to interpret student responses during the unclear-meaning confirmation loop.
+
+export function detectConfirmIntent(text: string): 'yes' | 'no' | 'unclear' {
+  const lower = text.toLowerCase().trim()
+  if (/^(yes|yeah|yep|yup|correct|right|exactly|that'?s\s+(it|right)|sure|of\s+course|absolutely|ок|да)\b/.test(lower)) return 'yes'
+  if (/^(no|nope|not\s+really|nah|not\s+exactly|wrong|that'?s\s+not|not\s+that|not\s+quite)\b/.test(lower)) return 'no'
+  return 'unclear'
+}
+
+// ─── Word-salad pattern detection ─────────────────────────────────────────────
+// Fires when the same low-content word appears twice in a row (broken structure,
+// not intentional emphasis like "really really"). Real English words, wrong order.
+
+const CONFUSION_REPEAT_WORDS = new Set([
+  'some', 'like', 'kind', 'sort', 'thing', 'it', 'what',
+  'that', 'a', 'the', 'this', 'ok', 'okay', 'and', 'so', 'but',
+])
+
+function hasWordSaladPattern(words: string[]): boolean {
+  for (let i = 0; i < words.length - 1; i++) {
+    const w1 = words[i]!.toLowerCase()
+    const w2 = words[i + 1]!.toLowerCase()
+    if (w1.length >= 2 && w1 === w2 && CONFUSION_REPEAT_WORDS.has(w1)) return true
+  }
+  return false
+}
+
 // ─── Repetition spam detection ────────────────────────────────────────────────
 
 function isRepetitionSpam(words: string[]): boolean {
@@ -264,6 +293,22 @@ export function classifyInput(answer: string, minLength: number): ClassifyResult
   const trimmed = answer.trim()
   const lower = trimmed.toLowerCase()
   const words = trimmed.split(/\s+/).filter(Boolean)
+
+  // 0. Prompt injection — blocked before any other check, no AI call, no abuse flag
+  if (
+    /ignore\s+(previous|all|above|prior|my|your|the)\s+(instructions?|prompts?|context|system)/i.test(trimmed) ||
+    /you\s+are\s+(now\s+)?(a|an)\s+/i.test(trimmed) ||
+    /(?:act|pretend|roleplay|behave)\s+(?:as|like)\s+/i.test(trimmed) ||
+    /\bsystem\s+prompt\b/i.test(trimmed) ||
+    /disregard\s+(all|previous|prior)\s+/i.test(trimmed)
+  ) {
+    console.log('[demo-ai] blocked reason=prompt_injection')
+    return {
+      cls: 'GIBBERISH',
+      reason: 'prompt_injection',
+      message: "I couldn't understand that — try one meaningful sentence.",
+    }
+  }
 
   // 1. Vocabulary help (highest priority — catches Cyrillic, "what is X", misspellings)
   const vocabWord = detectVocabWord(trimmed)
@@ -386,6 +431,16 @@ export function classifyInput(answer: string, minLength: number): ClassifyResult
       cls: 'SHORT',
       reason: 'too_few_words',
       message: "That's a start! Try 2–3 full sentences — I want to hear your actual ideas.",
+    }
+  }
+
+  // 13. Word-salad pattern — real English words, broken structure (not spam, not short)
+  //     Examples: "some some", "like like classmates" — POSSIBLE_MEANING_UNCLEAR, not GIBBERISH
+  if (words.length >= 5 && hasWordSaladPattern(words)) {
+    return {
+      cls: 'POSSIBLE_MEANING_UNCLEAR',
+      reason: 'word_salad',
+      message: '',
     }
   }
 

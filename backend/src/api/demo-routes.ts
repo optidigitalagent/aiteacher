@@ -20,17 +20,19 @@ import {
   buildRuleBasedSpeakingFeedback,
   buildRuleBasedWritingFeedback,
   getOpenAIClient,
+  inferMeaning,
 } from '../demo/evaluator.js'
 import {
   classifyInput,
   buildEarlyResult,
   detectVocabWord,
   VOCAB_EXPLANATIONS,
+  detectConfirmIntent,
 } from '../demo/abuse-guard.js'
+import { DEMO_AI_CONFIG, canUseDemoAI } from '../demo/ai-config.js'
 
 const router = Router()
 
-const MAX_AI_CALLS        = 4
 // Abuse thresholds
 const ABUSE_FLAG_LIMIT    = 3   // gibberish submissions before early termination
 const ATTEMPTS_LIMIT      = 8   // total rejected submissions on AI steps
@@ -383,14 +385,78 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       const classified = classifyInput(answer, expectedStep.minLength)
       const stepPrompt = expectedStep.prompt ?? ''
 
-      // Vocabulary help: explain and retry, never count as abuse, never call AI
+      // ── 1. Vocabulary help — explain, no AI, no abuse count ──────────────────
       if (classified.cls === 'VOCAB_HELP') {
-        console.log('[demo-ai] skipped reason=VOCAB_HELP step=' + stepKey)
+        console.log('[demo-ai] blocked reason=known_vocab_help step=' + stepKey)
         res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt) })
         return
       }
 
+      // ── 2. Pending meaning confirmation (yes / no loop) ──────────────────────
+      const pendingMeaningKey = `demo:pending_meaning:${sessionId}:${stepKey}`
+      const pendingRaw = await redis.get(pendingMeaningKey)
+      if (pendingRaw !== null) {
+        const pending = JSON.parse(pendingRaw) as { inferredMeaning: string; originalAnswer: string }
+        const confirmIntent = detectConfirmIntent(answer)
+
+        if (confirmIntent === 'yes') {
+          await redis.del(pendingMeaningKey)
+          const correctionMsg = [
+            `Great — I can see what you meant.`,
+            `A more natural way to say it:`,
+            `"${pending.inferredMeaning}"`,
+            `Why this works: we use a full sentence with 'because' or 'to' to connect your idea.`,
+            `No problem — now try again in your own words.`,
+          ].join('\n')
+          res.status(422).json({ code: 'MEANING_CONFIRMED', message: ensureTeacherContinues(correctionMsg, stepPrompt) })
+          return
+        }
+
+        if (confirmIntent === 'no') {
+          await redis.del(pendingMeaningKey)
+          const frame = buildConfusedHint(session, stepKey, 2)
+          const frameMsg = `No problem. ${frame}`
+          res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(frameMsg, stepPrompt) })
+          return
+        }
+
+        // Unclear response while waiting for yes/no — ask once more, no retry increment
+        res.status(422).json({
+          code: 'MEANING_UNCLEAR',
+          message: `Just yes or no — did I understand you correctly?\n"${pending.inferredMeaning}"\n(Say "yes" or "no" and we'll keep going.)`,
+        })
+        return
+      }
+
+      // ── 3. Non-VALID input ───────────────────────────────────────────────────
       if (classified.cls !== 'VALID') {
+
+        // POSSIBLE_MEANING_UNCLEAR — infer intent before any abuse tracking
+        if (classified.cls === 'POSSIBLE_MEANING_UNCLEAR') {
+          const budget = canUseDemoAI(session, 'unclear_meaning_inference', 200, 70)
+          if (budget.allowed) {
+            await incrementAiCalls(sessionId)
+            const inferred = await inferMeaning(answer, session, stepKey)
+            await redis.set(
+              pendingMeaningKey,
+              JSON.stringify({ inferredMeaning: inferred, originalAnswer: answer }),
+              'EX', 3600,
+            )
+            const msg = [
+              `I can see what you're trying to say.`,
+              `I think you mean: "${inferred}"`,
+              `Is that what you wanted to say? (yes / no)`,
+            ].join('\n')
+            res.status(422).json({ code: 'MEANING_UNCLEAR', message: msg })
+            return
+          }
+          // Budget exhausted — give a frame hint and ask retry (no inference)
+          const retries = await incrementStepRetries(sessionId, stepKey)
+          const fallbackMsg = `That idea is useful — the English just needs structure.\n${buildConfusedHint(session, stepKey, retries)}`
+          res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(fallbackMsg, stepPrompt) })
+          return
+        }
+
         let abuseFlags: number
         let totalAttempts: number
         let stepRetries: number
@@ -443,25 +509,25 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         }
 
       } else {
-        // ── Valid input — clear retries, evaluate with AI or rule-based ──────
+        // ── 4. Valid input — clear retries, evaluate with AI or rule-based ──────
         await clearStepRetries(sessionId, stepKey)
 
         if (stepKey === 'speaking_task') {
-          if (session.ai_calls_used >= MAX_AI_CALLS) {
-            console.log('[demo-ai] skipped reason=budget_exhausted step=speaking_task')
+          const budget = canUseDemoAI(session, 'speaking_eval', 350, 120)
+          if (!budget.allowed) {
+            console.log(`[demo-ai] fallback reason=${budget.reason ?? 'budget'} step=speaking_task`)
             score = buildRuleBasedSpeakingFeedback(answer)
           } else {
-            console.log('[demo-ai] calling purpose=speaking_eval')
             await incrementAiCalls(sessionId)
             const trimmedAnswer = answer.slice(0, SPEAKING_MAX_CHARS)
             score = await evaluateSpeaking(trimmedAnswer, { ...session, ai_calls_used: session.ai_calls_used + 1 })
           }
         } else {
-          if (session.ai_calls_used >= MAX_AI_CALLS) {
-            console.log('[demo-ai] skipped reason=budget_exhausted step=writing_task')
+          const budget = canUseDemoAI(session, 'writing_eval', 400, 120)
+          if (!budget.allowed) {
+            console.log(`[demo-ai] fallback reason=${budget.reason ?? 'budget'} step=writing_task`)
             score = buildRuleBasedWritingFeedback(answer)
           } else {
-            console.log('[demo-ai] calling purpose=writing_eval')
             await incrementAiCalls(sessionId)
             const trimmedAnswer = answer.slice(0, WRITING_MAX_CHARS)
             score = await evaluateWriting(trimmedAnswer, { ...session, ai_calls_used: session.ai_calls_used + 1 })
@@ -488,23 +554,28 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       isLastStep,
     )
 
-    // Final result generation (AI call #3) on last step
+    // Final result generation on last step
     let finalResult = null
     if (isLastStep) {
       const freshSession = await loadSession(sessionId, userId)
-      if (freshSession && freshSession.ai_calls_used < MAX_AI_CALLS) {
-        console.log('[demo-ai] calling purpose=final_result')
-        await incrementAiCalls(sessionId)
-        finalResult = await generateFinalResult(freshSession)
-      } else {
-        console.log('[demo-ai] skipped reason=budget_exhausted purpose=final_result')
-        finalResult = {
-          level: 'B1',
-          score: 65,
-          strengths: ['communicating ideas', 'effort and persistence'],
-          areas_to_improve: ['grammar accuracy', 'sentence variety'],
-          teacher_message: "You engaged in English today — that's the starting point. The full course builds exactly on where you are now, step by step.",
+      const resultFallback = {
+        level: 'B1',
+        score: 65,
+        strengths: ['communicating ideas', 'effort and persistence'],
+        areas_to_improve: ['grammar accuracy', 'sentence variety'],
+        teacher_message: "You engaged in English today — that's the starting point. The full course builds exactly on where you are now, step by step.",
+      }
+      if (freshSession) {
+        const budget = canUseDemoAI(freshSession, 'final_result', 450, 180)
+        if (budget.allowed) {
+          await incrementAiCalls(sessionId)
+          finalResult = await generateFinalResult(freshSession)
+        } else {
+          console.log(`[demo-ai] fallback reason=${budget.reason ?? 'budget'} purpose=final_result`)
+          finalResult = resultFallback
         }
+      } else {
+        finalResult = resultFallback
       }
       await saveFinalResult(sessionId, finalResult)
     }
@@ -673,8 +744,9 @@ router.post('/demo/translate', requireAuth, async (req: Request, res: Response):
     console.log('[demo-translate] cache_hit=false')
     const langName = targetLanguage === 'uk' ? 'Ukrainian' : 'Russian'
 
+    console.log(`[demo-translate] model=${DEMO_AI_CONFIG.translateModel}`)
     const aiResult = await getOpenAIClient().chat.completions.create({
-      model:       'gpt-4o-mini',
+      model:       DEMO_AI_CONFIG.translateModel,
       max_tokens:  200,
       temperature: 0.1,
       messages: [
