@@ -9,6 +9,7 @@ import {
   buildWarmUpFeedback,
   buildFollowUpFeedback,
   buildConfusedHint,
+  buildStudentQuestionResponse,
   getTotalSteps,
   type DemoSession,
   type ScoreRecord,
@@ -28,6 +29,7 @@ import {
   detectVocabWord,
   VOCAB_EXPLANATIONS,
   detectConfirmIntent,
+  detectStudentQuestion,
 } from '../demo/abuse-guard.js'
 import { DEMO_AI_CONFIG, canUseDemoAI } from '../demo/ai-config.js'
 
@@ -361,8 +363,16 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       correctionMessage = undefined
 
     } else if (stepKey === 'speaking_followup') {
-      const classified = classifyInput(answer, expectedStep.minLength)
       const stepPrompt = expectedStep.prompt ?? ''
+
+      // ── 0. Student question — answer grammar/task question, return to current task ──
+      if (detectStudentQuestion(answer)) {
+        const response = buildStudentQuestionResponse(session, stepPrompt)
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: response })
+        return
+      }
+
+      const classified = classifyInput(answer, expectedStep.minLength)
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=speaking_followup')
         res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt) })
@@ -382,8 +392,17 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       score = { feedback: feedbackMessage }
 
     } else if (stepKey === 'speaking_task' || stepKey === 'writing_task') {
-      const classified = classifyInput(answer, expectedStep.minLength)
       const stepPrompt = expectedStep.prompt ?? ''
+
+      // ── 0. Student question — answer grammar/task question, return to current task ──
+      // Must run before classifyInput — grammar questions parse as VALID and would hit AI eval.
+      if (detectStudentQuestion(answer)) {
+        const response = buildStudentQuestionResponse(session, stepPrompt)
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: response })
+        return
+      }
+
+      const classified = classifyInput(answer, expectedStep.minLength)
 
       // ── 1. Vocabulary help — explain, no AI, no abuse count ──────────────────
       if (classified.cls === 'VOCAB_HELP') {

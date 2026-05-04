@@ -256,9 +256,23 @@ export function buildFollowUpFeedback(_session: DemoSession, answer: string, ste
   }
 
   if (stepKey === 'speaking_followup') {
-    return "Useful — that rounds out your answer. Let's move to the final task now."
+    return "Good — that gives me a clearer sense of your thinking. One last task to go."
   }
   return "Got it — that gives me a better picture. Let's keep going."
+}
+
+// Builds the teacher reply when a student asks about grammar or task rules instead of answering.
+// Uses the session's grammar pack (rule-based, zero AI cost).
+// Returns the explanation + a prompt to return to the current task.
+export function buildStudentQuestionResponse(session: DemoSession, stepPrompt: string): string {
+  const grammar = GRAMMAR_PACKS[session.demo_mission] ?? GRAMMAR_PACKS['real_conversation_mission']!
+  // wrongExplanation explains the rule AND why the correct answer is right — best fit for "why is the answer X"
+  const rule = grammar.wrongExplanation.replace(/\*\*/g, '')
+  return [
+    `Good question.`,
+    rule,
+    `Now let's return to the task: ${stepPrompt}`,
+  ].join('\n')
 }
 
 export function buildConfusedHint(session: DemoSession, stepKey: string, retryCount: number): string {

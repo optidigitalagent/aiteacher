@@ -30,6 +30,7 @@ export type AllowedAIPurpose =
   | 'final_result'
   | 'unknown_help_short'
   | 'fallback_teacher_response'
+  | 'student_question_answer'  // grammar/task question — rule-based first, AI only if no pack match
 
 // Blocked purposes are never passed to canUseDemoAI — they are rejected before this call.
 // Listed here for documentation: spam | gibberish | repetition_spam | profanity_only |
@@ -93,4 +94,53 @@ export function canUseDemoAI(
     `[demo-ai] allowed purpose=${purpose} model=${DEMO_AI_CONFIG.model} estimated_cost=${estimatedCost.toFixed(6)}`,
   )
   return { allowed: true, estimatedCost }
+}
+
+// ── TTS / Voice cost policy ───────────────────────────────────────────────────
+// OpenAI TTS: ~$15/1M chars. At 800 chars/demo = $0.000012 per demo.
+// BUT only if voice is limited to HIGH-VALUE messages. If every message is voiced,
+// a full demo (20+ teacher messages × avg 80 chars = 1600 chars) costs $0.000024 —
+// still within $0.05, BUT at scale (100 demos × 1600 chars) = $0.0024, acceptable.
+// The risk is developer error: accidentally voicing EVERY response type, including
+// cached/scripted messages that should use pre-recorded audio instead.
+//
+// ALLOWED message types for TTS (configure via DEMO_TTS_ALLOWED_MESSAGE_TYPES):
+//   greeting       — first personalized greeting (if not pre-recorded)
+//   key_correction — important personalized grammar correction
+//   final_result   — motivational end-of-demo message
+//
+// NEVER voice automatically:
+//   help responses, spam warnings, retry prompts, translation output,
+//   long explanations, any cached or scripted static message (use pre-recorded audio).
+//
+// IMPLEMENTATION NOTE: call canUseDemoTTS() before every TTS API call.
+// Track chars_used and calls_used in Redis: demo:tts:{sessionId}
+
+export const DEMO_TTS_CONFIG = {
+  maxCharsPerSession: parseInt(process.env.DEMO_TTS_MAX_CHARS_PER_SESSION ?? '800',  10),
+  maxCallsPerSession: parseInt(process.env.DEMO_TTS_MAX_CALLS_PER_SESSION  ?? '3',   10),
+  allowedMessageTypes: (process.env.DEMO_TTS_ALLOWED_MESSAGE_TYPES ?? 'greeting,key_correction,final_result').split(','),
+  cacheEnabled: process.env.DEMO_TTS_CACHE_ENABLED !== 'false',
+} as const
+
+export function canUseDemoTTS(
+  charsUsed: number,
+  callsUsed: number,
+  messageType: string,
+  messageLength: number,
+): { allowed: boolean; reason?: string } {
+  if (!(DEMO_TTS_CONFIG.allowedMessageTypes as readonly string[]).includes(messageType)) {
+    console.log(`[demo-tts] blocked reason=type_not_allowed type=${messageType}`)
+    return { allowed: false, reason: `type_not_allowed:${messageType}` }
+  }
+  if (callsUsed >= DEMO_TTS_CONFIG.maxCallsPerSession) {
+    console.log(`[demo-tts] blocked reason=call_limit calls=${callsUsed}`)
+    return { allowed: false, reason: 'call_limit' }
+  }
+  if (charsUsed + messageLength > DEMO_TTS_CONFIG.maxCharsPerSession) {
+    console.log(`[demo-tts] blocked reason=char_limit chars_used=${charsUsed} new=${messageLength}`)
+    return { allowed: false, reason: 'char_limit' }
+  }
+  console.log(`[demo-tts] allowed type=${messageType} chars=${messageLength}`)
+  return { allowed: true }
 }

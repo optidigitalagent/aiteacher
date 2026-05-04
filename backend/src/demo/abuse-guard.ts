@@ -219,6 +219,27 @@ function buildVocabMessage(canonical: string): string {
   return `Good question. ${entry.explanation}\n${entry.example}\n${entry.taskHint}`
 }
 
+// ─── Student question detection ───────────────────────────────────────────────
+// Detects when a student is asking about grammar or the task rather than answering.
+// These patterns are unambiguously interrogative — no attempt content follows.
+// Must be checked BEFORE classifyInput in speaking/writing steps.
+
+const STUDENT_QUESTION_PATTERNS: RegExp[] = [
+  /^why\s+is\s+(the\s+)?correct\s+answer/i,        // "why is the correct answer..."
+  /^why\s+is\s+it\s+\w/i,                           // "why is it X"
+  /^why\s+(did|is|does|do)\s+(you|the\s+answer)/i,  // "why did you say..."
+  /^what\s+does\s+.{1,30}\s+mean/i,                 // "what does X mean"
+  /^can\s+you\s+explain\b/i,                         // "can you explain..."
+  /^what\s+is\s+(the\s+)?(grammar|rule|formula)\b/i,// "what is the grammar rule"
+  /^i\s+don'?t\s+understand\s+why\b/i,              // "i don't understand why"
+  /^how\s+(can|do)\s+i\s+(say|write|use|form)\b/i,  // "how can I say..."
+]
+
+export function detectStudentQuestion(text: string): boolean {
+  const lower = text.toLowerCase().trim()
+  return STUDENT_QUESTION_PATTERNS.some(p => p.test(lower))
+}
+
 // ─── Yes/no confirmation intent detection ────────────────────────────────────
 // Used to interpret student responses during the unclear-meaning confirmation loop.
 
@@ -321,6 +342,8 @@ export function classifyInput(answer: string, minLength: number): ClassifyResult
   }
 
   // 2. Confusion detection (before length — confused messages have alpha)
+  // Word-count guard: long messages that contain "I don't know" as a filler are speaking attempts,
+  // not genuine confusion — let them fall through to word-salad or VALID.
   if (['?', 'what', 'huh', 'hmm', 'idk'].includes(lower)) {
     return {
       cls: 'CONFUSED',
@@ -328,7 +351,7 @@ export function classifyInput(answer: string, minLength: number): ClassifyResult
       message: 'No worries! Try a simple sentence — like "I think..." or "In my opinion...".',
     }
   }
-  if (CONFUSION_PHRASES.some(p => lower.includes(p))) {
+  if (words.length <= 10 && CONFUSION_PHRASES.some(p => lower.includes(p))) {
     return {
       cls: 'CONFUSED',
       reason: 'confusion_phrase',

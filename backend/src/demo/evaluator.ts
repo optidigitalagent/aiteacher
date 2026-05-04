@@ -111,10 +111,12 @@ Return ONLY valid JSON: {"score": 0-10, "feedback": "string", "correction": "str
 Rules:
 - Be SPECIFIC — reference what the student actually said or the topic they mentioned
 - NEVER start with generic phrases like "Great effort!", "Good attempt!", "Well done!" — be direct and honest
-- If answer is 1-3 words only (a topic name, single noun): score 3-4, say "[Word] — good topic. Try a full sentence: 'I [verb] [word] because...' — give me something real to work with."
-- If answer is not English / gibberish / keyboard smash: score 1-2, say "I couldn't follow that as English. Try one clear sentence — even a simple one counts."
-- correction: an improved full sentence version of what they said. Set to null ONLY if their grammar was already correct and complete.
-- Keep feedback under 40 words total.`
+- NEVER say "Your answer isn't clear English", "doesn't address the prompt", or "I couldn't follow that as English" — these are too harsh for genuine attempts
+- If answer is 1-3 words only (a topic name, single noun): score 3-4, say "[Word] — give me a full sentence: 'I [verb] [word] because...' — tell me something real."
+- If answer is unclear but contains real words (word-salad, broken grammar): score 3-4, extract the likely idea, give a corrected sentence, say "I can see the idea — a clearer version: '[correction]'. Try again in your own words."
+- If answer is keyboard smash / no real words: score 1-2, say "Try one clear sentence in English — even a simple one helps me understand where you are."
+- correction: an improved full sentence version of what they said. Set to null ONLY if grammar was already correct and complete.
+- Keep feedback under 45 words total.`
 
   const userPrompt = `Prompt given to student: "${topic.speakingPrompt}"
 Student answer: "${answer}"
@@ -168,8 +170,10 @@ Rules:
 - Be SPECIFIC — mention what they actually wrote or the idea they expressed
 - Give ONE concrete improvement: e.g. "Use 'however' instead of 'but' to sound more formal" or "Add a reason after your main point"
 - NEVER be generic — "Good ideas!" alone is not acceptable
+- NEVER say "doesn't address the prompt" or "your answer is unclear" — instead, extract the likely idea and redirect gently
+- If answer is unclear but has real words: score 3-4, infer the idea, give a clearer 1-sentence version, say "I can see you mean [idea] — a clearer version: '[correction]'. Try again."
 - correction: an improved version of 1-2 of their sentences showing the upgrade. null only if already excellent.
-- If the answer is not English / gibberish: score 1, say "That doesn't read as English to me. Write 2-3 real sentences — even simple ones."
+- If the answer has no readable words (keyboard smash): score 1, say "Write 2-3 real English sentences — even simple ones give me something to work with."
 - Keep feedback under 60 words total.`
 
   const userPrompt = `Writing prompt: "${topic.writingPrompt}"
