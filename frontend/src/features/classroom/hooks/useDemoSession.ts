@@ -167,6 +167,7 @@ export function useDemoSession({
   const handlePlayAudio = useCallback(async (messageId: string, messageType: string, text: string) => {
     const sid = sessionIdRef.current
     if (!sid) return
+    console.log(`[demo-voice] fetching /demo/tts id=${messageId} type=${messageType}`)
     setVoiceStates(prev => ({ ...prev, [messageId]: 'loading' }))
     try {
       const res = await fetch(`${API_BASE}/demo/tts`, {
@@ -175,18 +176,25 @@ export function useDemoSession({
         body:    JSON.stringify({ sessionId: sid, messageId, messageType, messageText: text }),
       })
       if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}) as Record<string, unknown>) as Record<string, unknown>
+        const code = (errBody['code'] as string | undefined) ?? (errBody['reason'] as string | undefined) ?? String(res.status)
+        console.log(`[demo-voice] error id=${messageId} status=${res.status} code=${code}`)
         setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
         return
       }
       const j = (await res.json()) as { audio?: string }
       if (!j.audio) {
+        console.log(`[demo-voice] error id=${messageId} reason=no_audio_in_response`)
         setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
         return
       }
       setVoiceStates(prev => ({ ...prev, [messageId]: 'playing' }))
-      await playAudioChunk(j.audio)
+      console.log(`[demo-voice] playing id=${messageId}`)
+      // strict=true: complete MP3 — errors propagate so we can show the retry button
+      await playAudioChunk(j.audio, true)
       setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
-    } catch {
+    } catch (err) {
+      console.log(`[demo-voice] error id=${messageId} reason=${err instanceof Error ? err.message : 'unknown'}`)
       setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
     }
   }, [token])
@@ -195,6 +203,7 @@ export function useDemoSession({
 
   // ── Register a message for voice + schedule auto-play ────────────────────────
   const scheduleVoice = useCallback((id: string, type: string, text: string) => {
+    console.log(`[demo-voice] scheduled id=${id} type=${type}`)
     setVoiceMessages(prev => ({ ...prev, [id]: { type, text } }))
     setPendingVoicePlay({ id, type, text })
   }, [])

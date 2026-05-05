@@ -31,7 +31,7 @@ import {
   detectConfirmIntent,
   detectStudentQuestion,
 } from '../demo/abuse-guard.js'
-import { DEMO_AI_CONFIG, canUseDemoAI } from '../demo/ai-config.js'
+import { DEMO_AI_CONFIG, canUseDemoAI, DEMO_TTS_CONFIG, canUseDemoTTS } from '../demo/ai-config.js'
 
 const router = Router()
 
@@ -42,6 +42,7 @@ const ATTEMPTS_LIMIT      = 8   // total rejected submissions on AI steps
 const HELP_REQUESTS_LIMIT = 5
 const TRANSLATE_LIMIT     = 10
 // Max chars forwarded to AI
+const TTS_MAX_TEXT_CHARS  = 400
 const SPEAKING_MAX_CHARS  = 300
 const WRITING_MAX_CHARS   = 400
 const TRANSLATE_MAX_CHARS = 500
@@ -344,6 +345,13 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
         return
       }
+      // classifyInput uses char-based minLength — a 3-word answer like "where's my friends"
+      // passes (18 chars > minLength=5) but needs more substance for a followup step.
+      if (answer.trim().split(/\s+/).filter(Boolean).length <= 3) {
+        const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with that idea.", stepPrompt)
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+        return
+      }
       feedbackMessage = buildFollowUpFeedback(session, answer, 'warm_up_followup')
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
         correctionMessage = classified.correction
@@ -383,6 +391,13 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
           ? buildConfusedHint(session, 'speaking_followup', 0)
           : classified.message
         res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(hint, stepPrompt) })
+        return
+      }
+      // classifyInput uses char-based minLength — a 3-word answer passes length check
+      // but is too brief for a speaking followup step. Block before advancing.
+      if (answer.trim().split(/\s+/).filter(Boolean).length <= 3) {
+        const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with that idea.", stepPrompt)
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
         return
       }
       feedbackMessage = buildFollowUpFeedback(session, answer, 'speaking_followup')
@@ -781,6 +796,100 @@ router.post('/demo/translate', requireAuth, async (req: Request, res: Response):
   } catch (err) {
     console.error('[demo/translate] error:', err instanceof Error ? err.message : err)
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Translation failed' })
+  }
+})
+
+// ── POST /demo/tts ────────────────────────────────────────────────────────────
+// Generates audio for a high-value teacher message in demo mode.
+// Auth required, session ownership required, per-session TTS budget enforced.
+// Frontend sends messageText — backend validates type, length, budget, then caches.
+
+router.post('/demo/tts', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.userId
+  const body   = req.body as Record<string, unknown>
+
+  const sessionId   = typeof body['sessionId']   === 'string' ? body['sessionId']   : null
+  const messageType = typeof body['messageType'] === 'string' ? body['messageType'] : null
+  const messageRaw  = typeof body['messageText'] === 'string' ? body['messageText'] : null
+
+  if (!sessionId || !messageType || messageRaw === null) {
+    res.status(400).json({ code: 'INVALID_REQUEST', message: 'sessionId, messageType, and messageText are required' })
+    return
+  }
+
+  const text = messageRaw.trim().slice(0, TTS_MAX_TEXT_CHARS)
+  if (!text) {
+    res.status(400).json({ code: 'INVALID_REQUEST', message: 'messageText cannot be empty' })
+    return
+  }
+
+  console.log(`[demo-tts] request session=${sessionId} type=${messageType}`)
+
+  try {
+    const session = await loadSession(sessionId, userId)
+    if (!session) {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Session not found' })
+      return
+    }
+
+    // Load per-session TTS usage
+    const usageKey = `demo:tts:usage:${sessionId}`
+    const usageRaw = await redis.get(usageKey)
+    const usage = usageRaw
+      ? (JSON.parse(usageRaw) as { calls_used: number; chars_used: number })
+      : { calls_used: 0, chars_used: 0 }
+
+    // Budget + type check
+    const check = canUseDemoTTS(usage.chars_used, usage.calls_used, messageType, text.length)
+    if (!check.allowed) {
+      res.status(429).json({ code: 'TTS_LIMIT_REACHED', reason: check.reason })
+      return
+    }
+
+    // Cache check — avoids repeat API cost for replays
+    const cacheKey = `demo:tts:cache:${simpleHash(text + messageType)}`
+    if (DEMO_TTS_CONFIG.cacheEnabled) {
+      const cached = await redis.get(cacheKey)
+      if (cached) {
+        console.log(`[demo-tts] cache_hit=true type=${messageType}`)
+        res.json({ audio: cached, cached: true })
+        return
+      }
+    }
+
+    // Generate TTS — model/voice configurable via env, cheap defaults
+    const ttsModel = process.env.OPENAI_TTS_MODEL ?? 'tts-1'
+    const ttsVoice = (process.env.OPENAI_TTS_VOICE ?? 'nova') as
+      'alloy' | 'ash' | 'coral' | 'echo' | 'fable' | 'onyx' | 'nova' | 'sage' | 'shimmer'
+
+    console.log(`[demo-tts] openai_call model=${ttsModel} voice=${ttsVoice} type=${messageType} chars=${text.length} response_format=mp3`)
+
+    const speechResponse = await getOpenAIClient().audio.speech.create({
+      model:           ttsModel,
+      voice:           ttsVoice,
+      input:           text,
+      response_format: 'mp3',
+    })
+
+    const base64Audio = Buffer.from(
+      await (speechResponse as unknown as { arrayBuffer: () => Promise<ArrayBuffer> }).arrayBuffer(),
+    ).toString('base64')
+
+    // Store in cache (1h TTL — enough to replay within the session)
+    if (DEMO_TTS_CONFIG.cacheEnabled) {
+      await redis.set(cacheKey, base64Audio, 'EX', 3600)
+    }
+
+    // Update usage tracking (4h TTL, same as session)
+    const newUsage = { calls_used: usage.calls_used + 1, chars_used: usage.chars_used + text.length }
+    await redis.set(usageKey, JSON.stringify(newUsage), 'EX', 14400)
+
+    console.log(`[demo-tts] done calls_now=${newUsage.calls_used} chars_now=${newUsage.chars_used}`)
+    res.json({ audio: base64Audio, cached: false })
+
+  } catch (err) {
+    console.error('[demo/tts] error:', err instanceof Error ? err.message : err)
+    res.status(500).json({ code: 'TTS_FAILED', message: 'Voice generation failed' })
   }
 })
 

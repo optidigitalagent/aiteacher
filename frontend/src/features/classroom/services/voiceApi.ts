@@ -72,15 +72,24 @@ function getPlayCtx(): AudioContext {
   return playCtx
 }
 
-export async function playAudioChunk(base64: string): Promise<void> {
+// strict=true: re-throws on decode/resume failures (use for complete MP3 from demo TTS).
+// strict=false (default): silently skips decode errors (use for streaming partial MP3 frames).
+export async function playAudioChunk(base64: string, strict = false): Promise<void> {
+  const ctx = getPlayCtx()
+  if (ctx.state === 'suspended') {
+    try {
+      await ctx.resume()
+    } catch (err) {
+      if (strict) throw new Error(`audio_resume_failed: autoplay policy — user gesture required`)
+      return
+    }
+  }
+
+  const binary = atob(base64)
+  const bytes  = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+
   try {
-    const ctx = getPlayCtx()
-    if (ctx.state === 'suspended') await ctx.resume()
-
-    const binary = atob(base64)
-    const bytes  = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-
     const audioBuffer = await ctx.decodeAudioData(bytes.buffer.slice(0))
     const source      = ctx.createBufferSource()
     source.buffer     = audioBuffer
@@ -90,8 +99,9 @@ export async function playAudioChunk(base64: string): Promise<void> {
     if (nextPlayTime < now) nextPlayTime = now
     source.start(nextPlayTime)
     nextPlayTime += audioBuffer.duration
-  } catch {
-    // Partial MP3 frame — skip gracefully
+  } catch (err) {
+    if (strict) throw new Error(`audio_decode_failed: ${err instanceof Error ? err.message : 'unknown'}`)
+    // Partial MP3 frame from streaming — skip gracefully
   }
 }
 

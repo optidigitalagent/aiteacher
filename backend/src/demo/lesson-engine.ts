@@ -256,7 +256,7 @@ export function buildFollowUpFeedback(_session: DemoSession, answer: string, ste
   }
 
   if (stepKey === 'speaking_followup') {
-    return "Good — that gives me a clearer sense of your thinking. One last task to go."
+    return "Got it — good detail."
   }
   return "Got it — that gives me a better picture. Let's keep going."
 }
