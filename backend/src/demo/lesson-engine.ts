@@ -236,16 +236,38 @@ export function buildWarmUpFeedback(_session: DemoSession, answer: string): stri
   if (wordCount <= 3) {
     const word = answer.trim()
     const cap = word.charAt(0).toUpperCase() + word.slice(1)
-    return `${cap} — that's a start. Now give me one full sentence with that idea. For example: "I really like ${word} because..." — that gives me something real to work with.`
+    return `${cap} — that's a start. Give me one full sentence: "I really like ${word} because..." — I want to hear your actual opinion.`
   }
 
-  // Neutral acknowledgment — never use scripted encouragement for warm-up
-  // since we can't verify quality without AI at this step
-  const hasPersonal = /\b(i|my|me)\b/i.test(answer)
-  if (wordCount >= 15 && hasPersonal) {
-    return "Got it — that gives me a useful picture of where you are."
+  // YouTube / creator content — detect before "watching nothing" since both can appear together
+  if (/\b(youtube|youtuber|mr\.?\s*beast|pewdiepie|channel|vlog)\b/i.test(answer)) {
+    if (/\b(watching\s+nothing|not\s+watching|nothing\s+right\s+now)\b/i.test(answer)) {
+      return "Mr Beast fan, watching nothing right now — you're here instead. Good call. Let's make this worth your time."
+    }
+    return "YouTube — what kind of content? Gaming, challenges, educational? Tell me what you actually watch the most."
   }
-  return "Okay, I've got something to work with. Let's keep going."
+
+  // Not watching anything right now
+  if (/\b(watching\s+nothing|not\s+watching|nothing\s+right\s+now|nothing\s+at\s+the\s+moment)\b/i.test(answer)) {
+    return "Nothing right now — fine. Think of the last thing you watched that you genuinely enjoyed. We'll use that."
+  }
+
+  // Extract first significant proper noun (show/movie/channel name)
+  const stopWords = new Set(['The', 'I', 'A', 'An', 'And', 'But', 'Or', 'So', 'In', 'On', 'At', 'To', 'For', 'Of', 'With', 'Because', 'Right', 'Now', 'My', 'Me', 'We', 'It', 'Its', 'He', 'She', 'They', 'You', 'Your', 'Just', 'Here'])
+  const properNouns = words.filter(w => w.length > 2 && /^[A-Z]/.test(w) && !stopWords.has(w))
+  if (properNouns.length > 0 && wordCount >= 5) {
+    const name = properNouns[0]!
+    return `${name} — got it. Would you actually recommend it to a friend, or is it more of a personal thing?`
+  }
+
+  const hasPersonal = /\b(i|my|me)\b/i.test(answer)
+  if (wordCount >= 12 && hasPersonal) {
+    return "Good — I've got a clear picture. Let's get into the exercises."
+  }
+  if (wordCount >= 6 && hasPersonal) {
+    return "Got it — that's enough to start. Let's go."
+  }
+  return "Okay — let's get started."
 }
 
 export function buildFollowUpFeedback(_session: DemoSession, answer: string, stepKey: string): string {
@@ -256,9 +278,51 @@ export function buildFollowUpFeedback(_session: DemoSession, answer: string, ste
   }
 
   if (stepKey === 'speaking_followup') {
-    return "Got it — good detail."
+    // Special effects — also catch the common "here is/are" error for immediate correction
+    if (/\b(special\s+effect|cgi|visual|cinematograph|director)\b/i.test(answer)) {
+      if (/\bhere\s+(is|are)\b/i.test(answer)) {
+        return "Good observation — and one quick fix: instead of 'here is,' say 'there are good special effects' or 'it has great visual effects.' Same idea, more natural. Good eye for craft."
+      }
+      return "You're thinking about craft, not just story — that's the mark of a real viewer. What makes the effect work for you — the realism, the scale, something else?"
+    }
+    // "effect" alone (catches "a good special effect" phrasing)
+    if (/\beffect\b/i.test(answer)) {
+      if (/\bhere\s+(is|are)\b/i.test(answer)) {
+        return "Good — effects are what you notice first. One correction: say 'the effects are great' instead of 'here is good effect.' Try it in a sentence."
+      }
+      return "Good — effects pull you in immediately. What kind — visual, sound, or something else?"
+    }
+    if (/\b(acting|performance|actor|actress|character|cast)\b/i.test(answer)) {
+      return "The acting — that's what makes or breaks a show. Good call."
+    }
+    if (/\b(script|writing|dialogue|story|plot|twist)\b/i.test(answer)) {
+      return "The writing — that's the hardest thing to fake. Solid answer."
+    }
+    if (/\b(music|soundtrack|score|sound)\b/i.test(answer)) {
+      return "The music — most people don't notice the soundtrack until it's gone. Sharp observation."
+    }
+    return "Specific answer — exactly the kind of detail that shows you're paying attention."
   }
-  return "Got it — that gives me a better picture. Let's keep going."
+
+  // warm_up_followup — acknowledge and model correct English
+  const isFragment = /^(because|since|but|and|so)\b/i.test(answer.trim())
+
+  if (/\b(locked\s+in|in\s+the\s+zone|on\s+a\s+grind|grinding|hustl)/i.test(answer)) {
+    if (isFragment) {
+      return "I understand — 'locked in' means focused. A complete sentence: 'I usually watch alone because I focus better that way.' Got it — let's keep going."
+    }
+    return "I get it — focused and solo. A natural version: 'I usually watch alone because I stay more concentrated.' Let's keep going."
+  }
+  if (/\b(alone|by\s+myself|solo|on\s+my\s+own)\b/i.test(answer)) {
+    if (isFragment || wordCount < 5) {
+      return "Solo — good. A complete sentence: 'I usually watch alone because I pick up more details.' Let's keep going."
+    }
+    return "Solo viewer — you pick up things groups miss. Makes sense."
+  }
+  if (/\b(with\s+(someone|a\s+friend|friends|family|my|the))\b/i.test(answer)) {
+    return "Social viewing — it changes the whole experience. Let's keep going."
+  }
+  return "That works. Let's keep going."
 }
 
 // Builds the teacher reply when a student asks about grammar or task rules instead of answering.

@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChatMessage, LessonStep } from '../types'
-import { playAudioChunk } from '../services/voiceApi'
+import { playAudioChunk, stopAudioPlayback } from '../services/voiceApi'
+
+function stripMarkdownForTts(text: string): string {
+  return text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim()
+}
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -83,7 +87,8 @@ function buildFeedbackText(
       text += `Try: "${fb.correction}"`
     }
   }
-  if (fb.score != null) text += `\n\nScore: ${fb.score}/10`
+  // Only celebrate genuinely strong scores — low scores discourage in a demo context
+  if (fb.score != null && fb.score >= 7) text += `\n\nScore: ${fb.score}/10`
   return text
 }
 
@@ -126,6 +131,10 @@ export function useDemoSession({
   const currentTeacherMsgRef = useRef<string | null>(null)
   const mcqTimerRef          = useRef<ReturnType<typeof setTimeout> | null>(null)
   const voiceMutedRef        = useRef(false)
+  // Set to true once TTS session budget is exhausted — stops scheduling further requests
+  const ttsLimitReachedRef   = useRef(false)
+  // Incremented each time a new voice message is scheduled — lets in-flight fetches detect they're stale
+  const voiceGenerationRef   = useRef(0)
 
   useEffect(() => { submittingRef.current  = submitting  }, [submitting])
   useEffect(() => { currentStepRef.current = currentStep }, [currentStep])
@@ -167,7 +176,9 @@ export function useDemoSession({
   const handlePlayAudio = useCallback(async (messageId: string, messageType: string, text: string) => {
     const sid = sessionIdRef.current
     if (!sid) return
-    console.log(`[demo-voice] fetching /demo/tts id=${messageId} type=${messageType}`)
+    // Capture generation so we can detect if this play becomes stale mid-flight
+    const myGeneration = voiceGenerationRef.current
+    console.log(`[demo-voice] fetching /demo/tts id=${messageId} type=${messageType} gen=${myGeneration}`)
     setVoiceStates(prev => ({ ...prev, [messageId]: 'loading' }))
     try {
       const res = await fetch(`${API_BASE}/demo/tts`, {
@@ -175,11 +186,22 @@ export function useDemoSession({
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body:    JSON.stringify({ sessionId: sid, messageId, messageType, messageText: text }),
       })
+      // Stale check: a newer voice was scheduled while this fetch was in flight
+      if (voiceGenerationRef.current !== myGeneration) {
+        console.log(`[demo-voice] stale id=${messageId} — superseded by newer message`)
+        setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
+        return
+      }
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}) as Record<string, unknown>) as Record<string, unknown>
         const code = (errBody['code'] as string | undefined) ?? (errBody['reason'] as string | undefined) ?? String(res.status)
         console.log(`[demo-voice] error id=${messageId} status=${res.status} code=${code}`)
-        setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
+        if (res.status === 429) {
+          ttsLimitReachedRef.current = true
+          setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
+        } else {
+          setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
+        }
         return
       }
       const j = (await res.json()) as { audio?: string }
@@ -188,14 +210,24 @@ export function useDemoSession({
         setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
         return
       }
+      // Final stale check before playback
+      if (voiceGenerationRef.current !== myGeneration) {
+        console.log(`[demo-voice] stale id=${messageId} — audio ready but superseded`)
+        setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
+        return
+      }
       setVoiceStates(prev => ({ ...prev, [messageId]: 'playing' }))
       console.log(`[demo-voice] playing id=${messageId}`)
-      // strict=true: complete MP3 — errors propagate so we can show the retry button
       await playAudioChunk(j.audio, true)
       setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
     } catch (err) {
-      console.log(`[demo-voice] error id=${messageId} reason=${err instanceof Error ? err.message : 'unknown'}`)
-      setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
+      // If cancelled mid-play (e.g. stopAudioPlayback called), treat as done not error
+      if (voiceGenerationRef.current !== myGeneration) {
+        setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
+      } else {
+        console.log(`[demo-voice] error id=${messageId} reason=${err instanceof Error ? err.message : 'unknown'}`)
+        setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
+      }
     }
   }, [token])
 
@@ -203,7 +235,11 @@ export function useDemoSession({
 
   // ── Register a message for voice + schedule auto-play ────────────────────────
   const scheduleVoice = useCallback((id: string, type: string, text: string) => {
-    console.log(`[demo-voice] scheduled id=${id} type=${type}`)
+    if (ttsLimitReachedRef.current) return
+    // Increment generation FIRST — any in-flight fetches for older messages will self-cancel
+    voiceGenerationRef.current += 1
+    stopAudioPlayback()
+    console.log(`[demo-voice] scheduled id=${id} type=${type} gen=${voiceGenerationRef.current}`)
     setVoiceMessages(prev => ({ ...prev, [id]: { type, text } }))
     setPendingVoicePlay({ id, type, text })
   }, [])
@@ -224,6 +260,9 @@ export function useDemoSession({
     const sid  = sessionIdRef.current
     if (!step || !sid || submittingRef.current) return
 
+    // Cancel any in-progress or queued audio before starting new interaction
+    stopAudioPlayback()
+
     currentTeacherMsgRef.current = null
     setChatMessages((prev) => [
       ...prev.filter((m) => !m.isTyping),
@@ -240,14 +279,26 @@ export function useDemoSession({
 
       if (!res.ok) {
         const j = (await res.json()) as { message?: string; code?: string }
-        setChatMessages((prev) => [
-          ...prev.filter((m) => !m.isTyping),
-          {
-            id:     uid(),
-            sender: 'ai',
-            text:   j.message ?? (j.code === 'INVALID_ANSWER' ? 'Please try again.' : 'Something went wrong.'),
-          },
+        // Teacher responds — not a system error, so show typing indicator first
+        setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: 'typing', sender: 'ai', isTyping: true }])
+        setIsSpeaking(true)
+        await sleep(900)
+        setIsSpeaking(false)
+        const errMsgId = uid()
+        const errMsgText = j.message ?? (j.code === 'INVALID_ANSWER' ? 'Please try again.' : 'Something went wrong.')
+        setChatMessages(prev => [
+          ...prev.filter(m => !m.isTyping),
+          { id: errMsgId, sender: 'ai', text: errMsgText },
         ])
+        // Voice key teacher moments — corrections and moderation feel more personal when spoken
+        const spokeCodes = new Set(['MODERATION', 'MEANING_CONFIRMED', 'STUDENT_QUESTION', 'VOCAB_HELP', 'QUALITY_RETRY'])
+        if (spokeCodes.has(j.code ?? '') && j.message) {
+          // Quality retry uses the step-appropriate voice type so TTS budget tracks correctly
+          const voiceType = j.code === 'QUALITY_RETRY'
+            ? (step.key === 'speaking_task' ? 'speaking_feedback' : step.key === 'writing_task' ? 'writing_feedback' : 'key_correction')
+            : 'key_correction'
+          scheduleVoice(errMsgId, voiceType, stripMarkdownForTts(j.message).slice(0, 400))
+        }
         return
       }
 
@@ -267,6 +318,7 @@ export function useDemoSession({
       // Feedback voice type — specific per step so TTS budget can track separately
       const feedbackMsgType = step.key === 'speaking_task' ? 'speaking_feedback'
         : step.key === 'writing_task' ? 'writing_feedback'
+        : step.key === 'grammar_mcq' ? 'key_correction'
         : undefined
 
       const feedbackId   = uid()
@@ -283,8 +335,8 @@ export function useDemoSession({
       ])
 
       if (feedbackMsgType) {
-        // Use raw message (not the formatted text with ✗/✓ symbols) for TTS
-        scheduleVoice(feedbackId, feedbackMsgType, j.feedback.message.slice(0, 400))
+        // Strip markdown before sending to TTS (avoid "asterisk asterisk" being spoken)
+        scheduleVoice(feedbackId, feedbackMsgType, stripMarkdownForTts(j.feedback.message).slice(0, 400))
       }
 
       setSelectedOption(null)
@@ -304,7 +356,7 @@ export function useDemoSession({
         // Tag next-step prompt for voice (follow-up question / main task instruction)
         const nextBubbleId = currentTeacherMsgRef.current
         if (nextBubbleId && j.nextStep.teacherMessages.length > 0) {
-          const nextText = j.nextStep.teacherMessages.map(m => m.text).join(' ').slice(0, 300)
+          const nextText = stripMarkdownForTts(j.nextStep.teacherMessages.map(m => m.text).join(' ')).slice(0, 300)
           setChatMessages(prev => prev.map(m =>
             m.id === nextBubbleId ? { ...m, messageType: 'follow_up_question' } : m,
           ))

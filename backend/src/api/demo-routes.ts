@@ -30,6 +30,7 @@ import {
   VOCAB_EXPLANATIONS,
   detectConfirmIntent,
   detectStudentQuestion,
+  detectToxicity,
 } from '../demo/abuse-guard.js'
 import { DEMO_AI_CONFIG, canUseDemoAI, DEMO_TTS_CONFIG, canUseDemoTTS } from '../demo/ai-config.js'
 
@@ -293,8 +294,13 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
     let correctionMessage: string | undefined
 
     if (stepKey === 'warm_up') {
-      const classified = classifyInput(answer, expectedStep.minLength)
       const stepPrompt = expectedStep.prompt ?? ''
+      if (detectToxicity(answer)) {
+        console.log('[demo-ai] moderation step=warm_up')
+        res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt) })
+        return
+      }
+      const classified = classifyInput(answer, expectedStep.minLength)
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=warm_up')
         res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt) })
@@ -323,8 +329,13 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       score = { feedback: feedbackMessage }
 
     } else if (stepKey === 'warm_up_followup') {
-      const classified = classifyInput(answer, expectedStep.minLength)
       const stepPrompt = expectedStep.prompt ?? ''
+      if (detectToxicity(answer)) {
+        console.log('[demo-ai] moderation step=warm_up_followup')
+        res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt) })
+        return
+      }
+      const classified = classifyInput(answer, expectedStep.minLength)
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=warm_up_followup')
         res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt) })
@@ -373,6 +384,12 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
     } else if (stepKey === 'speaking_followup') {
       const stepPrompt = expectedStep.prompt ?? ''
 
+      if (detectToxicity(answer)) {
+        console.log('[demo-ai] moderation step=speaking_followup')
+        res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt) })
+        return
+      }
+
       // ── 0. Student question — answer grammar/task question, return to current task ──
       if (detectStudentQuestion(answer)) {
         const response = buildStudentQuestionResponse(session, stepPrompt)
@@ -408,6 +425,12 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
 
     } else if (stepKey === 'speaking_task' || stepKey === 'writing_task') {
       const stepPrompt = expectedStep.prompt ?? ''
+
+      if (detectToxicity(answer)) {
+        console.log(`[demo-ai] moderation step=${stepKey}`)
+        res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt) })
+        return
+      }
 
       // ── 0. Student question — answer grammar/task question, return to current task ──
       // Must run before classifyInput — grammar questions parse as VALID and would hit AI eval.
@@ -543,8 +566,9 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         }
 
       } else {
-        // ── 4. Valid input — clear retries, evaluate with AI or rule-based ──────
-        await clearStepRetries(sessionId, stepKey)
+        // ── 4. Valid input — evaluate with AI or rule-based ──────
+        // Read retry count BEFORE evaluation — used in quality gate below.
+        const qualityRetryCount = await getStepRetries(sessionId, stepKey)
 
         if (stepKey === 'speaking_task') {
           const budget = canUseDemoAI(session, 'speaking_eval', 350, 120)
@@ -569,6 +593,31 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         }
         feedbackMessage = score.feedback ?? "Keep going."
         correctionMessage = score.correction
+
+        // Quality gate: score ≤ 5 on a real answer → ask for retry rather than silently advancing.
+        // Only fires if retries are not exhausted and total attempts haven't hit the session limit.
+        const QUALITY_RETRY_THRESHOLD = 5
+        if (
+          !score.skipped &&
+          typeof score.score === 'number' &&
+          score.score <= QUALITY_RETRY_THRESHOLD &&
+          qualityRetryCount < expectedStep.maxRetries &&
+          session.answer_attempts_total < ATTEMPTS_LIMIT
+        ) {
+          await incrementStepRetries(sessionId, stepKey)
+          await incrementAttempts(sessionId)
+          const corrPart = score.correction
+            ? `\n\n✗ "${answer.slice(0, 120)}"\n✓ "${score.correction}"`
+            : ''
+          res.status(422).json({
+            code: 'QUALITY_RETRY',
+            message: ensureTeacherContinues(feedbackMessage + corrPart, stepPrompt),
+          })
+          return
+        }
+
+        // Advancing — clear retry counter
+        await clearStepRetries(sessionId, stepKey)
       }
 
     } else {
@@ -956,6 +1005,46 @@ router.post('/demo/dev-reset', requireAuth, async (req: Request, res: Response):
 function getGibberishMessage(abuseFlags: number): string {
   if (abuseFlags <= 1) return "I couldn't follow that — try a real sentence, even a simple one."
   return "Let's keep it meaningful — I want to help you improve. Write one sentence about the topic."
+}
+
+// Builds a moderation response that sets a boundary AND extracts the student's likely intent,
+// so the teacher stays pedagogically active rather than just blocking.
+function buildToxicModerationResponse(answer: string, stepPrompt: string): string {
+  const boundary = "Let's keep the conversation respectful."
+
+  const hasMrBeast    = /\bmr\.?\s*beast\b/i.test(answer)
+  const hasYouTube    = /\byoutube\b/i.test(answer)
+  const hasNotWatching = /\b(watching\s+nothing|not\s+watching|nothing\s+right\s+now|here\s+(?:to|for)\s+lessons?|here\s+doing\s+lessons?|doing\s+this\s+lesson|i'?m\s+here)\b/i.test(answer)
+  const hasRecommend  = /\b(recommend|tell\s+(?:my|a)\s+friend|suggest)\b/i.test(answer.toLowerCase())
+
+  if (hasMrBeast) {
+    if (hasNotWatching) {
+      const corrected = `I would recommend MrBeast to a friend, but right now I'm not watching anything — I'm doing this lesson.`
+      return `${boundary} I can see you want to recommend MrBeast but you're not watching anything right now. A clearer way to say it: "${corrected}" Try again without the insults: ${stepPrompt}`
+    }
+    if (hasRecommend) {
+      const corrected = `I would recommend MrBeast to my friends because the videos are entertaining and fun.`
+      return `${boundary} I can see you're recommending MrBeast. A natural version: "${corrected}" Try again: ${stepPrompt}`
+    }
+    return `${boundary} I can see you're a MrBeast fan. Give me a real sentence about that — without insults. ${stepPrompt}`
+  }
+
+  if (hasYouTube) {
+    return `${boundary} I can see you watch YouTube. Tell me what kind of content in a clean sentence. ${stepPrompt}`
+  }
+
+  // Try to extract any proper-noun show or creator name
+  const genericStarts = new Set(['The', 'I', 'A', 'But', 'And', 'Or', 'So', 'My', 'Me', 'We', 'It', 'He', 'She', 'You', 'Your', 'Got', 'Let', 'Keep', 'Just'])
+  const propNounMatch = answer.match(/\b([A-Z][a-zA-Z']+(?:\s+[A-Z][a-zA-Z']+){0,2})\b/)
+  if (propNounMatch) {
+    const firstWord = (propNounMatch[1] ?? '').split(' ')[0] ?? ''
+    if (!genericStarts.has(firstWord)) {
+      const name = propNounMatch[1]!
+      return `${boundary} I can see you're talking about ${name}. Tell me more about it — without the insults. ${stepPrompt}`
+    }
+  }
+
+  return `${boundary} I'm here to help you improve your English — answer the question without insults. ${stepPrompt}`
 }
 
 export default router
