@@ -250,6 +250,29 @@ export function detectConfirmIntent(text: string): 'yes' | 'no' | 'unclear' {
   return 'unclear'
 }
 
+// ─── Toxicity / directed-abuse detection ─────────────────────────────────────
+// Catches racial slurs and explicit insults aimed at the teacher/system.
+// Does NOT count toward abuse_flags — handled separately with a soft moderation reply.
+// Caller: check BEFORE classifyInput for all text-input steps.
+
+const TOXICITY_PATTERNS: RegExp[] = [
+  // Racial slurs — standalone word check (broad catch)
+  /\bnig+[ae]r?\b/i,
+  /\b(wetback|spic|chink|gook|kike|cracker|coon)\b/i,
+  /\b(faggot|f[a4]g+[o0]t|tranny)\b/i,
+  // Directed insults at the teacher/AI/lesson — flexible word order
+  /\b(stupid|dumb|fucking|shitty|retarded|idiotic)\s+\w*\s*(question|task|lesson|class|bot|ai|teacher)\b/i,
+  /\byour\s+\w*\s*(stupid|dumb|fucking|shitty|retarded)\b/i,
+  // Explicit profanity directed outward
+  /\bfuck\s+(you|your|off|this)\b/i,
+  /\b(go\s+fuck|fuck\s+this|fuck\s+off)\b/i,
+  /\bshut\s+(up|the\s+fuck)\b/i,
+]
+
+export function detectToxicity(text: string): boolean {
+  return TOXICITY_PATTERNS.some(p => p.test(text))
+}
+
 // ─── Word-salad pattern detection ─────────────────────────────────────────────
 // Fires when the same low-content word appears twice in a row (broken structure,
 // not intentional emphasis like "really really"). Real English words, wrong order.
