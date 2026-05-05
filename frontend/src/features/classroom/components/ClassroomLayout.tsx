@@ -417,6 +417,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                 ? (msgId, text) => demo.handleTranslateMessage(msgId, text, 'ru')
                 : undefined
               }
+              voiceMuted={isDemoMode ? demo.voiceMuted : undefined}
+              onToggleMute={isDemoMode ? demo.toggleVoiceMuted : undefined}
+              voiceStates={isDemoMode ? demo.voiceStates : undefined}
+              voiceMessages={isDemoMode ? demo.voiceMessages : undefined}
+              onPlayAudio={isDemoMode ? demo.handlePlayAudio : undefined}
             />
           )}
 
