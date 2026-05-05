@@ -545,7 +545,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         const isSpamClass = classified.cls === 'GIBBERISH' || classified.cls === 'REPETITION_SPAM'
         if (!isSpamClass && stepRetries >= 3) {
           await clearStepRetries(sessionId, stepKey)
-          score = { score: 3, feedback: "Let's keep going — you'll get more practice with this in the full course.", skipped: true }
+          score = { score: 3, feedback: "That's okay — I have enough to see your pattern. Let's keep moving.", skipped: true }
           feedbackMessage = score.feedback!
           // fall through to saveAnswer
         } else {
@@ -661,6 +661,12 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         finalResult = resultFallback
       }
       await saveFinalResult(sessionId, finalResult)
+    }
+
+    // Append a personal wrap-up sentence to the last feedback before showing the result screen.
+    // This prevents the lesson from ending abruptly on a grammar correction with no teacher goodbye.
+    if (isLastStep) {
+      feedbackMessage += '\n\nThat\'s the session done. Good effort today — here are your results.'
     }
 
     res.json({

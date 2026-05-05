@@ -6,7 +6,7 @@ import AuthGate from './AuthGate'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type LessonMood         = 'chill_easy' | 'fun_interactive' | 'real_conversation' | 'challenge_me'
-export type InterestArea       = 'music_social' | 'games' | 'movies_series' | 'travel' | 'school_life' | 'future_career'
+export type InterestArea       = 'games' | 'movies_series' | 'travel' | 'school_life'
 export type TeacherStyle       = 'friendly_coach' | 'older_friend' | 'real_tutor' | 'challenge_trainer'
 export type SpeakingConfidence = 'freezes' | 'can_try' | 'okay' | 'test_me'
 export type DemoMission        = 'real_conversation_mission' | 'fix_mistakes' | 'listening_check' | 'find_level'
@@ -54,12 +54,10 @@ const STEPS: StepDef[] = [
     field:    'interestArea',
     question: 'Pick a world for your first AI lesson.',
     options: [
-      { value: 'music_social',  label: 'Music & TikTok', desc: 'Songs, trends, creators',    emoji: '🎵' },
       { value: 'games',         label: 'Games',           desc: 'Gaming culture, esports',    emoji: '🕹️' },
       { value: 'movies_series', label: 'Movies & series', desc: 'Film, TV, pop culture',      emoji: '🎬' },
       { value: 'travel',        label: 'Travel',           desc: 'Places, trips, adventures',  emoji: '✈️' },
       { value: 'school_life',   label: 'School life',      desc: 'Classes, friends, routines', emoji: '📚' },
-      { value: 'future_career', label: 'Future / career',  desc: 'Jobs, ambitions, success',   emoji: '🚀' },
     ],
   },
   {

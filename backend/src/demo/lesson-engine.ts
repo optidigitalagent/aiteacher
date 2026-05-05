@@ -45,11 +45,22 @@ export interface FinalResult {
 
 export type StepType = 'text_input' | 'mcq'
 
+// audioMode drives the future static-audio pipeline:
+//   'static' — scripted text suitable for pre-recorded audio; use audioKey to look up the asset
+//   'tts'    — dynamic AI text; generate live TTS until static assets exist
+//   'none'   — do not voice (moderation, help, system messages)
+export interface TeacherMessageItem {
+  text: string
+  delay: number
+  audioMode?: 'static' | 'tts' | 'none'
+  audioKey?: string
+}
+
 export interface StepContent {
   key: string
   index: number
   type: StepType
-  teacherMessages: Array<{ text: string; delay: number }>
+  teacherMessages: TeacherMessageItem[]
   prompt?: string
   placeholder?: string
   minLength: number
@@ -59,7 +70,7 @@ export interface StepContent {
 }
 
 export interface IntroContent {
-  messages: Array<{ text: string; delay: number }>
+  messages: TeacherMessageItem[]
 }
 
 const TOTAL_STEPS = 6
@@ -76,11 +87,11 @@ export function buildIntro(session: DemoSession): IntroContent {
 
   return {
     messages: [
-      { text: tone.greeting, delay: 0 },
-      { text: missionNote, delay: 1600 },
-      { text: confidenceNote, delay: 3000 },
-      { text: `I saw you're interested in ${topic.label} — I'll use that in today's tasks. It makes the whole thing more real.`, delay: 4400 },
-      { text: "Let's start.", delay: 5600 },
+      { text: tone.greeting,    delay: 0,    audioMode: 'static', audioKey: `intro_greeting_${session.teacher_style}` },
+      { text: missionNote,      delay: 1600, audioMode: 'static', audioKey: `intro_mission_${session.demo_mission}` },
+      { text: confidenceNote,   delay: 3000, audioMode: 'static', audioKey: `intro_confidence_${session.speaking_confidence}` },
+      { text: `I saw you're interested in ${topic.label} — I'll use that in today's tasks. It makes the whole thing more real.`, delay: 4400, audioMode: 'static', audioKey: `intro_topic_${session.interest_area}` },
+      { text: "Let's start.",   delay: 5600, audioMode: 'static', audioKey: 'intro_start' },
     ],
   }
 }
@@ -97,8 +108,8 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         index: 0,
         type: 'text_input',
         teacherMessages: [
-          { text: `Before we get into the exercises, I want to hear from you.`, delay: 0 },
-          { text: topic.warmUpQuestion, delay: 1100 },
+          { text: `Before we get into the exercises, I want to hear from you.`, delay: 0,    audioMode: 'static', audioKey: 'warm_up_intro' },
+          { text: topic.warmUpQuestion,                                          delay: 1100, audioMode: 'static', audioKey: `warm_up_question_${session.interest_area}` },
         ],
         prompt: topic.warmUpQuestion,
         placeholder: topic.warmUpPlaceholder,
@@ -112,8 +123,7 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         index: 1,
         type: 'text_input',
         teacherMessages: [
-          { text: "Good — quick follow-up:", delay: 0 },
-          { text: topic.warmUpFollowUpQuestion, delay: 900 },
+          { text: topic.warmUpFollowUpQuestion, delay: 0, audioMode: 'static', audioKey: `warm_up_followup_${session.interest_area}` },
         ],
         prompt: topic.warmUpFollowUpQuestion,
         placeholder: topic.warmUpFollowUpPlaceholder,
@@ -127,9 +137,9 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         index: 2,
         type: 'mcq',
         teacherMessages: [
-          { text: tone.transition, delay: 0 },
-          { text: `Quick grammar check — ${grammar.target}. One sentence, four options.`, delay: 1000 },
-          { text: grammar.explanation, delay: 2000 },
+          { text: tone.transition,                                                                       delay: 0,    audioMode: 'static', audioKey: `grammar_transition_${session.teacher_style}` },
+          { text: `Quick grammar check — ${grammar.target}. One sentence, four options.`,               delay: 1000, audioMode: 'static', audioKey: `grammar_intro_${session.demo_mission}` },
+          { text: grammar.explanation,                                                                   delay: 2000, audioMode: 'static', audioKey: `grammar_explanation_${session.demo_mission}` },
         ],
         prompt: grammar.question,
         options: grammar.options.map((o, i) => `${['A', 'B', 'C', 'D'][i]}) ${o}`),
@@ -143,8 +153,8 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         index: 3,
         type: 'text_input',
         teacherMessages: [
-          { text: "Now let's hear you actually speak.", delay: 0 },
-          { text: topic.speakingPrompt, delay: 1100 },
+          { text: "Now let's hear you actually speak.", delay: 0,    audioMode: 'static', audioKey: 'speaking_transition' },
+          { text: topic.speakingPrompt,                 delay: 1100, audioMode: 'static', audioKey: `speaking_prompt_${session.interest_area}` },
         ],
         prompt: topic.speakingPrompt,
         placeholder: topic.speakingPlaceholder,
@@ -158,8 +168,7 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         index: 4,
         type: 'text_input',
         teacherMessages: [
-          { text: "One more thing about that:", delay: 0 },
-          { text: topic.speakingFollowUpQuestion, delay: 900 },
+          { text: topic.speakingFollowUpQuestion, delay: 0, audioMode: 'static', audioKey: `speaking_followup_${session.interest_area}` },
         ],
         prompt: topic.speakingFollowUpQuestion,
         placeholder: topic.speakingFollowUpPlaceholder,
@@ -173,8 +182,8 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         index: 5,
         type: 'text_input',
         teacherMessages: [
-          { text: "Last one — this is where I see how you actually think in writing.", delay: 0 },
-          { text: topic.writingPrompt, delay: 1200 },
+          { text: "Last one — this is where I see how you actually think in writing.", delay: 0,    audioMode: 'static', audioKey: 'writing_transition' },
+          { text: topic.writingPrompt,                                                 delay: 1200, audioMode: 'static', audioKey: `writing_prompt_${session.interest_area}` },
         ],
         prompt: topic.writingPrompt,
         placeholder: topic.writingPlaceholder,
@@ -242,9 +251,9 @@ export function buildWarmUpFeedback(_session: DemoSession, answer: string): stri
   // YouTube / creator content — detect before "watching nothing" since both can appear together
   if (/\b(youtube|youtuber|mr\.?\s*beast|pewdiepie|channel|vlog)\b/i.test(answer)) {
     if (/\b(watching\s+nothing|not\s+watching|nothing\s+right\s+now)\b/i.test(answer)) {
-      return "Mr Beast fan, watching nothing right now — you're here instead. Good call. Let's make this worth your time."
+      return "MrBeast fan, here for lessons right now — good call. Let's use that."
     }
-    return "YouTube — what kind of content? Gaming, challenges, educational? Tell me what you actually watch the most."
+    return "YouTube — got it. That gives me a lot to work with."
   }
 
   // Not watching anything right now
@@ -257,7 +266,7 @@ export function buildWarmUpFeedback(_session: DemoSession, answer: string): stri
   const properNouns = words.filter(w => w.length > 2 && /^[A-Z]/.test(w) && !stopWords.has(w))
   if (properNouns.length > 0 && wordCount >= 5) {
     const name = properNouns[0]!
-    return `${name} — got it. Would you actually recommend it to a friend, or is it more of a personal thing?`
+    return `${name} — got it. I've got what I need.`
   }
 
   const hasPersonal = /\b(i|my|me)\b/i.test(answer)
