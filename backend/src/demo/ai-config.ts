@@ -120,8 +120,8 @@ export function canUseDemoAI(
 // Track chars_used and calls_used in Redis: demo:tts:usage:{sessionId}
 
 export const DEMO_TTS_CONFIG = {
-  maxCharsPerSession: parseInt(process.env.DEMO_TTS_MAX_CHARS_PER_SESSION ?? '1600', 10),
-  maxCallsPerSession: parseInt(process.env.DEMO_TTS_MAX_CALLS_PER_SESSION  ?? '6',   10),
+  maxCharsPerSession: parseInt(process.env.DEMO_TTS_MAX_CHARS_PER_SESSION ?? '2500', 10),
+  maxCallsPerSession: parseInt(process.env.DEMO_TTS_MAX_CALLS_PER_SESSION  ?? '10',  10),
   allowedMessageTypes: (
     process.env.DEMO_TTS_ALLOWED_MESSAGE_TYPES ??
     'greeting,main_prompt,follow_up_question,key_correction,speaking_feedback,writing_feedback,final_result'
