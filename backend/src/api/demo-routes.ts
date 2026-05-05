@@ -679,6 +679,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       nextStep: nextStepContent,
       finalResult,
       isComplete: isLastStep,
+      finalAudioKey: isLastStep ? 'final_goodbye' : null,
     })
   } catch (err) {
     console.error('[demo/answer] error:', err instanceof Error ? err.message : err)
