@@ -159,6 +159,15 @@ export function useDemoSession({
 
   const playMessages = useCallback(async (msgs: TeacherMessage[]) => {
     currentTeacherMsgRef.current = null
+    // Invalidate any in-flight TTS so it doesn't play over the new static audio batch.
+    // playStaticAudioFile calls stopAudioPlayback(), but the generation increment is what
+    // prevents a stale TTS fetch that completes *after* stopAudioPlayback from re-creating
+    // a new AudioContext and playing anyway.
+    voiceGenerationRef.current += 1
+    stopStaticAudio()
+    stopAudioPlayback()
+    setIsStaticAudioPlaying(false)
+    isStaticAudioPlayingRef.current = false
     for (let i = 0; i < msgs.length; i++) {
       const msg     = msgs[i]!
       const prevMsg = i > 0 ? msgs[i - 1] : null
@@ -438,6 +447,11 @@ export function useDemoSession({
       setCompletedSteps((prev) => [...prev, step.key])
 
       if (j.isComplete && j.finalResult) {
+        // Kill any in-flight TTS (feedback for the final step) before playing the goodbye.
+        // Without this, the TTS fetch could complete after goodbye starts, recreate the
+        // AudioContext, and play over the farewell audio.
+        voiceGenerationRef.current += 1
+        stopAudioPlayback()
         // Play goodbye audio before result overlay
         if (!voiceMutedRef.current && j.finalAudioKey) {
           const goodbyeUrl = STATIC_DEMO_AUDIO_MAP[j.finalAudioKey]

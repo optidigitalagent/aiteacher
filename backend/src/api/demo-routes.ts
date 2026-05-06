@@ -356,10 +356,11 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
         return
       }
-      // classifyInput uses char-based minLength — a 3-word answer like "where's my friends"
-      // passes (18 chars > minLength=5) but needs more substance for a followup step.
-      if (answer.trim().split(/\s+/).filter(Boolean).length <= 3) {
-        const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with that idea.", stepPrompt)
+      // classifyInput uses char-based minLength — even a 5-word vague answer like
+      // "I've seen it's a topic" passes the char gate but carries no real information.
+      // Raise the word floor to 6 so the student must form a real sentence.
+      if (answer.trim().split(/\s+/).filter(Boolean).length <= 5) {
+        const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with your actual reasoning.", stepPrompt)
         res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
         return
       }

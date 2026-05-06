@@ -109,10 +109,12 @@ export async function evaluateSpeaking(
 Return ONLY valid JSON: {"score": 0-10, "feedback": "string", "correction": "string or null"}
 
 Rules:
-- Be SPECIFIC — reference what the student actually said or the topic/name they mentioned
-- NEVER open with empty phrases: "Great effort!", "Good attempt!", "Well done!", "Got it", "I see", "Interesting", "Useful", "You tried"
+- Be SPECIFIC — reference what the student actually said, the subject they named, or the moment they described
+- NEVER open with empty phrases: "Great effort!", "Good attempt!", "Well done!", "Got it", "I see", "Interesting", "Useful", "You tried", "Specific answer"
 - NEVER say only "Tell me more" or "Let's keep going" without teaching something concrete
 - NEVER say "doesn't address the prompt", "unclear English", or "confusing" — instead extract the likely idea and redirect
+- If student starts with a meta-complaint ("you didn't hear me", "you misunderstood", "you little bit don't hear me well", "that's not what I meant") — start your feedback with "I hear you —" then continue with the evaluation of what they actually said
+- If student ends with "can you help me", "I don't know", "help me" — acknowledge it: "I can see what you meant —" and continue with a corrected version
 - If answer is unclear but contains real words: score 5, extract the likely idea, give a corrected sentence: "I can see the idea — a clearer version: '[correction]'. Try again in your own words."
 - If answer is 1-3 words: score 5, say "[Word] — give me a full sentence: 'I [verb] [word] because...' — tell me something real."
 - If answer has genuine content but grammar errors: correct ONE key error and explain it briefly. Score based on idea quality (minimum 5 for any genuine attempt).
@@ -120,7 +122,7 @@ Rules:
 - correction: an improved full sentence of what they said. Set to null ONLY if grammar was already correct and complete.
 - Score range for real attempts: 5-8. Reserve 9-10 for exceptional clarity and detail.
 - ALWAYS end with a question or clear instruction — the student must know what to do next.
-- Keep feedback under 50 words total.`
+- Keep feedback under 55 words total.`
 
   const userPrompt = `Prompt given to student: "${topic.speakingPrompt}"
 Student answer: "${answer}"
@@ -173,10 +175,11 @@ export async function evaluateWriting(
 Return ONLY valid JSON: {"score": 0-10, "feedback": "string", "correction": "string or null"}
 
 Rules:
-- Be SPECIFIC — mention what they actually wrote or the show/topic they named
-- Give ONE concrete improvement: e.g. "Use 'because' after your main point" or "Start with 'I recommend' instead of 'is there'"
-- NEVER open with empty phrases: "Got it", "Good ideas!", "You tried", "You attempted", "That gives me a better picture"
+- Be SPECIFIC — mention what they actually wrote or the topic/subject/idea they named
+- Give ONE concrete improvement: e.g. "Use 'because' after your main point" or "Start with 'I would' instead of starting mid-sentence"
+- NEVER open with empty phrases: "Got it", "Good ideas!", "You tried", "You attempted", "That gives me a better picture", "Clear idea"
 - NEVER say "doesn't address the prompt", "unclear", "confusing" — instead extract the idea and redirect firmly but warmly
+- If student mentions meta-complaints ("you didn't hear me", "you misunderstood") — briefly acknowledge: "I hear you —" then evaluate what they wrote
 - If answer is unclear but has real words: score 5, infer the idea, give a clearer 1-sentence version: "I can see you mean [idea] — try: '[correction]'. More specific this time."
 - If answer has weak grammar but real content: correct 1-2 key errors, explain briefly. Score for idea quality (minimum 5 for genuine attempts).
 - correction: an improved 1-2 sentence version of what they wrote. null only if already grammatically strong.

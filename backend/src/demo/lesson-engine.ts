@@ -248,6 +248,39 @@ export function buildWarmUpFeedback(_session: DemoSession, answer: string): stri
     return `${cap} — that's a start. Give me one full sentence: "I really like ${word} because..." — I want to hear your actual opinion.`
   }
 
+  // School subjects — respond to what the student actually said
+  if (/\b(math|maths|mathematic|mathematics|algebra|geometry|calculus|trigonometry)\b/i.test(answer)) {
+    if (wordCount >= 8) {
+      return "Maths — good choice. The fact that it trains your thinking is exactly right — that's what we'll build on today."
+    }
+    return "Maths — I'll use that today."
+  }
+  if (/\b(physics)\b/i.test(answer)) {
+    return wordCount >= 8
+      ? "Physics — a subject that connects everything. That analytical mindset is useful here."
+      : "Physics — got it. Let's go."
+  }
+  if (/\b(chemistry|biology|science)\b/i.test(answer)) {
+    const m = answer.match(/\b(chemistry|biology|science)\b/i)
+    const subj = m ? m[0].charAt(0).toUpperCase() + m[0].slice(1) : 'Science'
+    return `${subj} — solid. I'll pull from that today.`
+  }
+  if (/\b(history|geography)\b/i.test(answer)) {
+    const m = answer.match(/\b(history|geography)\b/i)
+    const subj = m ? m[0].charAt(0).toUpperCase() + m[0].slice(1) : 'That'
+    return wordCount >= 8
+      ? `${subj} — understanding context is a real skill. Let's use that.`
+      : `${subj} — I've got what I need.`
+  }
+  if (/\b(literature|language|english|writing)\b/i.test(answer)) {
+    return "Language — then you already know what it means to think carefully about words. Let's use that."
+  }
+  if (/\b(art|music|sport|sports|pe|physical)\b/i.test(answer)) {
+    const m = answer.match(/\b(art|music|sport|sports|pe|physical)\b/i)
+    const subj = m ? m[0].charAt(0).toUpperCase() + m[0].slice(1) : 'That'
+    return `${subj} — good. I've got a clear picture. Let's get into the work.`
+  }
+
   // YouTube / creator content — detect before "watching nothing" since both can appear together
   if (/\b(youtube|youtuber|mr\.?\s*beast|pewdiepie|channel|vlog)\b/i.test(answer)) {
     if (/\b(watching\s+nothing|not\s+watching|nothing\s+right\s+now)\b/i.test(answer)) {
@@ -279,11 +312,31 @@ export function buildWarmUpFeedback(_session: DemoSession, answer: string): stri
   return "Okay — let's get started."
 }
 
-export function buildFollowUpFeedback(_session: DemoSession, answer: string, stepKey: string): string {
+export function buildFollowUpFeedback(session: DemoSession, answer: string, stepKey: string): string {
   const wordCount = answer.trim().split(/\s+/).filter(Boolean).length
 
   if (wordCount <= 3) {
     return "Tell me a bit more — give me a full sentence with that idea."
+  }
+
+  if (stepKey === 'speaking_followup') {
+    // School-life topic has completely different content from movies — handle separately
+    if (session.interest_area === 'school_life') {
+      if (/\b(simple|simply|easy|clearly|explain|show|teach|describe)\b/i.test(answer)) {
+        return "That's the right approach — clear, simple language is what actually works when you explain to someone new."
+      }
+      if (/\b(example|like\s+(when|how)|imagine|picture|think\s+of)\b/i.test(answer)) {
+        return "Good — using examples is the most effective way to explain anything. That's real teaching instinct."
+      }
+      if (/\b(computer|online|internet|app|phone|digital|learn\w*)\b/i.test(answer)) {
+        return "Modern context — makes it immediately relatable. That's a smart way to frame it."
+      }
+      if (wordCount >= 12) {
+        return "Clear idea — the way you'd explain it shows you actually understood it yourself."
+      }
+      // Short but real content — push for one more sentence
+      return "Almost there — give me one more sentence: how would you actually put it in words a younger student would understand?"
+    }
   }
 
   if (stepKey === 'speaking_followup') {
@@ -331,7 +384,11 @@ export function buildFollowUpFeedback(_session: DemoSession, answer: string, ste
   if (/\b(with\s+(someone|a\s+friend|friends|family|my|the))\b/i.test(answer)) {
     return "Social viewing — it changes the whole experience. Let's keep going."
   }
-  return "That works. Let's keep going."
+  // If no specific keyword matched, check for substance before accepting
+  if (wordCount <= 8) {
+    return "I need more than that — give me a full sentence with your actual reason. Try: 'I think it's the topic itself because...' or 'The way it's taught makes sense to me because...'"
+  }
+  return "Got it. Let's keep going."
 }
 
 // Builds the teacher reply when a student asks about grammar or task rules instead of answering.
