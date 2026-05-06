@@ -102,6 +102,7 @@ function parseJSON<T>(text: string, fallback: T): T {
 export async function evaluateSpeaking(
   answer: string,
   session: DemoSession,
+  isVoiceLike?: boolean,
 ): Promise<ScoreRecord> {
   const topic = TOPIC_PACKS[session.interest_area] ?? TOPIC_PACKS['school_life']!
 
@@ -125,7 +126,7 @@ Rules:
 - Keep feedback under 55 words total.`
 
   const userPrompt = `Prompt given to student: "${topic.speakingPrompt}"
-Student answer: "${answer}"
+Student answer: "${answer}"${isVoiceLike ? '\nNote: extracted from a voice transcript — student was thinking aloud; evaluate this as their final intended idea.' : ''}
 Student confidence level: ${session.speaking_confidence}
 Teacher style: ${session.teacher_style}
 Interest area: ${topic.label}`

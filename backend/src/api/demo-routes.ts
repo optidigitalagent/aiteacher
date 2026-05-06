@@ -31,6 +31,8 @@ import {
   detectConfirmIntent,
   detectStudentQuestion,
   detectToxicity,
+  detectMetaHelpIntent,
+  normalizeVoiceTranscript,
 } from '../demo/abuse-guard.js'
 import { DEMO_AI_CONFIG, canUseDemoAI, DEMO_TTS_CONFIG, canUseDemoTTS } from '../demo/ai-config.js'
 
@@ -295,6 +297,10 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
 
     if (stepKey === 'warm_up') {
       const stepPrompt = expectedStep.prompt ?? ''
+      if (detectMetaHelpIntent(answer)) {
+        res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey) })
+        return
+      }
       if (detectToxicity(answer)) {
         console.log('[demo-ai] moderation step=warm_up')
         res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt) })
@@ -330,6 +336,10 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
 
     } else if (stepKey === 'warm_up_followup') {
       const stepPrompt = expectedStep.prompt ?? ''
+      if (detectMetaHelpIntent(answer)) {
+        res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey) })
+        return
+      }
       if (detectToxicity(answer)) {
         console.log('[demo-ai] moderation step=warm_up_followup')
         res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt) })
@@ -385,6 +395,10 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
     } else if (stepKey === 'speaking_followup') {
       const stepPrompt = expectedStep.prompt ?? ''
 
+      if (detectMetaHelpIntent(answer)) {
+        res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey) })
+        return
+      }
       if (detectToxicity(answer)) {
         console.log('[demo-ai] moderation step=speaking_followup')
         res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt) })
@@ -427,13 +441,21 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
     } else if (stepKey === 'speaking_task' || stepKey === 'writing_task') {
       const stepPrompt = expectedStep.prompt ?? ''
 
+      // ── 0a. Meta / presence-check — student didn't hear, checking if system is active ──
+      // Must run before everything else — these must NEVER be graded or counted as attempts.
+      if (detectMetaHelpIntent(answer)) {
+        console.log(`[demo-meta-help] step=${stepKey}`)
+        res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey) })
+        return
+      }
+
       if (detectToxicity(answer)) {
         console.log(`[demo-ai] moderation step=${stepKey}`)
         res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt) })
         return
       }
 
-      // ── 0. Student question — answer grammar/task question, return to current task ──
+      // ── 0b. Student question — answer grammar/task question, return to current task ──
       // Must run before classifyInput — grammar questions parse as VALID and would hit AI eval.
       if (detectStudentQuestion(answer)) {
         const response = buildStudentQuestionResponse(session, stepPrompt)
@@ -578,8 +600,16 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
             score = buildRuleBasedSpeakingFeedback(answer)
           } else {
             await incrementAiCalls(sessionId)
-            const trimmedAnswer = answer.slice(0, SPEAKING_MAX_CHARS)
-            score = await evaluateSpeaking(trimmedAnswer, { ...session, ai_calls_used: session.ai_calls_used + 1 })
+            const rawAnswer  = answer.slice(0, SPEAKING_MAX_CHARS)
+            const voiceNorm  = normalizeVoiceTranscript(rawAnswer)
+            if (voiceNorm.isVoiceLike) {
+              console.log(`[demo-voice-norm] ramble detected, normalized="${voiceNorm.normalized.slice(0, 80)}"`)
+            }
+            score = await evaluateSpeaking(
+              voiceNorm.isVoiceLike ? voiceNorm.normalized : rawAnswer,
+              { ...session, ai_calls_used: session.ai_calls_used + 1 },
+              voiceNorm.isVoiceLike,
+            )
           }
         } else {
           const budget = canUseDemoAI(session, 'writing_eval', 400, 120)
@@ -1009,6 +1039,13 @@ router.post('/demo/dev-reset', requireAuth, async (req: Request, res: Response):
 })
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Teacher response for meta/presence-check intents (didn't hear, are you there, etc.).
+// Repeats the current question with a sentence frame — does NOT advance the lesson.
+function buildMetaHelpResponse(session: DemoSession, stepPrompt: string, stepKey: string): string {
+  const hint = buildConfusedHint(session, stepKey, 0)
+  return `I'm here — I can see your message.\n\nThe question is: ${stepPrompt}\n\n${hint}`
+}
 
 function getGibberishMessage(abuseFlags: number): string {
   if (abuseFlags <= 1) return "I couldn't follow that — try a real sentence, even a simple one."

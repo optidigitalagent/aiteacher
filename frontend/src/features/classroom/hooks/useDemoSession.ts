@@ -398,7 +398,7 @@ export function useDemoSession({
           { id: errMsgId, sender: 'ai', text: errMsgText },
         ])
         // Voice key teacher moments — corrections and moderation feel more personal when spoken
-        const spokeCodes = new Set(['MODERATION', 'MEANING_CONFIRMED', 'STUDENT_QUESTION', 'VOCAB_HELP', 'QUALITY_RETRY'])
+        const spokeCodes = new Set(['MODERATION', 'MEANING_CONFIRMED', 'STUDENT_QUESTION', 'VOCAB_HELP', 'QUALITY_RETRY', 'META_HELP'])
         if (spokeCodes.has(j.code ?? '') && j.message) {
           // Quality retry uses the step-appropriate voice type so TTS budget tracks correctly
           const voiceType = j.code === 'QUALITY_RETRY'

@@ -523,6 +523,123 @@ export function classifyInput(answer: string, minLength: number): ClassifyResult
   return { cls: 'VALID', reason: 'ok', message: '' }
 }
 
+// ─── Meta / presence-check intent detection ───────────────────────────────────
+// Detects messages where the student is checking if the system is active, saying
+// they didn't hear / misunderstood, or asking what to do — NOT attempting the task.
+// These must NOT be graded or counted as task-attempt failures.
+// Check BEFORE classifyInput in every answerable step.
+
+const META_HELP_PATTERNS: RegExp[] = [
+  // Presence checks: "are you there?", "hey are you here", "you there?"
+  /^\s*(?:hey[\s,]*)?(?:are\s+you\s+(?:there|here)|you\s+there)\s*[?!.]*\s*$/i,
+  // Didn't / couldn't hear
+  /\bi\s+(?:didn'?t|couldn'?t|can'?t)\s+(?:hear|get|understand)\b/i,
+  /\b(?:didn'?t|couldn'?t)\s+hear\s+(?:you|the\s+question|it)\b/i,
+  // Asking to repeat
+  /\b(?:can\s+you\s+(?:repeat|say\s+that\s+again|ask\s+(?:me\s+)?again)|please\s+repeat|repeat\s+(?:the\s+)?question)\b/i,
+  // Misunderstood / student says they were misunderstood
+  /\byou\s+(?:mis+under(?:stood|stand)|didn'?t\s+under(?:stand|stood)|didn'?t\s+hear\s+me|don'?t\s+(?:hear|understand)\s+me)\b/i,
+  /\bthat(?:'s|\s+is)\s+not\s+what\s+i\s+(?:said|meant)\b/i,
+  /\byou\s+(?:a\s+)?little\s+bit\s+don'?t\s+hear\b/i,
+  // What is the question / what do I do
+  /\bwhat\s+(?:is|was)\s+(?:the\s+)?question\s*\??/i,
+  /\bwhat\s+(?:should|do)\s+i\s+(?:answer|write|say|do)\s*\??$/i,
+  /\bi\s+(?:didn'?t|couldn'?t)\s+(?:hear|get|understand)\s+(?:the\s+)?(?:question|task|prompt)\b/i,
+]
+
+export function detectMetaHelpIntent(text: string): boolean {
+  const lower = text.toLowerCase().trim()
+  // Standalone: "hello", "hi", "hey" with nothing else
+  if (/^(?:hello+|hi+|hey+)[?.!,\s]*$/.test(lower)) return true
+  return META_HELP_PATTERNS.some(p => p.test(text))
+}
+
+// ─── Voice transcript normalization ──────────────────────────────────────────
+// Detects thinking-aloud voice input and extracts the student's final intended
+// answer. Used in speaking steps where the raw transcript includes false starts
+// and fillers. Returns normalized text (for AI evaluation) plus isVoiceLike flag.
+
+const VOICE_FILLER_SET = new Set([
+  'okay', 'ok', 'so', 'um', 'uh', 'hmm', 'hm', 'well', 'like',
+  'right', 'alright', 'just', 'yeah', 'yep', 'nah', 'now',
+  'something', 'small', 'wait', 'hold',
+])
+
+const FILLER_PREFIX_RE =
+  /^(?:okay|ok|so+|um+|uh+|hmm*|hm+|well|right|alright|let\s+me|wait|one\s+second|hold\s+on|yeah|yep|something\s+small|just|now|i\s+want\s+to|i\s+am\s+going|one\s+sec(?:ond)?)\s+/i
+
+const I_VERB_TOKENS = new Set([
+  'was','am','were','would','could','have','had','feel','felt',
+  'think','thought','saw','see','want','wanted','like','liked',
+  'love','loved','enjoy','enjoyed','found','did','do','went','go',
+  'can','will','try','tried','made','make',
+])
+
+export function normalizeVoiceTranscript(
+  answer: string,
+): { normalized: string; isVoiceLike: boolean } {
+  const trimmed = answer.trim()
+  const words   = trimmed.split(/\s+/).filter(Boolean)
+
+  // Need at least 5 words to detect a preamble worth stripping
+  if (words.length < 5) return { normalized: trimmed, isVoiceLike: false }
+
+  const firstWord        = (words[0] ?? '').toLowerCase()
+  const startsWithFiller = VOICE_FILLER_SET.has(firstWord)
+
+  // Check filler density in the first 40% of words
+  const prefixLen   = Math.max(3, Math.ceil(words.length * 0.40))
+  const prefixWords = words.slice(0, prefixLen)
+  const fillerCount = prefixWords.filter(w => VOICE_FILLER_SET.has(w.toLowerCase())).length
+  const isVoiceLike = startsWithFiller || fillerCount / prefixLen >= 0.30
+
+  if (!isVoiceLike) return { normalized: trimmed, isVoiceLike: false }
+
+  // Find all positions where "I [personal-verb]" appears (likely sentence starts)
+  const iPositions: number[] = []
+  for (let i = 0; i < words.length - 1; i++) {
+    if (words[i] === 'I' && I_VERB_TOKENS.has((words[i + 1] ?? '').toLowerCase())) {
+      iPositions.push(i)
+    }
+  }
+
+  // Take the last "I [verb]" clause that yields ≥ 6 words (a full thought),
+  // falling back to ≥ 4 words if no longer candidate exists.
+  for (let k = iPositions.length - 1; k >= 0; k--) {
+    const pos     = iPositions[k]!
+    const segment = words.slice(pos).join(' ')
+    if (segment.split(/\s+/).length >= 6) {
+      return { normalized: segment, isVoiceLike: true }
+    }
+  }
+  if (iPositions.length > 0) {
+    const lastPos = iPositions[iPositions.length - 1]!
+    const segment = words.slice(lastPos).join(' ')
+    if (segment.split(/\s+/).length >= 4) {
+      return { normalized: segment, isVoiceLike: true }
+    }
+  }
+
+  // Fallback: strip known filler prefix tokens one at a time
+  let cleaned = trimmed
+  let changed  = true
+  while (changed) {
+    changed  = false
+    const m  = cleaned.match(FILLER_PREFIX_RE)
+    // Guard: don't strip more than 60% of the original (preserve substance)
+    if (m && m[0].length < trimmed.length * 0.60) {
+      cleaned = cleaned.slice(m[0].length)
+      changed = true
+    }
+  }
+
+  cleaned = cleaned.trim()
+  return {
+    normalized: cleaned.length >= 10 ? cleaned : trimmed,
+    isVoiceLike: true,
+  }
+}
+
 // ─── Early-termination result builder ────────────────────────────────────────
 
 export function buildEarlyResult(session: DemoSession, dueToAbuse: boolean): FinalResult {
