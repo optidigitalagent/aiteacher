@@ -19,6 +19,26 @@ export interface ClassifyResult {
   correction?: string
 }
 
+// ─── Voice normalization result ───────────────────────────────────────────────
+export interface VoiceNormResult {
+  originalText: string
+  normalizedText: string
+  isVoiceLike: boolean
+  confidence: 'high' | 'medium' | 'low'
+  removedFiller: boolean
+  hasMetaHelpInside: boolean
+  reason: string
+}
+
+// ─── Answer quality result ────────────────────────────────────────────────────
+export type AnswerQuality = 'valid' | 'weak' | 'meta_help' | 'spam'
+export interface AnswerQualityResult {
+  quality: AnswerQuality
+  reason: string
+  shouldAdvance: boolean
+  suggestedResponse?: string
+}
+
 // ─── Lesson vocabulary: canonical name + misspelling aliases ──────────────────
 
 const VOCAB_CANONICAL: Record<string, string> = {
@@ -545,6 +565,8 @@ const META_HELP_PATTERNS: RegExp[] = [
   /\bwhat\s+(?:is|was)\s+(?:the\s+)?question\s*\??/i,
   /\bwhat\s+(?:should|do)\s+i\s+(?:answer|write|say|do)\s*\??$/i,
   /\bi\s+(?:didn'?t|couldn'?t)\s+(?:hear|get|understand)\s+(?:the\s+)?(?:question|task|prompt)\b/i,
+  // Don't understand the question (standalone — distinguishes from mixed answer+help)
+  /\bi\s+don'?t\s+understand\s+(?:the\s+)?(?:question|task)\s*[?!.]*$/i,
 ]
 
 export function detectMetaHelpIntent(text: string): boolean {
@@ -556,13 +578,12 @@ export function detectMetaHelpIntent(text: string): boolean {
 
 // ─── Voice transcript normalization ──────────────────────────────────────────
 // Detects thinking-aloud voice input and extracts the student's final intended
-// answer. Used in speaking steps where the raw transcript includes false starts
-// and fillers. Returns normalized text (for AI evaluation) plus isVoiceLike flag.
+// answer. Returns a structured VoiceNormResult with confidence and meta-help flag.
 
 const VOICE_FILLER_SET = new Set([
   'okay', 'ok', 'so', 'um', 'uh', 'hmm', 'hm', 'well', 'like',
   'right', 'alright', 'just', 'yeah', 'yep', 'nah', 'now',
-  'something', 'small', 'wait', 'hold',
+  'something', 'small', 'wait', 'hold', 'let',
 ])
 
 const FILLER_PREFIX_RE =
@@ -575,69 +596,249 @@ const I_VERB_TOKENS = new Set([
   'can','will','try','tried','made','make',
 ])
 
-export function normalizeVoiceTranscript(
-  answer: string,
-): { normalized: string; isVoiceLike: boolean } {
-  const trimmed = answer.trim()
-  const words   = trimmed.split(/\s+/).filter(Boolean)
+// Help phrases that might appear embedded inside a real answer
+const HELP_INSIDE_PATTERNS: RegExp[] = [
+  /\bcan\s+you\s+help\s+me\b/i,
+  /\bhelp\s+me\b/i,
+  /\bi\s+need\s+help\b/i,
+  /\bplease\s+help\b/i,
+]
 
-  // Need at least 5 words to detect a preamble worth stripping
-  if (words.length < 5) return { normalized: trimmed, isVoiceLike: false }
+// Explicit final-answer markers — checked before voice-like heuristics.
+// match.index > 3 required so marker must be preceded by at least a few chars.
+const FINAL_ANSWER_MARKERS: Array<{ re: RegExp; reason: string }> = [
+  { re: /\bmy\s+answer\s+is\s+/i,            reason: 'marker_my_answer' },
+  { re: /\bmy\s+sentence\s+is\s+/i,          reason: 'marker_my_sentence' },
+  { re: /\bthe\s+sentence\s+is\s+/i,         reason: 'marker_the_sentence' },
+  { re: /\bwhat\s+i\s+mean\s+is\s+/i,        reason: 'marker_what_i_mean' },
+  { re: /\bi\s+would\s+say\s+(?:that\s+)?/i, reason: 'marker_i_would_say' },
+  { re: /\bi\s+mean\s+/i,                    reason: 'marker_i_mean' },
+  { re: /\bactually\s+/i,                    reason: 'marker_actually' },
+]
 
-  const firstWord        = (words[0] ?? '').toLowerCase()
+export function normalizeVoiceTranscript(answer: string): VoiceNormResult {
+  const originalText = answer.trim()
+  const words = originalText.split(/\s+/).filter(Boolean)
+
+  // Help phrase embedded inside a longer answer (not a standalone help request)
+  const hasMetaHelpInside =
+    words.length > 5 && HELP_INSIDE_PATTERNS.some(p => p.test(originalText))
+
+  if (words.length < 5) {
+    return {
+      originalText, normalizedText: originalText,
+      isVoiceLike: false, confidence: 'high',
+      removedFiller: false, hasMetaHelpInside: false,
+      reason: 'too_short_to_normalize',
+    }
+  }
+
+  // 1. Final-answer markers — highest priority, works regardless of isVoiceLike.
+  //    Requires content before the marker (index > 3).
+  for (const { re, reason } of FINAL_ANSWER_MARKERS) {
+    const match = originalText.match(re)
+    if (match && match.index !== undefined && match.index > 3) {
+      const afterMarker = originalText.slice(match.index + match[0].length).trim()
+      if (afterMarker.split(/\s+/).length >= 3) {
+        return {
+          originalText, normalizedText: afterMarker,
+          isVoiceLike: true, confidence: 'high',
+          removedFiller: true, hasMetaHelpInside,
+          reason,
+        }
+      }
+    }
+  }
+
+  // 2. Detect isVoiceLike
+  const firstWord = (words[0] ?? '').toLowerCase()
   const startsWithFiller = VOICE_FILLER_SET.has(firstWord)
-
-  // Check filler density in the first 40% of words
-  const prefixLen   = Math.max(3, Math.ceil(words.length * 0.40))
+  const prefixLen = Math.max(3, Math.ceil(words.length * 0.40))
   const prefixWords = words.slice(0, prefixLen)
   const fillerCount = prefixWords.filter(w => VOICE_FILLER_SET.has(w.toLowerCase())).length
   const isVoiceLike = startsWithFiller || fillerCount / prefixLen >= 0.30
 
-  if (!isVoiceLike) return { normalized: trimmed, isVoiceLike: false }
+  if (!isVoiceLike) {
+    return {
+      originalText, normalizedText: originalText,
+      isVoiceLike: false, confidence: 'high',
+      removedFiller: false, hasMetaHelpInside,
+      reason: 'not_voice_like',
+    }
+  }
 
-  // Find all positions where "I [personal-verb]" appears (likely sentence starts)
+  // 3. Last "I [personal-verb]" clause — walk backwards, take first that's ≥ 6 words
   const iPositions: number[] = []
   for (let i = 0; i < words.length - 1; i++) {
     if (words[i] === 'I' && I_VERB_TOKENS.has((words[i + 1] ?? '').toLowerCase())) {
       iPositions.push(i)
     }
   }
-
-  // Take the last "I [verb]" clause that yields ≥ 6 words (a full thought),
-  // falling back to ≥ 4 words if no longer candidate exists.
   for (let k = iPositions.length - 1; k >= 0; k--) {
-    const pos     = iPositions[k]!
+    const pos = iPositions[k]!
     const segment = words.slice(pos).join(' ')
     if (segment.split(/\s+/).length >= 6) {
-      return { normalized: segment, isVoiceLike: true }
+      return {
+        originalText, normalizedText: segment,
+        isVoiceLike: true, confidence: 'medium',
+        removedFiller: true, hasMetaHelpInside,
+        reason: 'last_i_verb_clause',
+      }
     }
   }
   if (iPositions.length > 0) {
     const lastPos = iPositions[iPositions.length - 1]!
     const segment = words.slice(lastPos).join(' ')
     if (segment.split(/\s+/).length >= 4) {
-      return { normalized: segment, isVoiceLike: true }
+      return {
+        originalText, normalizedText: segment,
+        isVoiceLike: true, confidence: 'medium',
+        removedFiller: true, hasMetaHelpInside,
+        reason: 'last_i_verb_clause_short',
+      }
     }
   }
 
-  // Fallback: strip known filler prefix tokens one at a time
-  let cleaned = trimmed
-  let changed  = true
+  // 4. Strip leading filler tokens iteratively (guard: don't remove > 60% of original)
+  let cleaned = originalText
+  let changed = true
   while (changed) {
-    changed  = false
-    const m  = cleaned.match(FILLER_PREFIX_RE)
-    // Guard: don't strip more than 60% of the original (preserve substance)
-    if (m && m[0].length < trimmed.length * 0.60) {
+    changed = false
+    const m = cleaned.match(FILLER_PREFIX_RE)
+    if (m && m[0].length < originalText.length * 0.60) {
       cleaned = cleaned.slice(m[0].length)
       changed = true
     }
   }
-
   cleaned = cleaned.trim()
-  return {
-    normalized: cleaned.length >= 10 ? cleaned : trimmed,
-    isVoiceLike: true,
+
+  if (cleaned.length >= 10 && cleaned !== originalText) {
+    const confidence = cleaned.split(/\s+/).length >= 5 ? 'medium' : 'low'
+    return {
+      originalText, normalizedText: cleaned,
+      isVoiceLike: true, confidence,
+      removedFiller: true, hasMetaHelpInside,
+      reason: 'filler_prefix_stripped',
+    }
   }
+
+  // 5. Could not extract cleanly — low confidence, keep original
+  return {
+    originalText, normalizedText: originalText,
+    isVoiceLike: true, confidence: 'low',
+    removedFiller: false, hasMetaHelpInside,
+    reason: 'extraction_failed',
+  }
+}
+
+// ─── Weak-answer quality gate (rule-based, zero AI cost) ─────────────────────
+// Runs BEFORE AI evaluation on VALID-classified answers.
+// Catches content-free answers that pass classifyInput's length/alphabet checks.
+
+const WEAK_GATE_FILLERS = new Set([
+  'okay','ok','so','um','uh','hmm','hm','well','like','right',
+  'alright','just','yeah','yep','now','something','wait','hold',
+  'maybe','perhaps','kind','sort','type','one','last',
+])
+
+const CONTENT_VERBS = new Set([
+  'like','love','enjoy','think','feel','want','have','know',
+  'see','watch','play','do','go','make','makes','made','work','works','worked',
+  'study','learn','practice','try','help','use','find','get','become','start',
+  'finish','remember','prefer','recommend','believe','understand',
+  'explain','change','improve','teach','write','read','speak',
+  'listen','proud','excited','interested','focus',
+  'choose','chose','pick','decided','decide','felt',
+  'saw','was','were','am','are','had','did','does',
+  'seen','shown','given','taken','done','means','makes','keeps',
+])
+
+const VAGUE_NOUNS = new Set([
+  'topic','subject','thing','stuff','it','this','that','one','something',
+  'anything','everything','nothing','way','kind','type','sort',
+])
+
+function hasContentVerb(words: string[]): boolean {
+  return words.some(w => CONTENT_VERBS.has(w.toLowerCase()))
+}
+
+function allVagueContent(words: string[]): boolean {
+  const content = words.filter(w => {
+    const l = w.toLowerCase()
+    return !WEAK_GATE_FILLERS.has(l) && l.length > 2
+  })
+  if (content.length === 0) return true
+  return content.every(w => VAGUE_NOUNS.has(w.toLowerCase()))
+}
+
+export function analyzeAnswerQuality(
+  answer: string,
+  stepKey: string,
+): AnswerQualityResult {
+  const trimmed = answer.trim()
+  const lower = trimmed.toLowerCase()
+  const words = trimmed.split(/\s+/).filter(Boolean)
+
+  // META_HELP — already caught upstream but guard here too
+  if (detectMetaHelpIntent(trimmed)) {
+    return { quality: 'meta_help', reason: 'meta_help_intent', shouldAdvance: false }
+  }
+
+  // All words are filler — no real content at all
+  if (words.length > 0 && words.every(w => WEAK_GATE_FILLERS.has(w.toLowerCase()))) {
+    return {
+      quality: 'weak', reason: 'all_fillers', shouldAdvance: false,
+      suggestedResponse: `Try saying something real — even one sentence is great. Start with "I…"`,
+    }
+  }
+
+  // Very short + no content verb
+  if (words.length <= 4 && !hasContentVerb(words)) {
+    return {
+      quality: 'weak', reason: 'too_short_no_verb', shouldAdvance: false,
+      suggestedResponse: `Give me a full sentence — what do you actually think? Try: "I think… because…"`,
+    }
+  }
+
+  // High filler density in short answers (> 50%)
+  if (words.length <= 8) {
+    const fillerCount = words.filter(w => WEAK_GATE_FILLERS.has(w.toLowerCase())).length
+    if (fillerCount / words.length > 0.50) {
+      return {
+        quality: 'weak', reason: 'high_filler_density', shouldAdvance: false,
+        suggestedResponse: `I need a real sentence — not just filler words. What's your actual answer?`,
+      }
+    }
+  }
+
+  // "I don't know" without real follow-on (≤ 6 words total)
+  if (/\bi\s+don'?t\s+know\b/i.test(lower) && words.length <= 6) {
+    return {
+      quality: 'weak', reason: 'i_dont_know_no_attempt', shouldAdvance: false,
+      suggestedResponse: `Even a guess is great — try "I think…" and give me one idea.`,
+    }
+  }
+
+  // Only vague nouns, no real verb — e.g. "is about yeah topic make self", "last one schedule rules"
+  if (allVagueContent(words) && !hasContentVerb(words)) {
+    return {
+      quality: 'weak', reason: 'vague_content_no_verb', shouldAdvance: false,
+      suggestedResponse: `I can see you have an idea — but I need a full sentence. Try: "I think… because…"`,
+    }
+  }
+
+  // For graded steps: fragment with no subject pronoun + short
+  if (stepKey === 'speaking_task' || stepKey === 'writing_task') {
+    const hasSubject = /\b(i|me|we|my|us|it|this|they|he|she|you)\b/i.test(trimmed)
+    if (!hasSubject && words.length <= 6) {
+      return {
+        quality: 'weak', reason: 'no_subject_short_fragment', shouldAdvance: false,
+        suggestedResponse: `I need a proper sentence — start with "I…" and tell me what you actually think.`,
+      }
+    }
+  }
+
+  return { quality: 'valid', reason: 'ok', shouldAdvance: true }
 }
 
 // ─── Early-termination result builder ────────────────────────────────────────

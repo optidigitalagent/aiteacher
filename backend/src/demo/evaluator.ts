@@ -103,6 +103,7 @@ export async function evaluateSpeaking(
   answer: string,
   session: DemoSession,
   isVoiceLike?: boolean,
+  hasMetaHelpInside?: boolean,
 ): Promise<ScoreRecord> {
   const topic = TOPIC_PACKS[session.interest_area] ?? TOPIC_PACKS['school_life']!
 
@@ -125,8 +126,15 @@ Rules:
 - ALWAYS end with a question or clear instruction — the student must know what to do next.
 - Keep feedback under 55 words total.`
 
+  const voiceNote = isVoiceLike
+    ? '\nNote: extracted from a voice transcript — student was thinking aloud; evaluate this as their final intended idea.'
+    : ''
+  const helpNote = hasMetaHelpInside
+    ? '\nNote: student included a help request inside their answer — briefly acknowledge it ("I can see what you meant —") then evaluate the answer itself.'
+    : ''
+
   const userPrompt = `Prompt given to student: "${topic.speakingPrompt}"
-Student answer: "${answer}"${isVoiceLike ? '\nNote: extracted from a voice transcript — student was thinking aloud; evaluate this as their final intended idea.' : ''}
+Student answer: "${answer}"${voiceNote}${helpNote}
 Student confidence level: ${session.speaking_confidence}
 Teacher style: ${session.teacher_style}
 Interest area: ${topic.label}`

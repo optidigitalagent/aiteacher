@@ -33,6 +33,7 @@ import {
   detectToxicity,
   detectMetaHelpIntent,
   normalizeVoiceTranscript,
+  analyzeAnswerQuality,
 } from '../demo/abuse-guard.js'
 import { DEMO_AI_CONFIG, canUseDemoAI, DEMO_TTS_CONFIG, canUseDemoTTS } from '../demo/ai-config.js'
 
@@ -599,27 +600,72 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
             console.log(`[demo-ai] fallback reason=${budget.reason ?? 'budget'} step=speaking_task`)
             score = buildRuleBasedSpeakingFeedback(answer)
           } else {
-            await incrementAiCalls(sessionId)
-            const rawAnswer  = answer.slice(0, SPEAKING_MAX_CHARS)
-            const voiceNorm  = normalizeVoiceTranscript(rawAnswer)
+            const rawAnswer = answer.slice(0, SPEAKING_MAX_CHARS)
+            const voiceNorm = normalizeVoiceTranscript(rawAnswer)
+
             if (voiceNorm.isVoiceLike) {
-              console.log(`[demo-voice-norm] ramble detected, normalized="${voiceNorm.normalized.slice(0, 80)}"`)
+              console.log(`[demo-voice-norm] confidence=${voiceNorm.confidence} reason=${voiceNorm.reason} normalized="${voiceNorm.normalizedText.slice(0, 80)}"`)
             }
+
+            // Low confidence extraction — can't reliably determine the answer; ask for retry
+            if (voiceNorm.confidence === 'low' && voiceNorm.isVoiceLike && qualityRetryCount < expectedStep.maxRetries) {
+              await incrementStepRetries(sessionId, stepKey)
+              await incrementAttempts(sessionId)
+              res.status(422).json({
+                code: 'QUALITY_RETRY',
+                message: ensureTeacherContinues(
+                  "I could hear you were thinking — but I couldn't quite catch your final answer. Say it one more time.",
+                  stepPrompt,
+                ),
+              })
+              return
+            }
+
+            const evalAnswer = voiceNorm.isVoiceLike ? voiceNorm.normalizedText : rawAnswer
+
+            // ── 4a. Rule-based weak-answer gate (zero AI cost) ──────────────
+            const weakCheck = analyzeAnswerQuality(evalAnswer, stepKey)
+            if (weakCheck.quality === 'weak' && qualityRetryCount < expectedStep.maxRetries) {
+              await incrementStepRetries(sessionId, stepKey)
+              await incrementAttempts(sessionId)
+              const base = weakCheck.suggestedResponse ?? buildConfusedHint(session, stepKey, qualityRetryCount + 1)
+              res.status(422).json({
+                code: 'QUALITY_RETRY',
+                message: ensureTeacherContinues(base, stepPrompt),
+              })
+              return
+            }
+
+            await incrementAiCalls(sessionId)
             score = await evaluateSpeaking(
-              voiceNorm.isVoiceLike ? voiceNorm.normalized : rawAnswer,
+              evalAnswer,
               { ...session, ai_calls_used: session.ai_calls_used + 1 },
               voiceNorm.isVoiceLike,
+              voiceNorm.hasMetaHelpInside,
             )
           }
         } else {
+          // ── 4a. Rule-based weak-answer gate for writing (zero AI cost) ────
+          const writingAnswer = answer.slice(0, WRITING_MAX_CHARS)
+          const weakCheck = analyzeAnswerQuality(writingAnswer, stepKey)
+          if (weakCheck.quality === 'weak' && qualityRetryCount < expectedStep.maxRetries) {
+            await incrementStepRetries(sessionId, stepKey)
+            await incrementAttempts(sessionId)
+            const base = weakCheck.suggestedResponse ?? buildConfusedHint(session, stepKey, qualityRetryCount + 1)
+            res.status(422).json({
+              code: 'QUALITY_RETRY',
+              message: ensureTeacherContinues(base, stepPrompt),
+            })
+            return
+          }
+
           const budget = canUseDemoAI(session, 'writing_eval', 400, 120)
           if (!budget.allowed) {
             console.log(`[demo-ai] fallback reason=${budget.reason ?? 'budget'} step=writing_task`)
             score = buildRuleBasedWritingFeedback(answer)
           } else {
             await incrementAiCalls(sessionId)
-            const trimmedAnswer = answer.slice(0, WRITING_MAX_CHARS)
-            score = await evaluateWriting(trimmedAnswer, { ...session, ai_calls_used: session.ai_calls_used + 1 })
+            score = await evaluateWriting(writingAnswer, { ...session, ai_calls_used: session.ai_calls_used + 1 })
           }
         }
         feedbackMessage = score.feedback ?? "Keep going."
