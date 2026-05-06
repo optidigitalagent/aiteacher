@@ -45,7 +45,7 @@ export interface DemoFinalResult {
   teacher_message:  string
 }
 
-export type DemoPhase = 'loading' | 'intro' | 'lesson' | 'complete' | 'error'
+export type DemoPhase = 'loading' | 'ready' | 'intro' | 'lesson' | 'complete' | 'error'
 
 export type VoicePlayState = 'loading' | 'playing' | 'done' | 'error'
 
@@ -65,6 +65,7 @@ export interface UseDemoSessionReturn {
   handleTextSubmit:       (answer: string) => void
   handleMcqSelect:        (i: number) => void
   handleHelpRequest:      (text: string) => void
+  startLesson:            () => void
   handleTranslateMessage: (messageId: string, text: string, lang: string) => Promise<string | null>
   showLeaveModal:         boolean
   setShowLeaveModal:      (v: boolean) => void
@@ -131,6 +132,11 @@ export function useDemoSession({
   const [pendingVoicePlay,       setPendingVoicePlay]       = useState<{ id: string; type: string; text: string } | null>(null)
   const [isStaticAudioPlaying,   setIsStaticAudioPlaying]   = useState(false)
   const isStaticAudioPlayingRef  = useRef(false)
+  // Stores session data while phase === 'ready', consumed by startLesson()
+  const pendingLessonRef = useRef<{
+    intro:       { messages: TeacherMessage[] }
+    currentStep: DemoStepContent | null
+  } | null>(null)
 
   // Refs keep async callbacks always fresh without re-creating them
   const didInit              = useRef(false)
@@ -153,8 +159,21 @@ export function useDemoSession({
 
   const playMessages = useCallback(async (msgs: TeacherMessage[]) => {
     currentTeacherMsgRef.current = null
-    for (const msg of msgs) {
-      if (msg.delay > 0) await sleep(Math.min(msg.delay, 2600))
+    for (let i = 0; i < msgs.length; i++) {
+      const msg     = msgs[i]!
+      const prevMsg = i > 0 ? msgs[i - 1] : null
+      // Previous message had static audio → audio already provided natural pacing
+      const prevHadAudio = prevMsg?.audioMode === 'static' && !!prevMsg.audioKey
+      const currHasAudio = msg.audioMode === 'static' && !!msg.audioKey
+
+      if (i === 0) {
+        if (msg.delay > 0) await sleep(Math.min(msg.delay, 1500))
+      } else if (prevHadAudio && currHasAudio) {
+        // Short breath between consecutive audio messages — no extra dead air
+        await sleep(220)
+      } else if (msg.delay > 0) {
+        await sleep(Math.min(msg.delay, 2000))
+      }
 
       const msgId = uid()
       setChatMessages((prev) => [
@@ -162,7 +181,11 @@ export function useDemoSession({
         { id: 'typing', sender: 'ai', isTyping: true },
       ])
       setIsSpeaking(true)
-      await sleep(Math.min(800 + msg.text.length * 16, 3200))
+      // After audio the teacher appears to continue speaking — shorter typing feels natural
+      const typingMs = prevHadAudio
+        ? Math.min(280 + msg.text.length * 5, 900)
+        : Math.min(650 + msg.text.length * 12, 2600)
+      await sleep(typingMs)
       setIsSpeaking(false)
 
       currentTeacherMsgRef.current = msgId
@@ -190,7 +213,6 @@ export function useDemoSession({
             setVoiceStates(prev => ({ ...prev, [msgId]: 'done' }))
           } catch (err) {
             const msg_str = err instanceof Error ? err.message : String(err)
-            // autoplay blocked → show play button; any other error → warn and continue
             if (!msg_str.includes('audio_resume_failed')) {
               console.warn(`[demo-static] key="${msg.audioKey}": ${msg_str}`)
             }
@@ -496,43 +518,59 @@ export function useDemoSession({
           return
         }
 
-        setPhase('intro')
-        await playMessages(data.intro.messages)
-
-        // Only schedule TTS for intro if messages are not all static
-        const introAllStatic = data.intro.messages.every(m => m.audioMode === 'static')
-        const introBubbleId = currentTeacherMsgRef.current
-        if (!introAllStatic && introBubbleId && data.intro.messages.length > 0) {
-          const introTtsText = data.intro.messages.map(m => m.text).join(' ').slice(0, 400)
-          setChatMessages(prev => prev.map(m =>
-            m.id === introBubbleId ? { ...m, messageType: 'greeting' } : m,
-          ))
-          scheduleVoice(introBubbleId, 'greeting', introTtsText)
-        }
-
-        setLessonStarted(true)
-        setPhase('lesson')
-
-        if (data.currentStep) {
-          setCurrentStep(data.currentStep)
-          await playMessages(data.currentStep.teacherMessages)
-          // Only schedule TTS if messages are not all static
-          const stepAllStatic = data.currentStep.teacherMessages.every(m => m.audioMode === 'static')
-          const stepBubbleId = currentTeacherMsgRef.current
-          if (!stepAllStatic && stepBubbleId && data.currentStep.teacherMessages.length > 0) {
-            const stepText = data.currentStep.teacherMessages.map(m => m.text).join(' ').slice(0, 300)
-            setChatMessages(prev => prev.map(m =>
-              m.id === stepBubbleId ? { ...m, messageType: 'main_prompt' } : m,
-            ))
-            scheduleVoice(stepBubbleId, 'main_prompt', stepText)
-          }
-        }
+        // Store session data and wait for user to click Begin Lesson.
+        // This guarantees a user gesture before the first audio.play() call,
+        // which is required to pass the browser autoplay policy.
+        pendingLessonRef.current = { intro: data.intro, currentStep: data.currentStep }
+        setPhase('ready')
       } catch {
         setError('Could not load your lesson. Please refresh.')
         setPhase('error')
       }
     })()
   }, [enabled, demoId, token, onNotFound, playMessages, scheduleVoice]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Called when user clicks "Begin Lesson" — their click is the required user gesture
+  const startLesson = useCallback(async () => {
+    const pending = pendingLessonRef.current
+    if (!pending) return
+    pendingLessonRef.current = null
+
+    try {
+      setPhase('intro')
+      await playMessages(pending.intro.messages)
+
+      const introAllStatic = pending.intro.messages.every(m => m.audioMode === 'static')
+      const introBubbleId = currentTeacherMsgRef.current
+      if (!introAllStatic && introBubbleId && pending.intro.messages.length > 0) {
+        const introTtsText = pending.intro.messages.map(m => m.text).join(' ').slice(0, 400)
+        setChatMessages(prev => prev.map(m =>
+          m.id === introBubbleId ? { ...m, messageType: 'greeting' } : m,
+        ))
+        scheduleVoice(introBubbleId, 'greeting', introTtsText)
+      }
+
+      setLessonStarted(true)
+      setPhase('lesson')
+
+      if (pending.currentStep) {
+        setCurrentStep(pending.currentStep)
+        await playMessages(pending.currentStep.teacherMessages)
+        const stepAllStatic = pending.currentStep.teacherMessages.every(m => m.audioMode === 'static')
+        const stepBubbleId = currentTeacherMsgRef.current
+        if (!stepAllStatic && stepBubbleId && pending.currentStep.teacherMessages.length > 0) {
+          const stepText = pending.currentStep.teacherMessages.map(m => m.text).join(' ').slice(0, 300)
+          setChatMessages(prev => prev.map(m =>
+            m.id === stepBubbleId ? { ...m, messageType: 'main_prompt' } : m,
+          ))
+          scheduleVoice(stepBubbleId, 'main_prompt', stepText)
+        }
+      }
+    } catch {
+      setError('Could not start your lesson. Please refresh.')
+      setPhase('error')
+    }
+  }, [playMessages, scheduleVoice]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTextSubmit = useCallback((answer: string) => {
     if (!answer.trim() || currentStepRef.current?.type === 'mcq') return
@@ -625,6 +663,7 @@ export function useDemoSession({
     chatMessages, steps, progress, isSpeaking, lessonStarted,
     phase, currentStep, finalResult, interestArea,
     submitting, selectedOption, setSelectedOption,
+    startLesson,
     handleTextSubmit, handleMcqSelect,
     handleHelpRequest, handleTranslateMessage,
     showLeaveModal, setShowLeaveModal, error,

@@ -8,6 +8,7 @@ interface Props {
   onSubmit:        () => void
   onToggleMic:     () => void
   onExplain:       () => void
+  inputDisabled?:  boolean
   // Help input (demo mode)
   showHelpInput?:  boolean
   helpInputValue?: string
@@ -18,6 +19,7 @@ interface Props {
 
 export default function BottomControls({
   isListening, value, onChange, onSubmit, onToggleMic, onExplain,
+  inputDisabled,
   showHelpInput, helpInputValue, onHelpChange, onHelpSubmit, onHelpClose,
 }: Props) {
   const inputRef          = useRef<HTMLInputElement>(null)
@@ -25,6 +27,7 @@ export default function BottomControls({
   const [focused, setFocused] = useState(false)
 
   const handleKey = (e: React.KeyboardEvent) => {
+    if (inputDisabled) return
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit() }
   }
 
@@ -156,27 +159,35 @@ export default function BottomControls({
           <input
             ref={inputRef}
             value={value}
-            onChange={e => onChange(e.target.value)}
+            onChange={e => { if (!inputDisabled) onChange(e.target.value) }}
             onKeyDown={handleKey}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            placeholder="Type your answer…"
+            placeholder={inputDisabled ? 'Listen to your teacher…' : 'Type your answer…'}
+            readOnly={inputDisabled}
             style={{
               flex: 1, border: 'none', background: 'transparent',
-              padding: '13px 0', fontSize: 15, color: '#1a1a2e',
+              padding: '13px 0', fontSize: 15,
+              color: inputDisabled ? '#aaa' : '#1a1a2e',
               fontFamily: "'Plus Jakarta Sans', sans-serif",
               minWidth: 0,
+              cursor: inputDisabled ? 'default' : 'text',
             }}
           />
-          <button onClick={onSubmit} style={{
-            width: 40, height: 40, borderRadius: 99, border: 'none', flexShrink: 0,
-            background: value.trim() ? 'linear-gradient(135deg, #1a1a2e, #2d2d4e)' : '#e8e8f0',
-            cursor: value.trim() ? 'pointer' : 'default',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: value.trim() ? '0 4px 12px rgba(26,26,46,0.3)' : 'none',
-            transition: 'all 0.2s',
-          }}>
-            <IcSend s={15} c={value.trim() ? 'white' : '#bbb'} />
+          <button
+            onClick={inputDisabled ? undefined : onSubmit}
+            disabled={inputDisabled || !value.trim()}
+            style={{
+              width: 40, height: 40, borderRadius: 99, border: 'none', flexShrink: 0,
+              background: (!inputDisabled && value.trim()) ? 'linear-gradient(135deg, #1a1a2e, #2d2d4e)' : '#e8e8f0',
+              cursor: (!inputDisabled && value.trim()) ? 'pointer' : 'default',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: (!inputDisabled && value.trim()) ? '0 4px 12px rgba(26,26,46,0.3)' : 'none',
+              transition: 'all 0.2s',
+              opacity: inputDisabled ? 0.45 : 1,
+            }}
+          >
+            <IcSend s={15} c={(!inputDisabled && value.trim()) ? 'white' : '#bbb'} />
           </button>
         </div>
       </div>

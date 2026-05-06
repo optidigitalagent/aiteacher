@@ -74,12 +74,16 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const demoMicTimerRef        = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Tracks demo.isStaticAudioPlaying via ref so toggleDemoMic can read it without stale closure
   const demoStaticPlayingRef   = useRef(false)
+  // Tracks demo.phase via ref so toggleDemoMic / handleSubmit can read it without stale closure
+  const demoPhaseRef           = useRef<string>('loading')
 
   // Stable ref to demo.handleTextSubmit — populated after demo is declared below
   const demoSubmitRef = useRef<(t: string) => void>(() => {})
 
   const toggleDemoMic = useCallback(() => {
-    // Block recording while scripted static audio is playing
+    // Block recording while lesson hasn't started or static audio is playing
+    const ph = demoPhaseRef.current
+    if (ph === 'loading' || ph === 'ready' || ph === 'intro') return
     if (demoStaticPlayingRef.current) return
     if (demoListening) {
       if (demoMicTimerRef.current) { clearTimeout(demoMicTimerRef.current); demoMicTimerRef.current = null }
@@ -158,6 +162,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   useEffect(() => {
     demoStaticPlayingRef.current = demo.isStaticAudioPlaying
   }, [demo.isStaticAudioPlaying])
+
+  useEffect(() => {
+    demoPhaseRef.current = demo.phase
+  }, [demo.phase])
 
   // ── Local UI state ────────────────────────────────────────────────────────
   const [answer,          setAnswer]          = useState('')
@@ -273,6 +281,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const handleSubmit = useCallback(() => {
     if (isDemoMode) {
       if (!answer.trim()) return
+      const ph = demoPhaseRef.current
+      if (ph === 'loading' || ph === 'ready' || ph === 'intro') return
       // User submitting interrupts any playing audio immediately
       stopStaticAudio()
       stopAudioPlayback()
@@ -394,6 +404,37 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           {/* Center — exercise, demo step, teaching overlay, or waiting state */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', minWidth: 0 }}>
             {isDemoMode ? (
+              demo.phase === 'ready' ? (
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{
+                    fontSize: 13, color: '#9B8CFF', fontWeight: 600, marginBottom: 20,
+                    letterSpacing: '0.04em', textTransform: 'uppercase',
+                  }}>
+                    Your lesson is ready
+                  </div>
+                  <button
+                    onClick={() => { void demo.startLesson() }}
+                    style={{
+                      padding: '15px 44px',
+                      background: 'linear-gradient(135deg, #6E7CFB 0%, #9B8CFF 100%)',
+                      color: 'white', border: 'none', borderRadius: 20,
+                      fontSize: 17, fontWeight: 700, cursor: 'pointer', letterSpacing: '-0.2px',
+                      boxShadow: '0 8px 32px rgba(110,124,251,0.40), 0 2px 8px rgba(0,0,0,0.08)',
+                      transition: 'transform 0.15s, box-shadow 0.15s',
+                    }}
+                    onMouseEnter={e => {
+                      (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)'
+                      ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 12px 40px rgba(110,124,251,0.5), 0 4px 12px rgba(0,0,0,0.1)'
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLButtonElement).style.transform = ''
+                      ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 32px rgba(110,124,251,0.40), 0 2px 8px rgba(0,0,0,0.08)'
+                    }}
+                  >
+                    Begin Lesson ▶
+                  </button>
+                </div>
+              ) : (
               <DemoStepCenter
                 phase={demo.phase}
                 currentStep={demo.currentStep}
@@ -402,6 +443,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                 submitting={demo.submitting}
                 isSpeaking={demo.isSpeaking}
               />
+              )
             ) : teachingCard ? (
               <TeachingOverlay card={teachingCard} onDismiss={() => setTeachingCard(null)} />
             ) : questionForPanel ? (
@@ -459,6 +501,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           onSubmit={handleSubmit}
           onToggleMic={isDemoMode ? toggleDemoMic : toggle}
           onExplain={handleExplain}
+          inputDisabled={isDemoMode && !demo.lessonStarted}
           showHelpInput={isDemoMode ? showHelpInput : false}
           helpInputValue={helpInputValue}
           onHelpChange={setHelpInputValue}
