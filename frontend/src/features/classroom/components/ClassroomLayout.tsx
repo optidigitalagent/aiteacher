@@ -20,7 +20,8 @@ import {
   sendMessage,
   type BackendMessage,
 } from '../services/classroomSocket'
-import { useAuth, getStoredToken } from '../../../context/AuthContext'
+import { useAuth, getStoredToken }      from '../../../context/AuthContext'
+import { stopStaticAudio, stopAudioPlayback } from '../services/voiceApi'
 
 const LESSON_UNIT = Number(import.meta.env.VITE_LESSON_UNIT ?? 1)
 const ENV_SECTION = import.meta.env.VITE_LESSON_SECTION as string | undefined
@@ -68,14 +69,18 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     start(): void; stop(): void
   }
   const [demoListening,     setDemoListening]     = useState(false)
-  const demoSpeechRef    = useRef<WebSpeechRec | null>(null)
-  const demoTranscriptRef = useRef('')
-  const demoMicTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const demoSpeechRef          = useRef<WebSpeechRec | null>(null)
+  const demoTranscriptRef      = useRef('')
+  const demoMicTimerRef        = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Tracks demo.isStaticAudioPlaying via ref so toggleDemoMic can read it without stale closure
+  const demoStaticPlayingRef   = useRef(false)
 
   // Stable ref to demo.handleTextSubmit — populated after demo is declared below
   const demoSubmitRef = useRef<(t: string) => void>(() => {})
 
   const toggleDemoMic = useCallback(() => {
+    // Block recording while scripted static audio is playing
+    if (demoStaticPlayingRef.current) return
     if (demoListening) {
       if (demoMicTimerRef.current) { clearTimeout(demoMicTimerRef.current); demoMicTimerRef.current = null }
       demoSpeechRef.current?.stop()
@@ -148,6 +153,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       demo.handleTextSubmit(text)
     }
   }, [demo.handleTextSubmit])
+
+  // Keep demoStaticPlayingRef in sync so toggleDemoMic can read it without stale closure
+  useEffect(() => {
+    demoStaticPlayingRef.current = demo.isStaticAudioPlaying
+  }, [demo.isStaticAudioPlaying])
 
   // ── Local UI state ────────────────────────────────────────────────────────
   const [answer,          setAnswer]          = useState('')
@@ -263,6 +273,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const handleSubmit = useCallback(() => {
     if (isDemoMode) {
       if (!answer.trim()) return
+      // User submitting interrupts any playing audio immediately
+      stopStaticAudio()
+      stopAudioPlayback()
       const a = answer
       setAnswer('')
       demo.handleTextSubmit(a)

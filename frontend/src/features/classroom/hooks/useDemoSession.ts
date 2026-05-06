@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChatMessage, LessonStep } from '../types'
-import { playAudioChunk, stopAudioPlayback } from '../services/voiceApi'
+import { playAudioChunk, stopAudioPlayback, playStaticAudioFile, stopStaticAudio } from '../services/voiceApi'
+import { STATIC_DEMO_AUDIO_MAP } from '../staticAudioMap'
 
 function stripMarkdownForTts(text: string): string {
   return text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim()
@@ -18,7 +19,12 @@ const DEMO_STEP_LABELS: Record<DemoStepKey, string> = {
   writing_task:  'Writing',
 }
 
-interface TeacherMessage { text: string; delay: number }
+interface TeacherMessage {
+  text:       string
+  delay:      number
+  audioMode?: 'static' | 'tts' | 'none'
+  audioKey?:  string
+}
 
 export interface DemoStepContent {
   key:             string
@@ -69,6 +75,7 @@ export interface UseDemoSessionReturn {
   voiceStates:            Record<string, VoicePlayState>
   voiceMessages:          Record<string, { type: string; text: string }>
   handlePlayAudio:        (messageId: string, messageType: string, text: string) => Promise<void>
+  isStaticAudioPlaying:   boolean
 }
 
 function uid() { return Math.random().toString(36).slice(2) }
@@ -118,10 +125,12 @@ export function useDemoSession({
   const [sessionId,      setSessionId]      = useState<string | null>(null)
 
   // Voice state
-  const [voiceMuted,        setVoiceMuted]        = useState(false)
-  const [voiceStates,       setVoiceStates]       = useState<Record<string, VoicePlayState>>({})
-  const [voiceMessages,     setVoiceMessages]     = useState<Record<string, { type: string; text: string }>>({})
-  const [pendingVoicePlay,  setPendingVoicePlay]  = useState<{ id: string; type: string; text: string } | null>(null)
+  const [voiceMuted,             setVoiceMuted]             = useState(false)
+  const [voiceStates,            setVoiceStates]            = useState<Record<string, VoicePlayState>>({})
+  const [voiceMessages,          setVoiceMessages]          = useState<Record<string, { type: string; text: string }>>({})
+  const [pendingVoicePlay,       setPendingVoicePlay]       = useState<{ id: string; type: string; text: string } | null>(null)
+  const [isStaticAudioPlaying,   setIsStaticAudioPlaying]   = useState(false)
+  const isStaticAudioPlayingRef  = useRef(false)
 
   // Refs keep async callbacks always fresh without re-creating them
   const didInit              = useRef(false)
@@ -136,31 +145,18 @@ export function useDemoSession({
   // Incremented each time a new voice message is scheduled — lets in-flight fetches detect they're stale
   const voiceGenerationRef   = useRef(0)
 
-  useEffect(() => { submittingRef.current  = submitting  }, [submitting])
-  useEffect(() => { currentStepRef.current = currentStep }, [currentStep])
-  useEffect(() => { sessionIdRef.current   = sessionId   }, [sessionId])
-  useEffect(() => { voiceMutedRef.current  = voiceMuted  }, [voiceMuted])
-
-  const pushTeacher = useCallback((text: string) => {
-    const existing = currentTeacherMsgRef.current
-    if (existing) {
-      setChatMessages((prev) =>
-        prev.map((m) => (m.id === existing ? { ...m, text: (m.text ?? '') + ' ' + text } : m)),
-      )
-    } else {
-      const id = uid()
-      currentTeacherMsgRef.current = id
-      setChatMessages((prev) => [
-        ...prev.filter((m) => !m.isTyping),
-        { id, sender: 'ai', text },
-      ])
-    }
-  }, [])
+  useEffect(() => { submittingRef.current           = submitting           }, [submitting])
+  useEffect(() => { currentStepRef.current          = currentStep          }, [currentStep])
+  useEffect(() => { sessionIdRef.current            = sessionId            }, [sessionId])
+  useEffect(() => { voiceMutedRef.current           = voiceMuted           }, [voiceMuted])
+  useEffect(() => { isStaticAudioPlayingRef.current = isStaticAudioPlaying }, [isStaticAudioPlaying])
 
   const playMessages = useCallback(async (msgs: TeacherMessage[]) => {
     currentTeacherMsgRef.current = null
     for (const msg of msgs) {
       if (msg.delay > 0) await sleep(Math.min(msg.delay, 2600))
+
+      const msgId = uid()
       setChatMessages((prev) => [
         ...prev.filter((m) => !m.isTyping),
         { id: 'typing', sender: 'ai', isTyping: true },
@@ -168,12 +164,73 @@ export function useDemoSession({
       setIsSpeaking(true)
       await sleep(Math.min(800 + msg.text.length * 16, 3200))
       setIsSpeaking(false)
-      pushTeacher(msg.text)
-    }
-  }, [pushTeacher])
 
-  // ── Voice: fetch and play TTS audio for a teacher message ────────────────────
+      currentTeacherMsgRef.current = msgId
+      setChatMessages((prev) => [
+        ...prev.filter((m) => !m.isTyping),
+        { id: msgId, sender: 'ai', text: msg.text },
+      ])
+
+      if (msg.audioMode === 'static' && msg.audioKey) {
+        const url = STATIC_DEMO_AUDIO_MAP[msg.audioKey]
+        // Always register so the replay button appears
+        setVoiceMessages(prev => ({ ...prev, [msgId]: { type: 'static', text: msg.audioKey! } }))
+
+        if (voiceMutedRef.current) {
+          setVoiceStates(prev => ({ ...prev, [msgId]: 'done' }))
+        } else if (!url) {
+          console.warn(`[demo-static] no mapping for audioKey: "${msg.audioKey}"`)
+          setVoiceStates(prev => ({ ...prev, [msgId]: 'done' }))
+        } else {
+          setVoiceStates(prev => ({ ...prev, [msgId]: 'loading' }))
+          setIsStaticAudioPlaying(true)
+          isStaticAudioPlayingRef.current = true
+          try {
+            await playStaticAudioFile(url)
+            setVoiceStates(prev => ({ ...prev, [msgId]: 'done' }))
+          } catch (err) {
+            const msg_str = err instanceof Error ? err.message : String(err)
+            // autoplay blocked → show play button; any other error → warn and continue
+            if (!msg_str.includes('audio_resume_failed')) {
+              console.warn(`[demo-static] key="${msg.audioKey}": ${msg_str}`)
+            }
+            setVoiceStates(prev => ({ ...prev, [msgId]: 'error' }))
+          } finally {
+            setIsStaticAudioPlaying(false)
+            isStaticAudioPlayingRef.current = false
+          }
+        }
+      }
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Voice: play static pre-recorded or fetch TTS audio ───────────────────────
   const handlePlayAudio = useCallback(async (messageId: string, messageType: string, text: string) => {
+    // text is the audioKey for static messages
+    if (messageType === 'static') {
+      const url = STATIC_DEMO_AUDIO_MAP[text]
+      if (!url) {
+        console.warn(`[demo-static] replay: no mapping for audioKey "${text}"`)
+        setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
+        return
+      }
+      voiceGenerationRef.current += 1
+      setVoiceStates(prev => ({ ...prev, [messageId]: 'playing' }))
+      setIsStaticAudioPlaying(true)
+      isStaticAudioPlayingRef.current = true
+      try {
+        await playStaticAudioFile(url)
+        setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
+      } catch (err) {
+        console.warn(`[demo-static] replay key="${text}":`, err instanceof Error ? err.message : err)
+        setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
+      } finally {
+        setIsStaticAudioPlaying(false)
+        isStaticAudioPlayingRef.current = false
+      }
+      return
+    }
+
     const sid = sessionIdRef.current
     if (!sid) return
     // Capture generation so we can detect if this play becomes stale mid-flight
@@ -231,14 +288,26 @@ export function useDemoSession({
     }
   }, [token])
 
-  const toggleVoiceMuted = useCallback(() => setVoiceMuted(prev => !prev), [])
+  const toggleVoiceMuted = useCallback(() => {
+    setVoiceMuted(prev => {
+      if (!prev) {
+        stopStaticAudio()
+        stopAudioPlayback()
+        setIsStaticAudioPlaying(false)
+        isStaticAudioPlayingRef.current = false
+      }
+      return !prev
+    })
+  }, [])
 
   // ── Register a message for voice + schedule auto-play ────────────────────────
   const scheduleVoice = useCallback((id: string, type: string, text: string) => {
     if (ttsLimitReachedRef.current) return
-    // Increment generation FIRST — any in-flight fetches for older messages will self-cancel
     voiceGenerationRef.current += 1
+    stopStaticAudio()                    // stop any static audio before TTS
     stopAudioPlayback()
+    setIsStaticAudioPlaying(false)
+    isStaticAudioPlayingRef.current = false
     console.log(`[demo-voice] scheduled id=${id} type=${type} gen=${voiceGenerationRef.current}`)
     setVoiceMessages(prev => ({ ...prev, [id]: { type, text } }))
     setPendingVoicePlay({ id, type, text })
@@ -261,7 +330,10 @@ export function useDemoSession({
     if (!step || !sid || submittingRef.current) return
 
     // Cancel any in-progress or queued audio before starting new interaction
+    stopStaticAudio()
     stopAudioPlayback()
+    setIsStaticAudioPlaying(false)
+    isStaticAudioPlayingRef.current = false
 
     currentTeacherMsgRef.current = null
     setChatMessages((prev) => [
@@ -303,10 +375,11 @@ export function useDemoSession({
       }
 
       const j = (await res.json()) as {
-        feedback:    { message: string; correction: string | null; score: number | null; correct: boolean | null }
-        nextStep:    DemoStepContent | null
-        finalResult: DemoFinalResult | null
-        isComplete:  boolean
+        feedback:      { message: string; correction: string | null; score: number | null; correct: boolean | null }
+        nextStep:      DemoStepContent | null
+        finalResult:   DemoFinalResult | null
+        isComplete:    boolean
+        finalAudioKey: string | null
       }
 
       await sleep(500)
@@ -343,6 +416,22 @@ export function useDemoSession({
       setCompletedSteps((prev) => [...prev, step.key])
 
       if (j.isComplete && j.finalResult) {
+        // Play goodbye audio before result overlay
+        if (!voiceMutedRef.current && j.finalAudioKey) {
+          const goodbyeUrl = STATIC_DEMO_AUDIO_MAP[j.finalAudioKey]
+          if (goodbyeUrl) {
+            setIsStaticAudioPlaying(true)
+            isStaticAudioPlayingRef.current = true
+            try {
+              await playStaticAudioFile(goodbyeUrl)
+            } catch (err) {
+              console.warn(`[demo-static] final_goodbye:`, err instanceof Error ? err.message : err)
+            } finally {
+              setIsStaticAudioPlaying(false)
+              isStaticAudioPlayingRef.current = false
+            }
+          }
+        }
         await sleep(2000)
         setFinalResult(j.finalResult)
         setPhase('complete')
@@ -353,9 +442,10 @@ export function useDemoSession({
         await sleep(2000)
         setCurrentStep(j.nextStep)
         await playMessages(j.nextStep.teacherMessages)
-        // Tag next-step prompt for voice (follow-up question / main task instruction)
+        // Only schedule TTS if the step messages are not all static
+        const nextAllStatic = j.nextStep.teacherMessages.every(m => m.audioMode === 'static')
         const nextBubbleId = currentTeacherMsgRef.current
-        if (nextBubbleId && j.nextStep.teacherMessages.length > 0) {
+        if (!nextAllStatic && nextBubbleId && j.nextStep.teacherMessages.length > 0) {
           const nextText = stripMarkdownForTts(j.nextStep.teacherMessages.map(m => m.text).join(' ')).slice(0, 300)
           setChatMessages(prev => prev.map(m =>
             m.id === nextBubbleId ? { ...m, messageType: 'follow_up_question' } : m,
@@ -409,9 +499,10 @@ export function useDemoSession({
         setPhase('intro')
         await playMessages(data.intro.messages)
 
-        // Tag intro bubble for greeting voice
+        // Only schedule TTS for intro if messages are not all static
+        const introAllStatic = data.intro.messages.every(m => m.audioMode === 'static')
         const introBubbleId = currentTeacherMsgRef.current
-        if (introBubbleId && data.intro.messages.length > 0) {
+        if (!introAllStatic && introBubbleId && data.intro.messages.length > 0) {
           const introTtsText = data.intro.messages.map(m => m.text).join(' ').slice(0, 400)
           setChatMessages(prev => prev.map(m =>
             m.id === introBubbleId ? { ...m, messageType: 'greeting' } : m,
@@ -425,9 +516,10 @@ export function useDemoSession({
         if (data.currentStep) {
           setCurrentStep(data.currentStep)
           await playMessages(data.currentStep.teacherMessages)
-          // Tag initial step instruction for voice
+          // Only schedule TTS if messages are not all static
+          const stepAllStatic = data.currentStep.teacherMessages.every(m => m.audioMode === 'static')
           const stepBubbleId = currentTeacherMsgRef.current
-          if (stepBubbleId && data.currentStep.teacherMessages.length > 0) {
+          if (!stepAllStatic && stepBubbleId && data.currentStep.teacherMessages.length > 0) {
             const stepText = data.currentStep.teacherMessages.map(m => m.text).join(' ').slice(0, 300)
             setChatMessages(prev => prev.map(m =>
               m.id === stepBubbleId ? { ...m, messageType: 'main_prompt' } : m,
@@ -538,5 +630,6 @@ export function useDemoSession({
     showLeaveModal, setShowLeaveModal, error,
     voiceMuted, toggleVoiceMuted,
     voiceStates, voiceMessages, handlePlayAudio,
+    isStaticAudioPlaying,
   }
 }

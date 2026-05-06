@@ -112,3 +112,56 @@ export function stopAudioPlayback(): void {
     playCtx = null
   }
 }
+
+// ── Static audio (pre-recorded demo files served from /audio/demo/) ──────────
+
+let _staticEl:      HTMLAudioElement | null = null
+let _staticResolve: (() => void) | null     = null
+
+export function stopStaticAudio(): void {
+  if (_staticEl) {
+    _staticEl.pause()
+    _staticEl.src = ''
+    _staticEl.onended = null
+    _staticEl.onerror = null
+    _staticEl = null
+  }
+  const res = _staticResolve
+  _staticResolve = null
+  if (res) res()  // resolve pending promise so callers don't hang
+}
+
+export function isStaticAudioPlaying(): boolean {
+  return _staticEl !== null && !_staticEl.paused
+}
+
+export function playStaticAudioFile(url: string): Promise<void> {
+  stopStaticAudio()      // stop previous static audio
+  stopAudioPlayback()    // stop TTS so they never overlap
+
+  return new Promise<void>((resolve, reject) => {
+    _staticResolve = resolve
+
+    const audio = new Audio(url)
+    _staticEl = audio
+
+    audio.onended = () => {
+      _staticEl      = null
+      _staticResolve = null
+      resolve()
+    }
+
+    audio.onerror = () => {
+      _staticEl      = null
+      _staticResolve = null
+      reject(new Error(`static_audio_load_failed: ${url}`))
+    }
+
+    audio.play().catch((err: unknown) => {
+      _staticEl      = null
+      _staticResolve = null
+      const autoplay = err instanceof Error && err.name === 'NotAllowedError'
+      reject(new Error(autoplay ? 'audio_resume_failed: autoplay policy' : String(err)))
+    })
+  })
+}
