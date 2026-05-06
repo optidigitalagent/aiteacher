@@ -158,14 +158,12 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     }
   }, [demo.handleTextSubmit])
 
-  // Keep demoStaticPlayingRef in sync so toggleDemoMic can read it without stale closure
-  useEffect(() => {
-    demoStaticPlayingRef.current = demo.isStaticAudioPlaying
-  }, [demo.isStaticAudioPlaying])
-
-  useEffect(() => {
-    demoPhaseRef.current = demo.phase
-  }, [demo.phase])
+  // Keep refs in sync during render (direct assignment, not useEffect) so that by the time
+  // the browser paints and the user can interact, the refs already reflect the current phase.
+  // The useEffect pattern has a one-render lag: lessonStarted could flip to true (enabling
+  // input) before demoPhaseRef.current is updated, causing handleSubmit to silently block.
+  demoPhaseRef.current         = demo.phase
+  demoStaticPlayingRef.current = demo.isStaticAudioPlaying
 
   // ── Local UI state ────────────────────────────────────────────────────────
   const [answer,          setAnswer]          = useState('')
@@ -280,12 +278,19 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
 
   const handleSubmit = useCallback(() => {
     if (isDemoMode) {
-      if (!answer.trim()) return
+      if (!answer.trim()) {
+        console.log('[demo-submit] blocked reason=empty_answer')
+        return
+      }
       const ph = demoPhaseRef.current
-      if (ph === 'loading' || ph === 'ready' || ph === 'intro') return
+      if (ph === 'loading' || ph === 'ready' || ph === 'intro') {
+        console.log(`[demo-submit] blocked reason=phase_${ph}`)
+        return
+      }
       // User submitting interrupts any playing audio immediately
       stopStaticAudio()
       stopAudioPlayback()
+      console.log('[demo-submit] accepted')
       const a = answer
       setAnswer('')
       demo.handleTextSubmit(a)

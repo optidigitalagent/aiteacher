@@ -358,7 +358,11 @@ export function useDemoSession({
   const submitAnswer = useCallback(async (answerStr: string, displayAnswer: string) => {
     const step = currentStepRef.current
     const sid  = sessionIdRef.current
-    if (!step || !sid || submittingRef.current) return
+    if (!step || !sid || submittingRef.current) {
+      const reason = !step ? 'no_step' : !sid ? 'no_session' : 'already_submitting'
+      console.log(`[demo-submit] blocked reason=${reason}`)
+      return
+    }
 
     // Cancel any in-progress or queued audio before starting new interaction
     stopStaticAudio()
@@ -470,6 +474,7 @@ export function useDemoSession({
         }
         await sleep(2000)
         setFinalResult(j.finalResult)
+        console.log('[demo-phase] complete')
         setPhase('complete')
         return
       }
@@ -528,6 +533,7 @@ export function useDemoSession({
 
         if (data.isComplete && data.finalResult) {
           setFinalResult(data.finalResult)
+          console.log('[demo-phase] complete')
           setPhase('complete')
           return
         }
@@ -536,9 +542,11 @@ export function useDemoSession({
         // This guarantees a user gesture before the first audio.play() call,
         // which is required to pass the browser autoplay policy.
         pendingLessonRef.current = { intro: data.intro, currentStep: data.currentStep }
+        console.log('[demo-phase] ready')
         setPhase('ready')
       } catch {
         setError('Could not load your lesson. Please refresh.')
+        console.log('[demo-phase] error')
         setPhase('error')
       }
     })()
@@ -551,6 +559,7 @@ export function useDemoSession({
     pendingLessonRef.current = null
 
     try {
+      console.log('[demo-phase] intro')
       setPhase('intro')
       await playMessages(pending.intro.messages)
 
@@ -565,6 +574,7 @@ export function useDemoSession({
       }
 
       setLessonStarted(true)
+      console.log('[demo-phase] lesson')
       setPhase('lesson')
 
       if (pending.currentStep) {
@@ -582,6 +592,7 @@ export function useDemoSession({
       }
     } catch {
       setError('Could not start your lesson. Please refresh.')
+      console.log('[demo-phase] error')
       setPhase('error')
     }
   }, [playMessages, scheduleVoice]) // eslint-disable-line react-hooks/exhaustive-deps

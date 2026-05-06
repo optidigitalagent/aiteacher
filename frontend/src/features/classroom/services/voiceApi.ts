@@ -115,10 +115,13 @@ export function stopAudioPlayback(): void {
 
 // ── Static audio (pre-recorded demo files served from /audio/demo/) ──────────
 
-let _staticEl:      HTMLAudioElement | null = null
-let _staticResolve: (() => void) | null     = null
+let _staticEl:            HTMLAudioElement | null               = null
+let _staticResolve:       (() => void) | null                   = null
+// Fallback timer: if onended never fires (browser glitch), force-resolve after duration+buffer
+let _staticDurationTimer: ReturnType<typeof setTimeout> | null  = null
 
 export function stopStaticAudio(): void {
+  if (_staticDurationTimer) { clearTimeout(_staticDurationTimer); _staticDurationTimer = null }
   if (_staticEl) {
     _staticEl.pause()
     _staticEl.src = ''
@@ -136,7 +139,7 @@ export function isStaticAudioPlaying(): boolean {
 }
 
 export function playStaticAudioFile(url: string): Promise<void> {
-  stopStaticAudio()      // stop previous static audio
+  stopStaticAudio()      // stop previous static audio + clear any pending timer
   stopAudioPlayback()    // stop TTS so they never overlap
 
   return new Promise<void>((resolve, reject) => {
@@ -145,19 +148,39 @@ export function playStaticAudioFile(url: string): Promise<void> {
     const audio = new Audio(url)
     _staticEl = audio
 
+    // Once we know the duration, arm a fallback timer.
+    // If onended is silently dropped (Mobile Safari, memory pressure), this prevents
+    // playMessages from hanging and blocking the intro → lesson phase transition.
+    audio.addEventListener('loadedmetadata', () => {
+      if (_staticDurationTimer) { clearTimeout(_staticDurationTimer); _staticDurationTimer = null }
+      if (audio.duration && isFinite(audio.duration) && audio.duration > 0) {
+        _staticDurationTimer = setTimeout(() => {
+          _staticDurationTimer = null
+          if (_staticResolve === resolve) {
+            _staticEl      = null
+            _staticResolve = null
+            resolve()
+          }
+        }, Math.ceil(audio.duration * 1000) + 5000)
+      }
+    })
+
     audio.onended = () => {
+      if (_staticDurationTimer) { clearTimeout(_staticDurationTimer); _staticDurationTimer = null }
       _staticEl      = null
       _staticResolve = null
       resolve()
     }
 
     audio.onerror = () => {
+      if (_staticDurationTimer) { clearTimeout(_staticDurationTimer); _staticDurationTimer = null }
       _staticEl      = null
       _staticResolve = null
       reject(new Error(`static_audio_load_failed: ${url}`))
     }
 
     audio.play().catch((err: unknown) => {
+      if (_staticDurationTimer) { clearTimeout(_staticDurationTimer); _staticDurationTimer = null }
       _staticEl      = null
       _staticResolve = null
       const autoplay = err instanceof Error && err.name === 'NotAllowedError'
