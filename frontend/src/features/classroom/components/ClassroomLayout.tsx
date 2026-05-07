@@ -21,7 +21,6 @@ import {
   type BackendMessage,
 } from '../services/classroomSocket'
 import { useAuth, getStoredToken }      from '../../../context/AuthContext'
-import { stopStaticAudio, stopAudioPlayback } from '../services/voiceApi'
 
 const LESSON_UNIT = Number(import.meta.env.VITE_LESSON_UNIT ?? 1)
 const ENV_SECTION = import.meta.env.VITE_LESSON_SECTION as string | undefined
@@ -79,6 +78,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
 
   // Stable ref to demo.handleTextSubmit — populated after demo is declared below
   const demoSubmitRef = useRef<(t: string) => void>(() => {})
+  // Stable ref to demo.interruptAudio — populated after demo is declared below
+  const demoInterruptRef = useRef<() => void>(() => {})
 
   const toggleDemoMic = useCallback(() => {
     const ph = demoPhaseRef.current
@@ -92,8 +93,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     }
     const wasStaticPlaying = demoStaticPlayingRef.current
     console.log(`[demo-mic] clicked reason=start_recording phase=${ph} wasStaticPlaying=${wasStaticPlaying}`)
-    stopStaticAudio()
-    stopAudioPlayback()
+    // interruptAudio increments the generation counter — cancels any running playMessages loop
+    // so it won't advance to the next message after the mic starts recording.
+    demoInterruptRef.current()
     console.log(`[demo-mic] accepted stoppedAudio=${wasStaticPlaying}`)
     const w = window as unknown as Record<string, unknown>
     const SpeechRecCtor = (w['SpeechRecognition'] ?? w['webkitSpeechRecognition']) as
@@ -168,6 +170,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   // input) before demoPhaseRef.current is updated, causing handleSubmit to silently block.
   demoPhaseRef.current         = demo.phase
   demoStaticPlayingRef.current = demo.isStaticAudioPlaying
+  demoInterruptRef.current     = demo.interruptAudio
 
   // ── Local UI state ────────────────────────────────────────────────────────
   const [answer,          setAnswer]          = useState('')
@@ -293,9 +296,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         console.log(`[demo-submit] blocked reason=phase_${ph}`)
         return
       }
-      // User submitting interrupts any playing audio immediately
-      stopStaticAudio()
-      stopAudioPlayback()
+      // User submitting interrupts any playing audio and cancels any running playMessages loop
+      demo.interruptAudio()
       console.log('[demo-submit] accepted')
       const a = answer
       setAnswer('')
@@ -311,7 +313,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       send({ type: 'text_message', text: answer })
       setAnswer('')
     }
-  }, [isDemoMode, answer, demo.handleTextSubmit, question, handleCheck, pushUser, setTyping, send])
+  }, [isDemoMode, answer, demo.handleTextSubmit, demo.interruptAudio, question, handleCheck, pushUser, setTyping, send])
 
   const handleExplain = useCallback(() => {
     if (isDemoMode) {

@@ -83,10 +83,17 @@ export interface UseDemoSessionReturn {
   voiceMessages:          Record<string, { type: string; text: string }>
   handlePlayAudio:        (messageId: string, messageType: string, text: string) => Promise<void>
   isStaticAudioPlaying:   boolean
+  // Stops all audio + cancels any running playMessages loop (use on mic click)
+  interruptAudio:         () => void
 }
 
 function uid() { return Math.random().toString(36).slice(2) }
 function sleep(ms: number) { return new Promise<void>((r) => setTimeout(r, ms)) }
+function textHash6(s: string): string {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0
+  return Math.abs(h).toString(16).slice(0, 6)
+}
 
 function buildFeedbackText(
   fb: { message: string; correction: string | null; score: number | null; correct: boolean | null },
@@ -160,30 +167,31 @@ export function useDemoSession({
 
   const playMessages = useCallback(async (msgs: TeacherMessage[]) => {
     currentTeacherMsgRef.current = null
-    // Invalidate any in-flight TTS so it doesn't play over the new static audio batch.
-    // playStaticAudioFile calls stopAudioPlayback(), but the generation increment is what
-    // prevents a stale TTS fetch that completes *after* stopAudioPlayback from re-creating
-    // a new AudioContext and playing anyway.
     voiceGenerationRef.current += 1
+    // Capture token — any call to interruptAudio() or a new playMessages() will increment
+    // voiceGenerationRef past myGen, causing this run to exit at the next check point.
+    const myGen = voiceGenerationRef.current
     stopStaticAudio()
     stopAudioPlayback()
     setIsStaticAudioPlaying(false)
     isStaticAudioPlayingRef.current = false
+
     for (let i = 0; i < msgs.length; i++) {
+      // Cancelled by interruptAudio() or a newer playMessages() call
+      if (voiceGenerationRef.current !== myGen) return
+
       const msg     = msgs[i]!
       const prevMsg = i > 0 ? msgs[i - 1] : null
-      // Previous message had static audio → audio already provided natural pacing
       const prevHadAudio = prevMsg?.audioMode === 'static' && !!prevMsg.audioKey
-      const currHasAudio = msg.audioMode === 'static' && !!msg.audioKey
 
       if (i === 0) {
         if (msg.delay > 0) await sleep(Math.min(msg.delay, 1500))
-      } else if (prevHadAudio && currHasAudio) {
-        // Short breath between consecutive audio messages — no extra dead air
+      } else if (prevHadAudio && (msg.audioMode === 'static' && !!msg.audioKey)) {
         await sleep(220)
       } else if (msg.delay > 0) {
         await sleep(Math.min(msg.delay, 2000))
       }
+      if (voiceGenerationRef.current !== myGen) return
 
       const msgId = uid()
       setChatMessages((prev) => [
@@ -191,11 +199,17 @@ export function useDemoSession({
         { id: 'typing', sender: 'ai', isTyping: true },
       ])
       setIsSpeaking(true)
-      // After audio the teacher appears to continue speaking — shorter typing feels natural
       const typingMs = prevHadAudio
         ? Math.min(280 + msg.text.length * 5, 900)
         : Math.min(650 + msg.text.length * 12, 2600)
       await sleep(typingMs)
+
+      if (voiceGenerationRef.current !== myGen) {
+        // Interrupted during typing — remove the typing bubble cleanly
+        setChatMessages(prev => prev.filter(m => !m.isTyping))
+        setIsSpeaking(false)
+        return
+      }
       setIsSpeaking(false)
 
       currentTeacherMsgRef.current = msgId
@@ -215,12 +229,28 @@ export function useDemoSession({
           console.warn(`[demo-static] no mapping for audioKey: "${msg.audioKey}"`)
           setVoiceStates(prev => ({ ...prev, [msgId]: 'done' }))
         } else {
+          // Guard: don't start audio that's already stale (e.g. interruptAudio called between checks)
+          if (voiceGenerationRef.current !== myGen) {
+            setVoiceStates(prev => ({ ...prev, [msgId]: 'done' }))
+            console.log(`[demo-audio] skip-stale audioKey="${msg.audioKey}" reason=generation_mismatch`)
+            return
+          }
           setVoiceStates(prev => ({ ...prev, [msgId]: 'loading' }))
           setIsStaticAudioPlaying(true)
           isStaticAudioPlayingRef.current = true
+          const tHash = textHash6(msg.text)
           try {
-            console.log(`[demo-audio] start source=static audioKey="${msg.audioKey}" msgId=${msgId}`)
+            console.log(`[demo-audio] start source=static audioKey="${msg.audioKey}" msgId=${msgId} textHash=${tHash}`)
             await playStaticAudioFile(url)
+            // Check after await — stopStaticAudio() resolves the promise without an error,
+            // so the catch won't fire; we must check generation here to stop the loop.
+            if (voiceGenerationRef.current !== myGen) {
+              console.log(`[demo-audio] interrupted audioKey="${msg.audioKey}" reason=generation_mismatch_after_play`)
+              setVoiceStates(prev => ({ ...prev, [msgId]: 'done' }))
+              setIsStaticAudioPlaying(false)
+              isStaticAudioPlayingRef.current = false
+              return
+            }
             console.log(`[demo-audio] end source=static audioKey="${msg.audioKey}" msgId=${msgId}`)
             setVoiceStates(prev => ({ ...prev, [msgId]: 'done' }))
           } catch (err) {
@@ -347,6 +377,18 @@ export function useDemoSession({
     })
   }, [])
 
+  // Stops all audio and cancels any running playMessages loop.
+  // Call this on mic click so the student's recording starts on a clean slate.
+  const interruptAudio = useCallback(() => {
+    voiceGenerationRef.current += 1   // causes any running playMessages loop to exit at its next check
+    stopStaticAudio()
+    stopAudioPlayback()
+    setPendingVoicePlay(null)
+    setIsStaticAudioPlaying(false)
+    isStaticAudioPlayingRef.current = false
+    setIsSpeaking(false)
+  }, [])
+
   // ── Register a message for voice + schedule auto-play ────────────────────────
   const scheduleVoice = useCallback((id: string, type: string, text: string) => {
     if (ttsLimitReachedRef.current) return
@@ -454,7 +496,8 @@ export function useDemoSession({
       setChatMessages((prev) => [...prev, { id: 'typing', sender: 'ai', isTyping: true }])
       setIsSpeaking(true)
       await sleep(1200)
-      setIsSpeaking(false)
+      // Do NOT setIsSpeaking(false) here — keep teacher "speaking" indicator alive
+      // through message reveal and TTS fetch so the user never sees a fully-silent message.
 
       // Voice type per step — warm_up / followup steps now also get voiced
       const feedbackMsgType = step.key === 'speaking_task' ? 'speaking_feedback'
@@ -470,6 +513,7 @@ export function useDemoSession({
       const feedbackId   = uid()
       const feedbackText = buildFeedbackText(j.feedback, displayAnswer)
 
+      // Reveal message — typing bubble removed, isSpeaking still true (teacher about to speak)
       setChatMessages((prev) => [
         ...prev.filter((m) => !m.isTyping),
         {
@@ -481,8 +525,7 @@ export function useDemoSession({
       ])
 
       // Play feedback voice and AWAIT it before transitioning to the next step.
-      // Keep isSpeaking=true while TTS is fetching so there is no silent gap
-      // between the message appearing and the voice starting.
+      // isSpeaking is already true from the typing animation above — no gap.
       if (effectiveTtsType) {
         const ttsText = stripMarkdownForTts(j.feedback.spokenFeedback ?? j.feedback.message).slice(0, 300)
         const isFinal = effectiveTtsType === 'final_closing'
@@ -490,13 +533,12 @@ export function useDemoSession({
         voiceGenerationRef.current += 1
         setVoiceMessages(prev => ({ ...prev, [feedbackId]: { type: effectiveTtsType, text: ttsText } }))
         if (!voiceMutedRef.current) {
-          setIsSpeaking(true)
+          // isSpeaking already true — teacher indicator stays live through TTS fetch + playback
           if (isFinal) console.log(`[demo-final] preparing_voice id=${feedbackId}`)
           const ttsStart = Date.now()
           await handlePlayAudio(feedbackId, effectiveTtsType, ttsText)
           const ttsElapsed = Date.now() - ttsStart
           if (isFinal) console.log(`[demo-final] voice_done elapsed=${ttsElapsed}ms id=${feedbackId}`)
-          setIsSpeaking(false)
           // When TTS returned instantly (≤600ms), audio was silent (429/error) — add read time
           if (ttsElapsed < 600) {
             const readMs = Math.min(1200 + ttsText.length * 40, 3000)
@@ -508,6 +550,8 @@ export function useDemoSession({
           if (isFinal) console.log(`[demo-final] voice_skipped reason=muted id=${feedbackId}`)
         }
       }
+      // Single point of truth: turn off speaking indicator after voice lifecycle
+      setIsSpeaking(false)
 
       setSelectedOption(null)
       setCompletedSteps((prev) => [...prev, step.key])
@@ -544,6 +588,7 @@ export function useDemoSession({
         }
       }
     } catch {
+      setIsSpeaking(false)
       setChatMessages((prev) => [
         ...prev.filter((m) => !m.isTyping),
         { id: uid(), sender: 'ai', text: 'Something went wrong. Please try again.' },
@@ -748,5 +793,6 @@ export function useDemoSession({
     voiceMuted, toggleVoiceMuted,
     voiceStates, voiceMessages, handlePlayAudio,
     isStaticAudioPlaying,
+    interruptAudio,
   }
 }
