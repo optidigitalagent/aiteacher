@@ -567,6 +567,12 @@ const META_HELP_PATTERNS: RegExp[] = [
   /\bi\s+(?:didn'?t|couldn'?t)\s+(?:hear|get|understand)\s+(?:the\s+)?(?:question|task|prompt)\b/i,
   // Don't understand the question (standalone — distinguishes from mixed answer+help)
   /\bi\s+don'?t\s+understand\s+(?:the\s+)?(?:question|task)\s*[?!.]*$/i,
+  // "I don't understand the question(s)..." — student continues talking after stating confusion
+  /^i\s+don'?t\s+understand\s+(?:the\s+)?questions?\b/i,
+  // "I don't understand what you mean by..." — explicit confusion about a phrase in the prompt
+  /^i\s+don'?t\s+understand\s+what\s+(?:you\s+)?(?:mean|meant)\b/i,
+  // "I don't understand how to..." — asking for task clarification
+  /^i\s+don'?t\s+understand\s+how\s+to\b/i,
 ]
 
 export function detectMetaHelpIntent(text: string): boolean {

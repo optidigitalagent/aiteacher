@@ -689,6 +689,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
           res.status(422).json({
             code: 'QUALITY_RETRY',
             message: ensureTeacherContinues(feedbackMessage + corrPart, stepPrompt),
+            spokenMessage: buildSpokenFeedback(feedbackMessage),
           })
           return
         }
@@ -740,15 +741,24 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       await saveFinalResult(sessionId, finalResult)
     }
 
-    // Append a personal wrap-up sentence to the last feedback before showing the result screen.
-    // This prevents the lesson from ending abruptly on a grammar correction with no teacher goodbye.
+    // For the last step: build a natural closing that fits the score.
+    // Avoids the contradiction of "add more detail... That's the session done."
     if (isLastStep) {
-      feedbackMessage += '\n\nThat\'s the session done. Good effort today — here are your results.'
+      const wasLowScore = typeof score.score === 'number' && score.score <= 5
+      if (wasLowScore) {
+        // Retries exhausted, low score — replace AI's "add more detail" with graceful close.
+        // Correction is embedded in the close message; clear it to prevent double-display.
+        feedbackMessage = buildGracefulClose(score, stepKey, correctionMessage)
+        correctionMessage = undefined
+      } else {
+        feedbackMessage += '\n\n' + buildNaturalClose(score)
+      }
     }
 
     res.json({
       feedback: {
         message: feedbackMessage,
+        spokenFeedback: buildSpokenFeedback(feedbackMessage),
         correction: correctionMessage ?? null,
         score: score.score ?? null,
         correct: score.correct ?? null,
@@ -1085,6 +1095,36 @@ router.post('/demo/dev-reset', requireAuth, async (req: Request, res: Response):
 })
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// First sentence of feedback for TTS — avoids reading long correction blocks aloud.
+function buildSpokenFeedback(feedbackMsg: string): string {
+  // Strip markdown, take up to the first sentence break, cap at 130 chars
+  const clean = feedbackMsg.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim()
+  // Cut before ✗ correction blocks or newlines
+  const cutAt = clean.search(/\n|✗|✓/)
+  const base = cutAt > 0 ? clean.slice(0, cutAt) : clean
+  const firstBreak = base.search(/[.!?]\s/)
+  const firstSentence = firstBreak > 0 ? base.slice(0, firstBreak + 1) : base
+  return firstSentence.slice(0, 130).trim()
+}
+
+// Natural close when score is good — brief, teacher-like.
+function buildNaturalClose(score: ScoreRecord): string {
+  const s = score.score ?? 0
+  if (s >= 8) return "Strong finish. Let me show you your results."
+  if (s >= 6) return "I have a clear picture of your level now. Let me pull up your results."
+  return "I've seen enough across all the tasks. Let me show you your results."
+}
+
+// Graceful close when retries exhausted on low score — replaces AI's retry-style message.
+// Avoids "add more detail... That's the session done" contradiction.
+function buildGracefulClose(score: ScoreRecord, stepKey: string, correction?: string): string {
+  const corrLine = correction ? `\n\n✓ "${correction}"` : ''
+  if (stepKey === 'writing_task') {
+    return `Your idea came through clearly — the structure and capitalization need polish, but I can read your thinking. That's enough to assess your level.${corrLine}\n\nLet me show you your results now.`
+  }
+  return `I can see your idea. The grammar needs more work, but I have a complete picture of where you are.${corrLine}\n\nLet me show you your results now.`
+}
 
 // Teacher response for meta/presence-check intents (didn't hear, are you there, etc.).
 // Repeats the current question with a sentence frame — does NOT advance the lesson.

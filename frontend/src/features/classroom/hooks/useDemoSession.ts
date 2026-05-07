@@ -385,7 +385,7 @@ export function useDemoSession({
       })
 
       if (!res.ok) {
-        const j = (await res.json()) as { message?: string; code?: string }
+        const j = (await res.json()) as { message?: string; code?: string; spokenMessage?: string }
         // Teacher responds — not a system error, so show typing indicator first
         setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: 'typing', sender: 'ai', isTyping: true }])
         setIsSpeaking(true)
@@ -400,17 +400,18 @@ export function useDemoSession({
         // Voice key teacher moments — corrections and moderation feel more personal when spoken
         const spokeCodes = new Set(['MODERATION', 'MEANING_CONFIRMED', 'STUDENT_QUESTION', 'VOCAB_HELP', 'QUALITY_RETRY', 'META_HELP'])
         if (spokeCodes.has(j.code ?? '') && j.message) {
-          // Quality retry uses the step-appropriate voice type so TTS budget tracks correctly
+          // Use spokenMessage (short, no ✗/✓ block) when available; fall back to full message
+          const spokenText = j.spokenMessage ?? j.message
           const voiceType = j.code === 'QUALITY_RETRY'
             ? (step.key === 'speaking_task' ? 'speaking_feedback' : step.key === 'writing_task' ? 'writing_feedback' : 'key_correction')
             : 'key_correction'
-          scheduleVoice(errMsgId, voiceType, stripMarkdownForTts(j.message).slice(0, 400))
+          scheduleVoice(errMsgId, voiceType, stripMarkdownForTts(spokenText).slice(0, 300))
         }
         return
       }
 
       const j = (await res.json()) as {
-        feedback:      { message: string; correction: string | null; score: number | null; correct: boolean | null }
+        feedback:      { message: string; spokenFeedback?: string; correction: string | null; score: number | null; correct: boolean | null }
         nextStep:      DemoStepContent | null
         finalResult:   DemoFinalResult | null
         isComplete:    boolean
@@ -443,8 +444,9 @@ export function useDemoSession({
       ])
 
       if (feedbackMsgType) {
-        // Strip markdown before sending to TTS (avoid "asterisk asterisk" being spoken)
-        scheduleVoice(feedbackId, feedbackMsgType, stripMarkdownForTts(j.feedback.message).slice(0, 400))
+        // Use spokenFeedback (first sentence, no correction block) when available
+        const ttsText = j.feedback.spokenFeedback ?? j.feedback.message
+        scheduleVoice(feedbackId, feedbackMsgType, stripMarkdownForTts(ttsText).slice(0, 300))
       }
 
       setSelectedOption(null)

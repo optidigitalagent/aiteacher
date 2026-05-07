@@ -363,7 +363,12 @@ export function buildFollowUpFeedback(session: DemoSession, answer: string, step
     if (/\b(music|soundtrack|score|sound)\b/i.test(answer)) {
       return "The music — most people don't notice the soundtrack until it's gone. Sharp observation."
     }
-    return "Specific answer — exactly the kind of detail that shows you're paying attention."
+    // Generic followup response — acknowledge the idea and ask for one more sentence
+    const wordCount2 = answer.trim().split(/\s+/).filter(Boolean).length
+    if (wordCount2 >= 10) {
+      return "I can see what you mean. Give me that same idea in one cleaner sentence — I'll use it to assess your level."
+    }
+    return "Good start — add one more detail. What exactly made that memorable or special for you?"
   }
 
   // warm_up_followup — acknowledge and model correct English
