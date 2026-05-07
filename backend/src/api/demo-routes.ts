@@ -755,10 +755,16 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       }
     }
 
+    // For the final step, the AI teacher's own voice speaks the closing line.
+    // The static goodbye bot audio is not used — AI owns the lesson end.
+    const spokenFeedback = isLastStep
+      ? buildClosingSpokenLine(score)
+      : buildSpokenFeedback(feedbackMessage)
+
     res.json({
       feedback: {
         message: feedbackMessage,
-        spokenFeedback: buildSpokenFeedback(feedbackMessage),
+        spokenFeedback,
         correction: correctionMessage ?? null,
         score: score.score ?? null,
         correct: score.correct ?? null,
@@ -766,7 +772,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       nextStep: nextStepContent,
       finalResult,
       isComplete: isLastStep,
-      finalAudioKey: isLastStep ? 'final_goodbye' : null,
+      finalAudioKey: null,
     })
   } catch (err) {
     console.error('[demo/answer] error:', err instanceof Error ? err.message : err)
@@ -1096,16 +1102,31 @@ router.post('/demo/dev-reset', requireAuth, async (req: Request, res: Response):
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// First sentence of feedback for TTS — avoids reading long correction blocks aloud.
+// Up to two sentences of feedback for TTS — acknowledgment + instruction, without correction blocks.
 function buildSpokenFeedback(feedbackMsg: string): string {
-  // Strip markdown, take up to the first sentence break, cap at 130 chars
   const clean = feedbackMsg.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim()
-  // Cut before ✗ correction blocks or newlines
+  // Cut before ✗ correction blocks or newlines (correction belongs in text, not voice)
   const cutAt = clean.search(/\n|✗|✓/)
   const base = cutAt > 0 ? clean.slice(0, cutAt) : clean
-  const firstBreak = base.search(/[.!?]\s/)
-  const firstSentence = firstBreak > 0 ? base.slice(0, firstBreak + 1) : base
-  return firstSentence.slice(0, 130).trim()
+  // Find up to two sentence boundaries so the teacher sounds complete, not cut off
+  let endPos = base.length
+  let count = 0
+  for (let i = 0; i < base.length - 1; i++) {
+    if (/[.!?]/.test(base[i]) && /[\s"']/.test(base[i + 1])) {
+      count++
+      if (count >= 2) { endPos = i + 1; break }
+    }
+  }
+  return base.slice(0, endPos).slice(0, 220).trim()
+}
+
+// Closing line spoken by the AI teacher at the end of the last step.
+// Returned as spokenFeedback so the AI voice (not the static bot) owns the goodbye.
+function buildClosingSpokenLine(score: ScoreRecord): string {
+  const s = score.score ?? 0
+  if (s >= 8) return "Strong finish — I have everything I need. Let me show you your results."
+  if (s >= 6) return "I have a clear picture of your level now. Let me pull up your results."
+  return "I've seen enough across all tasks to assess your level. Let me show you your results."
 }
 
 // Natural close when score is good — brief, teacher-like.
