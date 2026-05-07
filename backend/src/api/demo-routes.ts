@@ -367,13 +367,20 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
         return
       }
-      // classifyInput uses char-based minLength — even a 5-word vague answer like
-      // "I've seen it's a topic" passes the char gate but carries no real information.
-      // Raise the word floor to 6 so the student must form a real sentence.
-      if (answer.trim().split(/\s+/).filter(Boolean).length <= 5) {
-        const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with your actual reasoning.", stepPrompt)
-        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
-        return
+      // Word-count floor: a one-word or very short answer needs elaboration — but only
+      // ask once. If the student already tried and kept it short, accept and move on.
+      // Prevents the "ocean" → rejection → "it is ocean" → rejection → frustration loop.
+      const wuFollowupWordCount = answer.trim().split(/\s+/).filter(Boolean).length
+      if (wuFollowupWordCount <= 5) {
+        const wuFollowupRetries = await getStepRetries(sessionId, stepKey)
+        if (wuFollowupRetries < 1) {
+          await incrementStepRetries(sessionId, stepKey)
+          await incrementAttempts(sessionId)
+          const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with your actual reasoning.", stepPrompt)
+          res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+          return
+        }
+        // Second attempt still short — accept with brief feedback, don't trap further
       }
       feedbackMessage = buildFollowUpFeedback(session, answer, 'warm_up_followup')
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
@@ -426,12 +433,19 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(hint, stepPrompt) })
         return
       }
-      // classifyInput uses char-based minLength — a 3-word answer passes length check
-      // but is too brief for a speaking followup step. Block before advancing.
-      if (answer.trim().split(/\s+/).filter(Boolean).length <= 3) {
-        const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with that idea.", stepPrompt)
-        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
-        return
+      // Word-count floor: ask once for a full sentence, but accept on the second try
+      // even if still short — prevents the student from being permanently stuck.
+      const sfWordCount = answer.trim().split(/\s+/).filter(Boolean).length
+      if (sfWordCount <= 3) {
+        const sfRetries = await getStepRetries(sessionId, stepKey)
+        if (sfRetries < 1) {
+          await incrementStepRetries(sessionId, stepKey)
+          await incrementAttempts(sessionId)
+          const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with that idea.", stepPrompt)
+          res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+          return
+        }
+        // Already asked once — accept short answer and continue
       }
       feedbackMessage = buildFollowUpFeedback(session, answer, 'speaking_followup')
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
@@ -1069,6 +1083,16 @@ router.post('/demo/dev-reset', requireAuth, async (req: Request, res: Response):
     ?.split(',')[0]?.trim() ?? req.socket.remoteAddress ?? 'unknown'
 
   try {
+    // Fetch session IDs before the transaction so we can clear per-session Redis keys.
+    // The TTS usage key (demo:tts:usage:{sessionId}) persists with a 4h TTL and
+    // accumulates across resets because dev-reset reuses the same session row.
+    // Without clearing it, budget appears exhausted from the 10th TTS call of run 3+.
+    const sessionRows = await query<{ id: string }>(
+      'SELECT id FROM demo_sessions WHERE user_id = $1',
+      [userId],
+    )
+    const sessionIds = sessionRows.rows.map(r => r.id)
+
     await withTransaction(async (client) => {
       await client.query(
         'UPDATE users SET demo_started_at = NULL WHERE id = $1',
@@ -1086,11 +1110,23 @@ router.post('/demo/dev-reset', requireAuth, async (req: Request, res: Response):
       )
     })
 
-    // Clear BOTH rate-limit keys that /demo/start checks in order.
+    // Clear rate-limit keys that /demo/start checks.
     await redis.del(`demo:user:${userId}:attempts`)
     await redis.del(`demo:ip:${ip}`)
 
-    console.log(`[demo/dev-reset] reset ok: user=${userId} ip=${ip}`)
+    // Clear all per-session Redis state so each test run starts with a clean slate.
+    const STEP_KEYS = ['warm_up', 'warm_up_followup', 'grammar_mcq', 'speaking_task', 'speaking_followup', 'writing_task']
+    for (const sid of sessionIds) {
+      await redis.del(`demo:tts:usage:${sid}`)
+      await redis.del(`demo:help:${sid}`)
+      await redis.del(`demo:translate:${sid}`)
+      for (const sk of STEP_KEYS) {
+        await redis.del(`demo:retry:${sid}:${sk}`)
+        await redis.del(`demo:pending_meaning:${sid}:${sk}`)
+      }
+    }
+
+    console.log(`[demo/dev-reset] reset ok: user=${userId} ip=${ip} sessions_cleared=${sessionIds.length}`)
     res.json({ ok: true })
   } catch (err) {
     console.error('[demo/dev-reset] error:', err instanceof Error ? err.message : err)

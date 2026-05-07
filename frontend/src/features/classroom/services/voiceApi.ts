@@ -89,19 +89,48 @@ export async function playAudioChunk(base64: string, strict = false): Promise<vo
   const bytes  = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
 
+  let audioBuffer: AudioBuffer
   try {
-    const audioBuffer = await ctx.decodeAudioData(bytes.buffer.slice(0))
-    const source      = ctx.createBufferSource()
-    source.buffer     = audioBuffer
-    source.connect(ctx.destination)
-
-    const now = ctx.currentTime
-    if (nextPlayTime < now) nextPlayTime = now
-    source.start(nextPlayTime)
-    nextPlayTime += audioBuffer.duration
+    audioBuffer = await ctx.decodeAudioData(bytes.buffer.slice(0))
   } catch (err) {
     if (strict) throw new Error(`audio_decode_failed: ${err instanceof Error ? err.message : 'unknown'}`)
-    // Partial MP3 frame from streaming — skip gracefully
+    return  // Partial MP3 frame from streaming — skip gracefully
+  }
+
+  const source = ctx.createBufferSource()
+  source.buffer = audioBuffer
+  source.connect(ctx.destination)
+
+  const now = ctx.currentTime
+  if (nextPlayTime < now) nextPlayTime = now
+  const startAt = nextPlayTime
+  source.start(startAt)
+  nextPlayTime += audioBuffer.duration
+
+  if (strict) {
+    // Wait for the audio to actually finish playing before returning.
+    // Without this, await handlePlayAudio() resolved the moment audio was *scheduled*,
+    // so the next playMessages() call fired stopAudioPlayback() while speech was
+    // still in progress — killing every AI acknowledgement and correction mid-sentence.
+    const capturedCtx = ctx
+    const delayMs = Math.max(0, (startAt - capturedCtx.currentTime) * 1000) + audioBuffer.duration * 1000
+    await new Promise<void>((resolve) => {
+      let done = false
+      const settle = () => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        capturedCtx.removeEventListener('statechange', onStateChange as EventListener)
+        resolve()
+      }
+      // Fallback: resolve after expected duration + generous buffer for device jitter
+      const timer = setTimeout(settle, delayMs + 600)
+      // Normal completion
+      source.onended = settle
+      // stopAudioPlayback() closes the context — detect and resolve so callers don't hang
+      const onStateChange = () => { if (capturedCtx.state === 'closed') settle() }
+      capturedCtx.addEventListener('statechange', onStateChange as EventListener)
+    })
   }
 }
 

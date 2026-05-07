@@ -484,10 +484,11 @@ export function useDemoSession({
       setCompletedSteps((prev) => [...prev, step.key])
 
       if (j.isComplete && j.finalResult) {
-        // Feedback TTS is already done (awaited above) — no need to kill anything.
-        // finalAudioKey is null (backend removed static bot goodbye);
-        // the AI teacher's closing line was voiced as part of spokenFeedback above.
-        await sleep(2200)
+        // Feedback TTS is fully done (playAudioChunk now awaits source.onended).
+        // If TTS was silent (429 budget exhausted), extend the pause so the student
+        // has time to read the feedback text before the overlay appears.
+        const completionDelay = ttsLimitReachedRef.current ? 4500 : 2200
+        await sleep(completionDelay)
         setFinalResult(j.finalResult)
         console.log('[demo-phase] complete')
         setPhase('complete')
