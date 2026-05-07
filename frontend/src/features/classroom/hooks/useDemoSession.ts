@@ -45,6 +45,12 @@ export interface DemoFinalResult {
   teacher_message:  string
 }
 
+// True only if the message has a static file actually mapped on disk.
+// Messages where the file is missing fall through to TTS.
+function hasWorkingStaticAudio(msg: TeacherMessage): boolean {
+  return msg.audioMode === 'static' && !!msg.audioKey && !!STATIC_DEMO_AUDIO_MAP[msg.audioKey]
+}
+
 export type DemoPhase = 'loading' | 'ready' | 'intro' | 'lesson' | 'complete' | 'error'
 
 export type VoicePlayState = 'loading' | 'playing' | 'done' | 'error'
@@ -364,9 +370,13 @@ export function useDemoSession({
       return
     }
 
-    // Cancel any in-progress or queued audio before starting new interaction
+    // Cancel any in-progress or queued audio before starting new interaction.
+    // Incrementing the generation counter also invalidates any in-flight TTS fetch
+    // from the previous turn (QUALITY_RETRY voice), so it never plays over the new response.
+    voiceGenerationRef.current += 1
     stopStaticAudio()
     stopAudioPlayback()
+    setPendingVoicePlay(null)
     setIsStaticAudioPlaying(false)
     isStaticAudioPlayingRef.current = false
 
@@ -424,10 +434,12 @@ export function useDemoSession({
       await sleep(1200)
       setIsSpeaking(false)
 
-      // Feedback voice type — specific per step so TTS budget can track separately
+      // Voice type per step — warm_up / followup steps now also get voiced
       const feedbackMsgType = step.key === 'speaking_task' ? 'speaking_feedback'
         : step.key === 'writing_task' ? 'writing_feedback'
         : step.key === 'grammar_mcq' ? 'key_correction'
+        : (step.key === 'warm_up' || step.key === 'warm_up_followup' || step.key === 'speaking_followup')
+          ? 'follow_up_question'
         : undefined
 
       const feedbackId   = uid()
@@ -443,38 +455,27 @@ export function useDemoSession({
         },
       ])
 
+      // Play feedback voice and AWAIT it before transitioning to the next step.
+      // Fire-and-forget was the root cause of TTS being killed mid-flight by playMessages().
       if (feedbackMsgType) {
-        // Use spokenFeedback (first sentence, no correction block) when available
-        const ttsText = j.feedback.spokenFeedback ?? j.feedback.message
-        scheduleVoice(feedbackId, feedbackMsgType, stripMarkdownForTts(ttsText).slice(0, 300))
+        const ttsText = stripMarkdownForTts(j.feedback.spokenFeedback ?? j.feedback.message).slice(0, 300)
+        voiceGenerationRef.current += 1
+        setVoiceMessages(prev => ({ ...prev, [feedbackId]: { type: feedbackMsgType, text: ttsText } }))
+        if (!voiceMutedRef.current && !ttsLimitReachedRef.current) {
+          await handlePlayAudio(feedbackId, feedbackMsgType, ttsText)
+        } else {
+          setVoiceStates(prev => ({ ...prev, [feedbackId]: 'done' }))
+        }
       }
 
       setSelectedOption(null)
       setCompletedSteps((prev) => [...prev, step.key])
 
       if (j.isComplete && j.finalResult) {
-        // Kill any in-flight TTS (feedback for the final step) before playing the goodbye.
-        // Without this, the TTS fetch could complete after goodbye starts, recreate the
-        // AudioContext, and play over the farewell audio.
-        voiceGenerationRef.current += 1
-        stopAudioPlayback()
-        // Play goodbye audio before result overlay
-        if (!voiceMutedRef.current && j.finalAudioKey) {
-          const goodbyeUrl = STATIC_DEMO_AUDIO_MAP[j.finalAudioKey]
-          if (goodbyeUrl) {
-            setIsStaticAudioPlaying(true)
-            isStaticAudioPlayingRef.current = true
-            try {
-              await playStaticAudioFile(goodbyeUrl)
-            } catch (err) {
-              console.warn(`[demo-static] final_goodbye:`, err instanceof Error ? err.message : err)
-            } finally {
-              setIsStaticAudioPlaying(false)
-              isStaticAudioPlayingRef.current = false
-            }
-          }
-        }
-        await sleep(2000)
+        // Feedback TTS is already done (awaited above) — no need to kill anything.
+        // finalAudioKey is null (backend removed static bot goodbye);
+        // the AI teacher's closing line was voiced as part of spokenFeedback above.
+        await sleep(2200)
         setFinalResult(j.finalResult)
         console.log('[demo-phase] complete')
         setPhase('complete')
@@ -482,18 +483,21 @@ export function useDemoSession({
       }
 
       if (j.nextStep) {
-        await sleep(2000)
+        // Brief pause after feedback voice before next step starts
+        await sleep(600)
         setCurrentStep(j.nextStep)
         await playMessages(j.nextStep.teacherMessages)
-        // Only schedule TTS if the step messages are not all static
-        const nextAllStatic = j.nextStep.teacherMessages.every(m => m.audioMode === 'static')
+        // Schedule TTS fallback for step messages where static audio file is missing
+        const nextAllStatic = j.nextStep.teacherMessages.every(hasWorkingStaticAudio)
         const nextBubbleId = currentTeacherMsgRef.current
         if (!nextAllStatic && nextBubbleId && j.nextStep.teacherMessages.length > 0) {
-          const nextText = stripMarkdownForTts(j.nextStep.teacherMessages.map(m => m.text).join(' ')).slice(0, 300)
+          // Use only the text of messages that lack a working static file
+          const needsTts = j.nextStep.teacherMessages.filter(m => !hasWorkingStaticAudio(m))
+          const nextText = stripMarkdownForTts(needsTts.map(m => m.text).join(' ')).slice(0, 300)
           setChatMessages(prev => prev.map(m =>
-            m.id === nextBubbleId ? { ...m, messageType: 'follow_up_question' } : m,
+            m.id === nextBubbleId ? { ...m, messageType: 'main_prompt' } : m,
           ))
-          scheduleVoice(nextBubbleId, 'follow_up_question', nextText)
+          scheduleVoice(nextBubbleId, 'main_prompt', nextText)
         }
       }
     } catch {
@@ -504,7 +508,7 @@ export function useDemoSession({
     } finally {
       setSubmitting(false)
     }
-  }, [token, playMessages, scheduleVoice])
+  }, [token, playMessages, scheduleVoice, handlePlayAudio])
 
   // Session init — runs once after enabled + auth
   useEffect(() => {
@@ -565,10 +569,12 @@ export function useDemoSession({
       setPhase('intro')
       await playMessages(pending.intro.messages)
 
-      const introAllStatic = pending.intro.messages.every(m => m.audioMode === 'static')
+      // Schedule TTS only for intro messages that lack a working static file
+      const introAllStatic = pending.intro.messages.every(hasWorkingStaticAudio)
       const introBubbleId = currentTeacherMsgRef.current
       if (!introAllStatic && introBubbleId && pending.intro.messages.length > 0) {
-        const introTtsText = pending.intro.messages.map(m => m.text).join(' ').slice(0, 400)
+        const needsTts = pending.intro.messages.filter(m => !hasWorkingStaticAudio(m))
+        const introTtsText = stripMarkdownForTts(needsTts.map(m => m.text).join(' ')).slice(0, 400)
         setChatMessages(prev => prev.map(m =>
           m.id === introBubbleId ? { ...m, messageType: 'greeting' } : m,
         ))
@@ -582,10 +588,12 @@ export function useDemoSession({
       if (pending.currentStep) {
         setCurrentStep(pending.currentStep)
         await playMessages(pending.currentStep.teacherMessages)
-        const stepAllStatic = pending.currentStep.teacherMessages.every(m => m.audioMode === 'static')
+        // Schedule TTS fallback for step messages where static audio file is missing
+        const stepAllStatic = pending.currentStep.teacherMessages.every(hasWorkingStaticAudio)
         const stepBubbleId = currentTeacherMsgRef.current
         if (!stepAllStatic && stepBubbleId && pending.currentStep.teacherMessages.length > 0) {
-          const stepText = pending.currentStep.teacherMessages.map(m => m.text).join(' ').slice(0, 300)
+          const needsTts = pending.currentStep.teacherMessages.filter(m => !hasWorkingStaticAudio(m))
+          const stepText = stripMarkdownForTts(needsTts.map(m => m.text).join(' ')).slice(0, 300)
           setChatMessages(prev => prev.map(m =>
             m.id === stepBubbleId ? { ...m, messageType: 'main_prompt' } : m,
           ))
