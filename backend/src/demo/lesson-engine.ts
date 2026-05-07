@@ -313,6 +313,11 @@ export function buildWarmUpFeedback(_session: DemoSession, answer: string): stri
 }
 
 export function buildFollowUpFeedback(session: DemoSession, answer: string, stepKey: string): string {
+  // Polite refusal — don't force elaboration
+  if (/\bi\s+don'?t\s+want\s+(?:to\s+)?(?:tell|say|share|talk|explain)\b/i.test(answer)) {
+    return "No problem — you don't have to say more. Let's keep going."
+  }
+
   const wordCount = answer.trim().split(/\s+/).filter(Boolean).length
 
   if (wordCount <= 3) {

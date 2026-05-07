@@ -219,10 +219,13 @@ export function useDemoSession({
           setIsStaticAudioPlaying(true)
           isStaticAudioPlayingRef.current = true
           try {
+            console.log(`[demo-audio] start source=static audioKey="${msg.audioKey}" msgId=${msgId}`)
             await playStaticAudioFile(url)
+            console.log(`[demo-audio] end source=static audioKey="${msg.audioKey}" msgId=${msgId}`)
             setVoiceStates(prev => ({ ...prev, [msgId]: 'done' }))
           } catch (err) {
             const msg_str = err instanceof Error ? err.message : String(err)
+            console.log(`[demo-audio] cancel source=static audioKey="${msg.audioKey}" reason=${msg_str.slice(0,60)}`)
             if (!msg_str.includes('audio_resume_failed')) {
               console.warn(`[demo-static] key="${msg.audioKey}": ${msg_str}`)
             }
@@ -482,16 +485,27 @@ export function useDemoSession({
       // between the message appearing and the voice starting.
       if (effectiveTtsType) {
         const ttsText = stripMarkdownForTts(j.feedback.spokenFeedback ?? j.feedback.message).slice(0, 300)
+        const isFinal = effectiveTtsType === 'final_closing'
+        console.log(`[demo-turn] feedbackId=${feedbackId} stepKey=${step.key} ttsType=${effectiveTtsType} speakable=${!voiceMutedRef.current} isFinal=${isFinal}`)
         voiceGenerationRef.current += 1
         setVoiceMessages(prev => ({ ...prev, [feedbackId]: { type: effectiveTtsType, text: ttsText } }))
-        // Feedback is high-priority — always attempt TTS even if step-start TTS exhausted the budget.
-        // ttsLimitReachedRef is only respected for low-priority step-start (main_prompt/greeting) messages.
         if (!voiceMutedRef.current) {
-          setIsSpeaking(true)   // hold "speaking" state while TTS fetch + playback run
+          setIsSpeaking(true)
+          if (isFinal) console.log(`[demo-final] preparing_voice id=${feedbackId}`)
+          const ttsStart = Date.now()
           await handlePlayAudio(feedbackId, effectiveTtsType, ttsText)
+          const ttsElapsed = Date.now() - ttsStart
+          if (isFinal) console.log(`[demo-final] voice_done elapsed=${ttsElapsed}ms id=${feedbackId}`)
           setIsSpeaking(false)
+          // When TTS returned instantly (≤600ms), audio was silent (429/error) — add read time
+          if (ttsElapsed < 600) {
+            const readMs = Math.min(1200 + ttsText.length * 40, 3000)
+            console.log(`[demo-advance] tts_was_silent elapsed=${ttsElapsed}ms adding_read_delay=${readMs}ms stepKey=${step.key}`)
+            await sleep(readMs)
+          }
         } else {
           setVoiceStates(prev => ({ ...prev, [feedbackId]: 'done' }))
+          if (isFinal) console.log(`[demo-final] voice_skipped reason=muted id=${feedbackId}`)
         }
       }
 
@@ -505,14 +519,15 @@ export function useDemoSession({
         const completionDelay = ttsLimitReachedRef.current ? 4500 : 2200
         await sleep(completionDelay)
         setFinalResult(j.finalResult)
+        console.log('[demo-final] overlay_shown')
         console.log('[demo-phase] complete')
         setPhase('complete')
         return
       }
 
       if (j.nextStep) {
-        // Brief pause after feedback voice before next step starts
         await sleep(600)
+        console.log(`[demo-advance] allowed nextStep=${j.nextStep.key} fromStep=${step.key}`)
         setCurrentStep(j.nextStep)
         await playMessages(j.nextStep.teacherMessages)
         // Schedule TTS fallback for step messages where static audio file is missing

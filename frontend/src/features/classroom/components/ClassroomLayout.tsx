@@ -85,15 +85,16 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     // Block recording before lesson starts or after it completes
     if (ph === 'loading' || ph === 'ready' || ph === 'intro' || ph === 'complete') return
     if (demoListening) {
+      console.log('[demo-mic] clicked reason=stop_recording phase=' + ph)
       if (demoMicTimerRef.current) { clearTimeout(demoMicTimerRef.current); demoMicTimerRef.current = null }
       demoSpeechRef.current?.stop()
-      // onend will fire and handle auto-submit
       return
     }
-    // Interrupt: stop all playing audio instantly before recording starts.
-    // This silences the AI teacher immediately — mic press feels like interrupting a real conversation.
+    const wasStaticPlaying = demoStaticPlayingRef.current
+    console.log(`[demo-mic] clicked reason=start_recording phase=${ph} wasStaticPlaying=${wasStaticPlaying}`)
     stopStaticAudio()
     stopAudioPlayback()
+    console.log(`[demo-mic] accepted stoppedAudio=${wasStaticPlaying}`)
     const w = window as unknown as Record<string, unknown>
     const SpeechRecCtor = (w['SpeechRecognition'] ?? w['webkitSpeechRecognition']) as
       (new () => WebSpeechRec) | undefined

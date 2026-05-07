@@ -579,7 +579,8 @@ const META_HELP_PATTERNS: RegExp[] = [
   // Presence checks: "are you there?", "hey are you here", "you there?"
   /^\s*(?:hey[\s,]*)?(?:are\s+you\s+(?:there|here)|you\s+there)\s*[?!.]*\s*$/i,
   // Didn't / couldn't hear
-  /\bi\s+(?:didn'?t|couldn'?t|can'?t)\s+(?:hear|get|understand)\b/i,
+  /\bi\s+(?:didn'?t|couldn'?t|can'?t)\s+hear\b/i,
+  /\bi\s+(?:didn'?t|couldn'?t|can'?t)\s+(?:get|understand)\s+(?:it|that|you|what|the\s+(?:question|task|point|prompt|audio|exercise))\b/i,
   /\b(?:didn'?t|couldn'?t)\s+hear\s+(?:you|the\s+question|it)\b/i,
   // Asking to repeat
   /\b(?:can\s+you\s+(?:repeat|say\s+that\s+again|ask\s+(?:me\s+)?again)|please\s+repeat|repeat\s+(?:the\s+)?question)\b/i,
@@ -886,6 +887,16 @@ export function analyzeAnswerQuality(
         quality: 'weak', reason: 'no_subject_short_fragment', shouldAdvance: false,
         suggestedResponse: `I need a proper sentence — start with "I…" and tell me what you actually think.`,
       }
+    }
+  }
+
+  // Polite refusal to elaborate — acknowledge and do not force retry
+  if (/\bi\s+don'?t\s+want\s+(?:to\s+)?(?:tell|say|share|talk|explain)\b/i.test(trimmed)) {
+    return {
+      quality: 'weak',
+      reason: 'refusal_to_elaborate',
+      shouldAdvance: false,
+      suggestedResponse: "No problem — you don't have to say more. Let's continue.",
     }
   }
 
