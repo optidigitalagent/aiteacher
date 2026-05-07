@@ -120,11 +120,14 @@ export function canUseDemoAI(
 // Track chars_used and calls_used in Redis: demo:tts:usage:{sessionId}
 
 export const DEMO_TTS_CONFIG = {
-  maxCharsPerSession: parseInt(process.env.DEMO_TTS_MAX_CHARS_PER_SESSION ?? '6000', 10),
-  maxCallsPerSession: parseInt(process.env.DEMO_TTS_MAX_CALLS_PER_SESSION  ?? '25',  10),
+  maxCharsPerSession:   parseInt(process.env.DEMO_TTS_MAX_CHARS_PER_SESSION ?? '6000', 10),
+  maxCallsPerSession:   parseInt(process.env.DEMO_TTS_MAX_CALLS_PER_SESSION  ?? '25',  10),
+  // Calls held back exclusively for final_closing — not consumable by normal messages.
+  // Normal messages can use at most (maxCalls - finalClosingReserved) calls.
+  finalClosingReserved: parseInt(process.env.DEMO_TTS_FINAL_RESERVED ?? '2', 10),
   allowedMessageTypes: (
     process.env.DEMO_TTS_ALLOWED_MESSAGE_TYPES ??
-    'greeting,main_prompt,follow_up_question,key_correction,speaking_feedback,writing_feedback,final_result'
+    'greeting,main_prompt,follow_up_question,key_correction,speaking_feedback,writing_feedback,final_result,final_closing'
   ).split(','),
   cacheEnabled: process.env.DEMO_TTS_CACHE_ENABLED !== 'false',
 } as const
@@ -135,18 +138,34 @@ export function canUseDemoTTS(
   messageType: string,
   messageLength: number,
 ): { allowed: boolean; reason?: string } {
+  const { maxCallsPerSession, maxCharsPerSession, finalClosingReserved } = DEMO_TTS_CONFIG
+
   if (!(DEMO_TTS_CONFIG.allowedMessageTypes as readonly string[]).includes(messageType)) {
     console.log(`[demo-tts] blocked reason=type_not_allowed type=${messageType}`)
     return { allowed: false, reason: `type_not_allowed:${messageType}` }
   }
-  if (callsUsed >= DEMO_TTS_CONFIG.maxCallsPerSession) {
-    console.log(`[demo-tts] blocked reason=call_limit calls=${callsUsed}`)
+
+  const isFinal = messageType === 'final_closing'
+  // Normal types: blocked once the reserved tail is reached, saving budget for final_closing.
+  // final_closing: blocked only at the absolute session ceiling.
+  const normalBudget = maxCallsPerSession - finalClosingReserved
+
+  if (callsUsed >= maxCallsPerSession) {
+    console.log(`[demo-tts] blocked reason=call_limit_total calls=${callsUsed} type=${messageType}`)
     return { allowed: false, reason: 'call_limit' }
   }
-  if (charsUsed + messageLength > DEMO_TTS_CONFIG.maxCharsPerSession) {
-    console.log(`[demo-tts] blocked reason=char_limit chars_used=${charsUsed} new=${messageLength}`)
+  if (!isFinal && callsUsed >= normalBudget) {
+    console.log(`[demo-tts] blocked reason=normal_budget_reserved calls=${callsUsed} normalBudget=${normalBudget} type=${messageType}`)
+    return { allowed: false, reason: 'call_limit' }
+  }
+  if (charsUsed + messageLength > maxCharsPerSession) {
+    console.log(`[demo-tts] blocked reason=char_limit chars_used=${charsUsed} new=${messageLength} type=${messageType}`)
     return { allowed: false, reason: 'char_limit' }
   }
+
+  const remaining = maxCallsPerSession - callsUsed
+  const priority  = isFinal ? 'P0_final' : 'normal'
+  console.log(`[demo-tts-budget] callsUsed=${callsUsed} charsUsed=${charsUsed} callsLimit=${maxCallsPerSession} charsLimit=${maxCharsPerSession} remaining=${remaining} priority=${priority} type=${messageType}`)
   console.log(`[demo-tts] allowed type=${messageType} chars=${messageLength}`)
   return { allowed: true }
 }

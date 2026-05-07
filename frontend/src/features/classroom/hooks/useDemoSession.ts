@@ -296,7 +296,16 @@ export function useDemoSession({
         }
         return
       }
-      const j = (await res.json()) as { audio?: string }
+      const j = (await res.json()) as {
+        audio?: string
+        budget?: { callsUsed: number; charsUsed: number; callsLimit: number; charsLimit: number }
+      }
+      if (j.budget) {
+        const { callsUsed, charsUsed, callsLimit, charsLimit } = j.budget
+        const remaining = callsLimit - callsUsed
+        const priority  = messageType === 'final_closing' ? 'P0_final' : 'normal'
+        console.log(`[demo-tts-budget] callsUsed=${callsUsed} charsUsed=${charsUsed} callsLimit=${callsLimit} charsLimit=${charsLimit} remaining=${remaining} priority=${priority} type=${messageType} id=${messageId}`)
+      }
       if (!j.audio) {
         console.log(`[demo-voice] error id=${messageId} reason=no_audio_in_response`)
         setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
@@ -452,6 +461,9 @@ export function useDemoSession({
           ? 'follow_up_question'
         : undefined
 
+      // Final-step voice uses a reserved TTS budget slot so normal retry voices cannot crowd it out.
+      const effectiveTtsType = j.isComplete && feedbackMsgType ? 'final_closing' : feedbackMsgType
+
       const feedbackId   = uid()
       const feedbackText = buildFeedbackText(j.feedback, displayAnswer)
 
@@ -461,20 +473,23 @@ export function useDemoSession({
           id:     feedbackId,
           sender: 'ai',
           text:   feedbackText,
-          ...(feedbackMsgType ? { messageType: feedbackMsgType } : {}),
+          ...(effectiveTtsType ? { messageType: effectiveTtsType } : {}),
         },
       ])
 
       // Play feedback voice and AWAIT it before transitioning to the next step.
-      // Fire-and-forget was the root cause of TTS being killed mid-flight by playMessages().
-      if (feedbackMsgType) {
+      // Keep isSpeaking=true while TTS is fetching so there is no silent gap
+      // between the message appearing and the voice starting.
+      if (effectiveTtsType) {
         const ttsText = stripMarkdownForTts(j.feedback.spokenFeedback ?? j.feedback.message).slice(0, 300)
         voiceGenerationRef.current += 1
-        setVoiceMessages(prev => ({ ...prev, [feedbackId]: { type: feedbackMsgType, text: ttsText } }))
+        setVoiceMessages(prev => ({ ...prev, [feedbackId]: { type: effectiveTtsType, text: ttsText } }))
         // Feedback is high-priority — always attempt TTS even if step-start TTS exhausted the budget.
         // ttsLimitReachedRef is only respected for low-priority step-start (main_prompt/greeting) messages.
         if (!voiceMutedRef.current) {
-          await handlePlayAudio(feedbackId, feedbackMsgType, ttsText)
+          setIsSpeaking(true)   // hold "speaking" state while TTS fetch + playback run
+          await handlePlayAudio(feedbackId, effectiveTtsType, ttsText)
+          setIsSpeaking(false)
         } else {
           setVoiceStates(prev => ({ ...prev, [feedbackId]: 'done' }))
         }

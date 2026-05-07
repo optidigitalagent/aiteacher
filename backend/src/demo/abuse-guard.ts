@@ -843,11 +843,30 @@ export function analyzeAnswerQuality(
     }
   }
 
-  // "I don't know" without real follow-on (≤ 6 words total)
-  if (/\bi\s+don'?t\s+know\b/i.test(lower) && words.length <= 6) {
-    return {
-      quality: 'weak', reason: 'i_dont_know_no_attempt', shouldAdvance: false,
-      suggestedResponse: `Even a guess is great — try "I think…" and give me one idea.`,
+  // "I don't know" without real follow-on — catches short standalone AND longer voice fillers
+  // that end with "I don't know" as a conclusion (e.g. "private like I would describe it like I don't know").
+  if (/\bi\s+don'?t\s+know\b/i.test(lower)) {
+    // Short form: still clear non-answer
+    if (words.length <= 6) {
+      return {
+        quality: 'weak', reason: 'i_dont_know_no_attempt', shouldAdvance: false,
+        suggestedResponse: `Even a guess is great — try "I think…" and give me one idea.`,
+      }
+    }
+    // Longer form: check whether it ends with "I don't know" and has no real content before it
+    const endsWithIDontKnow = /\bi\s+don'?t\s+know\s*[.!,]?\s*$/i.test(lower)
+    if (endsWithIDontKnow) {
+      const beforePhrase = lower.replace(/\bi\s+don'?t\s+know\s*[.!,]?\s*$/, '').trim()
+      // Count content words (length > 3, not fillers) — < 4 means the student gave no real answer
+      const realWords = beforePhrase.split(/\s+/).filter(
+        w => w.length > 3 && !WEAK_GATE_FILLERS.has(w),
+      )
+      if (realWords.length < 4) {
+        return {
+          quality: 'weak', reason: 'i_dont_know_conclusion', shouldAdvance: false,
+          suggestedResponse: `I hear you're not sure. Try this: "I would describe it as..." — say it in your own words.`,
+        }
+      }
     }
   }
 

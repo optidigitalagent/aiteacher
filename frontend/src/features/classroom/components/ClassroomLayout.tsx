@@ -81,16 +81,19 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const demoSubmitRef = useRef<(t: string) => void>(() => {})
 
   const toggleDemoMic = useCallback(() => {
-    // Block recording while lesson hasn't started or static audio is playing
     const ph = demoPhaseRef.current
-    if (ph === 'loading' || ph === 'ready' || ph === 'intro') return
-    if (demoStaticPlayingRef.current) return
+    // Block recording before lesson starts or after it completes
+    if (ph === 'loading' || ph === 'ready' || ph === 'intro' || ph === 'complete') return
     if (demoListening) {
       if (demoMicTimerRef.current) { clearTimeout(demoMicTimerRef.current); demoMicTimerRef.current = null }
       demoSpeechRef.current?.stop()
       // onend will fire and handle auto-submit
       return
     }
+    // Interrupt: stop all playing audio instantly before recording starts.
+    // This silences the AI teacher immediately — mic press feels like interrupting a real conversation.
+    stopStaticAudio()
+    stopAudioPlayback()
     const w = window as unknown as Record<string, unknown>
     const SpeechRecCtor = (w['SpeechRecognition'] ?? w['webkitSpeechRecognition']) as
       (new () => WebSpeechRec) | undefined
@@ -176,6 +179,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   // Demo help input
   const [showHelpInput,   setShowHelpInput]   = useState(false)
   const [helpInputValue,  setHelpInputValue]  = useState('')
+  // Two-stage lesson end: first show modal inside classroom, then full results on click
+  const [showFullResults, setShowFullResults] = useState(false)
 
   const answerRef = useRef('')
   useEffect(() => { answerRef.current = answer }, [answer])
@@ -506,7 +511,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           onSubmit={handleSubmit}
           onToggleMic={isDemoMode ? toggleDemoMic : toggle}
           onExplain={handleExplain}
-          inputDisabled={isDemoMode && !demo.lessonStarted}
+          inputDisabled={
+            (isDemoMode && !demo.lessonStarted) ||
+            (isDemoMode && demo.phase === 'complete')
+          }
           showHelpInput={isDemoMode ? showHelpInput : false}
           helpInputValue={helpInputValue}
           onHelpChange={setHelpInputValue}
@@ -515,8 +523,14 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         />
       </div>
 
-      {/* Demo overlays */}
-      {isDemoMode && demo.phase === 'complete' && demo.finalResult && (
+      {/* Demo overlays — two-stage: lesson-complete modal first, full results after button click */}
+      {isDemoMode && demo.phase === 'complete' && demo.finalResult && !showFullResults && (
+        <LessonCompleteModal
+          teacherMessage={demo.finalResult.teacher_message}
+          onViewResults={() => setShowFullResults(true)}
+        />
+      )}
+      {isDemoMode && showFullResults && demo.finalResult && (
         <DemoResultOverlay
           result={demo.finalResult}
           interestArea={demo.interestArea}
@@ -529,6 +543,71 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           onLeave={() => navigate('/')}
         />
       )}
+    </div>
+  )
+}
+
+// ── Lesson complete modal — appears inside the classroom after final teacher message ──
+// Chat remains visible and scrollable behind the dimmed overlay.
+// User clicks "View my results" to proceed to the full results screen.
+function LessonCompleteModal({ teacherMessage, onViewResults }: {
+  teacherMessage: string
+  onViewResults:  () => void
+}) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 200,
+      background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+    }}>
+      <div style={{
+        background: 'white', borderRadius: 24, padding: '32px 28px',
+        maxWidth: 420, width: '100%',
+        boxShadow: '0 32px 64px rgba(15,23,42,0.22)',
+        textAlign: 'center',
+      }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          background: '#f0fdf4', color: '#16a34a', borderRadius: 99,
+          padding: '5px 14px', fontSize: 11, fontWeight: 800,
+          textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 18,
+        }}>
+          ✓ Lesson complete
+        </div>
+        <div style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', marginBottom: 12, lineHeight: 1.3 }}>
+          Well done on finishing!
+        </div>
+        <div style={{
+          background: 'linear-gradient(135deg,#f8f7ff,#fff8f4)', borderRadius: 16,
+          padding: '14px 16px', marginBottom: 18, textAlign: 'left',
+          display: 'flex', gap: 10, alignItems: 'flex-start',
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 10, flexShrink: 0,
+            background: 'linear-gradient(135deg,#6E7CFB,#9B8CFF)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'white', fontSize: 12, fontWeight: 800,
+          }}>A</div>
+          <p style={{ fontSize: 14, color: '#374151', lineHeight: 1.6, margin: 0 }}>
+            {teacherMessage}
+          </p>
+        </div>
+        <p style={{ fontSize: 13, color: '#94A3B8', marginBottom: 24, lineHeight: 1.55 }}>
+          Your demo lesson is finished. View your results when you&apos;re ready.
+        </p>
+        <button
+          onClick={onViewResults}
+          style={{
+            width: '100%', padding: '14px 20px', borderRadius: 16, border: 'none',
+            background: 'linear-gradient(135deg,#6E7CFB,#9B8CFF)',
+            color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer',
+            boxShadow: '0 8px 28px rgba(110,124,251,0.40)',
+            letterSpacing: '-0.2px',
+          }}
+        >
+          View my results →
+        </button>
+      </div>
     </div>
   )
 }

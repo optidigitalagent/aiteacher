@@ -1013,7 +1013,16 @@ router.post('/demo/tts', requireAuth, async (req: Request, res: Response): Promi
       const cached = await redis.get(cacheKey)
       if (cached) {
         console.log(`[demo-tts] cache_hit=true type=${messageType}`)
-        res.json({ audio: cached, cached: true })
+        res.json({
+          audio: cached,
+          cached: true,
+          budget: {
+            callsUsed:  usage.calls_used,
+            charsUsed:  usage.chars_used,
+            callsLimit: DEMO_TTS_CONFIG.maxCallsPerSession,
+            charsLimit: DEMO_TTS_CONFIG.maxCharsPerSession,
+          },
+        })
         return
       }
     }
@@ -1046,7 +1055,16 @@ router.post('/demo/tts', requireAuth, async (req: Request, res: Response): Promi
     await redis.set(usageKey, JSON.stringify(newUsage), 'EX', 14400)
 
     console.log(`[demo-tts] done calls_now=${newUsage.calls_used} chars_now=${newUsage.chars_used}`)
-    res.json({ audio: base64Audio, cached: false })
+    res.json({
+      audio: base64Audio,
+      cached: false,
+      budget: {
+        callsUsed:  newUsage.calls_used,
+        charsUsed:  newUsage.chars_used,
+        callsLimit: DEMO_TTS_CONFIG.maxCallsPerSession,
+        charsLimit: DEMO_TTS_CONFIG.maxCharsPerSession,
+      },
+    })
 
   } catch (err) {
     console.error('[demo/tts] error:', err instanceof Error ? err.message : err)
