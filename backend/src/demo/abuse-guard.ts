@@ -62,6 +62,16 @@ const VOCAB_CANONICAL: Record<string, string> = {
   // general lesson words
   fluent: 'fluent', fluently: 'fluent',
   challenge: 'challenge', challenging: 'challenge',
+  soak: 'soak_it_in',
+}
+
+// Multi-word phrase / idiom map (checked before single-word patterns)
+const PHRASE_VOCAB_MAP: Record<string, string> = {
+  'soak it in':  'soak_it_in',
+  'soak it all': 'soak_it_in',
+  'soak in':     'soak_it_in',
+  'hold onto':   'hold_onto',
+  'hold on to':  'hold_onto',
 }
 
 const VOCAB_EXPLANATIONS: Record<string, { explanation: string; example: string; taskHint: string }> = {
@@ -140,6 +150,16 @@ const VOCAB_EXPLANATIONS: Record<string, { explanation: string; example: string;
     example: "Example: 'Learning grammar is a challenge, but it gets easier with practice.'",
     taskHint: "Try describing a challenge you've faced or are facing.",
   },
+  soak_it_in: {
+    explanation: "'Soak it in' means to stop and fully enjoy a moment — taking it in emotionally, not rushing past it.",
+    example: "'I just stood there and soaked it in' means: I stayed in that moment and really felt it completely.",
+    taskHint: "So — did you do anything like that to hold onto the feeling?",
+  },
+  hold_onto: {
+    explanation: "'Hold onto' something means to keep it, remember it, or not let it go.",
+    example: "'I held onto that memory' means the memory stayed with me — I didn't forget it.",
+    taskHint: "Try answering: what did you do to keep that feeling alive?",
+  },
 }
 
 // ─── Confusion phrases ────────────────────────────────────────────────────────
@@ -168,6 +188,12 @@ const CONFUSION_PHRASES = [
 
 export function detectVocabWord(text: string): string | null {
   const lower = text.toLowerCase().trim()
+
+  // Multi-word phrase / idiom check — must run before single-word patterns
+  const strippedLower = lower.replace(/[?!.,;:]+/g, '').trim()
+  for (const [phrase, canonical] of Object.entries(PHRASE_VOCAB_MAP)) {
+    if (strippedLower.includes(phrase)) return canonical
+  }
 
   // "translate me X", "translate X", "translation of X", "translate this X"
   const translateMatch = lower.match(/^(?:translate(?:\s+me)?(?:\s+this)?|translation\s+of)\s+(?:a |an |the )?(\w+)/)

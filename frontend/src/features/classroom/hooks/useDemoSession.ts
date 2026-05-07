@@ -90,18 +90,13 @@ function sleep(ms: number) { return new Promise<void>((r) => setTimeout(r, ms)) 
 
 function buildFeedbackText(
   fb: { message: string; correction: string | null; score: number | null; correct: boolean | null },
-  studentText: string,
+  _studentText: string,
 ): string {
   let text = fb.message
   if (fb.correction) {
-    text += '\n\n'
-    if (studentText) {
-      text += `✗ "${studentText}"\n✓ "${fb.correction}"`
-    } else {
-      text += `Try: "${fb.correction}"`
-    }
+    text += `\n\nA more natural way: "${fb.correction}"`
   }
-  // Only celebrate genuinely strong scores — low scores discourage in a demo context
+  // Only show score for genuinely strong responses — low scores discourage in a demo context
   if (fb.score != null && fb.score >= 7) text += `\n\nScore: ${fb.score}/10`
   return text
 }
@@ -291,7 +286,10 @@ export function useDemoSession({
         const code = (errBody['code'] as string | undefined) ?? (errBody['reason'] as string | undefined) ?? String(res.status)
         console.log(`[demo-voice] error id=${messageId} status=${res.status} code=${code}`)
         if (res.status === 429) {
-          ttsLimitReachedRef.current = true
+          // Only mark the budget globally exhausted when a HIGH-priority feedback message hits 429.
+          // Step-start (main_prompt / greeting) 429s should not block subsequent feedback voice.
+          const isStepStart = messageType === 'main_prompt' || messageType === 'greeting'
+          if (!isStepStart) ttsLimitReachedRef.current = true
           setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
         } else {
           setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
@@ -351,11 +349,13 @@ export function useDemoSession({
   }, [])
 
   // ── Auto-play effect — fires when pendingVoicePlay is set ───────────────────
+  // Step-start messages (main_prompt / greeting) respect ttsLimitReachedRef —
+  // if budget is exhausted, skip silently to preserve it for feedback messages.
   useEffect(() => {
     if (!pendingVoicePlay) return
     const { id, type, text } = pendingVoicePlay
     setPendingVoicePlay(null)
-    if (!voiceMutedRef.current) {
+    if (!voiceMutedRef.current && !ttsLimitReachedRef.current) {
       void handlePlayAudio(id, type, text)
     }
   }, [pendingVoicePlay, handlePlayAudio])
@@ -410,12 +410,22 @@ export function useDemoSession({
         // Voice key teacher moments — corrections and moderation feel more personal when spoken
         const spokeCodes = new Set(['MODERATION', 'MEANING_CONFIRMED', 'STUDENT_QUESTION', 'VOCAB_HELP', 'QUALITY_RETRY', 'META_HELP'])
         if (spokeCodes.has(j.code ?? '') && j.message) {
-          // Use spokenMessage (short, no ✗/✓ block) when available; fall back to full message
+          // Use spokenMessage (short, no correction block) when available; fall back to full message
           const spokenText = j.spokenMessage ?? j.message
           const voiceType = j.code === 'QUALITY_RETRY'
             ? (step.key === 'speaking_task' ? 'speaking_feedback' : step.key === 'writing_task' ? 'writing_feedback' : 'key_correction')
             : 'key_correction'
-          scheduleVoice(errMsgId, voiceType, stripMarkdownForTts(spokenText).slice(0, 300))
+          const ttsText = stripMarkdownForTts(spokenText).slice(0, 300)
+          voiceGenerationRef.current += 1
+          stopStaticAudio()
+          stopAudioPlayback()
+          setIsStaticAudioPlaying(false)
+          isStaticAudioPlayingRef.current = false
+          setVoiceMessages(prev => ({ ...prev, [errMsgId]: { type: voiceType, text: ttsText } }))
+          // High-priority: retry/correction voice always attempts TTS (same as feedback)
+          if (!voiceMutedRef.current) {
+            void handlePlayAudio(errMsgId, voiceType, ttsText)
+          }
         }
         return
       }
@@ -461,7 +471,9 @@ export function useDemoSession({
         const ttsText = stripMarkdownForTts(j.feedback.spokenFeedback ?? j.feedback.message).slice(0, 300)
         voiceGenerationRef.current += 1
         setVoiceMessages(prev => ({ ...prev, [feedbackId]: { type: feedbackMsgType, text: ttsText } }))
-        if (!voiceMutedRef.current && !ttsLimitReachedRef.current) {
+        // Feedback is high-priority — always attempt TTS even if step-start TTS exhausted the budget.
+        // ttsLimitReachedRef is only respected for low-priority step-start (main_prompt/greeting) messages.
+        if (!voiceMutedRef.current) {
           await handlePlayAudio(feedbackId, feedbackMsgType, ttsText)
         } else {
           setVoiceStates(prev => ({ ...prev, [feedbackId]: 'done' }))

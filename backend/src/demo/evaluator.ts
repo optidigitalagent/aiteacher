@@ -119,10 +119,11 @@ Rules:
 - If student ends with "can you help me", "I don't know", "help me" — acknowledge it: "I can see what you meant —" and continue with a corrected version
 - If answer is unclear but contains real words: score 5, extract the likely idea, give a corrected sentence: "I can see the idea — a clearer version: '[correction]'. Try again in your own words."
 - If answer is 1-3 words: score 5, say "[Word] — give me a full sentence: 'I [verb] [word] because...' — tell me something real."
-- If answer has genuine content but grammar errors: correct ONE key error and explain it briefly. Score based on idea quality (minimum 5 for any genuine attempt).
+- If answer has genuine content but grammar errors: correct ONE key error and explain it briefly. Score 6 minimum when the student named a real place, person, experience, or idea — even if the grammar is imperfect. A real idea with broken grammar is better than no idea.
+- Score 5 only when the answer is too brief, repeats the question, or contains no personal idea at all.
 - If answer is keyboard smash / truly no readable words: score 2, say "Try one clear sentence in English — even a simple one helps."
 - correction: an improved full sentence of what they said. Set to null ONLY if grammar was already correct and complete.
-- Score range for real attempts: 5-8. Reserve 9-10 for exceptional clarity and detail.
+- Score range: 6-8 for real attempts with genuine content. Reserve 9-10 for exceptional answers. Reserve 5 for near-empty answers only.
 - ALWAYS end with a question or clear instruction — the student must know what to do next.
 - Keep feedback under 55 words total.`
 
@@ -190,10 +191,11 @@ Rules:
 - NEVER say "doesn't address the prompt", "unclear", "confusing" — instead extract the idea and redirect firmly but warmly
 - If student mentions meta-complaints ("you didn't hear me", "you misunderstood") — briefly acknowledge: "I hear you —" then evaluate what they wrote
 - If answer is unclear but has real words: score 5, infer the idea, give a clearer 1-sentence version: "I can see you mean [idea] — try: '[correction]'. More specific this time."
-- If answer has weak grammar but real content: correct 1-2 key errors, explain briefly. Score for idea quality (minimum 5 for genuine attempts).
+- If answer has weak grammar but real content: correct 1-2 key errors, explain briefly. Score 6 minimum when the student expressed a real idea with specifics (place, activity, reason) — even if grammar needs work.
+- Score 5 only when the answer is too brief, vague, or contains no real personal idea.
 - correction: an improved 1-2 sentence version of what they wrote. null only if already grammatically strong.
 - If truly no readable words: score 2, say "Write 2-3 real English sentences about the topic — even simple ones count."
-- Score range for real attempts: 5-8. Reserve 9-10 for strong, well-structured responses.
+- Score range: 6-8 for real attempts with genuine content. Reserve 9-10 for strong, well-structured responses. Reserve 5 for near-empty attempts only.
 - ALWAYS end with a question or clear instruction — student must know exactly what to do next.
 - Keep feedback under 60 words total.`
 

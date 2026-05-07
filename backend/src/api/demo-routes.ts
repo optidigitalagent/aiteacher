@@ -683,9 +683,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         ) {
           await incrementStepRetries(sessionId, stepKey)
           await incrementAttempts(sessionId)
-          const corrPart = score.correction
-            ? `\n\n✗ "${answer.slice(0, 120)}"\n✓ "${score.correction}"`
-            : ''
+          const corrPart = score.correction ? `\n\nA more natural way: "${score.correction}"` : ''
           res.status(422).json({
             code: 'QUALITY_RETRY',
             message: ensureTeacherContinues(feedbackMessage + corrPart, stepPrompt),
