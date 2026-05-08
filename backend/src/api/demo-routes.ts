@@ -3,7 +3,8 @@ import { requireAuth } from '../auth/middleware.js'
 import { query, withTransaction } from '../db/postgres.js'
 import redis from '../db/redis.js'
 import {
-  buildIntro,
+  buildIntroText,
+  buildNextStepIntro,
   buildStep,
   evaluateMcqServerSide,
   buildWarmUpFeedback,
@@ -278,7 +279,7 @@ router.get('/demo/session/:id', requireAuth, async (req: Request, res: Response)
       return
     }
 
-    const intro = buildIntro(session)
+    const introText = buildIntroText(session)
     const totalSteps = getTotalSteps()
 
     if (session.status === 'completed' && session.final_result) {
@@ -290,7 +291,8 @@ router.get('/demo/session/:id', requireAuth, async (req: Request, res: Response)
         isComplete: true,
         interestArea: session.interest_area,
         demoMission: session.demo_mission,
-        intro,
+        introText,
+        currentStepIntro: null,
         currentStep: null,
         finalResult: session.final_result,
       })
@@ -298,6 +300,7 @@ router.get('/demo/session/:id', requireAuth, async (req: Request, res: Response)
     }
 
     const currentStep = buildStep(session, session.step_index)
+    const currentStepIntro = buildNextStepIntro(session, currentStep)
 
     res.json({
       id: session.id,
@@ -307,7 +310,8 @@ router.get('/demo/session/:id', requireAuth, async (req: Request, res: Response)
       isComplete: false,
       interestArea: session.interest_area,
       demoMission: session.demo_mission,
-      intro,
+      introText,
+      currentStepIntro,
       currentStep,
       finalResult: null,
     })
@@ -937,6 +941,8 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       ? baseState
       : guardedConvState(baseState.conversationState, feedbackMessage)
 
+    const nextStepIntro = buildNextStepIntro(session, nextStepContent)
+
     console.log(`[demo-conversation] mode=${finalConvState.conversationState.mode} stepKey=${stepKey} reason=${finalConvState.conversationState.reason}`)
     res.json({
       feedback: {
@@ -947,9 +953,9 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         correct: score.correct ?? null,
       },
       nextStep: nextStepContent,
+      nextStepIntro,
       finalResult,
       isComplete: isLastStep,
-      finalAudioKey: null,
       ...finalConvState,
     })
   } catch (err) {

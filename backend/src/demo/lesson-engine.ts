@@ -45,22 +45,10 @@ export interface FinalResult {
 
 export type StepType = 'text_input' | 'mcq'
 
-// audioMode drives the future static-audio pipeline:
-//   'static' — scripted text suitable for pre-recorded audio; use audioKey to look up the asset
-//   'tts'    — dynamic AI text; generate live TTS until static assets exist
-//   'none'   — do not voice (moderation, help, system messages)
-export interface TeacherMessageItem {
-  text: string
-  delay: number
-  audioMode?: 'static' | 'tts' | 'none'
-  audioKey?: string
-}
-
 export interface StepContent {
   key: string
   index: number
   type: StepType
-  teacherMessages: TeacherMessageItem[]
   prompt?: string
   placeholder?: string
   minLength: number
@@ -69,30 +57,55 @@ export interface StepContent {
   // correctIndex intentionally omitted — server-only
 }
 
-export interface IntroContent {
-  messages: TeacherMessageItem[]
-}
-
 const TOTAL_STEPS = 6
 
 export function getTotalSteps(): number {
   return TOTAL_STEPS
 }
 
-export function buildIntro(session: DemoSession): IntroContent {
+// Single AI teacher intro message — greeting + mission context + topic hook.
+// Kept under ~320 chars so TTS can speak the whole thing in one call.
+export function buildIntroText(session: DemoSession): string {
   const tone = TEACHER_TONES[session.teacher_style] ?? TEACHER_TONES['friendly_coach']!
-  const confidenceNote = CONFIDENCE_INTROS[session.speaking_confidence] ?? ''
   const missionNote = MISSION_INTROS[session.demo_mission] ?? ''
   const topic = TOPIC_PACKS[session.interest_area] ?? TOPIC_PACKS['school_life']!
+  return [
+    tone.greeting,
+    missionNote,
+    `I saw you're interested in ${topic.label} — I'll use that today. Let's start.`,
+  ].filter(Boolean).join(' ')
+}
 
-  return {
-    messages: [
-      { text: tone.greeting,    delay: 0,    audioMode: 'static', audioKey: `intro_greeting_${session.teacher_style}` },
-      { text: missionNote,      delay: 1600, audioMode: 'static', audioKey: `intro_mission_${session.demo_mission}` },
-      { text: confidenceNote,   delay: 3000, audioMode: 'static', audioKey: `intro_confidence_${session.speaking_confidence}` },
-      { text: `I saw you're interested in ${topic.label} — I'll use that in today's tasks. It makes the whole thing more real.`, delay: 4400, audioMode: 'static', audioKey: `intro_topic_${session.interest_area}` },
-      { text: "Let's start.",   delay: 5600, audioMode: 'static', audioKey: 'intro_start' },
-    ],
+// What the AI teacher says when introducing a step — used for transitions between steps
+// and when a session resumes mid-lesson. Returns null only when nextStep is null (end of lesson).
+export function buildNextStepIntro(session: DemoSession, nextStep: StepContent | null): string | null {
+  if (!nextStep) return null
+  const topic = TOPIC_PACKS[session.interest_area] ?? TOPIC_PACKS['school_life']!
+  const tone  = TEACHER_TONES[session.teacher_style] ?? TEACHER_TONES['friendly_coach']!
+  const grammar = GRAMMAR_PACKS[session.demo_mission] ?? GRAMMAR_PACKS['real_conversation_mission']!
+
+  switch (nextStep.key) {
+    case 'warm_up':
+      return topic.warmUpQuestion
+
+    case 'warm_up_followup':
+      return topic.warmUpFollowUpQuestion
+
+    case 'grammar_mcq':
+      // Explanation may contain **markdown** — chat renders it; TTS strips it via stripMarkdownForTts.
+      return `${tone.transition} Quick grammar check — ${grammar.target}. ${grammar.explanation}`
+
+    case 'speaking_task':
+      return topic.speakingPrompt
+
+    case 'speaking_followup':
+      return topic.speakingFollowUpQuestion
+
+    case 'writing_task':
+      return `Last exercise. ${topic.writingPrompt}`
+
+    default:
+      return nextStep.prompt ?? null
   }
 }
 
@@ -107,10 +120,6 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         key: 'warm_up',
         index: 0,
         type: 'text_input',
-        teacherMessages: [
-          { text: `Before we get into the exercises, I want to hear from you.`, delay: 0,    audioMode: 'static', audioKey: 'warm_up_intro' },
-          { text: topic.warmUpQuestion,                                          delay: 1100, audioMode: 'static', audioKey: `warm_up_question_${session.interest_area}` },
-        ],
         prompt: topic.warmUpQuestion,
         placeholder: topic.warmUpPlaceholder,
         minLength: 5,
@@ -122,9 +131,6 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         key: 'warm_up_followup',
         index: 1,
         type: 'text_input',
-        teacherMessages: [
-          { text: topic.warmUpFollowUpQuestion, delay: 0, audioMode: 'static', audioKey: `warm_up_followup_${session.interest_area}` },
-        ],
         prompt: topic.warmUpFollowUpQuestion,
         placeholder: topic.warmUpFollowUpPlaceholder,
         minLength: 5,
@@ -136,11 +142,6 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         key: 'grammar_mcq',
         index: 2,
         type: 'mcq',
-        teacherMessages: [
-          { text: tone.transition,                                                                       delay: 0,    audioMode: 'static', audioKey: `grammar_transition_${session.teacher_style}` },
-          { text: `Quick grammar check — ${grammar.target}. One sentence, four options.`,               delay: 1000, audioMode: 'static', audioKey: `grammar_intro_${session.demo_mission}` },
-          { text: grammar.explanation,                                                                   delay: 2000, audioMode: 'static', audioKey: `grammar_explanation_${session.demo_mission}` },
-        ],
         prompt: grammar.question,
         options: grammar.options.map((o, i) => `${['A', 'B', 'C', 'D'][i]}) ${o}`),
         minLength: 1,
@@ -152,10 +153,6 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         key: 'speaking_task',
         index: 3,
         type: 'text_input',
-        teacherMessages: [
-          { text: "Now let's hear you actually speak.", delay: 0,    audioMode: 'static', audioKey: 'speaking_transition' },
-          { text: topic.speakingPrompt,                 delay: 1100, audioMode: 'static', audioKey: `speaking_prompt_${session.interest_area}` },
-        ],
         prompt: topic.speakingPrompt,
         placeholder: topic.speakingPlaceholder,
         minLength: 10,
@@ -167,9 +164,6 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         key: 'speaking_followup',
         index: 4,
         type: 'text_input',
-        teacherMessages: [
-          { text: topic.speakingFollowUpQuestion, delay: 0, audioMode: 'static', audioKey: `speaking_followup_${session.interest_area}` },
-        ],
         prompt: topic.speakingFollowUpQuestion,
         placeholder: topic.speakingFollowUpPlaceholder,
         minLength: 5,
@@ -181,10 +175,6 @@ export function buildStep(session: DemoSession, stepIndex: number): StepContent 
         key: 'writing_task',
         index: 5,
         type: 'text_input',
-        teacherMessages: [
-          { text: "Last one — this is where I see how you actually think in writing.", delay: 0,    audioMode: 'static', audioKey: 'writing_transition' },
-          { text: topic.writingPrompt,                                                 delay: 1200, audioMode: 'static', audioKey: `writing_prompt_${session.interest_area}` },
-        ],
         prompt: topic.writingPrompt,
         placeholder: topic.writingPlaceholder,
         minLength: 20,
