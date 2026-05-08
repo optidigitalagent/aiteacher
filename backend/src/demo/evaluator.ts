@@ -125,6 +125,7 @@ Rules:
 - correction: an improved version of EXACTLY what the student said — fix grammar and word order only. NEVER add new reasons, emotions, details, or sentences not present in the student's answer. If they said "I like my school and timetable", write "I like my school and my timetable" — not "I like my school and timetable. They help me learn." Set to null only if grammar was already correct and complete.
 - Score range: 6-8 for real attempts with genuine content. Reserve 9-10 for exceptional answers. Reserve 5 for near-empty answers only.
 - ALWAYS end with a question or clear instruction — the student must know what to do next.
+- If earlier warm-up context is provided, reference it naturally when relevant (e.g. "You mentioned X earlier — that same idea applies here...") — only if it genuinely connects to what they said now. Skip if it doesn't.
 - Keep feedback under 55 words total.`
 
   const voiceNote = isVoiceLike
@@ -134,11 +135,13 @@ Rules:
     ? '\nNote: student included a help request inside their answer — briefly acknowledge it ("I can see what you meant —") then evaluate the answer itself.'
     : ''
 
+  const warmUpAnswer = (session.answers['warm_up'] ?? '').slice(0, 100)
+
   const userPrompt = `Prompt given to student: "${topic.speakingPrompt}"
 Student answer: "${answer}"${voiceNote}${helpNote}
 Student confidence level: ${session.speaking_confidence}
 Teacher style: ${session.teacher_style}
-Interest area: ${topic.label}`
+Interest area: ${topic.label}${warmUpAnswer ? `\nEarlier warm-up (student said): "${warmUpAnswer}"` : ''}`
 
   try {
     const res = await getClient().chat.completions.create({
@@ -198,13 +201,21 @@ Rules:
 - If truly no readable words: score 2, say "Write 2-3 real English sentences about the topic — even simple ones count."
 - Score range: 6-8 for real attempts with genuine content. Reserve 9-10 for strong, well-structured responses. Reserve 5 for near-empty attempts only.
 - ALWAYS end with a question or clear instruction — student must know exactly what to do next.
+- If earlier context (speaking answer, warm-up) is provided, briefly reference it when naturally relevant — skip if it doesn't connect.
 - Keep feedback under 60 words total.`
+
+  const speakingAnswer = (session.answers['speaking_task'] ?? '').slice(0, 100)
+  const warmUpAnswer   = (session.answers['warm_up'] ?? '').slice(0, 60)
+  const contextLines   = [
+    speakingAnswer && `Speaking answer earlier: "${speakingAnswer}"`,
+    warmUpAnswer   && `Warm-up topic (student said): "${warmUpAnswer}"`,
+  ].filter(Boolean).join('\n')
 
   const userPrompt = `Writing prompt: "${topic.writingPrompt}"
 Student answer: "${answer}"
 Student confidence: ${session.speaking_confidence}
 Teacher style: ${session.teacher_style}
-Interest area: ${topic.label}`
+Interest area: ${topic.label}${contextLines ? `\n${contextLines}` : ''}`
 
   try {
     const res = await getClient().chat.completions.create({
