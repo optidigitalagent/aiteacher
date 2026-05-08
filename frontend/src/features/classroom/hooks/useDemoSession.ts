@@ -593,8 +593,11 @@ export function useDemoSession({
           console.log(`[demo-advance] mic_interrupt delay=3000ms nextStep=${j.nextStep.key} fromStep=${step.key}`)
           await sleep(3000)
         } else {
-          console.log(`[demo-advance] allowed nextStep=${j.nextStep.key} fromStep=${step.key}`)
-          await sleep(600)
+          // Give the student time to absorb the AI feedback before the next step fires.
+          // 600ms felt too abrupt; 1400ms lands better after TTS finishes speaking.
+          const advanceDelay = Math.max(1400, Math.min(2200, 1000 + feedbackText.length * 8))
+          console.log(`[demo-advance] allowed nextStep=${j.nextStep.key} fromStep=${step.key} delay=${advanceDelay}ms`)
+          await sleep(advanceDelay)
         }
 
         // Guard: if the student already submitted at the next step during the delay,

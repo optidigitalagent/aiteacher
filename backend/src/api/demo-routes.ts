@@ -10,6 +10,7 @@ import {
   buildFollowUpFeedback,
   buildConfusedHint,
   buildStudentQuestionResponse,
+  buildTaskClarification,
   getTotalSteps,
   type DemoSession,
   type ScoreRecord,
@@ -32,6 +33,7 @@ import {
   detectStudentQuestion,
   detectToxicity,
   detectMetaHelpIntent,
+  detectEmbeddedConfusion,
   normalizeVoiceTranscript,
   analyzeAnswerQuality,
 } from '../demo/abuse-guard.js'
@@ -328,6 +330,24 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
         return
       }
+      // Single-word answers need one retry — warm_up_followup asks for elaboration
+      // immediately after, so we want at least a short phrase before advancing.
+      // Without this, the student hears "give me a sentence" feedback AND the
+      // follow-up question back-to-back before they can answer either.
+      const wuWordCount = answer.trim().split(/\s+/).filter(Boolean).length
+      if (wuWordCount === 1) {
+        const wuRetries = await getStepRetries(sessionId, stepKey)
+        if (wuRetries < 1) {
+          await incrementStepRetries(sessionId, stepKey)
+          await incrementAttempts(sessionId)
+          const word = answer.trim()
+          const hint = `${word.charAt(0).toUpperCase() + word.slice(1)} — give me a bit more. Try: "I really like ${word} because..." — one sentence is enough.`
+          res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(hint, stepPrompt) })
+          return
+        }
+        // Second attempt still one word — accept so the student isn't trapped
+      }
+
       // VALID or VALID_WEAK_ENGLISH — advance (warm_up is calibration only)
       feedbackMessage = buildWarmUpFeedback(session, answer)
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
@@ -420,6 +440,14 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         return
       }
 
+      // ── 0b. Embedded confusion — student is confused about the question itself ──
+      if (detectEmbeddedConfusion(answer)) {
+        console.log('[demo-meta-help] embedded_confusion step=speaking_followup')
+        const clarification = buildTaskClarification(session, 'speaking_followup', stepPrompt)
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: clarification, spokenMessage: clarification.slice(0, 200) })
+        return
+      }
+
       const classified = classifyInput(answer, expectedStep.minLength)
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=speaking_followup')
@@ -475,6 +503,16 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       if (detectStudentQuestion(answer)) {
         const response = buildStudentQuestionResponse(session, stepPrompt)
         res.status(422).json({ code: 'STUDENT_QUESTION', message: response })
+        return
+      }
+
+      // ── 0c. Embedded confusion — student is confused even when pattern not at start ──
+      // Catches "I will describe it like... what should I describe, I don't understand"
+      // detectStudentQuestion only matches anchored-to-start patterns.
+      if (detectEmbeddedConfusion(answer)) {
+        console.log(`[demo-meta-help] embedded_confusion step=${stepKey}`)
+        const clarification = buildTaskClarification(session, stepKey, stepPrompt)
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: clarification, spokenMessage: clarification.slice(0, 200) })
         return
       }
 
@@ -636,6 +674,30 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
             }
 
             const evalAnswer = voiceNorm.isVoiceLike ? voiceNorm.normalizedText : rawAnswer
+
+            // ── 4a-pre. "Cannot do this task" detection ──────────────────────
+            // Student honestly says they have no project/experience to draw on.
+            // Instead of generic QUALITY_RETRY, redirect with an alternative framing
+            // that makes it possible for them to answer — then accept on the next try.
+            const cannotDoTask =
+              /\bi\s+don'?t\s+(?:have|had)\s+(?:any\w*|a\s+\w+)\s*(?:like\s+this|similar|to\s+(?:share|talk\s+about)|at\s+all)?\b/i.test(evalAnswer) ||
+              /\bi\s+(?:never\s+had|didn'?t\s+have|don'?t\s+really\s+have)\s+(?:a\s+)?(?:project|assignment|class\s+moment|presentation)\b/i.test(evalAnswer) ||
+              /\bthere\s+(?:is|was|isn'?t|wasn'?t)\s+(?:nothing|no\s+project|no\s+assignment|nothing\s+like\s+this)\b/i.test(evalAnswer)
+
+            if (cannotDoTask && qualityRetryCount < expectedStep.maxRetries) {
+              await incrementStepRetries(sessionId, stepKey)
+              await incrementAttempts(sessionId)
+              console.log(`[demo-redirect] cannot_do_task step=speaking_task retry=${qualityRetryCount}`)
+              const redirect = qualityRetryCount === 0
+                ? "That's fine — let me rephrase. Think of any time this school year when you put effort into something: studying for a test, finishing a homework, understanding a difficult topic in class. Even something small. What comes to mind first?"
+                : "Even the smallest thing works — just describe any school task you completed this year. Start with 'I worked on...' and tell me what it was."
+              res.status(422).json({
+                code: 'QUALITY_RETRY',
+                message: ensureTeacherContinues(redirect, stepPrompt),
+                spokenMessage: redirect.split('.')[0] + '.',
+              })
+              return
+            }
 
             // ── 4a. Rule-based weak-answer gate (zero AI cost) ──────────────
             const weakCheck = analyzeAnswerQuality(evalAnswer, stepKey)
@@ -1001,10 +1063,18 @@ router.post('/demo/tts', requireAuth, async (req: Request, res: Response): Promi
       : { calls_used: 0, chars_used: 0 }
 
     // Budget + type check
+    console.log(`[demo-tts] budget_state calls_used=${usage.calls_used} chars_used=${usage.chars_used} type=${messageType}`)
     const check = canUseDemoTTS(usage.chars_used, usage.calls_used, messageType, text.length)
     if (!check.allowed) {
-      res.status(429).json({ code: 'TTS_LIMIT_REACHED', reason: check.reason })
-      return
+      // final_closing should NEVER be blocked — if we somehow get here, force it through.
+      // This is a safety net; canUseDemoTTS already has an unconditional bypass for final_closing.
+      if (messageType === 'final_closing') {
+        console.warn(`[demo-tts] WARNING: final_closing blocked by budget (reason=${check.reason}) — forcing through. calls_used=${usage.calls_used}`)
+        // fall through to generation below
+      } else {
+        res.status(429).json({ code: 'TTS_LIMIT_REACHED', reason: check.reason })
+        return
+      }
     }
 
     // Cache check — avoids repeat API cost for replays

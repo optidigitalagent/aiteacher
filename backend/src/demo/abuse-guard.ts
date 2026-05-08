@@ -610,6 +610,27 @@ export function detectMetaHelpIntent(text: string): boolean {
   return META_HELP_PATTERNS.some(p => p.test(text))
 }
 
+// ─── Embedded confusion detection ────────────────────────────────────────────
+// Detects when a student's message CONTAINS a clarification request even if it
+// doesn't START with a recognized student-question pattern. Used in speaking steps
+// so the teacher clarifies instead of evaluating a confused non-answer.
+// Only fires on shorter messages (≤ 20 words) to avoid false positives on
+// genuine answers that mention confusion as a filler ("I was confused but...").
+
+export function detectEmbeddedConfusion(text: string): boolean {
+  const lower = text.toLowerCase().trim()
+  const wordCount = lower.split(/\s+/).filter(Boolean).length
+  if (wordCount > 20) return false   // long answers are real attempts, not confusion
+
+  if (/\bwhat\s+should\s+i\s+(?:describe|say|write|answer|talk\s+about)\b/i.test(lower)) return true
+  if (/\bi\s+don'?t\s+understand\s+(?:the\s+)?(?:question|task|what\s+you\s+mean|this)\b/i.test(lower)) return true
+  if (/\bcan\s+you\s+(?:tell|explain|clarify)\s+(?:me|what)\b/i.test(lower)) return true
+  if (/\bwhat\s+(?:do\s+you\s+want\s+(?:me\s+to\s+)?(?:say|describe|write)|are\s+you\s+asking)\b/i.test(lower)) return true
+  if (/\bwhat\s+(?:should|must|do)\s+i\s+(?:describe|say|answer|write|explain)\b/i.test(lower)) return true
+
+  return false
+}
+
 // ─── Voice transcript normalization ──────────────────────────────────────────
 // Detects thinking-aloud voice input and extracts the student's final intended
 // answer. Returns a structured VoiceNormResult with confidence and meta-help flag.

@@ -243,9 +243,12 @@ export function buildWarmUpFeedback(_session: DemoSession, answer: string): stri
   const wordCount = words.length
 
   if (wordCount <= 3) {
+    // Short answer accepted (after retry floor in routes.ts) — just acknowledge.
+    // warm_up_followup fires immediately after with its own elaboration question,
+    // so we must NOT end this message with a question or the student hears two at once.
     const word = answer.trim()
     const cap = word.charAt(0).toUpperCase() + word.slice(1)
-    return `${cap} — that's a start. Give me one full sentence: "I really like ${word} because..." — I want to hear your actual opinion.`
+    return `${cap} — got it. I'll use that today.`
   }
 
   // School subjects — respond to what the student actually said
@@ -413,6 +416,27 @@ export function buildStudentQuestionResponse(session: DemoSession, stepPrompt: s
     rule,
     `Now let's return to the task: ${stepPrompt}`,
   ].join('\n')
+}
+
+// Returns a clarification for embedded confusion (student asks "what should I describe").
+// More specific than buildConfusedHint — directly rephrases the task in simpler terms.
+export function buildTaskClarification(session: DemoSession, stepKey: string, stepPrompt: string): string {
+  const topic = TOPIC_PACKS[session.interest_area] ?? TOPIC_PACKS['school_life']!
+
+  if (stepKey === 'speaking_followup') {
+    // Student often confused here because they said "I don't have a project" earlier.
+    // Rephrase to be about ANY learning moment, not necessarily a formal project.
+    return `Let me rephrase — I'm asking: if you had to teach this topic to a younger student, how would you explain it simply? You can imagine it, or use any subject you know something about.`
+  }
+  if (stepKey === 'speaking_task') {
+    const frame = topic.speakingPlaceholder.replace(/^e\.g\.\s*/i, '')
+    return `Let me clarify — I'm asking you to describe any moment at ${topic.label.replace('&', 'or')} you actually remember. Something like: "${frame}"`
+  }
+  if (stepKey === 'writing_task') {
+    const frame = topic.writingPlaceholder.replace(/^e\.g\.\s*/i, '')
+    return `Let me clarify — write about ${stepPrompt.toLowerCase().slice(0, 60)}... For example: "${frame}"`
+  }
+  return `Let me clarify — the question is: "${stepPrompt}". Try starting with "I…" and describe something real.`
 }
 
 export function buildConfusedHint(session: DemoSession, stepKey: string, retryCount: number): string {
