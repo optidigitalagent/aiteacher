@@ -1154,22 +1154,25 @@ router.post('/demo/dev-reset', requireAuth, async (req: Request, res: Response):
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Up to two sentences of feedback for TTS — acknowledgment + instruction, without correction blocks.
+// Up to three sentences of feedback for TTS — enough for acknowledgment + correction + instruction.
+// Cuts before ✗/✓ correction display blocks — those are visual, not spoken.
 function buildSpokenFeedback(feedbackMsg: string): string {
   const clean = feedbackMsg.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim()
-  // Cut before ✗ correction blocks or newlines (correction belongs in text, not voice)
-  const cutAt = clean.search(/\n|✗|✓/)
+  // Cut before correction markers (✓ ✗) — these are for text display only
+  const cutAt = clean.search(/✗|✓/)
   const base = cutAt > 0 ? clean.slice(0, cutAt) : clean
-  // Find up to two sentence boundaries so the teacher sounds complete, not cut off
-  let endPos = base.length
+  // Replace literal \n with space so sentence-boundary scan works across line breaks
+  const flat = base.replace(/\n+/g, ' ').trim()
+  // Find up to three sentence boundaries so the teacher sounds complete, not cut off
+  let endPos = flat.length
   let count = 0
-  for (let i = 0; i < base.length - 1; i++) {
-    if (/[.!?]/.test(base[i]) && /[\s"']/.test(base[i + 1])) {
+  for (let i = 0; i < flat.length - 1; i++) {
+    if (/[.!?]/.test(flat[i]) && /[\s"']/.test(flat[i + 1])) {
       count++
-      if (count >= 2) { endPos = i + 1; break }
+      if (count >= 3) { endPos = i + 1; break }
     }
   }
-  return base.slice(0, endPos).slice(0, 220).trim()
+  return flat.slice(0, endPos).slice(0, 300).trim()
 }
 
 // Closing line spoken by the AI teacher at the end of the last step.

@@ -145,16 +145,23 @@ export function canUseDemoTTS(
     return { allowed: false, reason: `type_not_allowed:${messageType}` }
   }
 
-  const isFinal = messageType === 'final_closing'
+  // final_closing is the single most critical UX moment — always allow regardless of budget.
+  // It fires exactly once per session (~80 chars). Any env-configured budget cap cannot block it.
+  if (messageType === 'final_closing') {
+    const remaining = maxCallsPerSession - callsUsed
+    console.log(`[demo-tts-budget] callsUsed=${callsUsed} charsUsed=${charsUsed} callsLimit=${maxCallsPerSession} charsLimit=${maxCharsPerSession} remaining=${remaining} priority=P0_final type=final_closing (unconditional)`)
+    console.log(`[demo-tts] allowed type=final_closing (bypass budget)`)
+    return { allowed: true }
+  }
+
   // Normal types: blocked once the reserved tail is reached, saving budget for final_closing.
-  // final_closing: blocked only at the absolute session ceiling.
   const normalBudget = maxCallsPerSession - finalClosingReserved
 
   if (callsUsed >= maxCallsPerSession) {
     console.log(`[demo-tts] blocked reason=call_limit_total calls=${callsUsed} type=${messageType}`)
     return { allowed: false, reason: 'call_limit' }
   }
-  if (!isFinal && callsUsed >= normalBudget) {
+  if (callsUsed >= normalBudget) {
     console.log(`[demo-tts] blocked reason=normal_budget_reserved calls=${callsUsed} normalBudget=${normalBudget} type=${messageType}`)
     return { allowed: false, reason: 'call_limit' }
   }
@@ -164,8 +171,7 @@ export function canUseDemoTTS(
   }
 
   const remaining = maxCallsPerSession - callsUsed
-  const priority  = isFinal ? 'P0_final' : 'normal'
-  console.log(`[demo-tts-budget] callsUsed=${callsUsed} charsUsed=${charsUsed} callsLimit=${maxCallsPerSession} charsLimit=${maxCharsPerSession} remaining=${remaining} priority=${priority} type=${messageType}`)
+  console.log(`[demo-tts-budget] callsUsed=${callsUsed} charsUsed=${charsUsed} callsLimit=${maxCallsPerSession} charsLimit=${maxCharsPerSession} remaining=${remaining} priority=normal type=${messageType}`)
   console.log(`[demo-tts] allowed type=${messageType} chars=${messageLength}`)
   return { allowed: true }
 }

@@ -526,11 +526,15 @@ export function useDemoSession({
 
       // Play feedback voice and AWAIT it before transitioning to the next step.
       // isSpeaking is already true from the typing animation above — no gap.
+      // Capture generation AFTER the per-turn increment so any interruptAudio()
+      // call during playback will push gen past this baseline — detectable below.
+      let genBeforeVoice = voiceGenerationRef.current
       if (effectiveTtsType) {
         const ttsText = stripMarkdownForTts(j.feedback.spokenFeedback ?? j.feedback.message).slice(0, 300)
         const isFinal = effectiveTtsType === 'final_closing'
         console.log(`[demo-turn] feedbackId=${feedbackId} stepKey=${step.key} ttsType=${effectiveTtsType} speakable=${!voiceMutedRef.current} isFinal=${isFinal}`)
         voiceGenerationRef.current += 1
+        genBeforeVoice = voiceGenerationRef.current  // capture post-increment baseline
         setVoiceMessages(prev => ({ ...prev, [feedbackId]: { type: effectiveTtsType, text: ttsText } }))
         if (!voiceMutedRef.current) {
           // isSpeaking already true — teacher indicator stays live through TTS fetch + playback
@@ -570,21 +574,45 @@ export function useDemoSession({
       }
 
       if (j.nextStep) {
-        await sleep(600)
-        console.log(`[demo-advance] allowed nextStep=${j.nextStep.key} fromStep=${step.key}`)
+        // Detect if the user clicked mic during feedback playback (interrupted).
+        // voiceGenerationRef advances past genBeforeVoice only when interruptAudio() fires.
+        // When muted there is no voice, so no interrupt is possible.
+        const micInterruptedVoice = effectiveTtsType != null &&
+                                    !voiceMutedRef.current &&
+                                    voiceGenerationRef.current !== genBeforeVoice
+
+        // Always update step ref immediately so any concurrent mic submission uses
+        // the correct step key (matching the DB state after the advance).
         setCurrentStep(j.nextStep)
-        await playMessages(j.nextStep.teacherMessages)
-        // Schedule TTS fallback for step messages where static audio file is missing
-        const nextAllStatic = j.nextStep.teacherMessages.every(hasWorkingStaticAudio)
-        const nextBubbleId = currentTeacherMsgRef.current
-        if (!nextAllStatic && nextBubbleId && j.nextStep.teacherMessages.length > 0) {
-          // Use only the text of messages that lack a working static file
-          const needsTts = j.nextStep.teacherMessages.filter(m => !hasWorkingStaticAudio(m))
-          const nextText = stripMarkdownForTts(needsTts.map(m => m.text).join(' ')).slice(0, 300)
-          setChatMessages(prev => prev.map(m =>
-            m.id === nextBubbleId ? { ...m, messageType: 'main_prompt' } : m,
-          ))
-          scheduleVoice(nextBubbleId, 'main_prompt', nextText)
+        currentStepRef.current = j.nextStep
+
+        if (micInterruptedVoice) {
+          // User clicked mic to speak — delay the next step's audio so we don't
+          // blast grammar/speaking transition over their active recording.
+          // After 3 s the recording is almost certainly done and audio is safe to play.
+          console.log(`[demo-advance] mic_interrupt delay=3000ms nextStep=${j.nextStep.key} fromStep=${step.key}`)
+          await sleep(3000)
+        } else {
+          console.log(`[demo-advance] allowed nextStep=${j.nextStep.key} fromStep=${step.key}`)
+          await sleep(600)
+        }
+
+        // Guard: if the student already submitted at the next step during the delay,
+        // currentStepRef will have advanced further — skip redundant audio.
+        if (currentStepRef.current?.key === j.nextStep.key) {
+          await playMessages(j.nextStep.teacherMessages)
+          // Schedule TTS fallback for step messages where static audio file is missing
+          const nextAllStatic = j.nextStep.teacherMessages.every(hasWorkingStaticAudio)
+          const nextBubbleId = currentTeacherMsgRef.current
+          if (!nextAllStatic && nextBubbleId && j.nextStep.teacherMessages.length > 0) {
+            // Use only the text of messages that lack a working static file
+            const needsTts = j.nextStep.teacherMessages.filter(m => !hasWorkingStaticAudio(m))
+            const nextText = stripMarkdownForTts(needsTts.map(m => m.text).join(' ')).slice(0, 300)
+            setChatMessages(prev => prev.map(m =>
+              m.id === nextBubbleId ? { ...m, messageType: 'main_prompt' } : m,
+            ))
+            scheduleVoice(nextBubbleId, 'main_prompt', nextText)
+          }
         }
       }
     } catch {

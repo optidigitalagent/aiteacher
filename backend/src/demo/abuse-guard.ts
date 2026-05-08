@@ -244,8 +244,9 @@ export function detectVocabWord(text: string): string | null {
     return VOCAB_CANONICAL[word] ?? null
   }
 
-  // Single known vocab word with optional question mark: "convince?" or "major?"
-  const singleWord = lower.match(/^([a-z]{3,})\?*$/)
+  // Single known vocab word with explicit question mark only: "convince?" or "major?"
+  // A bare word without "?" is more likely an answer than a vocabulary query.
+  const singleWord = lower.match(/^([a-z]{3,})\?$/)
   if (singleWord) {
     const word = singleWord[1] ?? ''
     return VOCAB_CANONICAL[word] ?? null
