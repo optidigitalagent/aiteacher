@@ -449,7 +449,8 @@ export function useDemoSession({
       })
 
       if (!res.ok) {
-        const j = (await res.json()) as { message?: string; code?: string; spokenMessage?: string }
+        const j = (await res.json()) as { message?: string; code?: string; spokenMessage?: string; conversationState?: { expectsStudentReply: boolean; mayAdvance: boolean; reason: string } }
+        console.log(`[demo-conversation] stepKey=${step.key} responseType=${j.code ?? 'error'} expectsStudentReply=true mayAdvance=false reason=${j.conversationState?.reason ?? j.code?.toLowerCase() ?? 'blocked'}`)
         // Teacher responds — not a system error, so show typing indicator first
         setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: 'typing', sender: 'ai', isTyping: true }])
         setIsSpeaking(true)
@@ -485,11 +486,26 @@ export function useDemoSession({
       }
 
       const j = (await res.json()) as {
-        feedback:      { message: string; spokenFeedback?: string; correction: string | null; score: number | null; correct: boolean | null }
-        nextStep:      DemoStepContent | null
-        finalResult:   DemoFinalResult | null
-        isComplete:    boolean
-        finalAudioKey: string | null
+        feedback:          { message: string; spokenFeedback?: string; correction: string | null; score: number | null; correct: boolean | null }
+        nextStep:          DemoStepContent | null
+        finalResult:       DemoFinalResult | null
+        isComplete:        boolean
+        finalAudioKey:     string | null
+        conversationState?: { expectsStudentReply: boolean; mayAdvance: boolean; reason: string }
+      }
+
+      // Gate: if backend explicitly says not to advance (shouldn't happen for 200s, but guard it)
+      console.log(`[demo-conversation] stepKey=${step.key} responseType=${j.conversationState?.reason ?? 'step_accepted'} expectsStudentReply=${j.conversationState?.expectsStudentReply ?? false} mayAdvance=${j.conversationState?.mayAdvance ?? true}`)
+      if (j.conversationState?.mayAdvance === false) {
+        // Backend returned 200 but said don't advance — show feedback and stop
+        console.log(`[demo-advance] blocked stepKey=${step.key} reason=${j.conversationState.reason}`)
+        const blockedId = uid()
+        setChatMessages(prev => [...prev, { id: 'typing', sender: 'ai', isTyping: true }])
+        setIsSpeaking(true)
+        await sleep(800)
+        setIsSpeaking(false)
+        setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: blockedId, sender: 'ai', text: buildFeedbackText(j.feedback, displayAnswer) }])
+        return
       }
 
       await sleep(500)
@@ -596,7 +612,7 @@ export function useDemoSession({
           // Give the student time to absorb the AI feedback before the next step fires.
           // 600ms felt too abrupt; 1400ms lands better after TTS finishes speaking.
           const advanceDelay = Math.max(1400, Math.min(2200, 1000 + feedbackText.length * 8))
-          console.log(`[demo-advance] allowed nextStep=${j.nextStep.key} fromStep=${step.key} delay=${advanceDelay}ms`)
+          console.log(`[demo-advance] allowed nextStep=${j.nextStep.key} fromStep=${step.key} delay=${advanceDelay}ms mayAdvance=${j.conversationState?.mayAdvance ?? true} reason=${j.conversationState?.reason ?? 'step_accepted'}`)
           await sleep(advanceDelay)
         }
 

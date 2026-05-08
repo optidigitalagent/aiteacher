@@ -69,6 +69,23 @@ function simpleHash(s: string): string {
   return Math.abs(h).toString(16)
 }
 
+// ── Conversation ownership state ───────────────────────────────────────────
+// Returned in every /demo/answer response so the frontend knows whether
+// the AI teacher expects a student reply (mayAdvance=false) or is done.
+interface ConversationState {
+  expectsStudentReply: boolean
+  mayAdvance: boolean
+  reason: string
+}
+
+function convWait(reason: string): { conversationState: ConversationState } {
+  return { conversationState: { expectsStudentReply: true, mayAdvance: false, reason } }
+}
+
+function convAdvance(reason = 'step_accepted'): { conversationState: ConversationState } {
+  return { conversationState: { expectsStudentReply: false, mayAdvance: true, reason } }
+}
+
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
 async function loadSession(sessionId: string, userId: string): Promise<DemoSession | null> {
@@ -390,6 +407,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       // Word-count floor: a one-word or very short answer needs elaboration — but only
       // ask once. If the student already tried and kept it short, accept and move on.
       // Prevents the "ocean" → rejection → "it is ocean" → rejection → frustration loop.
+      let wuFollowupShortAccept = false
       const wuFollowupWordCount = answer.trim().split(/\s+/).filter(Boolean).length
       if (wuFollowupWordCount <= 5) {
         const wuFollowupRetries = await getStepRetries(sessionId, stepKey)
@@ -397,12 +415,17 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
           await incrementStepRetries(sessionId, stepKey)
           await incrementAttempts(sessionId)
           const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with your actual reasoning.", stepPrompt)
-          res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+          console.log(`[demo-conversation] stepKey=warm_up_followup responseType=INVALID_ANSWER expectsStudentReply=true mayAdvance=false reason=short_answer_retry`)
+          res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convWait('short_answer_retry') })
           return
         }
-        // Second attempt still short — accept with brief feedback, don't trap further
+        // Second attempt still short — accept with clean acknowledgement only.
+        // buildFollowUpFeedback would say "give me more" which contradicts advancing.
+        wuFollowupShortAccept = true
       }
-      feedbackMessage = buildFollowUpFeedback(session, answer, 'warm_up_followup')
+      feedbackMessage = wuFollowupShortAccept
+        ? 'Got it — let\'s keep going.'
+        : buildFollowUpFeedback(session, answer, 'warm_up_followup')
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
         correctionMessage = classified.correction
       }
@@ -436,7 +459,8 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       // ── 0. Student question — answer grammar/task question, return to current task ──
       if (detectStudentQuestion(answer)) {
         const response = buildStudentQuestionResponse(session, stepPrompt)
-        res.status(422).json({ code: 'STUDENT_QUESTION', message: response })
+        console.log(`[demo-conversation] stepKey=speaking_followup responseType=STUDENT_QUESTION expectsStudentReply=true mayAdvance=false reason=student_question`)
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: response, ...convWait('student_question') })
         return
       }
 
@@ -444,7 +468,8 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       if (detectEmbeddedConfusion(answer)) {
         console.log('[demo-meta-help] embedded_confusion step=speaking_followup')
         const clarification = buildTaskClarification(session, 'speaking_followup', stepPrompt)
-        res.status(422).json({ code: 'STUDENT_QUESTION', message: clarification, spokenMessage: clarification.slice(0, 200) })
+        console.log(`[demo-conversation] stepKey=speaking_followup responseType=STUDENT_QUESTION expectsStudentReply=true mayAdvance=false reason=embedded_confusion`)
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: clarification, spokenMessage: clarification.slice(0, 200), ...convWait('embedded_confusion') })
         return
       }
 
@@ -463,6 +488,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       }
       // Word-count floor: ask once for a full sentence, but accept on the second try
       // even if still short — prevents the student from being permanently stuck.
+      let sfShortAccept = false
       const sfWordCount = answer.trim().split(/\s+/).filter(Boolean).length
       if (sfWordCount <= 3) {
         const sfRetries = await getStepRetries(sessionId, stepKey)
@@ -470,12 +496,16 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
           await incrementStepRetries(sessionId, stepKey)
           await incrementAttempts(sessionId)
           const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with that idea.", stepPrompt)
-          res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+          console.log(`[demo-conversation] stepKey=speaking_followup responseType=INVALID_ANSWER expectsStudentReply=true mayAdvance=false reason=short_answer_retry`)
+          res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convWait('short_answer_retry') })
           return
         }
-        // Already asked once — accept short answer and continue
+        // Already asked once — accept with a neutral close, not "give me more".
+        sfShortAccept = true
       }
-      feedbackMessage = buildFollowUpFeedback(session, answer, 'speaking_followup')
+      feedbackMessage = sfShortAccept
+        ? 'Got it — let\'s keep going.'
+        : buildFollowUpFeedback(session, answer, 'speaking_followup')
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
         correctionMessage = classified.correction
       }
@@ -502,7 +532,8 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       // Must run before classifyInput — grammar questions parse as VALID and would hit AI eval.
       if (detectStudentQuestion(answer)) {
         const response = buildStudentQuestionResponse(session, stepPrompt)
-        res.status(422).json({ code: 'STUDENT_QUESTION', message: response })
+        console.log(`[demo-conversation] stepKey=${stepKey} responseType=STUDENT_QUESTION expectsStudentReply=true mayAdvance=false reason=student_question`)
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: response, ...convWait('student_question') })
         return
       }
 
@@ -512,7 +543,8 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       if (detectEmbeddedConfusion(answer)) {
         console.log(`[demo-meta-help] embedded_confusion step=${stepKey}`)
         const clarification = buildTaskClarification(session, stepKey, stepPrompt)
-        res.status(422).json({ code: 'STUDENT_QUESTION', message: clarification, spokenMessage: clarification.slice(0, 200) })
+        console.log(`[demo-conversation] stepKey=${stepKey} responseType=STUDENT_QUESTION expectsStudentReply=true mayAdvance=false reason=embedded_confusion`)
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: clarification, spokenMessage: clarification.slice(0, 200), ...convWait('embedded_confusion') })
         return
       }
 
@@ -663,12 +695,14 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
             if (voiceNorm.confidence === 'low' && voiceNorm.isVoiceLike && qualityRetryCount < expectedStep.maxRetries) {
               await incrementStepRetries(sessionId, stepKey)
               await incrementAttempts(sessionId)
+              console.log(`[demo-conversation] stepKey=${stepKey} responseType=QUALITY_RETRY expectsStudentReply=true mayAdvance=false reason=low_confidence`)
               res.status(422).json({
                 code: 'QUALITY_RETRY',
                 message: ensureTeacherContinues(
                   "I could hear you were thinking — but I couldn't quite catch your final answer. Say it one more time.",
                   stepPrompt,
                 ),
+                ...convWait('low_confidence'),
               })
               return
             }
@@ -691,10 +725,12 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
               const redirect = qualityRetryCount === 0
                 ? "That's fine — let me rephrase. Think of any time this school year when you put effort into something: studying for a test, finishing a homework, understanding a difficult topic in class. Even something small. What comes to mind first?"
                 : "Even the smallest thing works — just describe any school task you completed this year. Start with 'I worked on...' and tell me what it was."
+              console.log(`[demo-conversation] stepKey=${stepKey} responseType=QUALITY_RETRY expectsStudentReply=true mayAdvance=false reason=cannot_do_task`)
               res.status(422).json({
                 code: 'QUALITY_RETRY',
                 message: ensureTeacherContinues(redirect, stepPrompt),
                 spokenMessage: redirect.split('.')[0] + '.',
+                ...convWait('cannot_do_task'),
               })
               return
             }
@@ -705,9 +741,11 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
               await incrementStepRetries(sessionId, stepKey)
               await incrementAttempts(sessionId)
               const base = weakCheck.suggestedResponse ?? buildConfusedHint(session, stepKey, qualityRetryCount + 1)
+              console.log(`[demo-conversation] stepKey=${stepKey} responseType=QUALITY_RETRY expectsStudentReply=true mayAdvance=false reason=weak_answer`)
               res.status(422).json({
                 code: 'QUALITY_RETRY',
                 message: ensureTeacherContinues(base, stepPrompt),
+                ...convWait('weak_answer'),
               })
               return
             }
@@ -728,9 +766,11 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
             await incrementStepRetries(sessionId, stepKey)
             await incrementAttempts(sessionId)
             const base = weakCheck.suggestedResponse ?? buildConfusedHint(session, stepKey, qualityRetryCount + 1)
+            console.log(`[demo-conversation] stepKey=${stepKey} responseType=QUALITY_RETRY expectsStudentReply=true mayAdvance=false reason=weak_answer`)
             res.status(422).json({
               code: 'QUALITY_RETRY',
               message: ensureTeacherContinues(base, stepPrompt),
+              ...convWait('weak_answer'),
             })
             return
           }
@@ -760,10 +800,12 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
           await incrementStepRetries(sessionId, stepKey)
           await incrementAttempts(sessionId)
           const corrPart = score.correction ? `\n\nA more natural way: "${score.correction}"` : ''
+          console.log(`[demo-conversation] stepKey=${stepKey} responseType=QUALITY_RETRY expectsStudentReply=true mayAdvance=false reason=low_score score=${score.score}`)
           res.status(422).json({
             code: 'QUALITY_RETRY',
             message: ensureTeacherContinues(feedbackMessage + corrPart, stepPrompt),
             spokenMessage: buildSpokenFeedback(feedbackMessage),
+            ...convWait('low_score'),
           })
           return
         }
@@ -835,6 +877,8 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       ? buildClosingSpokenLine(score)
       : buildSpokenFeedback(feedbackMessage)
 
+    const stepReason = isLastStep ? 'final_step_accepted' : 'step_accepted'
+    console.log(`[demo-conversation] stepKey=${stepKey} responseType=${stepReason} expectsStudentReply=false mayAdvance=true`)
     res.json({
       feedback: {
         message: feedbackMessage,
@@ -847,6 +891,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       finalResult,
       isComplete: isLastStep,
       finalAudioKey: null,
+      ...convAdvance(stepReason),
     })
   } catch (err) {
     console.error('[demo/answer] error:', err instanceof Error ? err.message : err)
