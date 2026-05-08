@@ -190,7 +190,7 @@ export function useDemoSession({
   // ── Show an AI teacher message with typing animation + TTS ────────────────────
   // Always reveals the text bubble. TTS plays if not muted/exhausted.
   // Increments voiceGenerationRef before TTS so interruptAudio() can cancel mid-play.
-  const showAiMessage = useCallback(async (text: string, ttsType?: string): Promise<string> => {
+  const showAiMessage = useCallback(async (text: string, ttsType?: string, ttsOverride?: string): Promise<string> => {
     setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: 'typing', sender: 'ai', isTyping: true }])
     setIsSpeaking(true)
     await sleep(Math.min(600 + text.length * 8, 2000))
@@ -199,7 +199,7 @@ export function useDemoSession({
     setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: msgId, sender: 'ai', text }])
 
     if (ttsType) {
-      const ttsText = stripMarkdownForTts(text).slice(0, 350)
+      const ttsText = stripMarkdownForTts(ttsOverride ?? text).slice(0, 350)
       setVoiceMessages(prev => ({ ...prev, [msgId]: { type: ttsType, text: ttsText } }))
 
       if (!voiceMutedRef.current && !ttsLimitReachedRef.current) {
@@ -317,10 +317,10 @@ export function useDemoSession({
 
       const effectiveTtsType = j.isComplete ? 'final_closing' : feedbackMsgType
       const feedbackText = buildFeedbackText(j.feedback, displayAnswer)
-      const spokenFeedback = j.feedback.spokenFeedback ?? j.feedback.message
+      const spokenFeedback = j.feedback.spokenFeedback ?? undefined
 
       await sleep(400)
-      await showAiMessage(feedbackText, effectiveTtsType)
+      await showAiMessage(feedbackText, effectiveTtsType, spokenFeedback)
 
       setSelectedOption(null)
       setCompletedSteps(prev => [...prev, step.key])
@@ -354,7 +354,6 @@ export function useDemoSession({
         }
       }
 
-      void spokenFeedback  // referenced only for exhaustive-use; actual spoken text handled above
     } catch {
       setIsSpeaking(false)
       setChatMessages(prev => [
@@ -468,20 +467,13 @@ export function useDemoSession({
 
     void (async () => {
       try {
-        setChatMessages(prev => [...prev, { id: 'typing', sender: 'ai', isTyping: true }])
-        setIsSpeaking(true)
         const res = await fetch(`${API_BASE}/demo/help`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body:    JSON.stringify({ sessionId: sid, text: trimmed }),
         })
-        await sleep(800)
-        setIsSpeaking(false)
         const j = (await res.json()) as { message?: string }
-        setChatMessages(prev => [
-          ...prev.filter(m => !m.isTyping),
-          { id: uid(), sender: 'ai', text: j.message ?? "I couldn't process that help request." },
-        ])
+        await showAiMessage(j.message ?? "I couldn't process that help request.", 'key_correction')
       } catch {
         setIsSpeaking(false)
         setChatMessages(prev => [
@@ -490,7 +482,7 @@ export function useDemoSession({
         ])
       }
     })()
-  }, [token])
+  }, [token, showAiMessage])
 
   const handleTranslateMessage = useCallback(async (
     _messageId: string,
