@@ -69,21 +69,71 @@ function simpleHash(s: string): string {
   return Math.abs(h).toString(16)
 }
 
-// ── Conversation ownership state ───────────────────────────────────────────
-// Returned in every /demo/answer response so the frontend knows whether
-// the AI teacher expects a student reply (mayAdvance=false) or is done.
+// ── Conversation lifecycle state ───────────────────────────────────────────
+// Returned in every /demo/answer response. The frontend uses `mode` to decide
+// whether the AI teacher still owns the conversation (no static audio) or
+// whether the scripted engine can resume (static audio allowed).
+type ConversationMode =
+  | 'awaiting_reply'      // AI asked a question — student must respond; 422 path
+  | 'clarification'       // Student asked for help / is confused; AI clarified; 422 path
+  | 'retry'               // Weak/unclear answer; AI gives hint and waits; 422 path
+  | 'reflective_followup' // 200: DB advanced; AI feedback still asks follow-up; static audio blocked
+  | 'transition_ready'    // 200: mini-dialogue resolved; static audio may resume
+  | 'closing'             // 200: final step done; overlay after AI voice lifecycle
+
 interface ConversationState {
+  mode:                ConversationMode
   expectsStudentReply: boolean
-  mayAdvance: boolean
-  reason: string
+  mayAdvance:          boolean
+  reason:              string
 }
 
-function convWait(reason: string): { conversationState: ConversationState } {
-  return { conversationState: { expectsStudentReply: true, mayAdvance: false, reason } }
+function convRetry(reason: string): { conversationState: ConversationState } {
+  return { conversationState: { mode: 'retry', expectsStudentReply: true, mayAdvance: false, reason } }
+}
+function convClarification(reason: string): { conversationState: ConversationState } {
+  return { conversationState: { mode: 'clarification', expectsStudentReply: true, mayAdvance: false, reason } }
+}
+function convAwaitingReply(reason: string): { conversationState: ConversationState } {
+  return { conversationState: { mode: 'awaiting_reply', expectsStudentReply: true, mayAdvance: false, reason } }
+}
+function convReflectiveFollowup(reason: string): { conversationState: ConversationState } {
+  // mayAdvance: true — DB has advanced, frontend must update step ref for correct routing.
+  // mode: reflective_followup — frontend must NOT play the next step's static audio.
+  return { conversationState: { mode: 'reflective_followup', expectsStudentReply: true, mayAdvance: true, reason } }
+}
+function convTransitionReady(reason = 'step_accepted'): { conversationState: ConversationState } {
+  return { conversationState: { mode: 'transition_ready', expectsStudentReply: false, mayAdvance: true, reason } }
+}
+function convClosing(reason = 'final_step_accepted'): { conversationState: ConversationState } {
+  return { conversationState: { mode: 'closing', expectsStudentReply: false, mayAdvance: true, reason } }
 }
 
-function convAdvance(reason = 'step_accepted'): { conversationState: ConversationState } {
-  return { conversationState: { expectsStudentReply: false, mayAdvance: true, reason } }
+// Defensive guard — if teacher feedback contains a student-response request while
+// mode says transition_ready, override to reflective_followup to block static audio.
+// Never overrides closing (lesson must always end).
+function hasStudentResponseRequest(text: string): boolean {
+  if (text.includes('?')) return true
+  const lower = text.toLowerCase()
+  return (
+    /\btell\s+me\b/.test(lower) ||
+    /\bgive\s+me\b/.test(lower) ||
+    /\bsay\s+it\b/.test(lower) ||
+    /\bcan\s+you\b/.test(lower) ||
+    /\bdescribe\b/.test(lower) ||
+    /\btry\s+(?:again|saying|one\s+more|it\s+in)\b/.test(lower)
+  )
+}
+function guardedConvState(
+  state: ConversationState,
+  feedbackText: string,
+): { conversationState: ConversationState } {
+  if (state.mode === 'closing') return { conversationState: state }
+  if (state.mayAdvance && hasStudentResponseRequest(feedbackText)) {
+    console.warn(`[demo-conversation-guard] overriding to reflective_followup reason=${state.reason} text="${feedbackText.slice(0, 80)}"`)
+    return { conversationState: { mode: 'reflective_followup', expectsStudentReply: true, mayAdvance: true, reason: `guarded_${state.reason}` } }
+  }
+  return { conversationState: state }
 }
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
@@ -318,33 +368,33 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
     if (stepKey === 'warm_up') {
       const stepPrompt = expectedStep.prompt ?? ''
       if (detectMetaHelpIntent(answer)) {
-        res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey) })
+        res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey), ...convClarification('meta_help') })
         return
       }
       if (detectToxicity(answer)) {
         console.log('[demo-ai] moderation step=warm_up')
-        res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt) })
+        res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt), ...convRetry('moderation') })
         return
       }
       const classified = classifyInput(answer, expectedStep.minLength)
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=warm_up')
-        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt) })
+        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt), ...convClarification('vocab_help') })
         return
       }
       if (classified.cls === 'GIBBERISH' || classified.cls === 'REPETITION_SPAM') {
         const msg = ensureTeacherContinues("I couldn't understand that — try a real sentence.", stepPrompt)
-        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convRetry('gibberish') })
         return
       }
       if (classified.cls === 'CONFUSED') {
         const msg = ensureTeacherContinues(buildConfusedHint(session, 'warm_up', 0), stepPrompt)
-        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convRetry('confused') })
         return
       }
       if (classified.cls === 'SHORT') {
         const msg = ensureTeacherContinues(classified.message, stepPrompt)
-        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convRetry('short') })
         return
       }
       // Single-word answers need one retry — warm_up_followup asks for elaboration
@@ -359,7 +409,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
           await incrementAttempts(sessionId)
           const word = answer.trim()
           const hint = `${word.charAt(0).toUpperCase() + word.slice(1)} — give me a bit more. Try: "I really like ${word} because..." — one sentence is enough.`
-          res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(hint, stepPrompt) })
+          res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(hint, stepPrompt), ...convRetry('single_word_retry') })
           return
         }
         // Second attempt still one word — accept so the student isn't trapped
@@ -375,33 +425,33 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
     } else if (stepKey === 'warm_up_followup') {
       const stepPrompt = expectedStep.prompt ?? ''
       if (detectMetaHelpIntent(answer)) {
-        res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey) })
+        res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey), ...convClarification('meta_help') })
         return
       }
       if (detectToxicity(answer)) {
         console.log('[demo-ai] moderation step=warm_up_followup')
-        res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt) })
+        res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt), ...convRetry('moderation') })
         return
       }
       const classified = classifyInput(answer, expectedStep.minLength)
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=warm_up_followup')
-        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt) })
+        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt), ...convClarification('vocab_help') })
         return
       }
       if (classified.cls === 'GIBBERISH' || classified.cls === 'REPETITION_SPAM') {
         const msg = ensureTeacherContinues("I couldn't understand that — try a real sentence.", stepPrompt)
-        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convRetry('gibberish') })
         return
       }
       if (classified.cls === 'CONFUSED') {
         const msg = ensureTeacherContinues(buildConfusedHint(session, 'warm_up_followup', 0), stepPrompt)
-        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convRetry('confused') })
         return
       }
       if (classified.cls === 'SHORT') {
         const msg = ensureTeacherContinues(classified.message, stepPrompt)
-        res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+        res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convRetry('short') })
         return
       }
       // Word-count floor: a one-word or very short answer needs elaboration — but only
@@ -416,7 +466,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
           await incrementAttempts(sessionId)
           const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with your actual reasoning.", stepPrompt)
           console.log(`[demo-conversation] stepKey=warm_up_followup responseType=INVALID_ANSWER expectsStudentReply=true mayAdvance=false reason=short_answer_retry`)
-          res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convWait('short_answer_retry') })
+          res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convRetry('short_answer_retry') })
           return
         }
         // Second attempt still short — accept with clean acknowledgement only.
@@ -447,12 +497,12 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       const stepPrompt = expectedStep.prompt ?? ''
 
       if (detectMetaHelpIntent(answer)) {
-        res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey) })
+        res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey), ...convClarification('meta_help') })
         return
       }
       if (detectToxicity(answer)) {
         console.log('[demo-ai] moderation step=speaking_followup')
-        res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt) })
+        res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt), ...convRetry('moderation') })
         return
       }
 
@@ -460,7 +510,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       if (detectStudentQuestion(answer)) {
         const response = buildStudentQuestionResponse(session, stepPrompt)
         console.log(`[demo-conversation] stepKey=speaking_followup responseType=STUDENT_QUESTION expectsStudentReply=true mayAdvance=false reason=student_question`)
-        res.status(422).json({ code: 'STUDENT_QUESTION', message: response, ...convWait('student_question') })
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: response, ...convClarification('student_question') })
         return
       }
 
@@ -469,21 +519,21 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         console.log('[demo-meta-help] embedded_confusion step=speaking_followup')
         const clarification = buildTaskClarification(session, 'speaking_followup', stepPrompt)
         console.log(`[demo-conversation] stepKey=speaking_followup responseType=STUDENT_QUESTION expectsStudentReply=true mayAdvance=false reason=embedded_confusion`)
-        res.status(422).json({ code: 'STUDENT_QUESTION', message: clarification, spokenMessage: clarification.slice(0, 200), ...convWait('embedded_confusion') })
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: clarification, spokenMessage: clarification.slice(0, 200), ...convClarification('embedded_confusion') })
         return
       }
 
       const classified = classifyInput(answer, expectedStep.minLength)
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=speaking_followup')
-        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt) })
+        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt), ...convClarification('vocab_help') })
         return
       }
       if (classified.cls !== 'VALID' && classified.cls !== 'VALID_WEAK_ENGLISH') {
         const hint = classified.cls === 'CONFUSED'
           ? buildConfusedHint(session, 'speaking_followup', 0)
           : classified.message
-        res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(hint, stepPrompt) })
+        res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(hint, stepPrompt), ...convRetry('invalid_answer') })
         return
       }
       // Word-count floor: ask once for a full sentence, but accept on the second try
@@ -497,7 +547,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
           await incrementAttempts(sessionId)
           const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with that idea.", stepPrompt)
           console.log(`[demo-conversation] stepKey=speaking_followup responseType=INVALID_ANSWER expectsStudentReply=true mayAdvance=false reason=short_answer_retry`)
-          res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convWait('short_answer_retry') })
+          res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convRetry('short_answer_retry') })
           return
         }
         // Already asked once — accept with a neutral close, not "give me more".
@@ -518,13 +568,13 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       // Must run before everything else — these must NEVER be graded or counted as attempts.
       if (detectMetaHelpIntent(answer)) {
         console.log(`[demo-meta-help] step=${stepKey}`)
-        res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey) })
+        res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey), ...convClarification('meta_help') })
         return
       }
 
       if (detectToxicity(answer)) {
         console.log(`[demo-ai] moderation step=${stepKey}`)
-        res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt) })
+        res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt), ...convRetry('moderation') })
         return
       }
 
@@ -533,7 +583,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       if (detectStudentQuestion(answer)) {
         const response = buildStudentQuestionResponse(session, stepPrompt)
         console.log(`[demo-conversation] stepKey=${stepKey} responseType=STUDENT_QUESTION expectsStudentReply=true mayAdvance=false reason=student_question`)
-        res.status(422).json({ code: 'STUDENT_QUESTION', message: response, ...convWait('student_question') })
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: response, ...convClarification('student_question') })
         return
       }
 
@@ -544,7 +594,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         console.log(`[demo-meta-help] embedded_confusion step=${stepKey}`)
         const clarification = buildTaskClarification(session, stepKey, stepPrompt)
         console.log(`[demo-conversation] stepKey=${stepKey} responseType=STUDENT_QUESTION expectsStudentReply=true mayAdvance=false reason=embedded_confusion`)
-        res.status(422).json({ code: 'STUDENT_QUESTION', message: clarification, spokenMessage: clarification.slice(0, 200), ...convWait('embedded_confusion') })
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: clarification, spokenMessage: clarification.slice(0, 200), ...convClarification('embedded_confusion') })
         return
       }
 
@@ -553,7 +603,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       // ── 1. Vocabulary help — explain, no AI, no abuse count ──────────────────
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] blocked reason=known_vocab_help step=' + stepKey)
-        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt) })
+        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(classified.message, stepPrompt), ...convClarification('vocab_help') })
         return
       }
 
@@ -573,7 +623,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
             `Why this works: we use a full sentence with 'because' or 'to' to connect your idea.`,
             `No problem — now try again in your own words.`,
           ].join('\n')
-          res.status(422).json({ code: 'MEANING_CONFIRMED', message: ensureTeacherContinues(correctionMsg, stepPrompt) })
+          res.status(422).json({ code: 'MEANING_CONFIRMED', message: ensureTeacherContinues(correctionMsg, stepPrompt), ...convAwaitingReply('meaning_confirmed_try_again') })
           return
         }
 
@@ -581,7 +631,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
           await redis.del(pendingMeaningKey)
           const frame = buildConfusedHint(session, stepKey, 2)
           const frameMsg = `No problem. ${frame}`
-          res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(frameMsg, stepPrompt) })
+          res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(frameMsg, stepPrompt), ...convAwaitingReply('meaning_denied_try_again') })
           return
         }
 
@@ -589,6 +639,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         res.status(422).json({
           code: 'MEANING_UNCLEAR',
           message: `Just yes or no — did I understand you correctly?\n"${pending.inferredMeaning}"\n(Say "yes" or "no" and we'll keep going.)`,
+          ...convClarification('meaning_pending'),
         })
         return
       }
@@ -612,13 +663,13 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
               `I think you mean: "${inferred}"`,
               `Is that what you wanted to say? (yes / no)`,
             ].join('\n')
-            res.status(422).json({ code: 'MEANING_UNCLEAR', message: msg })
+            res.status(422).json({ code: 'MEANING_UNCLEAR', message: msg, ...convClarification('meaning_unclear') })
             return
           }
           // Budget exhausted — give a frame hint and ask retry (no inference)
           const retries = await incrementStepRetries(sessionId, stepKey)
           const fallbackMsg = `That idea is useful — the English just needs structure.\n${buildConfusedHint(session, stepKey, retries)}`
-          res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(fallbackMsg, stepPrompt) })
+          res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(fallbackMsg, stepPrompt), ...convRetry('meaning_budget_fallback') })
           return
         }
 
@@ -646,6 +697,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
             nextStep: null,
             finalResult: earlyResult,
             isComplete: true,
+            ...convClosing('early_termination'),
           })
           return
         }
@@ -669,7 +721,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
             const base = stepRetries >= 2 ? buildConfusedHint(session, stepKey, stepRetries) : classified.message
             msg = ensureTeacherContinues(base, stepPrompt)
           }
-          res.status(422).json({ code: 'INVALID_ANSWER', message: msg })
+          res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convRetry('invalid_answer') })
           return
         }
 
@@ -702,7 +754,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
                   "I could hear you were thinking — but I couldn't quite catch your final answer. Say it one more time.",
                   stepPrompt,
                 ),
-                ...convWait('low_confidence'),
+                ...convRetry('low_confidence'),
               })
               return
             }
@@ -730,7 +782,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
                 code: 'QUALITY_RETRY',
                 message: ensureTeacherContinues(redirect, stepPrompt),
                 spokenMessage: redirect.split('.')[0] + '.',
-                ...convWait('cannot_do_task'),
+                ...convRetry('cannot_do_task'),
               })
               return
             }
@@ -745,7 +797,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
               res.status(422).json({
                 code: 'QUALITY_RETRY',
                 message: ensureTeacherContinues(base, stepPrompt),
-                ...convWait('weak_answer'),
+                ...convRetry('weak_answer'),
               })
               return
             }
@@ -770,7 +822,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
             res.status(422).json({
               code: 'QUALITY_RETRY',
               message: ensureTeacherContinues(base, stepPrompt),
-              ...convWait('weak_answer'),
+              ...convRetry('weak_answer'),
             })
             return
           }
@@ -805,7 +857,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
             code: 'QUALITY_RETRY',
             message: ensureTeacherContinues(feedbackMessage + corrPart, stepPrompt),
             spokenMessage: buildSpokenFeedback(feedbackMessage),
-            ...convWait('low_score'),
+            ...convRetry('low_score'),
           })
           return
         }
@@ -877,8 +929,15 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       ? buildClosingSpokenLine(score)
       : buildSpokenFeedback(feedbackMessage)
 
-    const stepReason = isLastStep ? 'final_step_accepted' : 'step_accepted'
-    console.log(`[demo-conversation] stepKey=${stepKey} responseType=${stepReason} expectsStudentReply=false mayAdvance=true`)
+    const baseState = isLastStep
+      ? convClosing('final_step_accepted')
+      : convTransitionReady('step_accepted')
+
+    const finalConvState = isLastStep
+      ? baseState
+      : guardedConvState(baseState.conversationState, feedbackMessage)
+
+    console.log(`[demo-conversation] mode=${finalConvState.conversationState.mode} stepKey=${stepKey} reason=${finalConvState.conversationState.reason}`)
     res.json({
       feedback: {
         message: feedbackMessage,
@@ -891,7 +950,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       finalResult,
       isComplete: isLastStep,
       finalAudioKey: null,
-      ...convAdvance(stepReason),
+      ...finalConvState,
     })
   } catch (err) {
     console.error('[demo/answer] error:', err instanceof Error ? err.message : err)
