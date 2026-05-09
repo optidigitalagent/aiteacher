@@ -1,4 +1,10 @@
-const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:4000'
+function buildWsBase(): string {
+  const explicit = import.meta.env.VITE_WS_URL as string | undefined
+  if (explicit) return explicit
+  const api = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:4000'
+  return api.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://')
+}
+const WS_BASE = buildWsBase()
 
 // ── Outbound (backend → frontend) ────────────────────────────────────────────
 

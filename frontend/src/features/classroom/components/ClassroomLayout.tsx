@@ -41,6 +41,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const send = useCallback((payload: object) => {
     sendMessage(wsRef.current, payload)
   }, [])
+  const [wsConnectError, setWsConnectError] = useState<string | null>(null)
+  const lessonStartedRef = useRef(false)
 
   // ── Production hooks (always called — rules of hooks) ────────────────────
   const {
@@ -200,7 +202,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   onMessageRef.current = (msg: BackendMessage) => {
     switch (msg.type) {
       case 'ai_text':
-        if (!lessonStarted) setLessonStarted(true)
+        if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
         setSpeaking(true)
         clearTyping()
         pushAI(msg.text)
@@ -231,7 +233,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       case 'section_card':
         break
       case 'lesson_resumed':
-        if (!lessonStarted) setLessonStarted(true)
+        if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
         pushAI(msg.message)
         setSpeaking(true)
         break
@@ -247,6 +249,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         break
       case 'error':
         console.error('[Classroom WS] error:', msg.code, msg.message)
+        if (['PAYMENT_REQUIRED', 'SUBSCRIPTION_EXPIRED', 'LESSON_LIMIT_REACHED', 'AUTH_REQUIRED', 'SESSION_TIME_LIMIT'].includes(msg.code)) {
+          setWsConnectError(msg.message)
+        }
         break
       default: {
         const u = (msg as { type: string }).type
@@ -279,7 +284,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           },
         })
       },
-      () => {},
+      () => {
+        if (!lessonStartedRef.current) {
+          setWsConnectError('Could not connect to your teacher. Please check your connection and try again.')
+        }
+      },
       token ?? undefined,
       paidSessionId ?? undefined,
     )
@@ -491,6 +500,25 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                 onCheck={handleCheck}
                 onHintToggle={() => setShowHint((h) => !h)}
               />
+            ) : wsConnectError ? (
+              <div style={{ textAlign: 'center', maxWidth: 320 }}>
+                <div style={{ color: '#ef4444', fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
+                  Connection failed
+                </div>
+                <div style={{ color: '#64748B', fontSize: 14, marginBottom: 20, lineHeight: 1.6 }}>
+                  {wsConnectError}
+                </div>
+                <button
+                  onClick={() => window.location.reload()}
+                  style={{
+                    padding: '10px 28px', borderRadius: 12, border: 'none',
+                    background: 'linear-gradient(135deg,#6E7CFB,#9B8CFF)',
+                    color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                  }}
+                >
+                  Try again
+                </button>
+              </div>
             ) : !lessonStarted ? (
               <div style={{ textAlign: 'center', color: '#aaa', fontSize: 15, fontWeight: 500, lineHeight: 1.6 }}>
                 Your teacher is preparing the lesson…

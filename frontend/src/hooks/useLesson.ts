@@ -71,7 +71,13 @@ interface ConfusedContext {
   studentLastAnswer?:  string
 }
 
-const WS_URL = 'ws://localhost:4000/lesson'
+function buildWsUrl(): string {
+  const explicit = import.meta.env.VITE_WS_URL as string | undefined
+  if (explicit) return `${explicit}/lesson`
+  const api = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:4000'
+  return api.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://') + '/lesson'
+}
+const WS_URL = buildWsUrl()
 
 export function useLesson() {
   const wsRef                                     = useRef<WebSocket | null>(null)

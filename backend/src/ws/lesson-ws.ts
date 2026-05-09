@@ -131,6 +131,8 @@ interface ClientMeta {
   maxDurationRef:  ReturnType<typeof setTimeout> | null
   stt:             DeepgramSTT | null
   ttsController:   AbortController | null
+  aiCallCount:     number          // number of orchestrator.process() calls this session
+  ttsCharCount:    number          // total characters sent to TTS this session
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -477,6 +479,7 @@ async function processInput(
   }
 
   const result = await orchestrator.process(meta.lessonId, text)
+  meta.aiCallCount++
 
   send(ws, { type: 'ai_text', phase: result.phase, text: result.text, displayText: result.displayText })
 
@@ -549,6 +552,7 @@ async function processInput(
 }
 
 async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise<void> {
+  meta.ttsCharCount += text.length
   const prev = meta.ttsController
   meta.ttsController = new AbortController()
   // Abort previous AFTER registering new controller so the chain is clean
@@ -716,6 +720,8 @@ export function attachLessonWS(server: Server): void {
       maxDurationRef:  null,
       stt:             null,
       ttsController:   null,
+      aiCallCount:     0,
+      ttsCharCount:    0,
     }
 
     clients.set(ws, meta)
@@ -782,8 +788,26 @@ export function attachLessonWS(server: Server): void {
       clients.delete(ws)
       console.log(`[ws] client disconnected, total=${clients.size}`)
 
-      // Finalize paid lesson usage
+      // Cost instrumentation + finalize paid lesson usage
       if (meta.usageId && meta.userId && meta.lessonStartedAt) {
+        const elapsedMs       = Date.now() - meta.lessonStartedAt
+        const elapsedMin      = Math.round(elapsedMs / 60_000)
+        const ttsProvider     = process.env.ELEVENLABS_API_KEY ? 'elevenlabs' : 'openai'
+        const aiModel         = 'claude-sonnet-4-6'
+        const sttProvider     = 'deepgram'
+        const aiCostUsd       = meta.aiCallCount * 0.003                                         // ~$0.003 per exchange (cached prompt)
+        const ttsCostUsd      = ttsProvider === 'openai'
+          ? (meta.ttsCharCount / 1000) * 0.015                                                   // OpenAI TTS: $15/1M chars
+          : (meta.ttsCharCount / 1000) * 0.15                                                    // ElevenLabs: conservative estimate
+        const sttCostUsd      = elapsedMin * 0.006                                               // Deepgram Nova-2: ~$0.36/hr
+        const estimatedCostUsd = aiCostUsd + ttsCostUsd + sttCostUsd
+        console.log(
+          `[paid-lesson-cost] session=${meta.sessionId ?? 'unknown'} ` +
+          `aiCalls=${meta.aiCallCount} ttsChars=${meta.ttsCharCount} ` +
+          `elapsedMinutes=${elapsedMin} estimatedCostUsd=${estimatedCostUsd.toFixed(4)} ` +
+          `ttsProvider=${ttsProvider} aiModel=${aiModel} sttProvider=${sttProvider}`,
+        )
+
         finalizeUsage(meta.usageId, meta.userId, meta.lessonStartedAt).catch((err: unknown) => {
           console.error('[ws] finalizeUsage error:', err)
         })
