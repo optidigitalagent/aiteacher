@@ -149,6 +149,17 @@ export interface OutboundLessonResumed {
   message:     string
 }
 
+/** Sent when the student's voice transcript passes the filter and is sent to the AI. */
+export interface OutboundStudentMessage {
+  type: 'student_message'
+  text: string
+}
+
+/** Sent after the backend finishes streaming all TTS audio for a teacher turn. */
+export interface OutboundTeacherTurnEnd {
+  type: 'teacher_turn_end'
+}
+
 export type OutboundMessage =
   | OutboundAiText
   | OutboundAudioChunk
@@ -161,3 +172,5 @@ export type OutboundMessage =
   | OutboundTeachingCard
   | OutboundSectionCard
   | OutboundLessonResumed
+  | OutboundStudentMessage
+  | OutboundTeacherTurnEnd

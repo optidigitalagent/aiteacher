@@ -29,17 +29,19 @@ export interface LessonSummary {
 }
 
 export type BackendMessage =
-  | { type: 'ai_text';       text: string; phase: string; displayText?: string }
-  | { type: 'audio_chunk';   data: string }
-  | { type: 'exercise';      exercise: BackendExercise }
-  | { type: 'phase_change';  from: string; to: string }
-  | { type: 'feedback';      correct: boolean; explanation: string }
-  | { type: 'lesson_end';    summary: LessonSummary }
-  | { type: 'transcript';    text: string }
-  | { type: 'error';         code: string; message: string }
-  | { type: 'teaching_card'; cardType: string; displayText: string }
-  | { type: 'section_card';  sectionId: string; card: unknown }
-  | { type: 'lesson_resumed'; phase: string; exerciseNum: number; message: string }
+  | { type: 'ai_text';          text: string; phase: string; displayText?: string }
+  | { type: 'audio_chunk';      data: string }
+  | { type: 'exercise';         exercise: BackendExercise }
+  | { type: 'phase_change';     from: string; to: string }
+  | { type: 'feedback';         correct: boolean; explanation: string }
+  | { type: 'lesson_end';       summary: LessonSummary }
+  | { type: 'transcript';       text: string }
+  | { type: 'error';            code: string; message: string }
+  | { type: 'teaching_card';    cardType: string; displayText: string }
+  | { type: 'section_card';     sectionId: string; card: unknown }
+  | { type: 'lesson_resumed';   phase: string; exerciseNum: number; message: string }
+  | { type: 'student_message';  text: string }
+  | { type: 'teacher_turn_end' }
 
 export type SendFn = (payload: object) => void
 
