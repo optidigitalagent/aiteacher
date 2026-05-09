@@ -63,15 +63,20 @@ const VOCAB_CANONICAL: Record<string, string> = {
   fluent: 'fluent', fluently: 'fluent',
   challenge: 'challenge', challenging: 'challenge',
   soak: 'soak_it_in',
+  // writing/speaking task words
+  pitch: 'pitch', pitching: 'pitch', pitches: 'pitch',
 }
 
 // Multi-word phrase / idiom map (checked before single-word patterns)
 const PHRASE_VOCAB_MAP: Record<string, string> = {
-  'soak it in':  'soak_it_in',
-  'soak it all': 'soak_it_in',
-  'soak in':     'soak_it_in',
-  'hold onto':   'hold_onto',
-  'hold on to':  'hold_onto',
+  'soak it in':     'soak_it_in',
+  'soak it all':    'soak_it_in',
+  'soak in':        'soak_it_in',
+  'hold onto':      'hold_onto',
+  'hold on to':     'hold_onto',
+  'major spoilers': 'major_spoilers',
+  'major spoiler':  'major_spoilers',
+  'no spoilers':    'spoiler',
 }
 
 const VOCAB_EXPLANATIONS: Record<string, { explanation: string; example: string; taskHint: string }> = {
@@ -159,6 +164,16 @@ const VOCAB_EXPLANATIONS: Record<string, { explanation: string; example: string;
     explanation: "'Hold onto' something means to keep it, remember it, or not let it go.",
     example: "'I held onto that memory' means the memory stayed with me — I didn't forget it.",
     taskHint: "Try answering: what did you do to keep that feeling alive?",
+  },
+  major_spoilers: {
+    explanation: "'Major spoilers' means revealing the most important or surprising parts of a story — plot twists, endings, key events — before someone has seen it.",
+    example: "Example: 'Without major spoilers' means: describe the scene, but don't give away the ending or biggest surprises.",
+    taskHint: "Try again: describe one scene or moment, leaving out how it ends.",
+  },
+  pitch: {
+    explanation: "'Pitch' means to try to persuade someone — to recommend or sell them on an idea, film, or show.",
+    example: "Example: 'Pitch me a show' means: convince me it's worth watching. Tell me why it's good.",
+    taskHint: "Try: 'You should watch ___ because ___ — I think you'd love it.'",
   },
 }
 
@@ -923,6 +938,51 @@ export function analyzeAnswerQuality(
   }
 
   return { quality: 'valid', reason: 'ok', shouldAdvance: true }
+}
+
+// ─── Direct vocab entry lookup (for help endpoint — more permissive than detectVocabWord) ──
+// detectVocabWord requires '?' for bare single words; this skips that requirement.
+// Use only in contexts where the student explicitly requested help (not answer evaluation).
+
+export function lookupVocabEntry(word: string): { explanation: string; example: string; taskHint: string } | null {
+  const lower = word.toLowerCase().replace(/[^a-z]/g, '')
+  if (lower.length < 3) return null
+  const canonical = VOCAB_CANONICAL[lower]
+  if (!canonical || canonical === '__confused__') return null
+  return VOCAB_EXPLANATIONS[canonical] ?? null
+}
+
+// ─── Acknowledgment detection ─────────────────────────────────────────────────
+// Detects short social/emotional responses that are NOT attempts at the pedagogical task:
+// "thank you", "okay thanks", "I understand", "interesting", "wow" etc.
+// Used to redirect the student back to the active learning objective without advancing.
+// Only fires on short messages (≤ 12 words) to avoid blocking genuine attempts.
+
+const ACK_PATTERNS: RegExp[] = [
+  /^thank\s+(?:you|u)\b/i,
+  /^thanks\b/i,
+  /^(?:ok|okay)\s+thank(?:s|\s+you)\b/i,
+  /^(?:ok|okay)\s*[!.,]*$/i,
+  /^alright\s+thanks\b/i,
+  /^got\s+it\s*[!.,]*$/i,
+  /^i\s+got\s+it\b/i,
+  /^i\s+understand\b/i,
+  /^i\s+see\s*[!.,]*$/i,
+  /^i\s+get\s+it\b/i,
+  /^understood\s*[!.,]*$/i,
+  /^(?:wow|amazing|awesome|nice|cool|perfect|excellent|wonderful)\s*[!.,]*$/i,
+  /^(?:that'?s\s+)?(?:great|nice|cool|amazing|awesome|wonderful|perfect)\s*[!.,]*$/i,
+  /^(?:very\s+)?interesting\s*[!.,]*$/i,
+  /^(?:sure|of\s+course)\s*[!.,]*$/i,
+  /^clear\s*[!.,]*$/i,
+]
+
+export function detectAcknowledgment(text: string): boolean {
+  const lower = text.trim().toLowerCase()
+  const words = lower.split(/\s+/).filter(Boolean)
+  // Long messages contain substantive content — don't block them
+  if (words.length > 12) return false
+  return ACK_PATTERNS.some(p => p.test(lower))
 }
 
 // ─── Early-termination result builder ────────────────────────────────────────
