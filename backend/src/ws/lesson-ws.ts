@@ -338,6 +338,7 @@ async function handleFocusLessonStart(
   meta: ClientMeta,
   config: FocusLessonConfig,
 ): Promise<void> {
+  console.log(`[paid-lesson] begin clicked session=${meta.sessionId} unit=${config.unit} section=${config.section ?? 'none'}`)
   if (!await checkAndLinkPaidSession(ws, meta)) return
 
   // ── Store teacher + voice from config (before any early return) ──────────
@@ -448,10 +449,15 @@ async function handleFocusLessonStart(
 
   meta.stt = new DeepgramSTT((transcript) => {
     send(ws, { type: 'transcript', text: transcript })
-    if (shouldProcessTranscript(transcript)) {
-      void processInput(ws, meta, transcript)
+    if (!shouldProcessTranscript(transcript)) {
+      console.log(`[paid-lesson] ignored_audio_chunk reason=invalid_transcript chars=${transcript.trim().length}`)
+      return
     }
+    console.log(`[paid-lesson] student_turn_finalized chars=${transcript.trim().length}`)
+    void processInput(ws, meta, transcript)
   })
+
+  console.log(`[paid-lesson] ready session=${meta.sessionId} lessonId=${lessonId}`)
 
   // Personalise greeting with selected teacher name
   const greeting = buildFocusGreeting(effectiveUnit, config.section, unitData.grammarTarget, unitData.textbookUnit, meta.teacherId ?? undefined)
@@ -478,6 +484,7 @@ async function processInput(
     return
   }
 
+  console.log(`[paid-lesson] ai_turn_started input_chars=${text.trim().length}`)
   const result = await orchestrator.process(meta.lessonId, text)
   meta.aiCallCount++
 
@@ -548,6 +555,7 @@ async function processInput(
     return
   }
 
+  console.log(`[paid-lesson] ai_turn_completed phase=${result.phase}`)
   await ttsStream(ws, meta, result.text)
 }
 
@@ -557,6 +565,7 @@ async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise
   meta.ttsController = new AbortController()
   // Abort previous AFTER registering new controller so the chain is clean
   try { prev?.abort() } catch { /* ignore abort-chain side effects */ }
+  console.log(`[paid-lesson] teacher_speaking start chars=${text.length}`)
   try {
     await speakToClient(
       (msg) => send(ws, msg),
@@ -564,6 +573,7 @@ async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise
       meta.ttsController.signal,
       meta.voiceId ?? undefined,
     )
+    console.log(`[paid-lesson] teacher_speaking end chars=${text.length}`)
   } catch (err: unknown) {
     if (err instanceof Error && err.name !== 'AbortError') {
       console.error('[ws] TTS error:', err.message)
@@ -761,7 +771,11 @@ export function attachLessonWS(server: Server): void {
             await processInput(ws, meta, msg.text)
             break
           case 'audio_chunk':
-            meta.stt?.send(msg.data)
+            if (!meta.stt) {
+              console.log('[paid-lesson] ignored_audio_chunk reason=before_begin')
+              return
+            }
+            meta.stt.send(msg.data)
             break
           case 'interrupt':
             meta.ttsController?.abort()

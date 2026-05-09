@@ -12,10 +12,11 @@ import {
 interface Options { send: SendFn }
 
 export function useVoiceSession({ send }: Options): VoiceState & {
-  toggle:       () => Promise<void>
-  onAudioChunk: (base64: string) => void
-  onTranscript: (text: string) => void
-  setSpeaking:  (v: boolean) => void
+  toggle:         () => Promise<void>
+  stopRecording:  () => void
+  onAudioChunk:   (base64: string) => void
+  onTranscript:   (text: string) => void
+  setSpeaking:    (v: boolean) => void
 } {
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking,  setIsSpeaking]  = useState(false)
@@ -28,6 +29,15 @@ export function useVoiceSession({ send }: Options): VoiceState & {
   const scheduleSpeakOff = useCallback((delayMs: number) => {
     clearTimeout(stopSpeakRef.current)
     stopSpeakRef.current = setTimeout(() => setIsSpeaking(false), delayMs)
+  }, [])
+
+  // Stop mic without sending interrupt (used when teacher starts speaking)
+  const stopRecording = useCallback(() => {
+    if (!streamRef.current) return
+    console.log('[paid-lesson] mic_enabled=false reason=teacher_speaking')
+    stopPCMCapture(streamRef.current)
+    streamRef.current = null
+    setIsListening(false)
   }, [])
 
   // Toggle mic on/off
@@ -50,6 +60,7 @@ export function useVoiceSession({ send }: Options): VoiceState & {
       streamRef.current = stream
       setIsListening(true)
       setTranscript('')
+      console.log('[paid-lesson] mic_enabled=true reason=student_turn')
       startPCMCapture(stream, (base64) => {
         send({ type: 'audio_chunk', data: base64 })
       })
@@ -82,5 +93,5 @@ export function useVoiceSession({ send }: Options): VoiceState & {
     }
   }, [scheduleSpeakOff])
 
-  return { isListening, isSpeaking, transcript, toggle, onAudioChunk, onTranscript, setSpeaking }
+  return { isListening, isSpeaking, transcript, toggle, stopRecording, onAudioChunk, onTranscript, setSpeaking }
 }

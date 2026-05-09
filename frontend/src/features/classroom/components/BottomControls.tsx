@@ -9,6 +9,7 @@ interface Props {
   onToggleMic:     () => void
   onExplain:       () => void
   inputDisabled?:  boolean
+  micDisabled?:    boolean
   // Help input (demo mode)
   showHelpInput?:  boolean
   helpInputValue?: string
@@ -19,7 +20,7 @@ interface Props {
 
 export default function BottomControls({
   isListening, value, onChange, onSubmit, onToggleMic, onExplain,
-  inputDisabled,
+  inputDisabled, micDisabled,
   showHelpInput, helpInputValue, onHelpChange, onHelpSubmit, onHelpClose,
 }: Props) {
   const inputRef          = useRef<HTMLInputElement>(null)
@@ -126,23 +127,32 @@ export default function BottomControls({
 
         {/* Mic button */}
         <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
-          {isListening && (
+          {isListening && !micDisabled && (
             <>
               <div className="cls-pulse-ring" />
               <div className="cls-pulse-ring cls-pulse-ring-2" />
               <div className="cls-pulse-ring cls-pulse-ring-3" />
             </>
           )}
-          <button onClick={onToggleMic} style={{
-            position: 'absolute', inset: 0, borderRadius: '50%', border: 'none',
-            background: 'linear-gradient(145deg, #6E7CFB 0%, #9B8CFF 55%, #FFB86B 100%)',
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: isListening
-              ? '0 0 0 4px rgba(110,124,251,0.35), 0 0 50px rgba(255,184,107,0.7), 0 10px 36px rgba(110,124,251,0.55)'
-              : undefined,
-            animation: isListening ? 'none' : 'cls-pulse-glow 2.4s ease-in-out infinite',
-            transition: 'box-shadow 0.2s',
-          }}>
+          <button
+            onClick={micDisabled ? undefined : onToggleMic}
+            disabled={micDisabled}
+            title={micDisabled ? 'Mic unavailable — wait for your teacher to finish' : undefined}
+            style={{
+              position: 'absolute', inset: 0, borderRadius: '50%', border: 'none',
+              background: micDisabled
+                ? 'linear-gradient(145deg, #94A3B8 0%, #CBD5E1 100%)'
+                : 'linear-gradient(145deg, #6E7CFB 0%, #9B8CFF 55%, #FFB86B 100%)',
+              cursor: micDisabled ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              opacity: micDisabled ? 0.55 : 1,
+              boxShadow: (!micDisabled && isListening)
+                ? '0 0 0 4px rgba(110,124,251,0.35), 0 0 50px rgba(255,184,107,0.7), 0 10px 36px rgba(110,124,251,0.55)'
+                : undefined,
+              animation: (!micDisabled && !isListening) ? 'cls-pulse-glow 2.4s ease-in-out infinite' : 'none',
+              transition: 'box-shadow 0.2s, opacity 0.2s, background 0.2s',
+            }}
+          >
             <IcMic s={26} />
           </button>
         </div>

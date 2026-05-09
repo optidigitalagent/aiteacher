@@ -55,7 +55,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   } = useClassroomChat({ send })
 
   const {
-    isListening, isSpeaking, transcript, toggle,
+    isListening, isSpeaking, transcript, toggle, stopRecording,
     onAudioChunk, onTranscript, setSpeaking,
   } = useVoiceSession({ send })
 
@@ -182,6 +182,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const [teachingCard,    setTeachingCard]    = useState<TeachingCardData | null>(null)
   const [confirmedAnswer, setConfirmedAnswer] = useState('')
   const [lessonStarted,   setLessonStarted]   = useState(false)
+  const [paidLessonReady, setPaidLessonReady] = useState(false)
+  const beginSentRef = useRef(false)
   // Demo help input
   const [showHelpInput,   setShowHelpInput]   = useState(false)
   const [helpInputValue,  setHelpInputValue]  = useState('')
@@ -204,6 +206,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       case 'ai_text':
         if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
         setSpeaking(true)
+        stopRecording()  // auto-stop mic when teacher speaks — prevents echo capture
         clearTyping()
         pushAI(msg.text)
         break
@@ -274,15 +277,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     const ws = createClassroomSocket(
       (msg) => onMessageRef.current(msg),
       () => {
-        sendMessage(ws, {
-          type:    'focus_lesson_start',
-          payload: {
-            unit: LESSON_UNIT,
-            ...(resolvedSection        ? { section:   resolvedSection }       : {}),
-            ...(sessionMeta?.teacherId ? { teacherId: sessionMeta.teacherId } : {}),
-            ...(sessionMeta?.voiceId   ? { voiceId:   sessionMeta.voiceId }   : {}),
-          },
-        })
+        // WS open: signal ready state — do NOT start lesson yet
+        // Lesson starts only when user clicks "Begin Lesson"
+        console.log('[paid-lesson] ready session=' + paidSessionId)
+        setPaidLessonReady(true)
       },
       () => {
         if (!lessonStartedRef.current) {
@@ -343,6 +341,35 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       setAnswer('')
     }
   }, [isDemoMode, answer, demo.handleTextSubmit, demo.interruptAudio, question, handleCheck, pushUser, setTyping, send])
+
+  // Begin Lesson: send focus_lesson_start only when user clicks the button
+  const handleBeginLesson = useCallback(() => {
+    if (beginSentRef.current) return  // prevent double-click
+    beginSentRef.current = true
+    console.log('[paid-lesson] begin clicked session=' + paidSessionId)
+    sendMessage(wsRef.current, {
+      type:    'focus_lesson_start',
+      payload: {
+        unit: LESSON_UNIT,
+        ...(resolvedSection        ? { section:   resolvedSection }       : {}),
+        ...(sessionMeta?.teacherId ? { teacherId: sessionMeta.teacherId } : {}),
+        ...(sessionMeta?.voiceId   ? { voiceId:   sessionMeta.voiceId }   : {}),
+      },
+    })
+  }, [paidSessionId, resolvedSection, sessionMeta])
+
+  // Guarded mic toggle for paid mode: blocked before lesson starts or while teacher speaks
+  const paidToggle = useCallback(async () => {
+    if (!lessonStarted) {
+      console.log('[paid-lesson] mic_enabled=false reason=lesson_not_started')
+      return
+    }
+    if (isSpeaking) {
+      console.log('[paid-lesson] mic_enabled=false reason=teacher_speaking')
+      return
+    }
+    await toggle()
+  }, [lessonStarted, isSpeaking, toggle])
 
   const handleExplain = useCallback(() => {
     if (isDemoMode) {
@@ -520,9 +547,13 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                 </button>
               </div>
             ) : !lessonStarted ? (
-              <div style={{ textAlign: 'center', color: '#aaa', fontSize: 15, fontWeight: 500, lineHeight: 1.6 }}>
-                Your teacher is preparing the lesson…
-              </div>
+              paidLessonReady ? (
+                <PaidBeginPanel meta={sessionMeta} onBegin={handleBeginLesson} />
+              ) : (
+                <div style={{ textAlign: 'center', color: '#aaa', fontSize: 15, fontWeight: 500, lineHeight: 1.6 }}>
+                  Connecting to your teacher…
+                </div>
+              )
             ) : null}
           </div>
 
@@ -563,12 +594,14 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           value={answer}
           onChange={setAnswer}
           onSubmit={handleSubmit}
-          onToggleMic={isDemoMode ? toggleDemoMic : toggle}
+          onToggleMic={isDemoMode ? toggleDemoMic : paidToggle}
           onExplain={handleExplain}
           inputDisabled={
             (isDemoMode && !demo.lessonStarted) ||
-            (isDemoMode && demo.phase === 'complete')
+            (isDemoMode && demo.phase === 'complete') ||
+            (!isDemoMode && !lessonStarted)
           }
+          micDisabled={!isDemoMode && (!lessonStarted || isSpeaking)}
           showHelpInput={isDemoMode ? showHelpInput : false}
           helpInputValue={helpInputValue}
           onHelpChange={setHelpInputValue}
@@ -616,6 +649,77 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           }}
         />
       )}
+    </div>
+  )
+}
+
+// ── Paid Begin Lesson panel — shown after WS connects, before lesson starts ──────────
+function PaidBeginPanel({ meta, onBegin }: {
+  meta:    import('../../../types/lessonTypes').LessonSessionMetadata | null
+  onBegin: () => void
+}) {
+  const section = meta?.sectionNumber
+  const topic   = meta?.sectionTopic ?? meta?.sectionTitle
+  const teacher = meta?.teacherName
+
+  return (
+    <div style={{ textAlign: 'center', maxWidth: 360 }}>
+      <div style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        background: '#f0fdf4', color: '#16a34a', borderRadius: 99,
+        padding: '5px 14px', fontSize: 11, fontWeight: 800,
+        textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 20,
+      }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
+        Your teacher is ready
+      </div>
+
+      {(section || topic) && (
+        <div style={{ marginBottom: 20 }}>
+          {section && (
+            <div style={{ fontSize: 13, color: '#94A3B8', fontWeight: 600, marginBottom: 4 }}>
+              Section {section}
+            </div>
+          )}
+          {topic && (
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#0F172A', lineHeight: 1.4 }}>
+              {topic}
+            </div>
+          )}
+        </div>
+      )}
+
+      {teacher && (
+        <div style={{ fontSize: 13, color: '#94A3B8', marginBottom: 24 }}>
+          with {teacher}
+        </div>
+      )}
+
+      <button
+        onClick={onBegin}
+        style={{
+          padding: '15px 44px',
+          background: 'linear-gradient(135deg, #6E7CFB 0%, #9B8CFF 100%)',
+          color: 'white', border: 'none', borderRadius: 20,
+          fontSize: 17, fontWeight: 700, cursor: 'pointer', letterSpacing: '-0.2px',
+          boxShadow: '0 8px 32px rgba(110,124,251,0.40), 0 2px 8px rgba(0,0,0,0.08)',
+          transition: 'transform 0.15s, box-shadow 0.15s',
+        }}
+        onMouseEnter={e => {
+          (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)'
+          ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 12px 40px rgba(110,124,251,0.5), 0 4px 12px rgba(0,0,0,0.1)'
+        }}
+        onMouseLeave={e => {
+          (e.currentTarget as HTMLButtonElement).style.transform = ''
+          ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 32px rgba(110,124,251,0.40), 0 2px 8px rgba(0,0,0,0.08)'
+        }}
+      >
+        Begin Lesson ▶
+      </button>
+
+      <div style={{ fontSize: 12, color: '#94A3B8', marginTop: 14, lineHeight: 1.6 }}>
+        Your paid minutes start when you begin
+      </div>
     </div>
   )
 }
