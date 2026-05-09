@@ -405,6 +405,18 @@ export function useDemoSession({
           currentStepIntro: data.currentStepIntro,
           currentStep:      data.currentStep,
         }
+
+        // Pre-warm greeting TTS in background so audio starts immediately on "Begin Lesson"
+        // Fire-and-forget — errors are silently ignored; on-demand fetch is the fallback
+        if (data.introText && data.id) {
+          const prewarmText = stripMarkdownForTts(data.introText).slice(0, 350)
+          void fetch(`${API_BASE}/demo/tts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ sessionId: data.id, messageType: 'greeting', messageText: prewarmText }),
+          }).catch(() => {})
+        }
+
         console.log('[demo-phase] ready')
         setPhase('ready')
       } catch {

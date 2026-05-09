@@ -77,6 +77,10 @@ const PHRASE_VOCAB_MAP: Record<string, string> = {
   'major spoilers': 'major_spoilers',
   'major spoiler':  'major_spoilers',
   'no spoilers':    'spoiler',
+  'simple terms':   'simple_terms',
+  'in simple terms': 'simple_terms',
+  'simple language': 'simple_terms',
+  'simple words':   'simple_terms',
 }
 
 const VOCAB_EXPLANATIONS: Record<string, { explanation: string; example: string; taskHint: string }> = {
@@ -174,6 +178,11 @@ const VOCAB_EXPLANATIONS: Record<string, { explanation: string; example: string;
     explanation: "'Pitch' means to try to persuade someone — to recommend or sell them on an idea, film, or show.",
     example: "Example: 'Pitch me a show' means: convince me it's worth watching. Tell me why it's good.",
     taskHint: "Try: 'You should watch ___ because ___ — I think you'd love it.'",
+  },
+  simple_terms: {
+    explanation: "'In simple terms' means explaining something using easy, clear words — the kind a young student would understand right away.",
+    example: "Example: 'In simple terms, gravity is what pulls things toward the ground.'",
+    taskHint: "Try: 'In simple terms, [what you learned] means...' — use words a 10-year-old would know.",
   },
 }
 

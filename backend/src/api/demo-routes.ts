@@ -338,7 +338,8 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
     return
   }
 
-  const answer = answerRaw.trim()
+  // Hard cap all inputs — prevents wall-of-text abuse on rule-based steps
+  const answer = answerRaw.trim().slice(0, 600)
 
   try {
     const session = await loadSession(sessionId, userId)
@@ -349,6 +350,15 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
 
     if (session.status === 'completed') {
       res.status(409).json({ code: 'ALREADY_COMPLETED', message: 'This session is already completed' })
+      return
+    }
+
+    // Per-session rate limit: 30 submissions per minute (protects against API-level abuse)
+    const rateLimitKey = `demo:rate:${sessionId}`
+    const rateCount = await redis.incr(rateLimitKey)
+    if (rateCount === 1) await redis.expire(rateLimitKey, 60)
+    if (rateCount > 30) {
+      res.status(429).json({ code: 'RATE_LIMIT', message: "Slow down — try again in a moment." })
       return
     }
 
@@ -866,12 +876,17 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         correctionMessage = score.correction
 
         // Quality gate: score ≤ 5 on a real answer → ask for retry rather than silently advancing.
-        // Only fires if retries are not exhausted and total attempts haven't hit the session limit.
+        // For speaking_task with AI correction: raise threshold to 6 so the student can practice
+        // the corrected version before advancing. Prevents premature advancement when the AI's
+        // own correction implies the student should try again.
         const QUALITY_RETRY_THRESHOLD = 5
+        const effectiveRetryThreshold = (stepKey === 'speaking_task' && score.correction)
+          ? 6
+          : QUALITY_RETRY_THRESHOLD
         if (
           !score.skipped &&
           typeof score.score === 'number' &&
-          score.score <= QUALITY_RETRY_THRESHOLD &&
+          score.score <= effectiveRetryThreshold &&
           qualityRetryCount < expectedStep.maxRetries &&
           session.answer_attempts_total < ATTEMPTS_LIMIT
         ) {
@@ -1351,6 +1366,7 @@ router.post('/demo/dev-reset', requireAuth, async (req: Request, res: Response):
       await redis.del(`demo:tts:usage:${sid}`)
       await redis.del(`demo:help:${sid}`)
       await redis.del(`demo:translate:${sid}`)
+      await redis.del(`demo:rate:${sid}`)
       for (const sk of STEP_KEYS) {
         await redis.del(`demo:retry:${sid}:${sk}`)
         await redis.del(`demo:pending_meaning:${sid}:${sk}`)
