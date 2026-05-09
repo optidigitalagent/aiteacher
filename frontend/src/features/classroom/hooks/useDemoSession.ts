@@ -193,7 +193,7 @@ export function useDemoSession({
   const showAiMessage = useCallback(async (text: string, ttsType?: string, ttsOverride?: string): Promise<string> => {
     setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: 'typing', sender: 'ai', isTyping: true }])
     setIsSpeaking(true)
-    await sleep(Math.min(600 + text.length * 8, 2000))
+    await sleep(Math.min(500 + text.length * 6, 1200))
 
     const msgId = uid()
     setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: msgId, sender: 'ai', text }])

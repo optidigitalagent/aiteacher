@@ -93,7 +93,7 @@ export function buildNextStepIntro(session: DemoSession, nextStep: StepContent |
 
     case 'grammar_mcq':
       // Explanation may contain **markdown** — chat renders it; TTS strips it via stripMarkdownForTts.
-      return `${tone.transition} Quick grammar check — ${grammar.target}. ${grammar.explanation}`
+      return `Quick grammar check — ${grammar.target}. ${grammar.explanation}`
 
     case 'speaking_task':
       return topic.speakingPrompt
@@ -284,7 +284,7 @@ export function buildWarmUpFeedback(_session: DemoSession, answer: string): stri
 
   // Not watching anything right now
   if (/\b(watching\s+nothing|not\s+watching|nothing\s+right\s+now|nothing\s+at\s+the\s+moment)\b/i.test(answer)) {
-    return "Nothing right now — fine. Think of the last thing you watched that you genuinely enjoyed. We'll use that."
+    return "Nothing right now — that's fine. I've got what I need."
   }
 
   // Extract first significant proper noun (show/movie/channel name)
@@ -332,8 +332,7 @@ export function buildFollowUpFeedback(session: DemoSession, answer: string, step
       if (wordCount >= 12) {
         return "Clear idea — the way you'd explain it shows you actually understood it yourself."
       }
-      // Short but real content — push for one more sentence
-      return "Almost there — give me one more sentence: how would you actually put it in words a younger student would understand?"
+      return "Good — that approach makes sense."
     }
   }
 
@@ -341,16 +340,16 @@ export function buildFollowUpFeedback(session: DemoSession, answer: string, step
     // Special effects — also catch the common "here is/are" error for immediate correction
     if (/\b(special\s+effect|cgi|visual|cinematograph|director)\b/i.test(answer)) {
       if (/\bhere\s+(is|are)\b/i.test(answer)) {
-        return "Good observation — and one quick fix: instead of 'here is,' say 'there are good special effects' or 'it has great visual effects.' Same idea, more natural. Good eye for craft."
+        return "Good observation — quick note: say 'there are good special effects' or 'it has great visual effects' instead of 'here is.' Good eye for craft."
       }
-      return "You're thinking about craft, not just story — that's the mark of a real viewer. What makes the effect work for you — the realism, the scale, something else?"
+      return "You're thinking about craft, not just story — that's the mark of a real viewer."
     }
     // "effect" alone (catches "a good special effect" phrasing)
     if (/\beffect\b/i.test(answer)) {
       if (/\bhere\s+(is|are)\b/i.test(answer)) {
-        return "Good — effects are what you notice first. One correction: say 'the effects are great' instead of 'here is good effect.' Try it in a sentence."
+        return "Good — effects are what you notice first. Quick note: 'the effects are great' is more natural than 'here is good effect.'"
       }
-      return "Good — effects pull you in immediately. What kind — visual, sound, or something else?"
+      return "Good — effects pull you in. Solid observation."
     }
     if (/\b(acting|performance|actor|actress|character|cast)\b/i.test(answer)) {
       return "The acting — that's what makes or breaks a show. Good call."
@@ -361,12 +360,12 @@ export function buildFollowUpFeedback(session: DemoSession, answer: string, step
     if (/\b(music|soundtrack|score|sound)\b/i.test(answer)) {
       return "The music — most people don't notice the soundtrack until it's gone. Sharp observation."
     }
-    // Generic followup response — acknowledge the idea and ask for one more sentence
+    // Generic followup response — close cleanly (bridge step transitions immediately after)
     const wordCount2 = answer.trim().split(/\s+/).filter(Boolean).length
     if (wordCount2 >= 10) {
-      return "I can see what you mean. Give me that same idea in one cleaner sentence — I'll use it to assess your level."
+      return "I can see what you mean — that gives me enough to work with."
     }
-    return "Good start — add one more detail. What exactly made that memorable or special for you?"
+    return "Good — I've got what I needed from this."
   }
 
   // warm_up_followup — acknowledge and model correct English
@@ -374,24 +373,20 @@ export function buildFollowUpFeedback(session: DemoSession, answer: string, step
 
   if (/\b(locked\s+in|in\s+the\s+zone|on\s+a\s+grind|grinding|hustl)/i.test(answer)) {
     if (isFragment) {
-      return "I understand — 'locked in' means focused. A complete sentence: 'I usually watch alone because I focus better that way.' Got it — let's keep going."
+      return "I understand — 'locked in' means focused. A complete sentence: 'I usually watch alone because I focus better that way.'"
     }
-    return "I get it — focused and solo. A natural version: 'I usually watch alone because I stay more concentrated.' Let's keep going."
+    return "I get it — focused and solo. A natural version: 'I usually watch alone because I stay more concentrated.'"
   }
   if (/\b(alone|by\s+myself|solo|on\s+my\s+own)\b/i.test(answer)) {
     if (isFragment || wordCount < 5) {
-      return "Solo — good. A complete sentence: 'I usually watch alone because I pick up more details.' Let's keep going."
+      return "Solo — good. A complete sentence: 'I usually watch alone because I pick up more details.'"
     }
     return "Solo viewer — you pick up things groups miss. Makes sense."
   }
   if (/\b(with\s+(someone|a\s+friend|friends|family|my|the))\b/i.test(answer)) {
-    return "Social viewing — it changes the whole experience. Let's keep going."
+    return "Social viewing — it changes the whole experience."
   }
-  // If no specific keyword matched, check for substance before accepting
-  if (wordCount <= 8) {
-    return "I need more than that — give me a full sentence with your actual reason. Try: 'I think it's the topic itself because...' or 'The way it's taught makes sense to me because...'"
-  }
-  return "Got it. Let's keep going."
+  return "Got it."
 }
 
 // Builds the teacher reply when a student asks about grammar or task rules instead of answering.

@@ -122,7 +122,7 @@ Rules:
 - If answer has genuine content but grammar errors: correct ONE key error and explain it briefly. Score 6 minimum when the student named a real place, person, experience, or idea — even if the grammar is imperfect. A real idea with broken grammar is better than no idea.
 - Score 5 only when the answer is too brief, repeats the question, or contains no personal idea at all.
 - If answer is keyboard smash / truly no readable words: score 2, say "Try one clear sentence in English — even a simple one helps."
-- correction: an improved version of EXACTLY what the student said — fix grammar and word order only. NEVER add new reasons, emotions, details, or sentences not present in the student's answer. If they said "I like my school and timetable", write "I like my school and my timetable" — not "I like my school and timetable. They help me learn." Set to null only if grammar was already correct and complete.
+- correction: an improved version of EXACTLY what the student said — fix grammar and word order only, NEVER add content. If the student used wrong vocabulary (invented words, wrong noun choices like "beach" instead of "pitch"), or the text is so broken that a grammar-only fix still produces something meaningless or embarrassing, set correction to null. A bad correction is worse than no correction. Only provide correction when the result is clearly better English that the student can genuinely learn from.
 - Score range: 6-8 for real attempts with genuine content. Reserve 9-10 for exceptional answers. Reserve 5 for near-empty answers only.
 - ALWAYS end with a question or clear instruction — the student must know what to do next.
 - If earlier warm-up context is provided, reference it naturally when relevant (e.g. "You mentioned X earlier — that same idea applies here...") — only if it genuinely connects to what they said now. Skip if it doesn't.
@@ -197,7 +197,7 @@ Rules:
 - If answer is unclear but has real words: score 5, infer the idea, give a clearer 1-sentence version: "I can see you mean [idea] — try: '[correction]'. More specific this time."
 - If answer has weak grammar but real content: correct 1-2 key errors, explain briefly. Score 6 minimum when the student expressed a real idea with specifics (place, activity, reason) — even if grammar needs work.
 - Score 5 only when the answer is too brief, vague, or contains no real personal idea.
-- correction: an improved version of EXACTLY what the student wrote — fix grammar and word order only. NEVER add new reasons, emotions, or sentences not present in the student's answer. If they wrote "I like my school and timetable and rules", write "I like my school, my timetable, and the rules." — do not add "They help me learn every day." null only if already grammatically strong.
+- correction: an improved version of EXACTLY what the student wrote — fix grammar and word order only, NEVER add content. If the student used wrong vocabulary, invented phrases, or the writing is too incoherent for grammar-only correction to be meaningful, set correction to null. Only provide correction when it genuinely helps — a confusing correction is worse than none.
 - If truly no readable words: score 2, say "Write 2-3 real English sentences about the topic — even simple ones count."
 - Score range: 6-8 for real attempts with genuine content. Reserve 9-10 for strong, well-structured responses. Reserve 5 for near-empty attempts only.
 - ALWAYS end with a question or clear instruction — student must know exactly what to do next.

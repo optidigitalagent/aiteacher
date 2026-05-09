@@ -498,7 +498,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         wuFollowupShortAccept = true
       }
       feedbackMessage = wuFollowupShortAccept
-        ? 'Got it — let\'s keep going.'
+        ? 'Right — I\'ve got what I need.'
         : buildFollowUpFeedback(session, answer, 'warm_up_followup')
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
         correctionMessage = classified.correction
@@ -582,7 +582,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         sfShortAccept = true
       }
       feedbackMessage = sfShortAccept
-        ? 'Got it — let\'s keep going.'
+        ? 'Got it.'
         : buildFollowUpFeedback(session, answer, 'speaking_followup')
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
         correctionMessage = classified.correction
@@ -974,7 +974,13 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       ? convClosing('final_step_accepted')
       : convTransitionReady('step_accepted')
 
-    const finalConvState = isLastStep
+    // Bridge steps always transition cleanly — they collect one bridging response then
+    // hand off to the next main exercise. Letting guardedConvState override to
+    // reflective_followup here creates a double-advance: the DB advances, the frontend
+    // updates currentStepRef, but the teacher's question keeps the student in the
+    // previous context — their next answer routes to the wrong (already-advanced) step.
+    const isBridgeStep = stepKey === 'warm_up_followup' || stepKey === 'speaking_followup'
+    const finalConvState = (isLastStep || isBridgeStep)
       ? baseState
       : guardedConvState(baseState.conversationState, feedbackMessage)
 
