@@ -72,6 +72,8 @@ async function main(): Promise<void> {
   })
   app.options('*', (_req: Request, res: Response): void => { res.sendStatus(204) })
 
+  // LiqPay callback is sent as application/x-www-form-urlencoded — must be before json()
+  app.use(express.urlencoded({ extended: false }))
   app.use(express.json())
   app.use(authRoutes)
   app.use(demoRoutes)

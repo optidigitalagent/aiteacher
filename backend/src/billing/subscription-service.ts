@@ -90,6 +90,8 @@ export async function activateSubscription(userId: string): Promise<void> {
          updated_at          = NOW()`,
       [userId, PLAN_ID, expiresAt, PLAN_TOTAL_MINUTES, PLAN_LESSONS_LIMIT, PLAN_LESSON_MINUTES],
     )
+
+    console.log(`[billing] subscription activated user=${userId} expiresAt=${expiresAt.toISOString()} minutes=${PLAN_TOTAL_MINUTES}`)
   })
 }
 

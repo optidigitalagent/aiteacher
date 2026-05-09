@@ -15,6 +15,11 @@ const SANDBOX    = process.env.LIQPAY_SANDBOX        === '1'
 const RESULT_URL = process.env.LIQPAY_RESULT_URL     ?? ''
 const SERVER_URL = process.env.LIQPAY_SERVER_URL     ?? ''
 
+// Statuses that mean a successful payment
+// 'sandbox' is only accepted when LIQPAY_SANDBOX=1
+const SUCCESSFUL_STATUSES = new Set(SANDBOX ? ['success', 'sandbox'] : ['success'])
+const FAILED_STATUSES     = new Set(['failure', 'error', 'reversed', 'expired'])
+
 // POST /billing/liqpay/create — authenticated; creates a pending payment + returns checkout data
 router.post('/billing/liqpay/create', requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.userId
@@ -38,6 +43,8 @@ router.post('/billing/liqpay/create', requireAuth, async (req: Request, res: Res
       sandbox:     SANDBOX,
     })
 
+    console.log(`[billing] create payment user=${userId} order=${orderId} amount=${PLAN_PRICE} sandbox=${SANDBOX}`)
+
     res.json(checkout)
   } catch (err) {
     console.error('[billing] create error:', err instanceof Error ? err.message : err)
@@ -46,16 +53,21 @@ router.post('/billing/liqpay/create', requireAuth, async (req: Request, res: Res
 })
 
 // POST /billing/liqpay/callback — public; LiqPay server-to-server callback
+// LiqPay sends application/x-www-form-urlencoded with fields: data, signature
 router.post('/billing/liqpay/callback', async (req: Request, res: Response) => {
   const { data, signature } = req.body as { data?: unknown; signature?: unknown }
 
   if (typeof data !== 'string' || typeof signature !== 'string') {
+    console.warn('[billing] callback: missing data or signature fields')
     res.status(400).json({ error: 'Missing data or signature' })
     return
   }
 
-  if (!verifySignature(data, signature)) {
-    console.warn('[billing] callback: signature mismatch')
+  const signatureValid = verifySignature(data, signature)
+  console.log(`[billing] callback signature valid=${signatureValid}`)
+
+  if (!signatureValid) {
+    console.warn('[billing] callback: signature mismatch — rejecting')
     res.status(400).json({ error: 'Invalid signature' })
     return
   }
@@ -72,6 +84,8 @@ router.post('/billing/liqpay/callback', async (req: Request, res: Response) => {
   const status   = payload['status']    as string | undefined
   const amount   = Number(payload['amount'])
   const currency = payload['currency']  as string | undefined
+
+  console.log(`[billing] callback received order=${orderId ?? 'none'} status=${status ?? 'none'} amount=${amount} currency=${currency ?? 'none'}`)
 
   if (!orderId) {
     res.status(400).json({ error: 'Missing order_id' })
@@ -97,11 +111,12 @@ router.post('/billing/liqpay/callback', async (req: Request, res: Response) => {
   }
 
   const payment = paymentRes.rows[0]!
+  console.log(`[billing] payment matched order=${orderId} user=${payment.user_id} currentStatus=${payment.status}`)
 
   // Validate amount and currency
   const expectedAmount = Number(payment.amount)
   if (Math.abs(expectedAmount - amount) > 0.01) {
-    console.warn(`[billing] callback: amount mismatch for ${orderId}: expected ${expectedAmount}, got ${amount}`)
+    console.warn(`[billing] callback: amount mismatch order=${orderId} expected=${expectedAmount} got=${amount}`)
     await query(
       `UPDATE payments SET status = 'failure', raw_provider_payload = $1, updated_at = NOW() WHERE order_id = $2`,
       [JSON.stringify(payload), orderId],
@@ -111,7 +126,7 @@ router.post('/billing/liqpay/callback', async (req: Request, res: Response) => {
   }
 
   if (currency && payment.currency !== currency) {
-    console.warn(`[billing] callback: currency mismatch for ${orderId}`)
+    console.warn(`[billing] callback: currency mismatch order=${orderId} expected=${payment.currency} got=${currency}`)
     await query(
       `UPDATE payments SET status = 'failure', raw_provider_payload = $1, updated_at = NOW() WHERE order_id = $2`,
       [JSON.stringify(payload), orderId],
@@ -120,15 +135,14 @@ router.post('/billing/liqpay/callback', async (req: Request, res: Response) => {
     return
   }
 
-  // Map provider status to internal status
-  // LiqPay sandbox uses 'sandbox' as success status
-  const SUCCESSFUL = new Set(['success', 'sandbox'])
-  const FAILED     = new Set(['failure', 'error', 'reversed', 'expired'])
-
   let newStatus: string
-  if (SUCCESSFUL.has(status ?? ''))      newStatus = 'success'
-  else if (FAILED.has(status ?? ''))     newStatus = 'failure'
-  else                                   newStatus = status ?? 'pending'
+  if (SUCCESSFUL_STATUSES.has(status ?? ''))  newStatus = 'success'
+  else if (FAILED_STATUSES.has(status ?? '')) newStatus = 'failure'
+  else                                        newStatus = status ?? 'pending'
+
+  if (status === 'sandbox') {
+    console.log(`[billing] sandbox payment accepted order=${orderId}`)
+  }
 
   // Idempotency: already successfully processed
   if (payment.status === 'success' && newStatus === 'success') {
@@ -145,12 +159,12 @@ router.post('/billing/liqpay/callback', async (req: Request, res: Response) => {
   if (newStatus === 'success') {
     try {
       await activateSubscription(payment.user_id)
-      console.log(`[billing] subscription activated: user=${payment.user_id} order=${orderId}`)
+      console.log(`[billing] subscription activated user=${payment.user_id} order=${orderId} minutes=500`)
     } catch (err) {
       console.error('[billing] activation failed:', err instanceof Error ? err.message : err)
     }
   } else {
-    console.log(`[billing] callback: order=${orderId} status=${newStatus}`)
+    console.log(`[billing] callback: order=${orderId} status=${newStatus} — no activation`)
   }
 
   res.json({ ok: true })

@@ -14,6 +14,7 @@ router.post('/lesson/start', requireAuth, async (req: Request, res: Response) =>
     const sub = await getSubscription(userId)
 
     if (!sub || sub.status !== 'active') {
+      console.log(`[billing] lesson gate blocked code=PAYMENT_REQUIRED user=${userId} status=${sub?.status ?? 'none'} remainingMinutes=${sub?.minutesRemaining ?? 0}`)
       res.status(402).json({
         code:    'PAYMENT_REQUIRED',
         message: 'An active subscription is required to start a paid lesson.',
@@ -23,6 +24,7 @@ router.post('/lesson/start', requireAuth, async (req: Request, res: Response) =>
 
     const now = new Date()
     if (sub.expiresAt && sub.expiresAt < now) {
+      console.log(`[billing] lesson gate blocked code=SUBSCRIPTION_EXPIRED user=${userId} status=${sub.status} remainingMinutes=${sub.minutesRemaining}`)
       res.status(402).json({
         code:    'SUBSCRIPTION_EXPIRED',
         message: 'Your subscription has expired. Please renew to continue.',
@@ -31,6 +33,7 @@ router.post('/lesson/start', requireAuth, async (req: Request, res: Response) =>
     }
 
     if (sub.minutesRemaining <= 0) {
+      console.log(`[billing] lesson gate blocked code=LESSON_LIMIT_REACHED user=${userId} status=${sub.status} remainingMinutes=0`)
       res.status(402).json({
         code:             'LESSON_LIMIT_REACHED',
         message:          'You have used all included lesson minutes for this period.',
