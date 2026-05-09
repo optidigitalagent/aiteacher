@@ -37,6 +37,8 @@ import {
   detectEmbeddedConfusion,
   normalizeVoiceTranscript,
   analyzeAnswerQuality,
+  detectAcknowledgment,
+  lookupVocabEntry,
 } from '../demo/abuse-guard.js'
 import { DEMO_AI_CONFIG, canUseDemoAI, DEMO_TTS_CONFIG, canUseDemoTTS } from '../demo/ai-config.js'
 
@@ -375,6 +377,10 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey), ...convClarification('meta_help') })
         return
       }
+      if (detectAcknowledgment(answer)) {
+        res.status(422).json({ code: 'ACKNOWLEDGMENT', message: ensureTeacherContinues("Good — now let's get to it.", stepPrompt), ...convClarification('acknowledgment') })
+        return
+      }
       if (detectToxicity(answer)) {
         console.log('[demo-ai] moderation step=warm_up')
         res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt), ...convRetry('moderation') })
@@ -430,6 +436,10 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       const stepPrompt = expectedStep.prompt ?? ''
       if (detectMetaHelpIntent(answer)) {
         res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey), ...convClarification('meta_help') })
+        return
+      }
+      if (detectAcknowledgment(answer)) {
+        res.status(422).json({ code: 'ACKNOWLEDGMENT', message: ensureTeacherContinues("Glad that helped. Now —", stepPrompt), ...convClarification('acknowledgment') })
         return
       }
       if (detectToxicity(answer)) {
@@ -502,6 +512,10 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
 
       if (detectMetaHelpIntent(answer)) {
         res.status(422).json({ code: 'META_HELP', message: buildMetaHelpResponse(session, stepPrompt, stepKey), ...convClarification('meta_help') })
+        return
+      }
+      if (detectAcknowledgment(answer)) {
+        res.status(422).json({ code: 'ACKNOWLEDGMENT', message: ensureTeacherContinues("Glad that helped — now try to answer:", stepPrompt), ...convClarification('acknowledgment') })
         return
       }
       if (detectToxicity(answer)) {
@@ -599,6 +613,14 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         const clarification = buildTaskClarification(session, stepKey, stepPrompt)
         console.log(`[demo-conversation] stepKey=${stepKey} responseType=STUDENT_QUESTION expectsStudentReply=true mayAdvance=false reason=embedded_confusion`)
         res.status(422).json({ code: 'STUDENT_QUESTION', message: clarification, spokenMessage: clarification.slice(0, 200), ...convClarification('embedded_confusion') })
+        return
+      }
+
+      // ── 0d. Acknowledgment — student reacting to teacher, not attempting the task ──
+      // Detected before classifyInput to prevent unnecessary AI calls.
+      if (detectAcknowledgment(answer)) {
+        console.log(`[demo-ack] step=${stepKey}`)
+        res.status(422).json({ code: 'ACKNOWLEDGMENT', message: ensureTeacherContinues("Good — now let's get back to it.", stepPrompt), ...convClarification('acknowledgment') })
         return
       }
 
@@ -1024,28 +1046,39 @@ router.post('/demo/help', requireAuth, async (req: Request, res: Response): Prom
       return
     }
 
+    // Resolve step prompt once — reused across all branches below
+    const currentStep = buildStep(session, session.step_index)
+    const stepPrompt = currentStep?.prompt ?? ''
+
     // Try vocab detection first (template-based, free)
     const vocabWord = detectVocabWord(text)
     if (vocabWord && vocabWord !== '__confused__') {
       const entry = VOCAB_EXPLANATIONS[vocabWord]
       if (entry) {
         console.log('[demo-help] mode=template word=' + vocabWord)
-        const currentStep = buildStep(session, session.step_index)
-        const stepPrompt = currentStep?.prompt ?? ''
         const base = `${entry.explanation}\n${entry.example}\n${entry.taskHint}`
         res.json({ message: ensureTeacherContinues(base, stepPrompt) })
         return
       }
     }
 
-    // Generic fallback — no AI call for help (keeps demo cost-safe)
+    // Direct single-word lookup — help button is more permissive than answer evaluation.
+    // detectVocabWord requires '?' for bare words; here we know the user explicitly asked.
+    const firstWord = text.trim().split(/\s+/)[0] ?? ''
+    const directEntry = lookupVocabEntry(firstWord)
+    if (directEntry) {
+      console.log('[demo-help] mode=direct_lookup word=' + firstWord.toLowerCase())
+      const base = `${directEntry.explanation}\n${directEntry.example}\n${directEntry.taskHint}`
+      res.json({ message: ensureTeacherContinues(base, stepPrompt) })
+      return
+    }
+
+    // Generic fallback — no AI call (keeps demo cost-safe)
     console.log('[demo-help] mode=generic')
-    const currentStep = buildStep(session, session.step_index)
-    const stepPrompt = currentStep?.prompt ?? ''
     const wordClean = text.replace(/[^a-zA-Z\s]/g, '').trim().split(/\s+/).slice(0, 3).join(' ')
     const base = wordClean
-      ? `Good question. Try to use "${wordClean}" in a full sentence — even a simple attempt helps a lot.`
-      : "Good question — try using it in a simple sentence. Even a short attempt tells me a lot."
+      ? `Good question — "${wordClean}" is part of the task. Look at the context and try one sentence using it — even a rough attempt is fine.`
+      : "Good question — try putting it in a simple sentence. Even a short attempt gives me a lot to work with."
     res.json({ message: ensureTeacherContinues(base, stepPrompt) })
   } catch (err) {
     console.error('[demo/help] error:', err instanceof Error ? err.message : err)
