@@ -15,7 +15,22 @@ export interface LessonStartPayload {
 }
 
 export interface LessonStartResponse {
-  sessionId: string
+  sessionId:       string
+  remainingMinutes: number
+}
+
+export type BillingErrorCode = 'PAYMENT_REQUIRED' | 'SUBSCRIPTION_EXPIRED' | 'LESSON_LIMIT_REACHED'
+
+export class BillingError extends Error {
+  code:             BillingErrorCode
+  remainingMinutes: number | undefined
+
+  constructor(code: BillingErrorCode, message: string, remainingMinutes?: number) {
+    super(message)
+    this.name             = 'BillingError'
+    this.code             = code
+    this.remainingMinutes = remainingMinutes
+  }
 }
 
 export async function startLesson(payload: LessonStartPayload): Promise<LessonStartResponse> {
@@ -35,9 +50,17 @@ export async function startLesson(payload: LessonStartPayload): Promise<LessonSt
       voiceId:       payload.voiceId,
     }),
   })
+
+  if (res.status === 402) {
+    const data = await res.json() as { code?: string; message?: string; remainingMinutes?: number }
+    const code = (data.code ?? 'PAYMENT_REQUIRED') as BillingErrorCode
+    throw new BillingError(code, data.message ?? 'Payment required', data.remainingMinutes)
+  }
+
   if (!res.ok) throw new Error(`Server error: ${res.status}`)
+
   const data = await res.json() as Record<string, unknown>
   const sessionId = (data.sessionId ?? data.lessonId ?? data.id) as string | undefined
   if (!sessionId) throw new Error('No session ID returned')
-  return { sessionId }
+  return { sessionId, remainingMinutes: Number(data.remainingMinutes ?? 0) }
 }

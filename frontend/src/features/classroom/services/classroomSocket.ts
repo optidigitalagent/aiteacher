@@ -39,12 +39,14 @@ export type SendFn = (payload: object) => void
 // ── Connection ────────────────────────────────────────────────────────────────
 
 export function createClassroomSocket(
-  onMessage: (msg: BackendMessage) => void,
-  onOpen?:   () => void,
-  onClose?:  () => void,
-  token?:    string,
+  onMessage:  (msg: BackendMessage) => void,
+  onOpen?:    () => void,
+  onClose?:   () => void,
+  token?:     string,
+  sessionId?: string,
 ): WebSocket {
-  const url = token ? `${WS_BASE}/lesson?token=${encodeURIComponent(token)}` : `${WS_BASE}/lesson`
+  let url = token ? `${WS_BASE}/lesson?token=${encodeURIComponent(token)}` : `${WS_BASE}/lesson`
+  if (sessionId) url += `&sessionId=${encodeURIComponent(sessionId)}`
   const ws = new WebSocket(url)
 
   ws.onopen = () => {

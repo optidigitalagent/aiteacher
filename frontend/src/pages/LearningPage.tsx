@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { startLesson } from '../services/lessonStartApi'
+import { startLesson, BillingError } from '../services/lessonStartApi'
 import type { LessonStartPayload } from '../services/lessonStartApi'
 import type { LessonSessionMetadata } from '../types/lessonTypes'
 import { useAuth } from '../context/AuthContext'
@@ -599,6 +599,16 @@ export default function LearningPage() {
       const { sessionId } = await startLesson(payload)
       navigate(`/classroom/${sessionId}`, { state: { ...baseMeta, sessionId } })
     } catch (err) {
+      if (err instanceof BillingError) {
+        if (err.code === 'SUBSCRIPTION_EXPIRED') {
+          navigate('/pricing?reason=expired')
+        } else if (err.code === 'LESSON_LIMIT_REACHED') {
+          navigate('/pricing?reason=limit_reached')
+        } else {
+          navigate('/pricing?reason=required')
+        }
+        return
+      }
       console.error('[LearningPage] startLesson failed:', err)
       setError('Failed to start lesson. Please try again.')
     } finally {

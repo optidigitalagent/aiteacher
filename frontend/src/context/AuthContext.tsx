@@ -18,6 +18,13 @@ export interface AuthProfile {
   currentBook:          string | null
   currentSection:       string | null
   subscriptionStatus:   string
+  planId:               string | null
+  planExpiresAt:        string | null
+  paidMinutesLimit:     number
+  paidMinutesUsed:      number
+  paidMinutesRemaining: number
+  paidLessonsLimit:     number
+  paidLessonMinutes:    number
 }
 
 interface AuthState {

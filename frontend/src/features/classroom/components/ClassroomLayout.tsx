@@ -28,7 +28,7 @@ const ENV_SECTION = import.meta.env.VITE_LESSON_SECTION as string | undefined
 export type ClassroomMode = 'demo' | 'paid'
 
 export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
-  const { demoId } = useParams<{ sessionId?: string; demoId?: string }>()
+  const { demoId, sessionId: paidSessionId } = useParams<{ sessionId?: string; demoId?: string }>()
   const location    = useLocation()
   const navigate    = useNavigate()
   const { isAuthenticated, isAuthLoading } = useAuth()
@@ -262,6 +262,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       },
       () => {},
       token ?? undefined,
+      paidSessionId ?? undefined,
     )
     wsRef.current = ws
     return () => { ws.close() }

@@ -25,9 +25,11 @@ import { checkConnection as checkPostgres, initTables } from './db/postgres.js'
 import { checkConnection as checkRedis } from './db/redis.js'
 import { attachLessonWS } from './ws/lesson-ws.js'
 import { setupOpenAI } from './ai/openai-handler.js'
-import apiRoutes  from './api/routes.js'
-import authRoutes from './api/auth-routes.js'
-import demoRoutes from './api/demo-routes.js'
+import apiRoutes     from './api/routes.js'
+import authRoutes    from './api/auth-routes.js'
+import demoRoutes    from './api/demo-routes.js'
+import lessonRoutes  from './api/lesson-routes.js'
+import billingRoutes from './billing/billing-routes.js'
 
 const REQUIRED_ENV = [
   'DATABASE_URL', 'REDIS_URL', 'JWT_SECRET',
@@ -73,6 +75,8 @@ async function main(): Promise<void> {
   app.use(express.json())
   app.use(authRoutes)
   app.use(demoRoutes)
+  app.use(lessonRoutes)
+  app.use(billingRoutes)
   app.use(apiRoutes)
 
   const server = createServer(app)

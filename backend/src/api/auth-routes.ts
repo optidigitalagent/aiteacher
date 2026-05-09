@@ -180,18 +180,30 @@ router.get('/api/me', requireAuth, async (req: Request, res: Response) => {
       current_book:          string | null
       current_section:       string | null
       subscription_status:   string
+      plan_id:               string | null
+      plan_expires_at:       string | null
+      paid_minutes_limit:    number
+      paid_minutes_used:     number
+      paid_lessons_limit:    number
+      paid_lesson_minutes:   number
     }>(
       `SELECT u.id, u.email, u.name, u.avatar_url,
-              COALESCE(ulp.display_name,          NULL)          AS display_name,
-              COALESCE(ulp.avatar_emoji,           NULL)          AS avatar_emoji,
-              COALESCE(ulp.level,                 'Beginner')    AS level,
-              COALESCE(ulp.rank,                  'New Learner') AS rank,
-              COALESCE(ulp.xp,                    0)             AS xp,
-              COALESCE(ulp.lessons_completed,     0)             AS lessons_completed,
-              COALESCE(ulp.demo_lessons_completed, 0)            AS demo_lessons_completed,
+              COALESCE(ulp.display_name,           NULL)          AS display_name,
+              COALESCE(ulp.avatar_emoji,            NULL)          AS avatar_emoji,
+              COALESCE(ulp.level,                  'Beginner')    AS level,
+              COALESCE(ulp.rank,                   'New Learner') AS rank,
+              COALESCE(ulp.xp,                     0)             AS xp,
+              COALESCE(ulp.lessons_completed,      0)             AS lessons_completed,
+              COALESCE(ulp.demo_lessons_completed,  0)            AS demo_lessons_completed,
               ulp.current_book,
               ulp.current_section,
-              COALESCE(ulp.subscription_status,   'free')        AS subscription_status
+              COALESCE(ulp.subscription_status,    'free')        AS subscription_status,
+              ulp.plan_id,
+              ulp.plan_expires_at,
+              COALESCE(ulp.paid_minutes_limit,     0)             AS paid_minutes_limit,
+              COALESCE(ulp.paid_minutes_used,      0)             AS paid_minutes_used,
+              COALESCE(ulp.paid_lessons_limit,     0)             AS paid_lessons_limit,
+              COALESCE(ulp.paid_lesson_minutes,    0)             AS paid_lesson_minutes
        FROM users u
        LEFT JOIN user_lesson_profiles ulp ON ulp.user_id = u.id
        WHERE u.id = $1`,
@@ -202,6 +214,8 @@ router.get('/api/me', requireAuth, async (req: Request, res: Response) => {
       return
     }
     const row = r.rows[0]!
+    const minutesLimit = Number(row.paid_minutes_limit)
+    const minutesUsed  = Number(row.paid_minutes_used)
     res.json({
       authenticated: true,
       user: {
@@ -221,6 +235,13 @@ router.get('/api/me', requireAuth, async (req: Request, res: Response) => {
         currentBook:          row.current_book,
         currentSection:       row.current_section,
         subscriptionStatus:   row.subscription_status,
+        planId:               row.plan_id,
+        planExpiresAt:        row.plan_expires_at,
+        paidMinutesLimit:     minutesLimit,
+        paidMinutesUsed:      minutesUsed,
+        paidMinutesRemaining: Math.max(0, minutesLimit - minutesUsed),
+        paidLessonsLimit:     Number(row.paid_lessons_limit),
+        paidLessonMinutes:    Number(row.paid_lesson_minutes),
       },
     })
   } catch {

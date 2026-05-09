@@ -4,6 +4,7 @@ import { v4 as uuid } from 'uuid'
 import { URL } from 'url'
 import { query } from '../db/postgres.js'
 import { verifyToken } from '../auth/jwt.js'
+import { getSubscription, finalizeUsage } from '../billing/subscription-service.js'
 import redis, {
   LESSON_TTL,
   lessonStateKey,
@@ -99,14 +100,19 @@ function buildFocusGreeting(
 
 const orchestrator = new LessonOrchestrator()
 
+const MAX_LESSON_MS = Number(process.env.PAID_PLAN_LESSON_MINUTES ?? 50) * 60_000
+
 interface ClientMeta {
   lessonId:        string | null
   studentId:       string | null
   userId:          string | null
+  sessionId:       string | null   // paid lesson session ID from /lesson/start
+  usageId:         string | null   // paid_lesson_usage.id for minute tracking
   lessonStartedAt: number | null
   lastSeen:        number
   heartbeatRef:    ReturnType<typeof setInterval>
   timeoutRef:      ReturnType<typeof setTimeout>
+  maxDurationRef:  ReturnType<typeof setTimeout> | null
   stt:             DeepgramSTT | null
   ttsController:   AbortController | null
 }
@@ -123,16 +129,72 @@ function resetInactivityTimer(ws: WebSocket, meta: ClientMeta): void {
   meta.timeoutRef = setTimeout(() => ws.terminate(), INACTIVITY_TIMEOUT_MS)
 }
 
+async function checkAndLinkPaidSession(ws: WebSocket, meta: ClientMeta): Promise<boolean> {
+  if (!meta.userId) {
+    send(ws, { type: 'error', code: 'AUTH_REQUIRED', message: 'Authentication required.' })
+    return false
+  }
+
+  // Validate subscription
+  const sub = await getSubscription(meta.userId)
+  if (!sub || sub.status !== 'active') {
+    send(ws, { type: 'error', code: 'PAYMENT_REQUIRED', message: 'Active subscription required.' })
+    ws.close(4402, 'Payment required')
+    return false
+  }
+  if (sub.expiresAt && sub.expiresAt < new Date()) {
+    send(ws, { type: 'error', code: 'SUBSCRIPTION_EXPIRED', message: 'Subscription expired.' })
+    ws.close(4402, 'Subscription expired')
+    return false
+  }
+  if (sub.minutesRemaining <= 0) {
+    send(ws, { type: 'error', code: 'LESSON_LIMIT_REACHED', message: 'No lesson minutes remaining.' })
+    ws.close(4402, 'Lesson limit reached')
+    return false
+  }
+
+  // Link to existing usage record created by /lesson/start, or create a new one
+  if (meta.sessionId) {
+    const existing = await query<{ id: string }>(
+      `SELECT id FROM paid_lesson_usage WHERE session_id = $1 AND user_id = $2 AND status = 'active'`,
+      [meta.sessionId, meta.userId],
+    )
+    if (existing.rows[0]) {
+      meta.usageId = existing.rows[0].id
+    }
+  }
+
+  if (!meta.usageId) {
+    const r = await query<{ id: string }>(
+      `INSERT INTO paid_lesson_usage (user_id, session_id, started_at, status)
+       VALUES ($1, $2, NOW(), 'active')
+       RETURNING id`,
+      [meta.userId, meta.sessionId],
+    )
+    meta.usageId = r.rows[0]?.id ?? null
+  }
+
+  return true
+}
+
 async function handleLessonStart(
   ws: WebSocket,
   meta: ClientMeta,
   config: LessonConfig,
 ): Promise<void> {
+  if (!await checkAndLinkPaidSession(ws, meta)) return
+
   const effectiveStudentId = meta.studentId ?? config.studentId
   const lessonId = uuid()
   meta.lessonId        = lessonId
   meta.studentId       = effectiveStudentId
   meta.lessonStartedAt = Date.now()
+
+  // Enforce 50-minute hard cap per paid session
+  meta.maxDurationRef = setTimeout(() => {
+    send(ws, { type: 'error', code: 'SESSION_TIME_LIMIT', message: 'Maximum lesson duration reached.' })
+    ws.close(4408, 'Time limit reached')
+  }, MAX_LESSON_MS)
 
   await query(
     `INSERT INTO lessons (id, student_id, grammar_target, lesson_topic, textbook_unit)
@@ -190,6 +252,8 @@ async function handleFocusLessonStart(
   meta: ClientMeta,
   config: FocusLessonConfig,
 ): Promise<void> {
+  if (!await checkAndLinkPaidSession(ws, meta)) return
+
   const unitData = getFocusUnit(config.unit)
   if (!unitData) {
     send(ws, { type: 'error', code: 'UNIT_NOT_FOUND', message: `Focus 2 Unit ${config.unit} is not available yet.` })
@@ -206,6 +270,12 @@ async function handleFocusLessonStart(
   meta.lessonId        = lessonId
   meta.studentId       = effectiveStudentId
   meta.lessonStartedAt = Date.now()
+
+  // Enforce 50-minute hard cap per paid session
+  meta.maxDurationRef = setTimeout(() => {
+    send(ws, { type: 'error', code: 'SESSION_TIME_LIMIT', message: 'Maximum lesson duration reached.' })
+    ws.close(4408, 'Time limit reached')
+  }, MAX_LESSON_MS)
 
   // When a specific section is selected, use its metadata as the authoritative
   // source for grammarTarget and lessonTopic — not the unit-level defaults.
@@ -469,11 +539,13 @@ export function attachLessonWS(server: Server): void {
     // ── JWT auth check ─────────────────────────────────────────────────────
     let jwtStudentId: string | null = null
     let jwtUserId:    string | null = null
+    let wsSessionId:  string | null = null
 
     try {
       const rawUrl = req.url ?? ''
       const urlObj = new URL(rawUrl, 'http://localhost')
       const token  = urlObj.searchParams.get('token')
+      wsSessionId  = urlObj.searchParams.get('sessionId')
 
       if (!token) {
         ws.close(4001, 'Authentication required')
@@ -502,10 +574,13 @@ export function attachLessonWS(server: Server): void {
       lessonId:        null,
       studentId:       jwtStudentId,
       userId:          jwtUserId,
+      sessionId:       wsSessionId,
+      usageId:         null,
       lessonStartedAt: null,
       lastSeen:        Date.now(),
       heartbeatRef,
       timeoutRef:      setTimeout(() => ws.terminate(), INACTIVITY_TIMEOUT_MS),
+      maxDurationRef:  null,
       stt:             null,
       ttsController:   null,
     }
@@ -568,10 +643,18 @@ export function attachLessonWS(server: Server): void {
     ws.on('close', () => {
       clearInterval(meta.heartbeatRef)
       clearTimeout(meta.timeoutRef)
+      if (meta.maxDurationRef) clearTimeout(meta.maxDurationRef)
       meta.ttsController?.abort()
       meta.stt?.close()
       clients.delete(ws)
       console.log(`[ws] client disconnected, total=${clients.size}`)
+
+      // Finalize paid lesson usage
+      if (meta.usageId && meta.userId && meta.lessonStartedAt) {
+        finalizeUsage(meta.usageId, meta.userId, meta.lessonStartedAt).catch((err: unknown) => {
+          console.error('[ws] finalizeUsage error:', err)
+        })
+      }
     })
 
     ws.on('error', (err: Error) => {

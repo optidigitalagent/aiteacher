@@ -6,6 +6,7 @@ import LearningPage from './pages/LearningPage'
 import AboutPage from './pages/AboutPage'
 import ProfilePage from './pages/ProfilePage'
 import PricingPage from './pages/PricingPage'
+import PaymentSuccessPage from './pages/PaymentSuccessPage'
 import SupportPage from './pages/SupportPage'
 import AuthCallbackPage from './pages/AuthCallbackPage'
 import ClassroomLayout from './features/classroom/components/ClassroomLayout'
@@ -23,6 +24,7 @@ export default function App() {
             <Route path="/about" element={<AboutPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/pricing/success" element={<PaymentSuccessPage />} />
           </Route>
 
           {/* OAuth callback — no layout */}
