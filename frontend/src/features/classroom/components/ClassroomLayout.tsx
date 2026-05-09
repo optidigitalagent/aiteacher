@@ -185,6 +185,12 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const [helpInputValue,  setHelpInputValue]  = useState('')
   // Two-stage lesson end: first show modal inside classroom, then full results on click
   const [showFullResults, setShowFullResults] = useState(false)
+  // Paid lesson end
+  type PaidLessonSummary = { lessonId: string; durationMin: number; phasesReached: string[] }
+  const [paidLessonEnded,   setPaidLessonEnded]   = useState(false)
+  const [paidLessonSummary, setPaidLessonSummary] = useState<PaidLessonSummary | null>(null)
+  // Paid lesson exit guard
+  const [showPaidLeaveModal, setShowPaidLeaveModal] = useState(false)
 
   const answerRef = useRef('')
   useEffect(() => { answerRef.current = answer }, [answer])
@@ -224,7 +230,20 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         break
       case 'section_card':
         break
+      case 'lesson_resumed':
+        if (!lessonStarted) setLessonStarted(true)
+        pushAI(msg.message)
+        setSpeaking(true)
+        break
       case 'lesson_end':
+        if (!isDemoMode) {
+          setPaidLessonSummary({
+            lessonId:      msg.summary.lessonId,
+            durationMin:   msg.summary.durationMin,
+            phasesReached: msg.summary.phasesReached,
+          })
+          setPaidLessonEnded(true)
+        }
         break
       case 'error':
         console.error('[Classroom WS] error:', msg.code, msg.message)
@@ -389,7 +408,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         <ClassroomHeader
           meta={isDemoMode ? null : sessionMeta}
           isDemo={isDemoMode}
-          onExit={isDemoMode ? () => demo.setShowLeaveModal(true) : undefined}
+          onExit={isDemoMode
+            ? () => demo.setShowLeaveModal(true)
+            : () => setShowPaidLeaveModal(true)
+          }
         />
 
         <div style={{
@@ -547,6 +569,25 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           onLeave={() => navigate('/')}
         />
       )}
+
+      {/* Paid lesson: completion modal */}
+      {!isDemoMode && paidLessonEnded && paidLessonSummary && (
+        <PaidLessonCompleteModal
+          durationMin={paidLessonSummary.durationMin}
+          onContinue={() => navigate('/learning')}
+        />
+      )}
+
+      {/* Paid lesson: exit guard */}
+      {!isDemoMode && showPaidLeaveModal && (
+        <PaidLeaveModal
+          onStay={() => setShowPaidLeaveModal(false)}
+          onLeave={() => {
+            wsRef.current?.close()
+            navigate('/learning')
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -611,6 +652,98 @@ function LessonCompleteModal({ teacherMessage, onViewResults }: {
         >
           View my results →
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Paid lesson complete modal ────────────────────────────────────────────────
+function PaidLessonCompleteModal({ durationMin, onContinue }: {
+  durationMin: number
+  onContinue:  () => void
+}) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 200,
+      background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+    }}>
+      <div style={{
+        background: 'white', borderRadius: 24, padding: '32px 28px',
+        maxWidth: 400, width: '100%',
+        boxShadow: '0 32px 64px rgba(15,23,42,0.22)',
+        textAlign: 'center',
+      }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          background: '#f0fdf4', color: '#16a34a', borderRadius: 99,
+          padding: '5px 14px', fontSize: 11, fontWeight: 800,
+          textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 18,
+        }}>
+          ✓ Lesson complete
+        </div>
+        <div style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', marginBottom: 10, lineHeight: 1.3 }}>
+          Great work!
+        </div>
+        <div style={{ fontSize: 14, color: '#64748B', marginBottom: 24, lineHeight: 1.6 }}>
+          You completed a {durationMin}-minute lesson. Your progress has been saved.
+        </div>
+        <button
+          onClick={onContinue}
+          style={{
+            width: '100%', padding: '14px 20px', borderRadius: 16, border: 'none',
+            background: 'linear-gradient(135deg,#7B8CFF,#A18BFF)',
+            color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer',
+            boxShadow: '0 8px 28px rgba(123,140,255,0.40)',
+          }}
+        >
+          Back to lessons →
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Paid lesson leave guard ───────────────────────────────────────────────────
+function PaidLeaveModal({ onStay, onLeave }: { onStay: () => void; onLeave: () => void }) {
+  return (
+    <div
+      onClick={onStay}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'white', borderRadius: 24, padding: '32px 28px',
+          maxWidth: 400, width: '100%',
+          boxShadow: '0 32px 64px rgba(15,23,42,0.22)',
+        }}
+      >
+        <div style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', marginBottom: 10 }}>
+          Leave your lesson?
+        </div>
+        <div style={{ fontSize: 14, color: '#64748B', lineHeight: 1.65, marginBottom: 24 }}>
+          Your progress will be saved. You can resume this lesson next time.
+          Minutes used so far will count toward your monthly balance.
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={onStay}
+            style={{ flex: 1, padding: '12px 0', borderRadius: 14, border: '1.5px solid #E6EAF2', background: 'white', color: '#0F172A', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+          >
+            Stay in lesson
+          </button>
+          <button
+            onClick={onLeave}
+            style={{ flex: 1, padding: '12px 0', borderRadius: 14, border: 'none', background: 'linear-gradient(135deg,#7B8CFF,#A18BFF)', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+          >
+            Save & exit
+          </button>
+        </div>
       </div>
     </div>
   )

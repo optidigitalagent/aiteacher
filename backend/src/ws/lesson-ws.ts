@@ -33,6 +33,17 @@ import type { StudentConfused } from './message-types.js'
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
 
+// Derive unit number from a section string like "2.3" → 2
+function unitFromSection(section: string): number {
+  const n = parseInt(section.split('.')[0] ?? '1', 10)
+  return Number.isNaN(n) || n < 1 ? 1 : n
+}
+
+// Resolve teacher display name from id
+function teacherDisplayName(teacherId?: string): string {
+  return teacherId === 'emma' ? 'Emma' : 'Alex'
+}
+
 // ── Voice input filter ────────────────────────────────────────────────────────
 // Deepgram fires UtteranceEnd after 1500ms of silence, but short fillers and
 // trailing-conjunction fragments still arrive as "complete" utterances.
@@ -56,9 +67,12 @@ function buildFocusGreeting(
   section: string | undefined,
   grammarTarget: string,
   textbookUnit: string,
+  teacherId?: string,
 ): string {
+  const tName = teacherDisplayName(teacherId)
+
   if (!section) {
-    return `Hello! I'm Alex. Today we're working on ${textbookUnit}. Grammar focus: ${grammarTarget}. Tell me one example sentence using this grammar — don't worry if it's not perfect.`
+    return `Hello! I'm ${tName}. Today we're working on ${textbookUnit}. Grammar focus: ${grammarTarget}. Tell me one example sentence using this grammar — don't worry if it's not perfect.`
   }
 
   // Student Book is the authoritative source for the section title and content.
@@ -95,7 +109,7 @@ function buildFocusGreeting(
 
   body += ` Open your book to this section. Tell me when you're on the page.`
 
-  return `Hello! I'm Alex, your English teacher. ${body}`
+  return `Hello! I'm ${tName}, your English teacher. ${body}`
 }
 
 const orchestrator = new LessonOrchestrator()
@@ -109,6 +123,8 @@ interface ClientMeta {
   sessionId:       string | null   // paid lesson session ID from /lesson/start
   usageId:         string | null   // paid_lesson_usage.id for minute tracking
   lessonStartedAt: number | null
+  voiceId:         string | null   // selected TTS voice id
+  teacherId:       string | null   // 'alex' | 'emma'
   lastSeen:        number
   heartbeatRef:    ReturnType<typeof setInterval>
   timeoutRef:      ReturnType<typeof setTimeout>
@@ -174,6 +190,74 @@ async function checkAndLinkPaidSession(ws: WebSocket, meta: ClientMeta): Promise
     meta.usageId = r.rows[0]?.id ?? null
   }
 
+  return true
+}
+
+// ── Resume logic ──────────────────────────────────────────────────────────────
+// Try to restore a lesson that was interrupted (browser close, network drop, etc.)
+// Returns true if resumed successfully, false if a fresh lesson must be started.
+
+async function resumeLesson(
+  ws: WebSocket,
+  meta: ClientMeta,
+  existingLessonId: string,
+): Promise<boolean> {
+  const stateRaw = await redis.get(lessonStateKey(existingLessonId))
+  if (!stateRaw) {
+    console.log(`[ws] resume skipped — Redis TTL expired for lessonId=${existingLessonId}`)
+    return false
+  }
+
+  const state = JSON.parse(stateRaw) as LessonState
+
+  // Calculate how much time is left from the original lesson
+  const originalStart = new Date(state.startedAt).getTime()
+  const elapsedMs     = Date.now() - originalStart
+  const remainingMs   = Math.max(0, MAX_LESSON_MS - elapsedMs)
+
+  if (remainingMs <= 60_000) {
+    // Less than 1 minute remaining — not worth resuming
+    send(ws, { type: 'error', code: 'SESSION_TIME_LIMIT', message: 'Lesson time has expired. Please start a new lesson.' })
+    return true  // handled — don't start fresh
+  }
+
+  // Restore meta state
+  meta.lessonId        = existingLessonId
+  meta.studentId       = state.studentId
+  meta.voiceId         = state.voiceId   ?? meta.voiceId
+  meta.teacherId       = state.teacherId ?? meta.teacherId
+  meta.lessonStartedAt = Date.now()
+
+  // Reset hard cap to remaining time
+  meta.maxDurationRef = setTimeout(() => {
+    send(ws, { type: 'error', code: 'SESSION_TIME_LIMIT', message: 'Maximum lesson duration reached.' })
+    ws.close(4408, 'Time limit reached')
+  }, remainingMs)
+
+  // Restart STT for new connection
+  meta.stt = new DeepgramSTT((transcript) => {
+    send(ws, { type: 'transcript', text: transcript })
+    if (shouldProcessTranscript(transcript)) {
+      void processInput(ws, meta, transcript)
+    }
+  })
+
+  const tName   = teacherDisplayName(meta.teacherId ?? undefined)
+  const exNote  = state.currentExerciseNum > 0
+    ? ` We were on Exercise ${state.currentExerciseNum}.`
+    : ''
+  const resumeMsg = `Welcome back! I'm ${tName}.${exNote} Let's continue — what do you remember from where we stopped?`
+
+  send(ws, {
+    type:        'lesson_resumed',
+    phase:       state.phase,
+    exerciseNum: state.currentExerciseNum,
+    message:     resumeMsg,
+  })
+  send(ws, { type: 'ai_text', phase: state.phase, text: resumeMsg })
+  await ttsStream(ws, meta, resumeMsg)
+
+  console.log(`[ws] lesson resumed lessonId=${existingLessonId} phase=${state.phase} exercise=${state.currentExerciseNum} remainingMs=${remainingMs}`)
   return true
 }
 
@@ -254,9 +338,32 @@ async function handleFocusLessonStart(
 ): Promise<void> {
   if (!await checkAndLinkPaidSession(ws, meta)) return
 
-  const unitData = getFocusUnit(config.unit)
+  // ── Store teacher + voice from config (before any early return) ──────────
+  if (config.teacherId) meta.teacherId = config.teacherId
+  if (config.voiceId)   meta.voiceId   = config.voiceId
+
+  // ── Derive unit from section number (e.g. "2.3" → unit 2) ───────────────
+  // The frontend sends VITE_LESSON_UNIT which may not match the actual section.
+  // Always trust the section number over the unit field.
+  const effectiveUnit = config.section ? unitFromSection(config.section) : config.unit
+
+  // ── Resume check: if this sessionId already has an active lesson in DB ───
+  if (meta.sessionId && meta.userId) {
+    const existingRow = await query<{ lesson_id: string | null }>(
+      `SELECT lesson_id FROM lesson_sessions WHERE session_id = $1 AND user_id = $2 AND status = 'active'`,
+      [meta.sessionId, meta.userId],
+    )
+    const existingLessonId = existingRow.rows[0]?.lesson_id
+    if (existingLessonId) {
+      const resumed = await resumeLesson(ws, meta, existingLessonId)
+      if (resumed) return
+      // Redis expired — fall through to create a new lesson
+    }
+  }
+
+  const unitData = getFocusUnit(effectiveUnit)
   if (!unitData) {
-    send(ws, { type: 'error', code: 'UNIT_NOT_FOUND', message: `Focus 2 Unit ${config.unit} is not available yet.` })
+    send(ws, { type: 'error', code: 'UNIT_NOT_FOUND', message: `Focus 2 Unit ${effectiveUnit} is not available yet.` })
     return
   }
 
@@ -293,16 +400,26 @@ async function handleFocusLessonStart(
     [lessonId, effectiveStudentId, grammarTarget, lessonTopic, unitData.textbookUnit],
   )
 
+  // Write lessonId back to lesson_sessions so reconnections can resume
+  if (meta.sessionId) {
+    await query(
+      `UPDATE lesson_sessions SET lesson_id = $1, status = 'active', updated_at = NOW() WHERE session_id = $2`,
+      [lessonId, meta.sessionId],
+    )
+  }
+
   const initialState: LessonState = {
     lessonId,
     studentId:      effectiveStudentId,
     phase:          'DIAGNOSTIC',
     mode:           'focus',
-    focusUnit:      config.unit,
+    focusUnit:      effectiveUnit,
     focusLesson:    config.section,
     grammarTarget,
     lessonTopic,
     textbookUnit:   unitData.textbookUnit,
+    teacherId:      meta.teacherId ?? undefined,
+    voiceId:        meta.voiceId   ?? undefined,
     currentExerciseNum:  0,
     completedExercises:  [],
     exchangeCount:       0,
@@ -334,7 +451,8 @@ async function handleFocusLessonStart(
     }
   })
 
-  const greeting = buildFocusGreeting(config.unit, config.section, unitData.grammarTarget, unitData.textbookUnit)
+  // Personalise greeting with selected teacher name
+  const greeting = buildFocusGreeting(effectiveUnit, config.section, unitData.grammarTarget, unitData.textbookUnit, meta.teacherId ?? undefined)
 
   send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: greeting })
 
@@ -404,6 +522,14 @@ async function processInput(
       },
     })
 
+    // Mark lesson_sessions completed so resume no longer triggers
+    if (meta.sessionId) {
+      query(
+        `UPDATE lesson_sessions SET status = 'completed', updated_at = NOW() WHERE session_id = $1`,
+        [meta.sessionId],
+      ).catch((err: unknown) => console.error('[ws] session status update error:', err))
+    }
+
     // Update student profile async — don't block the response
     if (meta.studentId) {
       const lessonId  = meta.lessonId
@@ -428,7 +554,12 @@ async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise
   // Abort previous AFTER registering new controller so the chain is clean
   try { prev?.abort() } catch { /* ignore abort-chain side effects */ }
   try {
-    await speakToClient((msg) => send(ws, msg), text, meta.ttsController.signal)
+    await speakToClient(
+      (msg) => send(ws, msg),
+      text,
+      meta.ttsController.signal,
+      meta.voiceId ?? undefined,
+    )
   } catch (err: unknown) {
     if (err instanceof Error && err.name !== 'AbortError') {
       console.error('[ws] TTS error:', err.message)
@@ -577,6 +708,8 @@ export function attachLessonWS(server: Server): void {
       sessionId:       wsSessionId,
       usageId:         null,
       lessonStartedAt: null,
+      voiceId:         null,
+      teacherId:       null,
       lastSeen:        Date.now(),
       heartbeatRef,
       timeoutRef:      setTimeout(() => ws.terminate(), INACTIVITY_TIMEOUT_MS),

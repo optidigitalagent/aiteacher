@@ -118,6 +118,7 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string) => {
     errorPatterns:  student.error_patterns  ?? [],
     grammarMastery: student.grammar_mastery ?? {},
     ragContext,
+    teacherName:    state.teacherId === 'emma' ? 'Emma' : 'Alex',
   }
 
   const systemPrompt = buildSystemPrompt(ctx)

@@ -39,6 +39,8 @@ export interface LessonState {
   grammarTarget: string
   lessonTopic:   string
   textbookUnit:  string
+  teacherId?:   string        // 'alex' | 'emma' — persisted for resume
+  voiceId?:    string        // 'onyx' | 'echo' | 'nova' | 'shimmer' — persisted for resume
 
   // exchange counters
   exchangeCount:      number

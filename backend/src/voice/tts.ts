@@ -1,9 +1,26 @@
 import OpenAI from 'openai'
 import type { OutboundMessage } from '../ws/message-types.js'
 
-const ELEVENLABS_KEY = process.env.ELEVENLABS_API_KEY ?? ''
-const VOICE_ID       = process.env.ELEVENLABS_VOICE_ID ?? '21m00Tcm4TlvDq8ikWAM'
-const OPENAI_KEY     = process.env.OPENAI_API_KEY ?? ''
+const ELEVENLABS_KEY     = process.env.ELEVENLABS_API_KEY ?? ''
+const ELEVENLABS_VOICE_DEFAULT = process.env.ELEVENLABS_VOICE_ID ?? '21m00Tcm4TlvDq8ikWAM'
+const OPENAI_KEY         = process.env.OPENAI_API_KEY ?? ''
+
+// Per-voice ElevenLabs IDs (optional): ELEVENLABS_VOICE_ONYX, _ECHO, _NOVA, _SHIMMER
+// If not set, all voices fall back to ELEVENLABS_VOICE_ID.
+function resolveElevenLabsVoiceId(voiceId?: string): string {
+  if (!voiceId) return ELEVENLABS_VOICE_DEFAULT
+  const key = `ELEVENLABS_VOICE_${voiceId.toUpperCase()}`
+  return process.env[key] ?? ELEVENLABS_VOICE_DEFAULT
+}
+
+// OpenAI accepts these voice names directly — they match our frontend voice IDs.
+const OPENAI_VALID_VOICES = new Set(['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'])
+type OpenAIVoice = 'alloy' | 'ash' | 'coral' | 'echo' | 'fable' | 'onyx' | 'nova' | 'sage' | 'shimmer'
+
+function resolveOpenAIVoice(voiceId?: string): OpenAIVoice {
+  if (voiceId && OPENAI_VALID_VOICES.has(voiceId)) return voiceId as OpenAIVoice
+  return 'nova'
+}
 
 // Once ElevenLabs fails with a billing/auth error, skip it for the whole process lifetime
 let elevenLabsDisabled = false
@@ -12,10 +29,11 @@ export async function speakToClient(
   send: (msg: OutboundMessage) => void,
   text: string,
   signal?: AbortSignal,
+  voiceId?: string,
 ): Promise<void> {
   if (ELEVENLABS_KEY && !elevenLabsDisabled) {
     try {
-      await speakElevenLabs(send, text, signal)
+      await speakElevenLabs(send, text, signal, resolveElevenLabsVoiceId(voiceId))
       return
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -31,7 +49,7 @@ export async function speakToClient(
   }
 
   if (OPENAI_KEY) {
-    await speakOpenAI(send, text, signal)
+    await speakOpenAI(send, text, signal, resolveOpenAIVoice(voiceId))
     return
   }
 
@@ -44,6 +62,7 @@ async function speakElevenLabs(
   send: (msg: OutboundMessage) => void,
   text: string,
   signal?: AbortSignal,
+  voiceId: string = ELEVENLABS_VOICE_DEFAULT,
 ): Promise<void> {
   const timeoutCtrl = new AbortController()
   const timeoutRef  = setTimeout(() => timeoutCtrl.abort(), 10_000)
@@ -54,7 +73,7 @@ async function speakElevenLabs(
   let response: Response
   try {
     response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
       {
         method: 'POST',
         signal: combined,
@@ -107,6 +126,7 @@ async function speakOpenAI(
   send: (msg: OutboundMessage) => void,
   text: string,
   signal?: AbortSignal,
+  voice: OpenAIVoice = 'nova',
 ): Promise<void> {
   const client = new OpenAI({ apiKey: OPENAI_KEY })
 
@@ -121,7 +141,7 @@ async function speakOpenAI(
     const speechResponse = await client.audio.speech.create(
       {
         model:           'tts-1',
-        voice:           'nova',   // warm, friendly — good for a teacher
+        voice,
         input:           text,
         response_format: 'mp3',
       },

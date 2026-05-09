@@ -16,6 +16,8 @@ export const FocusLessonConfigSchema = z.object({
   studentId: z.string().uuid().optional(),
   unit:      z.number().int().min(1).max(12),
   section:   z.string().regex(/^\d+\.\d+$/).optional(), // e.g. "1.1", "2.3"
+  teacherId: z.string().optional(),  // 'alex' | 'emma'
+  voiceId:   z.string().optional(),  // 'onyx' | 'echo' | 'nova' | 'shimmer'
 })
 
 export const InboundMessageSchema = z.discriminatedUnion('type', [
@@ -139,6 +141,14 @@ export interface OutboundSectionCard {
   card:      SlideSpec
 }
 
+/** Sent when a disconnected student reconnects and their lesson is resumed from Redis. */
+export interface OutboundLessonResumed {
+  type:        'lesson_resumed'
+  phase:       LessonPhase
+  exerciseNum: number
+  message:     string
+}
+
 export type OutboundMessage =
   | OutboundAiText
   | OutboundAudioChunk
@@ -150,3 +160,4 @@ export type OutboundMessage =
   | OutboundError
   | OutboundTeachingCard
   | OutboundSectionCard
+  | OutboundLessonResumed
