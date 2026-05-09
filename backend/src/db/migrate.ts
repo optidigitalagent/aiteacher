@@ -15,6 +15,9 @@ const MIGRATIONS = [
   '005_demo_engine.sql',
   '006_abuse_tracking.sql',
   '007_reset_inprogress.sql',
+  '008_billing.sql',
+  '009_paid_lesson_resume.sql',
+  '010_fix_billing_precision.sql',
 ]
 
 async function migrate(): Promise<void> {

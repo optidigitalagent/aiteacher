@@ -56,7 +56,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
 
   const {
     isListening, isSpeaking, transcript, toggle, stopRecording,
-    onAudioChunk, onTranscript, setSpeaking,
+    onAudioChunk, onTranscript, setSpeaking, onTeacherTurnEnd,
   } = useVoiceSession({ send })
 
   // ── Demo voice — Web Speech API (no WebSocket needed) ────────────────────
@@ -234,6 +234,12 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         setTeachingCard({ title: 'Explanation', body: msg.displayText })
         break
       case 'section_card':
+        break
+      case 'student_message':
+        pushUser(msg.text)
+        break
+      case 'teacher_turn_end':
+        if (!isDemoMode) onTeacherTurnEnd()
         break
       case 'lesson_resumed':
         if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }

@@ -142,6 +142,13 @@ export function stopAudioPlayback(): void {
   }
 }
 
+/** Returns how many milliseconds of queued audio remain before playback ends. */
+export function getScheduledAudioEndMs(): number {
+  if (!playCtx || playCtx.state === 'closed') return 0
+  const remaining = nextPlayTime - playCtx.currentTime
+  return remaining > 0 ? remaining * 1000 : 0
+}
+
 // ── Static audio (pre-recorded demo files served from /audio/demo/) ──────────
 
 let _staticEl:            HTMLAudioElement | null               = null

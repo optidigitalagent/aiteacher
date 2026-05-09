@@ -7,25 +7,26 @@ import {
   stopPCMCapture,
   playAudioChunk,
   stopAudioPlayback,
+  getScheduledAudioEndMs,
 } from '../services/voiceApi'
 
 interface Options { send: SendFn }
 
 export function useVoiceSession({ send }: Options): VoiceState & {
-  toggle:         () => Promise<void>
-  stopRecording:  () => void
-  onAudioChunk:   (base64: string) => void
-  onTranscript:   (text: string) => void
-  setSpeaking:    (v: boolean) => void
+  toggle:           () => Promise<void>
+  stopRecording:    () => void
+  onAudioChunk:     (base64: string) => void
+  onTranscript:     (text: string) => void
+  setSpeaking:      (v: boolean) => void
+  onTeacherTurnEnd: () => void
 } {
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking,  setIsSpeaking]  = useState(false)
   const [transcript,  setTranscript]  = useState('')
 
-  const streamRef       = useRef<MediaStream | null>(null)
-  const stopSpeakRef    = useRef<ReturnType<typeof setTimeout>>()
+  const streamRef    = useRef<MediaStream | null>(null)
+  const stopSpeakRef = useRef<ReturnType<typeof setTimeout>>()
 
-  // Schedule stopping the speaking indicator after silence
   const scheduleSpeakOff = useCallback((delayMs: number) => {
     clearTimeout(stopSpeakRef.current)
     stopSpeakRef.current = setTimeout(() => setIsSpeaking(false), delayMs)
@@ -67,13 +68,24 @@ export function useVoiceSession({ send }: Options): VoiceState & {
     } catch (err) {
       console.error('[voice] mic access denied:', err)
     }
-  }, [isListening, send, scheduleSpeakOff])
+  }, [isListening, send])
 
-  // Called when backend sends an audio_chunk event (TTS streaming)
+  // Called when backend sends an audio_chunk event (TTS streaming).
+  // Use a rolling 2s window while chunks arrive.  onTeacherTurnEnd replaces
+  // this with a precise queue-end timer once the backend signals completion.
   const onAudioChunk = useCallback((base64: string) => {
     setIsSpeaking(true)
-    scheduleSpeakOff(1500)  // resets on each incoming chunk
+    scheduleSpeakOff(2000)
     void playAudioChunk(base64)
+  }, [scheduleSpeakOff])
+
+  // Called when backend signals all TTS audio has been sent for this teacher turn.
+  // We now know no more chunks are coming, so we can schedule isSpeaking=false
+  // at the precise moment the audio queue drains — not 1.5s after the last chunk.
+  const onTeacherTurnEnd = useCallback(() => {
+    const remaining = getScheduledAudioEndMs()
+    // 300ms buffer so isSpeaking flips off just after the last word finishes
+    scheduleSpeakOff(Math.max(remaining + 300, 500))
   }, [scheduleSpeakOff])
 
   // Called when backend sends a transcript event (Deepgram STT result)
@@ -85,13 +97,13 @@ export function useVoiceSession({ send }: Options): VoiceState & {
   const setSpeaking = useCallback((v: boolean) => {
     setIsSpeaking(v)
     if (v) {
-      // Fallback: if no audio chunks arrive, stop speaking indicator after 5s
-      scheduleSpeakOff(5000)
+      // Fallback: if no audio chunks arrive, stop speaking indicator after 8s
+      scheduleSpeakOff(8000)
     } else {
       clearTimeout(stopSpeakRef.current)
       stopAudioPlayback()
     }
   }, [scheduleSpeakOff])
 
-  return { isListening, isSpeaking, transcript, toggle, stopRecording, onAudioChunk, onTranscript, setSpeaking }
+  return { isListening, isSpeaking, transcript, toggle, stopRecording, onAudioChunk, onTranscript, setSpeaking, onTeacherTurnEnd }
 }

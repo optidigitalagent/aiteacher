@@ -239,9 +239,9 @@ async function resumeLesson(
   // Restart STT for new connection
   meta.stt = new DeepgramSTT((transcript) => {
     send(ws, { type: 'transcript', text: transcript })
-    if (shouldProcessTranscript(transcript)) {
-      void processInput(ws, meta, transcript)
-    }
+    if (!shouldProcessTranscript(transcript)) return
+    send(ws, { type: 'student_message', text: transcript })
+    void processInput(ws, meta, transcript)
   })
 
   const tName   = teacherDisplayName(meta.teacherId ?? undefined)
@@ -322,9 +322,9 @@ async function handleLessonStart(
 
   meta.stt = new DeepgramSTT((transcript) => {
     send(ws, { type: 'transcript', text: transcript })
-    if (shouldProcessTranscript(transcript)) {
-      void processInput(ws, meta, transcript)
-    }
+    if (!shouldProcessTranscript(transcript)) return
+    send(ws, { type: 'student_message', text: transcript })
+    void processInput(ws, meta, transcript)
   })
 
   const greeting = `Hello! I'm Alex, your English teacher. Today we'll work on "${config.grammarTarget}" using the topic "${config.lessonTopic}". Let's start — tell me one thing you already know about this topic.`
@@ -454,6 +454,7 @@ async function handleFocusLessonStart(
       return
     }
     console.log(`[paid-lesson] student_turn_finalized chars=${transcript.trim().length}`)
+    send(ws, { type: 'student_message', text: transcript })
     void processInput(ws, meta, transcript)
   })
 
@@ -574,10 +575,15 @@ async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise
       meta.voiceId ?? undefined,
     )
     console.log(`[paid-lesson] teacher_speaking end chars=${text.length}`)
+    // Signal frontend that all TTS audio has been sent for this turn.
+    // The client uses this to calculate accurate audio-queue completion time
+    // and disable the mic until the queued audio actually finishes playing.
+    send(ws, { type: 'teacher_turn_end' })
   } catch (err: unknown) {
     if (err instanceof Error && err.name !== 'AbortError') {
       console.error('[ws] TTS error:', err.message)
     }
+    // Do NOT send teacher_turn_end on abort — frontend already handles interruption
   }
 }
 
