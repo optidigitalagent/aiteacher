@@ -65,6 +65,7 @@ const MIGRATIONS = [
   '006_abuse_tracking.sql',
   '007_reset_inprogress.sql',
   '008_billing.sql',
+  '009_paid_lesson_resume.sql',
 ]
 
 export async function initTables(): Promise<void> {
