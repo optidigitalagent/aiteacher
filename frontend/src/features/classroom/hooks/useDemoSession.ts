@@ -75,10 +75,10 @@ function sleep(ms: number) { return new Promise<void>((r) => setTimeout(r, ms)) 
 function buildFeedbackText(
   fb: { message: string; correction: string | null; score: number | null; correct: boolean | null },
   _studentText: string,
+  showCorrection = true,
 ): string {
   let text = fb.message
-  if (fb.correction) text += `\n\nA more natural way: "${fb.correction}"`
-  if (fb.score != null && fb.score >= 7) text += `\n\nScore: ${fb.score}/10`
+  if (showCorrection && fb.correction) text += `\n\nA more natural way: "${fb.correction}"`
   return text
 }
 
@@ -316,7 +316,10 @@ export function useDemoSession({
         : 'follow_up_question'
 
       const effectiveTtsType = j.isComplete ? 'final_closing' : feedbackMsgType
-      const feedbackText = buildFeedbackText(j.feedback, displayAnswer)
+      // In reflective_followup the teacher is mid-conversation with a follow-up question —
+      // hide the correction block so student isn't presented with "fix this" AND "tell me more"
+      const showCorrection = convMode !== 'reflective_followup'
+      const feedbackText = buildFeedbackText(j.feedback, displayAnswer, showCorrection)
       const spokenFeedback = j.feedback.spokenFeedback ?? undefined
 
       await sleep(400)
@@ -338,18 +341,25 @@ export function useDemoSession({
 
       // ── Advance to next step ───────────────────────────────────────────────
       if (j.nextStep) {
-        // Always update step ref so next submission routes to correct DB step
-        setCurrentStep(j.nextStep)
+        // Always update routing ref — controls which step key is sent to the backend
         currentStepRef.current = j.nextStep
 
-        // AI teacher still owns conversation — show nextStepIntro only when released
         const canShowIntro = convMode === 'transition_ready' || convMode === 'closing'
 
-        if (canShowIntro && j.nextStepIntro) {
-          console.log(`[demo-advance] nextStep=${j.nextStep.key} mode=${convMode}`)
-          await sleep(500)
-          await showAiMessage(j.nextStepIntro, 'main_prompt')
-        } else if (!canShowIntro) {
+        if (canShowIntro) {
+          // Update exercise card only when teacher introduces the next step.
+          // This prevents silent card switches — card and teacher voice stay in sync.
+          setCurrentStep(j.nextStep)
+          if (j.nextStepIntro) {
+            console.log(`[demo-advance] nextStep=${j.nextStep.key} mode=${convMode}`)
+            await sleep(500)
+            await showAiMessage(j.nextStepIntro, 'main_prompt')
+          } else {
+            console.log(`[demo-advance] nextStep=${j.nextStep.key} mode=${convMode}`)
+          }
+        } else {
+          // Teacher still owns conversation — hold exercise card until teacher introduces next step.
+          // currentStepRef is already updated so submissions route correctly.
           console.log(`[demo-advance] blocked_intro nextStep=${j.nextStep.key} mode=${convMode} reason=${j.conversationState?.reason ?? 'unknown'}`)
         }
       }

@@ -950,15 +950,14 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       await saveFinalResult(sessionId, finalResult)
     }
 
-    // For the last step: build a natural closing that fits the score.
-    // Avoids the contradiction of "add more detail... That's the session done."
+    // For the last step: always suppress correction from the separate block — it would appear
+    // after the closing line but TTS only speaks the closing, creating a visible/spoken mismatch.
     if (isLastStep) {
+      const rawCorrection = correctionMessage
+      correctionMessage = undefined
       const wasLowScore = typeof score.score === 'number' && score.score <= 5
       if (wasLowScore) {
-        // Retries exhausted, low score — replace AI's "add more detail" with graceful close.
-        // Correction is embedded in the close message; clear it to prevent double-display.
-        feedbackMessage = buildGracefulClose(score, stepKey, correctionMessage)
-        correctionMessage = undefined
+        feedbackMessage = buildGracefulClose(score, stepKey, rawCorrection)
       } else {
         feedbackMessage += '\n\n' + buildNaturalClose(score)
       }
