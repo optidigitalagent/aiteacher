@@ -228,6 +228,29 @@ async function restoreSnapshotToRedis(lessonId: string): Promise<string | null> 
   }
 }
 
+// ── Phase 2 (recovery): Periodic remaining-time broadcast ────────────────────
+// Sends lesson_timer_update every 60 seconds so the frontend can show
+// the student how much lesson time remains without needing a local clock.
+// Stops automatically when remaining time reaches zero.
+
+function startTimerBroadcast(ws: WebSocket, meta: ClientMeta): void {
+  // Send immediately so the frontend has an initial value
+  if (meta.lessonStartedAt) {
+    const initialRemaining = Math.max(0, MAX_LESSON_MS - (Date.now() - meta.lessonStartedAt))
+    send(ws, { type: 'lesson_timer_update', remainingMs: initialRemaining })
+  }
+
+  meta.timerUpdateRef = setInterval(() => {
+    if (!meta.lessonStartedAt) return
+    const remaining = Math.max(0, MAX_LESSON_MS - (Date.now() - meta.lessonStartedAt))
+    send(ws, { type: 'lesson_timer_update', remainingMs: remaining })
+    if (remaining <= 0) {
+      clearInterval(meta.timerUpdateRef!)
+      meta.timerUpdateRef = null
+    }
+  }, 60_000)
+}
+
 const orchestrator = new LessonOrchestrator()
 
 const MAX_LESSON_MS = Number(process.env.PAID_PLAN_LESSON_MINUTES ?? 50) * 60_000
@@ -246,6 +269,7 @@ interface ClientMeta {
   timeoutRef:      ReturnType<typeof setTimeout>
   maxDurationRef:  ReturnType<typeof setTimeout> | null
   warningRef:      ReturnType<typeof setTimeout> | null  // Phase 6: 5-min pre-timeout warning
+  timerUpdateRef:  ReturnType<typeof setInterval> | null // Phase 2 recovery: 60s remaining-time broadcast
   stt:             DeepgramSTT | null
   ttsController:   AbortController | null
   ttsActive:       boolean         // true while TTS audio is streaming to client (echo gate)
@@ -374,6 +398,9 @@ async function resumeLesson(
       console.log(`[paid-lesson] time_warning_sent remainingMs=300000 session=${meta.sessionId}`)
     }, remainingMs - 5 * 60_000)
   }
+
+  // Phase 2 recovery: start periodic remaining-time broadcast using restored start time
+  startTimerBroadcast(ws, meta)
 
   // Restart STT for new connection
   meta.stt = new DeepgramSTT((transcript) => {
@@ -508,6 +535,9 @@ async function handleLessonStart(
     send(ws, { type: 'student_message', text: transcript })
     void processInput(ws, meta, transcript)
   })
+
+  // Phase 2 recovery: start periodic remaining-time broadcast
+  startTimerBroadcast(ws, meta)
 
   const greeting = `Hello! I'm Alex, your English teacher. Today we'll work on "${config.grammarTarget}" using the topic "${config.lessonTopic}". Let's start — tell me one thing you already know about this topic.`
 
@@ -666,6 +696,9 @@ async function handleFocusLessonStart(
   })
 
   console.log(`[paid-lesson] ready session=${meta.sessionId} lessonId=${lessonId}`)
+
+  // Phase 2 recovery: start periodic remaining-time broadcast
+  startTimerBroadcast(ws, meta)
 
   // Personalise greeting with selected teacher name
   const greeting = buildFocusGreeting(effectiveUnit, config.section, unitData.grammarTarget, unitData.textbookUnit, meta.teacherId ?? undefined)
@@ -1021,6 +1054,7 @@ export function attachLessonWS(server: Server): void {
       timeoutRef:      setTimeout(() => ws.terminate(), INACTIVITY_TIMEOUT_MS),
       maxDurationRef:  null,
       warningRef:      null,  // Phase 6
+      timerUpdateRef:  null,  // Phase 2 recovery
       stt:             null,
       ttsController:   null,
       ttsActive:       false,
@@ -1098,8 +1132,9 @@ export function attachLessonWS(server: Server): void {
     ws.on('close', () => {
       clearInterval(meta.heartbeatRef)
       clearTimeout(meta.timeoutRef)
-      if (meta.maxDurationRef) clearTimeout(meta.maxDurationRef)
-      if (meta.warningRef)     clearTimeout(meta.warningRef)    // Phase 6
+      if (meta.maxDurationRef)  clearTimeout(meta.maxDurationRef)
+      if (meta.warningRef)      clearTimeout(meta.warningRef)    // Phase 6
+      if (meta.timerUpdateRef)  clearInterval(meta.timerUpdateRef) // Phase 2 recovery
       meta.ttsController?.abort()
       meta.stt?.close()
       clients.delete(ws)

@@ -201,6 +201,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const [paidLessonSummary,  setPaidLessonSummary]  = useState<PaidLessonSummary | null>(null)
   // Phase 6: 5-minute pre-timeout warning — number of minutes remaining, null = no warning
   const [lessonTimeWarning, setLessonTimeWarning] = useState<number | null>(null)
+  // Phase 2 recovery: remaining lesson minutes from backend periodic broadcast
+  const [lessonRemainingMin, setLessonRemainingMin] = useState<number | null>(null)
   // Paid lesson exit guard
   const [showPaidLeaveModal, setShowPaidLeaveModal] = useState(false)
   // Phase 5: tips drawer
@@ -289,6 +291,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       case 'lesson_time_warning':
         // Phase 6: 5-minute warning before lesson hard cap
         if (!isDemoMode) setLessonTimeWarning(Math.floor(msg.remainingMs / 60_000))
+        break
+      case 'lesson_timer_update':
+        // Phase 2 recovery: periodic remaining-time update from backend (every 60s)
+        if (!isDemoMode) setLessonRemainingMin(Math.ceil(msg.remainingMs / 60_000))
         break
       case 'error':
         console.error('[Classroom WS] error:', msg.code, msg.message)
@@ -486,6 +492,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         <ClassroomHeader
           meta={isDemoMode ? null : sessionMeta}
           isDemo={isDemoMode}
+          remainingMin={isDemoMode ? undefined : (lessonStarted ? lessonRemainingMin : undefined)}
           onExit={isDemoMode
             ? () => demo.setShowLeaveModal(true)
             : () => setShowPaidLeaveModal(true)

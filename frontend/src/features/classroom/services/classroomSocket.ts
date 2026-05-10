@@ -62,6 +62,8 @@ export type BackendMessage =
   | { type: 'tip_list';               tips: TipRecord[] }
   // Phase 6
   | { type: 'lesson_time_warning'; remainingMs: number }
+  // Phase 2 recovery: periodic remaining-time broadcast (every 60 seconds)
+  | { type: 'lesson_timer_update'; remainingMs: number }
 
 export interface TipRecord {
   id:          string

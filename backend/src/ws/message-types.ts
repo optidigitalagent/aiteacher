@@ -211,6 +211,16 @@ export interface OutboundLessonTimeWarning {
   remainingMs: number
 }
 
+/**
+ * Phase 2 (recovery): Broadcast every 60 seconds after lesson start.
+ * Gives the frontend real-time visibility into remaining lesson time.
+ * Frontend shows a subtle "X min remaining" chip — not a stressful countdown.
+ */
+export interface OutboundLessonTimerUpdate {
+  type:        'lesson_timer_update'
+  remainingMs: number
+}
+
 export type OutboundMessage =
   | OutboundAiText
   | OutboundAudioChunk
@@ -230,3 +240,4 @@ export type OutboundMessage =
   | OutboundTipAdded
   | OutboundTipList
   | OutboundLessonTimeWarning
+  | OutboundLessonTimerUpdate

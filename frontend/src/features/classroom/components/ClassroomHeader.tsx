@@ -4,12 +4,13 @@ import { IcChev, IcExit } from './icons'
 import type { LessonSessionMetadata } from '../../../types/lessonTypes'
 
 interface ClassroomHeaderProps {
-  meta?:    LessonSessionMetadata | null
-  isDemo?:  boolean
-  onExit?:  () => void
+  meta?:         LessonSessionMetadata | null
+  isDemo?:       boolean
+  onExit?:       () => void
+  remainingMin?: number | null
 }
 
-export default function ClassroomHeader({ meta, isDemo, onExit }: ClassroomHeaderProps) {
+export default function ClassroomHeader({ meta, isDemo, onExit, remainingMin }: ClassroomHeaderProps) {
   const navigate = useNavigate()
   const [showExitConfirm, setShowExitConfirm] = useState(false)
 
@@ -62,8 +63,21 @@ export default function ClassroomHeader({ meta, isDemo, onExit }: ClassroomHeade
           )}
         </div>
 
-        {/* Right: teacher chip + exit */}
+        {/* Right: remaining time chip (paid only) + teacher chip + exit */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: 260, justifyContent: 'flex-end' }}>
+          {!isDemo && remainingMin !== null && remainingMin !== undefined && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '4px 10px', borderRadius: 99,
+              background: remainingMin <= 5 ? 'rgba(245,158,11,0.12)' : 'rgba(110,124,251,0.08)',
+              border: `1px solid ${remainingMin <= 5 ? 'rgba(245,158,11,0.3)' : 'rgba(110,124,251,0.2)'}`,
+              fontSize: 12, fontWeight: 700,
+              color: remainingMin <= 5 ? '#d97706' : '#6E7CFB',
+            }}>
+              <span style={{ fontSize: 10 }}>⏱</span>
+              {remainingMin} min
+            </div>
+          )}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 7,
             padding: '5px 12px', borderRadius: 10, background: '#f5f5f7',
