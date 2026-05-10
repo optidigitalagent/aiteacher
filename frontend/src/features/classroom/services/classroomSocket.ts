@@ -42,6 +42,7 @@ export type BackendMessage =
   | { type: 'lesson_resumed';   phase: string; exerciseNum: number; message: string }
   | { type: 'student_message';  text: string }
   | { type: 'teacher_turn_end' }
+  | { type: 'lesson_ready';     sessionId: string | null }
 
 export type SendFn = (payload: object) => void
 

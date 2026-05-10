@@ -241,6 +241,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       case 'teacher_turn_end':
         if (!isDemoMode) onTeacherTurnEnd()
         break
+      case 'lesson_ready':
+        // Backend confirmed auth + session validation — safe to show Begin Lesson
+        if (!isDemoMode) setPaidLessonReady(true)
+        break
       case 'lesson_resumed':
         if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
         pushAI(msg.message)
@@ -283,10 +287,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     const ws = createClassroomSocket(
       (msg) => onMessageRef.current(msg),
       () => {
-        // WS open: signal ready state — do NOT start lesson yet
-        // Lesson starts only when user clicks "Begin Lesson"
-        console.log('[paid-lesson] ready session=' + paidSessionId)
-        setPaidLessonReady(true)
+        // WS open: connection established — wait for lesson_ready event from backend
+        // (which confirms auth + session validation) before showing Begin Lesson
+        console.log('[paid-lesson] ws_open session=' + paidSessionId)
       },
       () => {
         if (!lessonStartedRef.current) {

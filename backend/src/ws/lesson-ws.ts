@@ -133,6 +133,9 @@ interface ClientMeta {
   ttsController:   AbortController | null
   aiCallCount:     number          // number of orchestrator.process() calls this session
   ttsCharCount:    number          // total characters sent to TTS this session
+  // Serialization guard: prevents concurrent processInput() calls from racing
+  // on the same lesson state. If true, new input is dropped until AI returns.
+  aiProcessing:    boolean
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -485,8 +488,22 @@ async function processInput(
     return
   }
 
+  // Guard: if a previous AI call is still in-flight, drop the new input to
+  // prevent concurrent reads/writes to the same Redis lesson state.
+  if (meta.aiProcessing) {
+    console.log(`[paid-lesson] ai_turn_skipped reason=concurrent_call input_chars=${text.trim().length}`)
+    return
+  }
+  meta.aiProcessing = true
+
   console.log(`[paid-lesson] ai_turn_started input_chars=${text.trim().length}`)
-  const result = await orchestrator.process(meta.lessonId, text)
+  let result: Awaited<ReturnType<typeof orchestrator.process>> | undefined
+  try {
+    result = await orchestrator.process(meta.lessonId, text)
+  } finally {
+    meta.aiProcessing = false
+  }
+  if (!result) return
   meta.aiCallCount++
 
   send(ws, { type: 'ai_text', phase: result.phase, text: result.text, displayText: result.displayText })
@@ -738,10 +755,15 @@ export function attachLessonWS(server: Server): void {
       ttsController:   null,
       aiCallCount:     0,
       ttsCharCount:    0,
+      aiProcessing:    false,
     }
 
     clients.set(ws, meta)
-    console.log(`[ws] client connected (user=${jwtUserId}), total=${clients.size}`)
+    console.log(`[ws] client connected (user=${jwtUserId} session=${wsSessionId}), total=${clients.size}`)
+
+    // Signal frontend that the connection is authenticated and the session is
+    // validated. The "Begin Lesson" button should only appear after this event.
+    send(ws, { type: 'lesson_ready', sessionId: wsSessionId })
 
     ws.on('message', async (raw: Buffer) => {
       resetInactivityTimer(ws, meta)

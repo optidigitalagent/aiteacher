@@ -160,6 +160,16 @@ export interface OutboundTeacherTurnEnd {
   type: 'teacher_turn_end'
 }
 
+/**
+ * Sent immediately after the backend authenticates the WS connection and
+ * validates the paid session. The frontend should show "Begin Lesson" only
+ * after receiving this event — not just on WS open.
+ */
+export interface OutboundLessonReady {
+  type:      'lesson_ready'
+  sessionId: string | null
+}
+
 export type OutboundMessage =
   | OutboundAiText
   | OutboundAudioChunk
@@ -174,3 +184,4 @@ export type OutboundMessage =
   | OutboundLessonResumed
   | OutboundStudentMessage
   | OutboundTeacherTurnEnd
+  | OutboundLessonReady
