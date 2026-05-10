@@ -1,18 +1,34 @@
 {
-  "1.1": {
-    "pages": [13, 14],
-    "type": "Vocabulary"
-  },
-  "1.2": {
-    "pages": [15],
-    "type": "Grammar"
-  },
-  "1.3": {
-    "pages": [16],
-    "type": "Listening"
-  },
-  "1.4": {
-    "pages": [17, 18],
-    "type": "Reading"
-  }
+  "1.1": { "pages": [13, 14], "type": "Vocabulary",  "dataQuality": "ocr" },
+  "1.2": { "pages": [15],     "type": "Grammar",     "dataQuality": "ocr" },
+  "1.3": { "pages": [16],     "type": "Listening",   "dataQuality": "ocr" },
+  "1.4": { "pages": [17, 18], "type": "Reading",     "dataQuality": "ocr" },
+
+  "2.1": { "pages": null, "type": "Vocabulary",  "dataQuality": "structured" },
+  "2.2": { "pages": null, "type": "Grammar",     "dataQuality": "structured" },
+  "2.3": { "pages": null, "type": "Reading",     "dataQuality": "structured" },
+
+  "3.1": { "pages": null, "type": "Vocabulary",  "dataQuality": "structured" },
+  "3.2": { "pages": null, "type": "Grammar",     "dataQuality": "structured" },
+  "3.3": { "pages": null, "type": "Speaking",    "dataQuality": "unavailable", "enabled": false },
+
+  "4.1": { "pages": null, "type": "Vocabulary",  "dataQuality": "structured" },
+  "4.2": { "pages": null, "type": "Grammar",     "dataQuality": "structured" },
+  "4.3": { "pages": null, "type": "Reading",     "dataQuality": "structured" },
+
+  "5.1": { "pages": null, "type": "Vocabulary",  "dataQuality": "structured" },
+  "5.2": { "pages": null, "type": "Grammar",     "dataQuality": "structured" },
+  "5.3": { "pages": null, "type": "Reading",     "dataQuality": "structured" },
+
+  "6.1": { "pages": null, "type": "Vocabulary",  "dataQuality": "structured" },
+  "6.2": { "pages": null, "type": "Grammar",     "dataQuality": "structured" },
+  "6.3": { "pages": null, "type": "Reading",     "dataQuality": "structured" },
+
+  "7.1": { "pages": null, "type": "Vocabulary",  "dataQuality": "structured" },
+  "7.2": { "pages": null, "type": "Grammar",     "dataQuality": "structured" },
+  "7.3": { "pages": null, "type": "Reading",     "dataQuality": "structured" },
+
+  "8.1": { "pages": null, "type": "Vocabulary",  "dataQuality": "structured" },
+  "8.2": { "pages": null, "type": "Grammar",     "dataQuality": "structured" },
+  "8.3": { "pages": null, "type": "Reading",     "dataQuality": "structured" }
 }

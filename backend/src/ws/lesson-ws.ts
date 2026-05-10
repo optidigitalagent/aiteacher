@@ -21,6 +21,7 @@ import type { LessonPhase, LessonState, ErrorRecord } from '../lesson/types.js'
 import { getFocusUnit } from '../lesson/focus-content.js'
 import { getTeachersBookSection } from '../lesson/focus-teachers-book.js'
 import { getFocusStudentBookSection } from '../lesson/focus-student-book.js'
+import { getCatalogEntry } from '../lesson/curriculum-catalog.js'
 import { LessonOrchestrator } from '../lesson/orchestrator.js'
 import type { ExerciseErrorData } from '../lesson/orchestrator.js'
 import { DeepgramSTT } from '../voice/stt.js'
@@ -79,9 +80,11 @@ function buildFocusGreeting(
   }
 
   // Student Book is the authoritative source for the section title and content.
+  // Fall back to catalog entry if OCR data is unavailable (units 2–8 structured sections).
   const sb = getFocusStudentBookSection(section)
-  const sectionTitle  = sb?.lessonTitle ?? section
-  const grammarFocus  = sb?.grammarFocus ?? grammarTarget
+  const catalogEntry  = getCatalogEntry(section)
+  const sectionTitle  = sb?.lessonTitle ?? catalogEntry?.topic ?? section
+  const grammarFocus  = sb?.grammarFocus ?? catalogEntry?.grammarFocus ?? grammarTarget
 
   let body = `Today we're on section ${section} — "${sectionTitle}".`
 
@@ -708,7 +711,9 @@ async function handleFocusLessonStart(
   // For grammar sections, asynchronously generate/load the section overview card
   if (config.section) {
     const sb = getFocusStudentBookSection(config.section)
-    if (sb?.type === 'Grammar') sendSectionCardAsync(ws, config.section)
+    const ce = getCatalogEntry(config.section)
+    const isGrammar = sb?.type === 'Grammar' || ce?.type === 'grammar'
+    if (isGrammar) sendSectionCardAsync(ws, config.section)
   }
 
   // Phase 5: send recent tips so the frontend Tips drawer can populate immediately

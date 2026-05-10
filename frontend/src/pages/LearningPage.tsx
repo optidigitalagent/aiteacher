@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { startLesson, BillingError } from '../services/lessonStartApi'
-import type { LessonStartPayload } from '../services/lessonStartApi'
+import { startLesson, getContinuationStatus, BillingError } from '../services/lessonStartApi'
+import type { LessonStartPayload, ContinuationStatus } from '../services/lessonStartApi'
 import type { LessonSessionMetadata } from '../types/lessonTypes'
 import { useAuth } from '../context/AuthContext'
 import AuthGate, { type LessonSetupState } from '../components/shared/AuthGate'
@@ -10,6 +10,7 @@ import AuthGate, { type LessonSetupState } from '../components/shared/AuthGate'
 
 interface SectionData {
   bookId: string
+  unit: number
   sectionId: string
   sectionNumber: string
   title: string
@@ -18,6 +19,7 @@ interface SectionData {
   exerciseCount?: number
   sub: string
   disabled?: boolean
+  dataQuality?: 'ocr' | 'structured'
 }
 
 interface VoiceData {
@@ -36,17 +38,102 @@ const BOOKS = [
 ]
 
 const FOCUS2_SECTIONS: SectionData[] = [
-  { bookId: 'focus2', sectionId: 'focus2-0.1', sectionNumber: '0.1', title: 'Introduction',  topic: 'Welcome & Orientation',         estimatedDuration: 20, exerciseCount: 4,  sub: 'Welcome & orientation'  },
-  { bookId: 'focus2', sectionId: 'focus2-1.1', sectionNumber: '1.1', title: 'Vocabulary',    topic: 'Unit 1 Key Words & Phrases',    estimatedDuration: 25, exerciseCount: 6,  sub: 'Unit 1 key words & phrases'  },
-  { bookId: 'focus2', sectionId: 'focus2-1.2', sectionNumber: '1.2', title: 'Grammar',       topic: 'Present Simple & Continuous',   estimatedDuration: 30, exerciseCount: 8,  sub: 'Present Simple & Continuous' },
-  { bookId: 'focus2', sectionId: 'focus2-1.3', sectionNumber: '1.3', title: 'Listening',     topic: 'Audio Comprehension',           estimatedDuration: 25, exerciseCount: 6,  sub: 'Audio comprehension tasks'   },
-  { bookId: 'focus2', sectionId: 'focus2-2.1', sectionNumber: '2.1', title: 'Vocabulary',    topic: 'Unit 2 Topic Words',            estimatedDuration: 25, exerciseCount: 6,  sub: 'Unit 2 topic words'  },
-  { bookId: 'focus2', sectionId: 'focus2-2.2', sectionNumber: '2.2', title: 'Grammar',       topic: 'Past Simple & Past Continuous', estimatedDuration: 35, exerciseCount: 9,  sub: 'Past Simple & Past Continuous' },
-  { bookId: 'focus2', sectionId: 'focus2-2.3', sectionNumber: '2.3', title: 'Reading',       topic: 'Reading Comprehension',         estimatedDuration: 25, exerciseCount: 5,  sub: 'Reading comprehension' },
-  { bookId: 'focus2', sectionId: 'focus2-3.1', sectionNumber: '3.1', title: 'Vocabulary',    topic: 'Unit 3 Key Expressions',        estimatedDuration: 25, exerciseCount: 6,  sub: 'Unit 3 key expressions' },
-  { bookId: 'focus2', sectionId: 'focus2-3.2', sectionNumber: '3.2', title: 'Grammar',       topic: 'Present Perfect',               estimatedDuration: 35, exerciseCount: 9,  sub: 'Present Perfect' },
-  { bookId: 'focus2', sectionId: 'focus2-3.3', sectionNumber: '3.3', title: 'Speaking',      topic: 'Conversation & Discussion',     estimatedDuration: 30, exerciseCount: 4,  sub: 'Conversation & discussion', disabled: true },
+  // ── Unit 1: Free Time ──────────────────────────────────────────────────────
+  { bookId: 'focus2', unit: 1, sectionId: 'focus2-1.1', sectionNumber: '1.1', title: 'Vocabulary',
+    topic: 'Free-time activities & hobbies',     estimatedDuration: 25, exerciseCount: 6,
+    sub: 'go/play/do patterns; hobby vocabulary', dataQuality: 'ocr' },
+  { bookId: 'focus2', unit: 1, sectionId: 'focus2-1.2', sectionNumber: '1.2', title: 'Grammar',
+    topic: 'Present tenses — question forms',    estimatedDuration: 30, exerciseCount: 8,
+    sub: 'Present Simple & Continuous; subject/object questions', dataQuality: 'ocr' },
+  { bookId: 'focus2', unit: 1, sectionId: 'focus2-1.3', sectionNumber: '1.3', title: 'Listening',
+    topic: 'Voluntary work — comprehension',     estimatedDuration: 25, exerciseCount: 6,
+    sub: 'Gap-fill; personality adjectives in context', dataQuality: 'ocr' },
+  { bookId: 'focus2', unit: 1, sectionId: 'focus2-1.4', sectionNumber: '1.4', title: 'Reading',
+    topic: 'Teenage stereotypes — gapped text',  estimatedDuration: 25, exerciseCount: 5,
+    sub: 'Gapped text; personality adjective antonyms', dataQuality: 'ocr' },
+  // ── Unit 2: People and the Past ────────────────────────────────────────────
+  { bookId: 'focus2', unit: 2, sectionId: 'focus2-2.1', sectionNumber: '2.1', title: 'Vocabulary',
+    topic: 'Achievements & historical figures',  estimatedDuration: 25, exerciseCount: 6,
+    sub: 'discover, invent, overcome, inspire',  dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 2, sectionId: 'focus2-2.2', sectionNumber: '2.2', title: 'Grammar',
+    topic: 'Past Simple — regular & irregular',  estimatedDuration: 35, exerciseCount: 9,
+    sub: 'Regular -ed, irregular verbs, questions', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 2, sectionId: 'focus2-2.3', sectionNumber: '2.3', title: 'Reading',
+    topic: 'Biography — Marie Curie',            estimatedDuration: 25, exerciseCount: 5,
+    sub: 'Reading comprehension; past achievements', dataQuality: 'structured' },
+  // ── Unit 3: Our World ──────────────────────────────────────────────────────
+  { bookId: 'focus2', unit: 3, sectionId: 'focus2-3.1', sectionNumber: '3.1', title: 'Vocabulary',
+    topic: 'Geography & natural wonders',        estimatedDuration: 25, exerciseCount: 6,
+    sub: 'enormous, ancient, remote, landscape', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 3, sectionId: 'focus2-3.2', sectionNumber: '3.2', title: 'Grammar',
+    topic: 'Comparatives & Superlatives',        estimatedDuration: 35, exerciseCount: 9,
+    sub: '-er/more; -est/most; as...as; irregular forms', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 3, sectionId: 'focus2-3.3', sectionNumber: '3.3', title: 'Speaking',
+    topic: 'Conversation about places',          estimatedDuration: 30, exerciseCount: 4,
+    sub: 'Conversation practice', dataQuality: 'structured', disabled: true },
+  // ── Unit 4: Looking Good ───────────────────────────────────────────────────
+  { bookId: 'focus2', unit: 4, sectionId: 'focus2-4.1', sectionNumber: '4.1', title: 'Vocabulary',
+    topic: 'Fashion & personal appearance',      estimatedDuration: 25, exerciseCount: 6,
+    sub: 'trend, style, outfit, fashionable, brand', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 4, sectionId: 'focus2-4.2', sectionNumber: '4.2', title: 'Grammar',
+    topic: 'Present Perfect — experience & duration', estimatedDuration: 35, exerciseCount: 9,
+    sub: 'have/has + past participle; ever/never; for/since', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 4, sectionId: 'focus2-4.3', sectionNumber: '4.3', title: 'Reading',
+    topic: 'Fashion history — how clothing changed', estimatedDuration: 25, exerciseCount: 5,
+    sub: 'Reading comprehension; fashion vocabulary', dataQuality: 'structured' },
+  // ── Unit 5: Food and Health ────────────────────────────────────────────────
+  { bookId: 'focus2', unit: 5, sectionId: 'focus2-5.1', sectionNumber: '5.1', title: 'Vocabulary',
+    topic: 'Food & nutrition vocabulary',        estimatedDuration: 25, exerciseCount: 6,
+    sub: 'nutrition, ingredient, protein, calorie', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 5, sectionId: 'focus2-5.2', sectionNumber: '5.2', title: 'Grammar',
+    topic: 'Quantifiers — much, many, a lot of', estimatedDuration: 35, exerciseCount: 8,
+    sub: 'Countable/uncountable; some/any; a few/a little', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 5, sectionId: 'focus2-5.3', sectionNumber: '5.3', title: 'Reading',
+    topic: 'Healthy eating habits',              estimatedDuration: 25, exerciseCount: 5,
+    sub: 'Reading comprehension; nutrition text', dataQuality: 'structured' },
+  // ── Unit 6: Future Plans ───────────────────────────────────────────────────
+  { bookId: 'focus2', unit: 6, sectionId: 'focus2-6.1', sectionNumber: '6.1', title: 'Vocabulary',
+    topic: 'Plans, careers & technology',        estimatedDuration: 25, exerciseCount: 6,
+    sub: 'prediction, ambition, career, opportunity', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 6, sectionId: 'focus2-6.2', sectionNumber: '6.2', title: 'Grammar',
+    topic: 'Future forms — will, going to, arrangement', estimatedDuration: 35, exerciseCount: 9,
+    sub: 'will vs going to vs Present Continuous for future', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 6, sectionId: 'focus2-6.3', sectionNumber: '6.3', title: 'Reading',
+    topic: 'Future technology predictions',      estimatedDuration: 25, exerciseCount: 5,
+    sub: 'Reading comprehension; predictions text', dataQuality: 'structured' },
+  // ── Unit 7: Journey and Adventure ─────────────────────────────────────────
+  { bookId: 'focus2', unit: 7, sectionId: 'focus2-7.1', sectionNumber: '7.1', title: 'Vocabulary',
+    topic: 'Travel & adventure vocabulary',      estimatedDuration: 25, exerciseCount: 6,
+    sub: 'destination, itinerary, risk, consequence, solo', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 7, sectionId: 'focus2-7.2', sectionNumber: '7.2', title: 'Grammar',
+    topic: 'First Conditional',                  estimatedDuration: 35, exerciseCount: 9,
+    sub: 'if + Present Simple + will/might/can; if vs when', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 7, sectionId: 'focus2-7.3', sectionNumber: '7.3', title: 'Reading',
+    topic: 'Gap year adventures',                estimatedDuration: 25, exerciseCount: 5,
+    sub: 'Reading comprehension; travel text',   dataQuality: 'structured' },
+  // ── Unit 8: Technology Today ───────────────────────────────────────────────
+  { bookId: 'focus2', unit: 8, sectionId: 'focus2-8.1', sectionNumber: '8.1', title: 'Vocabulary',
+    topic: 'Technology & social media vocabulary', estimatedDuration: 25, exerciseCount: 6,
+    sub: 'privacy, screen time, cyberbullying, digital', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 8, sectionId: 'focus2-8.2', sectionNumber: '8.2', title: 'Grammar',
+    topic: 'Modal verbs — obligation, advice, prohibition', estimatedDuration: 35, exerciseCount: 9,
+    sub: 'should/must/have to/mustn\'t/don\'t have to', dataQuality: 'structured' },
+  { bookId: 'focus2', unit: 8, sectionId: 'focus2-8.3', sectionNumber: '8.3', title: 'Reading',
+    topic: 'Digital responsibility',             estimatedDuration: 25, exerciseCount: 5,
+    sub: 'Reading comprehension; technology text', dataQuality: 'structured' },
 ]
+
+// Unit metadata for group headers
+const FOCUS2_UNIT_TITLES: Record<number, string> = {
+  1: 'Free Time',
+  2: 'People and the Past',
+  3: 'Our World',
+  4: 'Looking Good',
+  5: 'Food and Health',
+  6: 'Future Plans',
+  7: 'Journey and Adventure',
+  8: 'Technology Today',
+}
 
 const BOOK_SECTIONS: Record<string, SectionData[]> = { focus2: FOCUS2_SECTIONS }
 const BOOK_TITLES:   Record<string, string>         = { focus2: 'Focus 2 Student Book' }

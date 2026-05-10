@@ -33,6 +33,32 @@ export class BillingError extends Error {
   }
 }
 
+export interface ContinuationStatus {
+  canContinue:                  boolean
+  canStartNew:                  boolean
+  activeSessionId:              string | null
+  activeSectionId:              string | null
+  activeTeacherId:              string | null
+  activeVoiceId:                string | null
+  remainingMinutes:             number | null
+  lastCompletedSection:         string | null
+  subscriptionMinutesRemaining: number
+}
+
+export async function getContinuationStatus(): Promise<ContinuationStatus | null> {
+  const token = getStoredToken()
+  if (!token) return null
+  try {
+    const res = await fetch(`${API_BASE}/lesson/continuation-status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return null
+    return await res.json() as ContinuationStatus
+  } catch {
+    return null
+  }
+}
+
 export async function startLesson(payload: LessonStartPayload): Promise<LessonStartResponse> {
   const token = getStoredToken()
   const res = await fetch(`${API_BASE}/lesson/start`, {
