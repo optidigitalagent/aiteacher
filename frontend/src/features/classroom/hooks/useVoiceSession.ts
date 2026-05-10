@@ -24,15 +24,20 @@ export function useVoiceSession({ send }: Options): VoiceState & {
   const [isSpeaking,  setIsSpeaking]  = useState(false)
   const [transcript,  setTranscript]  = useState('')
 
-  const streamRef    = useRef<MediaStream | null>(null)
-  const stopSpeakRef = useRef<ReturnType<typeof setTimeout>>()
+  const streamRef     = useRef<MediaStream | null>(null)
+  const stopSpeakRef  = useRef<ReturnType<typeof setTimeout>>()
+  // Mirrors isSpeaking but readable synchronously in callbacks (avoids stale closure)
+  const isSpeakingRef = useRef(false)
 
   const scheduleSpeakOff = useCallback((delayMs: number) => {
     clearTimeout(stopSpeakRef.current)
-    stopSpeakRef.current = setTimeout(() => setIsSpeaking(false), delayMs)
+    stopSpeakRef.current = setTimeout(() => {
+      isSpeakingRef.current = false
+      setIsSpeaking(false)
+    }, delayMs)
   }, [])
 
-  // Stop mic without sending interrupt (used when teacher starts speaking)
+  // Stop mic without sending interrupt (called when teacher starts speaking)
   const stopRecording = useCallback(() => {
     if (!streamRef.current) return
     console.log('[paid-lesson] mic_enabled=false reason=teacher_speaking')
@@ -53,6 +58,7 @@ export function useVoiceSession({ send }: Options): VoiceState & {
 
     // Starting mic: stop any ongoing TTS first
     stopAudioPlayback()
+    isSpeakingRef.current = false
     setIsSpeaking(false)
     clearTimeout(stopSpeakRef.current)
 
@@ -71,20 +77,22 @@ export function useVoiceSession({ send }: Options): VoiceState & {
   }, [isListening, send])
 
   // Called when backend sends an audio_chunk event (TTS streaming).
-  // Use a rolling 2s window while chunks arrive.  onTeacherTurnEnd replaces
-  // this with a precise queue-end timer once the backend signals completion.
+  // Gate: discard chunks that arrive after interrupt or before teacher turn starts.
+  // isSpeakingRef is set synchronously on ai_text (before first chunk arrives via
+  // ordered TCP WebSocket), so this check is always reliable.
   const onAudioChunk = useCallback((base64: string) => {
-    setIsSpeaking(true)
+    if (!isSpeakingRef.current) {
+      console.log('[paid-lesson] audio_chunk_discarded reason=not_speaking')
+      return
+    }
     scheduleSpeakOff(2000)
     void playAudioChunk(base64)
   }, [scheduleSpeakOff])
 
   // Called when backend signals all TTS audio has been sent for this teacher turn.
-  // We now know no more chunks are coming, so we can schedule isSpeaking=false
-  // at the precise moment the audio queue drains — not 1.5s after the last chunk.
+  // Schedule isSpeaking=false at the precise moment the audio queue drains.
   const onTeacherTurnEnd = useCallback(() => {
     const remaining = getScheduledAudioEndMs()
-    // 300ms buffer so isSpeaking flips off just after the last word finishes
     scheduleSpeakOff(Math.max(remaining + 300, 500))
   }, [scheduleSpeakOff])
 
@@ -95,6 +103,7 @@ export function useVoiceSession({ send }: Options): VoiceState & {
 
   // Called by ClassroomLayout when AI starts/stops speaking (ai_text event)
   const setSpeaking = useCallback((v: boolean) => {
+    isSpeakingRef.current = v
     setIsSpeaking(v)
     if (v) {
       // Fallback: if no audio chunks arrive, stop speaking indicator after 8s

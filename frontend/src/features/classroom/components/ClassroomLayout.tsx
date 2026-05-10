@@ -249,6 +249,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
         pushAI(msg.message)
         setSpeaking(true)
+        stopRecording()  // ensure mic is off during resume greeting TTS
         break
       case 'lesson_end':
         if (!isDemoMode) {
@@ -367,18 +368,21 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     })
   }, [paidSessionId, resolvedSection, sessionMeta])
 
-  // Guarded mic toggle for paid mode: blocked before lesson starts or while teacher speaks
+  // Guarded mic toggle for paid mode.
+  // When teacher is speaking: sends interrupt to backend, then opens mic.
+  // When lesson not started: blocked entirely.
   const paidToggle = useCallback(async () => {
     if (!lessonStarted) {
       console.log('[paid-lesson] mic_enabled=false reason=lesson_not_started')
       return
     }
-    if (isSpeaking) {
-      console.log('[paid-lesson] mic_enabled=false reason=teacher_speaking')
-      return
+    if (isSpeaking && !isListening) {
+      // Student interrupts teacher — stop backend TTS stream before opening mic
+      console.log('[paid-lesson] mic_interrupt reason=student_wants_to_speak')
+      send({ type: 'interrupt' })
     }
     await toggle()
-  }, [lessonStarted, isSpeaking, toggle])
+  }, [lessonStarted, isSpeaking, isListening, toggle, send])
 
   const handleExplain = useCallback(() => {
     if (isDemoMode) {

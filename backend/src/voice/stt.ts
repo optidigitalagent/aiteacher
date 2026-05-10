@@ -90,6 +90,10 @@ export class DeepgramSTT {
     }
   }
 
+  clearBuffer(): void {
+    this.transcriptBuffer = ''
+  }
+
   close(): void {
     if (!this.conn) return
     if (this.keepAliveRef) clearInterval(this.keepAliveRef)

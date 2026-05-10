@@ -131,6 +131,7 @@ interface ClientMeta {
   maxDurationRef:  ReturnType<typeof setTimeout> | null
   stt:             DeepgramSTT | null
   ttsController:   AbortController | null
+  ttsActive:       boolean         // true while TTS audio is streaming to client (echo gate)
   aiCallCount:     number          // number of orchestrator.process() calls this session
   ttsCharCount:    number          // total characters sent to TTS this session
   // Serialization guard: prevents concurrent processInput() calls from racing
@@ -242,6 +243,10 @@ async function resumeLesson(
   // Restart STT for new connection
   meta.stt = new DeepgramSTT((transcript) => {
     send(ws, { type: 'transcript', text: transcript })
+    if (meta.ttsActive) {
+      console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
+      return
+    }
     if (!shouldProcessTranscript(transcript)) return
     send(ws, { type: 'student_message', text: transcript })
     void processInput(ws, meta, transcript)
@@ -253,13 +258,13 @@ async function resumeLesson(
     : ''
   const resumeMsg = `Welcome back! I'm ${tName}.${exNote} Let's continue — what do you remember from where we stopped?`
 
+  // Send lesson_resumed only (no separate ai_text to avoid duplicate chat message)
   send(ws, {
     type:        'lesson_resumed',
     phase:       state.phase,
     exerciseNum: state.currentExerciseNum,
     message:     resumeMsg,
   })
-  send(ws, { type: 'ai_text', phase: state.phase, text: resumeMsg })
   await ttsStream(ws, meta, resumeMsg)
 
   console.log(`[ws] lesson resumed lessonId=${existingLessonId} phase=${state.phase} exercise=${state.currentExerciseNum} remainingMs=${remainingMs}`)
@@ -325,6 +330,10 @@ async function handleLessonStart(
 
   meta.stt = new DeepgramSTT((transcript) => {
     send(ws, { type: 'transcript', text: transcript })
+    if (meta.ttsActive) {
+      console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
+      return
+    }
     if (!shouldProcessTranscript(transcript)) return
     send(ws, { type: 'student_message', text: transcript })
     void processInput(ws, meta, transcript)
@@ -342,6 +351,13 @@ async function handleFocusLessonStart(
   config: FocusLessonConfig,
 ): Promise<void> {
   console.log(`[paid-lesson] begin clicked session=${meta.sessionId} unit=${config.unit} section=${config.section ?? 'none'}`)
+
+  // Guard: reject duplicate focus_lesson_start on the same WS connection
+  if (meta.lessonId) {
+    console.log(`[paid-lesson] duplicate_begin_ignored lessonId=${meta.lessonId}`)
+    return
+  }
+
   if (!await checkAndLinkPaidSession(ws, meta)) return
 
   // ── Store teacher + voice from config (before any early return) ──────────
@@ -452,6 +468,10 @@ async function handleFocusLessonStart(
 
   meta.stt = new DeepgramSTT((transcript) => {
     send(ws, { type: 'transcript', text: transcript })
+    if (meta.ttsActive) {
+      console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
+      return
+    }
     if (!shouldProcessTranscript(transcript)) {
       console.log(`[paid-lesson] ignored_audio_chunk reason=invalid_transcript chars=${transcript.trim().length}`)
       return
@@ -579,6 +599,7 @@ async function processInput(
 
 async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise<void> {
   meta.ttsCharCount += text.length
+  meta.ttsActive = true
   const prev = meta.ttsController
   meta.ttsController = new AbortController()
   // Abort previous AFTER registering new controller so the chain is clean
@@ -601,6 +622,8 @@ async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise
       console.error('[ws] TTS error:', err.message)
     }
     // Do NOT send teacher_turn_end on abort — frontend already handles interruption
+  } finally {
+    meta.ttsActive = false
   }
 }
 
@@ -753,6 +776,7 @@ export function attachLessonWS(server: Server): void {
       maxDurationRef:  null,
       stt:             null,
       ttsController:   null,
+      ttsActive:       false,
       aiCallCount:     0,
       ttsCharCount:    0,
       aiProcessing:    false,
@@ -806,7 +830,10 @@ export function attachLessonWS(server: Server): void {
             meta.stt.send(msg.data)
             break
           case 'interrupt':
+            // Clear any buffered STT transcript so it doesn't fire after TTS stops
+            meta.stt?.clearBuffer()
             meta.ttsController?.abort()
+            console.log(`[paid-lesson] interrupt received ttsActive=${meta.ttsActive}`)
             break
           case 'exercise_answer':
             await handleExerciseAnswer(ws, meta, msg.exerciseId, msg.answer)
