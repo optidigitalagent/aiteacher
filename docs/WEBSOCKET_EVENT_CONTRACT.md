@@ -680,9 +680,70 @@ Planned for Phase 3:
 - `exercise_cursor_updated` — exact cursor position update
 - `reading_chunk` — sentence/paragraph for reading exercise
 
-Planned for Phase 5:
-- `tip_added` — new persistent learning tip saved
-- `tip_list` — all tips for this student
+Phase 5 (IMPLEMENTED — see below):
+- `tip_added` — new persistent learning tip saved (live, mid-lesson)
+- `tip_list` — recent tips history sent at lesson start
+
+# EVENT: tip_list (Phase 5)
+
+Trigger: Sent immediately after lesson start (after `lesson_ready`), before student clicks Begin Lesson
+Meaning: Initialise the student's Notes drawer with their historical tips from previous lessons
+
+Payload:
+```json
+{
+  "type": "tip_list",
+  "tips": [
+    {
+      "id": "uuid",
+      "studentId": "uuid",
+      "lessonId": "uuid or null",
+      "section": "1.2 or null",
+      "category": "GRAMMAR",
+      "title": "Past Simple irregular verbs",
+      "explanation": "Student needed clarification during EXERCISES phase",
+      "example": null,
+      "source": "confusion",
+      "createdAt": "2026-05-10T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+Categories: VOCAB | PHRASE | GRAMMAR | PRONUNCIATION | COMMON_MISTAKE
+Sources: confusion | correction | vocabulary | observation
+
+Frontend behavior:
+- Set `tips` state to received array
+- Show floating Notes button if `tips.length > 0` (paid mode only)
+
+--
+
+# EVENT: tip_added (Phase 5)
+
+Trigger: Sent when a new tip is created mid-lesson (confusion signal, or lesson-end tip batch)
+Meaning: Append new tip to the student's Notes drawer
+
+Payload:
+```json
+{
+  "type": "tip_added",
+  "tip": {
+    "id": "uuid",
+    "studentId": "uuid",
+    "category": "COMMON_MISTAKE",
+    "title": "Past Simple: reached",
+    "explanation": "Wrote 'reacched' — common double-consonant error",
+    "example": null,
+    "source": "correction",
+    "createdAt": "2026-05-10T12:34:56.000Z"
+  }
+}
+```
+
+Frontend behavior:
+- Deduplicate by `tip.id` before prepending to `tips` state
+- Notes button badge count updates automatically
 
 Planned for Phase 6:
 - `reflection_started` — beginning of reflection phase

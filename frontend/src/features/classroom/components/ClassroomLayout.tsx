@@ -20,7 +20,9 @@ import {
   createClassroomSocket,
   sendMessage,
   type BackendMessage,
+  type TipRecord,
 } from '../services/classroomSocket'
+import TipsDrawer from './TipsDrawer'
 import { useAuth, getStoredToken }      from '../../../context/AuthContext'
 
 const LESSON_UNIT = Number(import.meta.env.VITE_LESSON_UNIT ?? 1)
@@ -196,6 +198,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const [paidLessonSummary, setPaidLessonSummary] = useState<PaidLessonSummary | null>(null)
   // Paid lesson exit guard
   const [showPaidLeaveModal, setShowPaidLeaveModal] = useState(false)
+  // Phase 5: tips drawer
+  const [tips,     setTips]     = useState<TipRecord[]>([])
+  const [showTips, setShowTips] = useState(false)
 
   const answerRef = useRef('')
   useEffect(() => { answerRef.current = answer }, [answer])
@@ -254,6 +259,15 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         break
       case 'exercise_cursor_updated':
         onCursorUpdated(msg.cursor)
+        break
+      case 'tip_list':
+        setTips(msg.tips)
+        break
+      case 'tip_added':
+        setTips(prev => {
+          const exists = prev.some(t => t.id === msg.tip.id)
+          return exists ? prev : [msg.tip, ...prev]
+        })
         break
       case 'lesson_end':
         if (!isDemoMode) {
@@ -656,6 +670,47 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           durationMin={paidLessonSummary.durationMin}
           onContinue={() => navigate('/learning')}
         />
+      )}
+
+      {/* Phase 5: Tips floating button (paid mode only, shown when tips exist) */}
+      {!isDemoMode && tips.length > 0 && !showTips && (
+        <button
+          onClick={() => setShowTips(true)}
+          title="My Learning Notes"
+          style={{
+            position: 'fixed', bottom: 120, right: 20, zIndex: 120,
+            background: 'linear-gradient(135deg,#6E7CFB,#9B8CFF)',
+            color: 'white', border: 'none', borderRadius: 16,
+            padding: '9px 14px', fontSize: 12, fontWeight: 800,
+            cursor: 'pointer', letterSpacing: '0.01em',
+            boxShadow: '0 6px 24px rgba(110,124,251,0.45)',
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}
+        >
+          <span style={{ fontSize: 14 }}>📖</span>
+          Notes
+          <span style={{
+            background: 'rgba(255,255,255,0.25)',
+            borderRadius: 99, padding: '1px 7px', fontSize: 11, fontWeight: 900,
+          }}>
+            {tips.length}
+          </span>
+        </button>
+      )}
+
+      {/* Phase 5: Tips drawer (paid mode only) */}
+      {!isDemoMode && showTips && (
+        <>
+          <div
+            onClick={() => setShowTips(false)}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 140,
+              background: 'rgba(15,23,42,0.25)',
+              backdropFilter: 'blur(2px)',
+            }}
+          />
+          <TipsDrawer tips={tips} onClose={() => setShowTips(false)} />
+        </>
       )}
 
       {/* Paid lesson: exit guard */}

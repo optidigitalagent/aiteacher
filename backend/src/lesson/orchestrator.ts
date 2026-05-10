@@ -6,6 +6,7 @@ import {
   type AIResponse,
   type OrchestratorResult,
   type ExerciseCursor,
+  type ErrorRecord,
 } from './types.js'
 import { shouldTransition, applyAISignal } from './transitions.js'
 import { saveExercise } from '../exercises/exercise-store.js'
@@ -47,6 +48,14 @@ function stubResponse(state: LessonState): AIResponse {
 // Phase 4: call-site context forwarded from the WS layer to the AI handler
 export interface OrchestratorCallContext {
   remainingMs?: number  // remaining lesson milliseconds for time-aware prompting
+}
+
+// Phase 5: error detail passed from WS layer to populate errorsThisLesson
+export interface ExerciseErrorData {
+  exercise:      string
+  studentAnswer: string
+  correctAnswer: string
+  errorType:     ErrorRecord['errorType']
 }
 
 export type AIHandlerFn = (state: LessonState, input: string, ctx?: OrchestratorCallContext) => Promise<AIResponse>
@@ -180,8 +189,9 @@ export class LessonOrchestrator {
     }
   }
 
-  // Called after student answers an exercise
-  async recordExerciseResult(lessonId: string, correct: boolean): Promise<void> {
+  // Called after student answers an exercise.
+  // Phase 5: accepts optional errorData to populate errorsThisLesson for tips and agenda context.
+  async recordExerciseResult(lessonId: string, correct: boolean, errorData?: ExerciseErrorData): Promise<void> {
     const state = await this.loadState(lessonId)
 
     if (correct) {
@@ -194,6 +204,17 @@ export class LessonOrchestrator {
       // Track failed item index so AI can give extra attention to it
       if (!state.failedItems.includes(state.itemIndex)) {
         state.failedItems = [...state.failedItems, state.itemIndex]
+      }
+      // Phase 5: populate errorsThisLesson for tip generation and agenda context
+      if (errorData) {
+        const record: ErrorRecord = {
+          exercise:      errorData.exercise,
+          studentAnswer: errorData.studentAnswer,
+          correctAnswer: errorData.correctAnswer,
+          errorType:     errorData.errorType,
+          timestamp:     new Date().toISOString(),
+        }
+        state.errorsThisLesson = [...(state.errorsThisLesson ?? []), record].slice(-10)
       }
     }
 

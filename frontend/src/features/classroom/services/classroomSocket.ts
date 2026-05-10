@@ -58,6 +58,21 @@ export type BackendMessage =
   | { type: 'teacher_turn_end' }
   | { type: 'lesson_ready';            sessionId: string | null }
   | { type: 'exercise_cursor_updated'; cursor: ExerciseCursor }
+  | { type: 'tip_added';              tip: TipRecord }
+  | { type: 'tip_list';               tips: TipRecord[] }
+
+export interface TipRecord {
+  id:          string
+  studentId:   string
+  lessonId?:   string | null
+  section?:    string | null
+  category:    'VOCAB' | 'PHRASE' | 'GRAMMAR' | 'PRONUNCIATION' | 'COMMON_MISTAKE'
+  title:       string
+  explanation: string
+  example?:    string | null
+  source:      'confusion' | 'correction' | 'vocabulary' | 'observation'
+  createdAt:   string
+}
 
 export type SendFn = (payload: object) => void
 
