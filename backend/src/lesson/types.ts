@@ -54,6 +54,13 @@ export interface LessonState {
   currentExerciseNum: number      // 1-based; 0 = not started yet
   completedExercises: number[]    // exercise numbers already given to student
 
+  // Phase 3: item-level exercise cursor (persisted in Redis, survives reconnect)
+  itemIndex:      number          // 0-based index of current item within currentExerciseNum
+  currentItem:    string          // exact text of the current item being asked
+  completedItems: number[]        // item indices completed in current exercise
+  failedItems:    number[]        // item indices where student made errors
+  wordBoxState:   WordBoxState | null  // word-box tracking for vocabulary exercises
+
   // content tracking
   vocabularyTaught: string[]
   errorsThisLesson: ErrorRecord[]
@@ -66,6 +73,27 @@ export interface LessonState {
 
   startedAt:     string // ISO
   phaseStartedAt: string // ISO
+}
+
+// Word-box tracking: words available to student + words already used
+export interface WordBoxState {
+  available: string[]
+  used:      string[]
+}
+
+// Exact cursor position within the textbook — broadcast to frontend as exercise_cursor_updated
+export interface ExerciseCursor {
+  unit?:          number
+  section?:       string
+  exerciseNumber: number
+  exerciseType:   string
+  instruction:    string
+  currentItem:    string
+  itemIndex:      number
+  itemTotal:      number
+  completedItems: number[]
+  failedItems:    number[]
+  wordBoxState?:  WordBoxState | null
 }
 
 export interface ErrorRecord {
@@ -101,11 +129,12 @@ export interface ExerciseData {
 }
 
 export interface OrchestratorResult {
-  text:         string
-  displayText:  string        // formatted display_text from AI (may contain card markdown)
-  phase:        LessonPhase
-  phaseChanged: boolean
-  previousPhase: LessonPhase
-  exercise:     ExerciseData | null
-  ended:        boolean
+  text:           string
+  displayText:    string        // formatted display_text from AI (may contain card markdown)
+  phase:          LessonPhase
+  phaseChanged:   boolean
+  previousPhase:  LessonPhase
+  exercise:       ExerciseData | null
+  ended:          boolean
+  exerciseCursor: ExerciseCursor | null  // Phase 3: item-level cursor broadcast
 }

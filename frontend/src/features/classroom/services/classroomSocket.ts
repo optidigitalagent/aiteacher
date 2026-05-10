@@ -8,6 +8,20 @@ const WS_BASE = buildWsBase()
 
 // ── Outbound (backend → frontend) ────────────────────────────────────────────
 
+export interface ExerciseCursor {
+  unit?:          number
+  section?:       string
+  exerciseNumber: number
+  exerciseType:   string
+  instruction:    string
+  currentItem:    string
+  itemIndex:      number
+  itemTotal:      number
+  completedItems: number[]
+  failedItems:    number[]
+  wordBoxState?:  { available: string[]; used: string[] } | null
+}
+
 export interface BackendExercise {
   id:             string
   exerciseType:   string
@@ -42,7 +56,8 @@ export type BackendMessage =
   | { type: 'lesson_resumed';   phase: string; exerciseNum: number; message: string }
   | { type: 'student_message';  text: string }
   | { type: 'teacher_turn_end' }
-  | { type: 'lesson_ready';     sessionId: string | null }
+  | { type: 'lesson_ready';            sessionId: string | null }
+  | { type: 'exercise_cursor_updated'; cursor: ExerciseCursor }
 
 export type SendFn = (payload: object) => void
 

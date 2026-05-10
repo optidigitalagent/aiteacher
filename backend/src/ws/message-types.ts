@@ -63,7 +63,7 @@ export type StudentConfused   = Extract<InboundMessage, { type: 'student_confuse
 
 // ─── Outbound (Server → Client) ──────────────────────────────────────────────
 
-import type { LessonPhase, SlideSpec } from '../lesson/types.js'
+import type { LessonPhase, SlideSpec, ExerciseCursor } from '../lesson/types.js'
 
 export interface OutboundAiText {
   type:         'ai_text'
@@ -170,6 +170,18 @@ export interface OutboundLessonReady {
   sessionId: string | null
 }
 
+/**
+ * Phase 3: Sent after every AI turn that produces or updates an exercise.
+ * Contains the authoritative item-level cursor for the current exercise.
+ * Frontend renders exercise state from this — never from local inference.
+ */
+export interface OutboundExerciseCursorUpdated {
+  type:   'exercise_cursor_updated'
+  cursor: ExerciseCursor
+}
+
+export type { ExerciseCursor }
+
 export type OutboundMessage =
   | OutboundAiText
   | OutboundAudioChunk
@@ -185,3 +197,4 @@ export type OutboundMessage =
   | OutboundStudentMessage
   | OutboundTeacherTurnEnd
   | OutboundLessonReady
+  | OutboundExerciseCursorUpdated

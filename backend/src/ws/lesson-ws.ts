@@ -265,6 +265,27 @@ async function resumeLesson(
     exerciseNum: state.currentExerciseNum,
     message:     resumeMsg,
   })
+
+  // Phase 3: restore exercise cursor state on resume if an exercise was active
+  if (state.currentExerciseNum > 0 && state.currentItem) {
+    send(ws, {
+      type: 'exercise_cursor_updated',
+      cursor: {
+        unit:           state.focusUnit,
+        section:        state.focusLesson,
+        exerciseNumber: state.currentExerciseNum,
+        exerciseType:   'form_transformation', // best-effort type on resume
+        instruction:    '',
+        currentItem:    state.currentItem,
+        itemIndex:      state.itemIndex ?? 0,
+        itemTotal:      0,
+        completedItems: state.completedItems ?? [],
+        failedItems:    state.failedItems    ?? [],
+        wordBoxState:   state.wordBoxState   ?? null,
+      },
+    })
+  }
+
   await ttsStream(ws, meta, resumeMsg)
 
   console.log(`[ws] lesson resumed lessonId=${existingLessonId} phase=${state.phase} exercise=${state.currentExerciseNum} remainingMs=${remainingMs}`)
@@ -306,6 +327,12 @@ async function handleLessonStart(
     textbookUnit:   config.textbookUnit,
     currentExerciseNum:  0,
     completedExercises:  [],
+    // Phase 3: item-level cursor
+    itemIndex:      0,
+    currentItem:    '',
+    completedItems: [],
+    failedItems:    [],
+    wordBoxState:   null,
     exchangeCount:       0,
     exerciseCount:       0,
     consecutiveCorrect:  0,
@@ -444,6 +471,12 @@ async function handleFocusLessonStart(
     voiceId:        meta.voiceId   ?? undefined,
     currentExerciseNum:  0,
     completedExercises:  [],
+    // Phase 3: item-level cursor
+    itemIndex:      0,
+    currentItem:    '',
+    completedItems: [],
+    failedItems:    [],
+    wordBoxState:   null,
     exchangeCount:       0,
     exerciseCount:       0,
     consecutiveCorrect:  0,
@@ -553,6 +586,12 @@ async function processInput(
         items:          result.exercise.items,
       },
     })
+  }
+
+  // Phase 3: send authoritative exercise cursor whenever it changes
+  if (result.exerciseCursor) {
+    send(ws, { type: 'exercise_cursor_updated', cursor: result.exerciseCursor })
+    console.log(`[paid-lesson] cursor_updated exercise=#${result.exerciseCursor.exerciseNumber} item=${result.exerciseCursor.itemIndex}/${result.exerciseCursor.itemTotal}`)
   }
 
   if (result.ended) {

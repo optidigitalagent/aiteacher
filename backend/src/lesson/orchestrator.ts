@@ -5,6 +5,7 @@ import {
   type LessonState,
   type AIResponse,
   type OrchestratorResult,
+  type ExerciseCursor,
 } from './types.js'
 import { shouldTransition, applyAISignal } from './transitions.js'
 import { saveExercise } from '../exercises/exercise-store.js'
@@ -89,6 +90,8 @@ export class LessonOrchestrator {
     // currentExerciseNum = the exercise currently being worked on (0 = not started).
     // Only advance when the AI returns an exercise with a DIFFERENT exerciseNumber.
     // Items within the same exercise share the same exerciseNumber → no increment.
+    let exerciseCursor: ExerciseCursor | null = null
+
     if (aiResp.exercise) {
       const newNum = aiResp.exercise.exerciseNumber
       if (newNum !== undefined && newNum > 0 && newNum !== state.currentExerciseNum) {
@@ -97,10 +100,50 @@ export class LessonOrchestrator {
           state.completedExercises = [...state.completedExercises, state.currentExerciseNum]
         }
         state.currentExerciseNum = newNum
+        // Reset item-level cursor for new exercise
+        state.itemIndex      = 0
+        state.currentItem    = aiResp.exercise.question
+        state.completedItems = []
+        state.failedItems    = []
         console.log(`[orch] exercise advanced to #${state.currentExerciseNum}, completed=[${state.completedExercises.join(',')}]`)
       } else if (!newNum && state.currentExerciseNum === 0) {
         // Free mode or AI omitted exerciseNumber — start at 1
         state.currentExerciseNum = 1
+        state.itemIndex          = 0
+        state.currentItem        = aiResp.exercise.question
+        state.completedItems     = []
+        state.failedItems        = []
+      } else {
+        // Same exercise — check if this is a new item or retry
+        const incomingItem = aiResp.exercise.question ?? ''
+        if (incomingItem && incomingItem !== state.currentItem && state.currentItem) {
+          // Different question text within same exercise → student moved to next item
+          if (!state.completedItems.includes(state.itemIndex)) {
+            state.completedItems = [...state.completedItems, state.itemIndex]
+          }
+          state.itemIndex   = state.completedItems.length
+          state.currentItem = incomingItem
+          console.log(`[orch] item advanced to #${state.itemIndex} within exercise #${state.currentExerciseNum}`)
+        } else if (incomingItem && !state.currentItem) {
+          // First item of this exercise
+          state.currentItem = incomingItem
+        }
+      }
+
+      // Build cursor for this exercise response
+      const itemTotal = aiResp.exercise.items?.length ?? 0
+      exerciseCursor = {
+        unit:          state.focusUnit,
+        section:       state.focusLesson,
+        exerciseNumber: state.currentExerciseNum,
+        exerciseType:   aiResp.exercise.type,
+        instruction:    aiResp.exercise.instruction ?? '',
+        currentItem:    state.currentItem,
+        itemIndex:      state.itemIndex,
+        itemTotal,
+        completedItems: state.completedItems,
+        failedItems:    state.failedItems,
+        wordBoxState:   state.wordBoxState,
       }
     }
 
@@ -121,13 +164,14 @@ export class LessonOrchestrator {
       : null
 
     return {
-      text:         aiResp.speech,
-      displayText:  aiResp.display_text ?? aiResp.speech,
-      phase:        state.phase,
+      text:           aiResp.speech,
+      displayText:    aiResp.display_text ?? aiResp.speech,
+      phase:          state.phase,
       phaseChanged,
       previousPhase,
       exercise,
-      ended:        state.phase === 'END',
+      ended:          state.phase === 'END',
+      exerciseCursor,
     }
   }
 
@@ -142,6 +186,10 @@ export class LessonOrchestrator {
     } else {
       state.consecutiveErrors++
       state.consecutiveCorrect = 0
+      // Track failed item index so AI can give extra attention to it
+      if (!state.failedItems.includes(state.itemIndex)) {
+        state.failedItems = [...state.failedItems, state.itemIndex]
+      }
     }
 
     // Difficulty adaptation (from exercise-engine.md)
@@ -157,7 +205,14 @@ export class LessonOrchestrator {
   private async loadState(lessonId: string): Promise<LessonState> {
     const raw = await redis.get(lessonStateKey(lessonId))
     if (!raw) throw new Error(`lesson state not found in Redis: ${lessonId}`)
-    return JSON.parse(raw) as LessonState
+    const state = JSON.parse(raw) as LessonState
+    // Normalize Phase 3 cursor fields for states created before this phase
+    state.itemIndex      ??= 0
+    state.currentItem    ??= ''
+    state.completedItems ??= []
+    state.failedItems    ??= []
+    state.wordBoxState   ??= null
+    return state
   }
 
   private async saveState(lessonId: string, state: LessonState): Promise<void> {

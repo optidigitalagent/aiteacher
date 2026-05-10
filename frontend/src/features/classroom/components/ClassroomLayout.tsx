@@ -9,6 +9,7 @@ import { useDemoSession }    from '../hooks/useDemoSession'
 import ClassroomHeader       from './ClassroomHeader'
 import TeacherPanel          from './TeacherPanel'
 import ExercisePanel         from './ExercisePanel'
+import PaidExerciseCard      from './PaidExerciseCard'
 import SectionProgressPanel  from './SectionProgressPanel'
 import ChatPanel             from './ChatPanel'
 import BottomControls        from './BottomControls'
@@ -46,8 +47,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
 
   // ── Production hooks (always called — rules of hooks) ────────────────────
   const {
-    question, progress, steps,
-    submitAnswer, onExercise, onPhaseChange,
+    question, exerciseCursor, progress, steps,
+    submitAnswer, onExercise, onPhaseChange, onCursorUpdated,
   } = useLessonSession({ send })
 
   const {
@@ -250,6 +251,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         pushAI(msg.message)
         setSpeaking(true)
         stopRecording()  // ensure mic is off during resume greeting TTS
+        break
+      case 'exercise_cursor_updated':
+        onCursorUpdated(msg.cursor)
         break
       case 'lesson_end':
         if (!isDemoMode) {
@@ -531,6 +535,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
               )
             ) : teachingCard ? (
               <TeachingOverlay card={teachingCard} onDismiss={() => setTeachingCard(null)} />
+            ) : exerciseCursor ? (
+              <PaidExerciseCard cursor={exerciseCursor} feedback={feedback} />
             ) : questionForPanel ? (
               <ExercisePanel
                 question={questionForPanel}

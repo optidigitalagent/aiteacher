@@ -322,10 +322,13 @@ FAILURE RULE: If student cannot state the rule after 3 guided attempts →
 
 → next_action: "rule_stated_correctly" once student states the rule correctly (even partially).`
 
-    case 'EXERCISES':
-      return `=== EXERCISES — MASTERY LOOP ===
-POSITION: Section ${state.focusLesson} | Working on: Exercise ${exerciseNum} | Completed: [${completed.join(', ') || 'none'}]
+    case 'EXERCISES': {
+      const itemCursorNote = state.itemIndex > 0 || state.currentItem
+        ? `\n━━━ ITEM CURSOR ━━━\nCurrent item index: ${state.itemIndex} (0-based)\nCurrent item being asked: "${state.currentItem || 'NOT YET STARTED'}"\nCompleted item indices in this exercise: [${(state.completedItems ?? []).join(', ') || 'none'}]\nFailed item indices (need extra care): [${(state.failedItems ?? []).join(', ') || 'none'}]\nDO NOT re-present completed items. DO NOT advance past the current item until correct.\n`
+        : ''
 
+      return `=== EXERCISES — MASTERY LOOP ===
+POSITION: Section ${state.focusLesson} | Working on: Exercise ${exerciseNum} | Completed exercises: [${completed.join(', ') || 'none'}]${itemCursorNote}
 ━━━ SEQUENCE LOCK ━━━
 Work ONLY on Exercise ${exerciseNum}. Do NOT advance to Exercise ${exerciseNum + 1} until this one is
 explicitly completed and announced with the COMPLETION ANNOUNCEMENT below.
@@ -413,6 +416,7 @@ Format your display_text with:
 Keep it tight — 4–5 lines max. This displays as a visual card in the UI.
 
 After 6+ completed exercises → next_action: "transition_to:VOCABULARY"`
+    }
 
     case 'VOCABULARY':
       return `PHASE: VOCABULARY — teach words in 3 dimensions, not as a list.

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import type { Exercise, LessonStep } from '../types'
-import type { BackendExercise, SendFn } from '../services/classroomSocket'
+import type { BackendExercise, ExerciseCursor, SendFn } from '../services/classroomSocket'
 
 interface Options { send: SendFn }
 
@@ -33,10 +33,11 @@ function mapExercise(be: BackendExercise, index: number): Exercise {
 }
 
 export function useLessonSession({ send }: Options) {
-  const [exercise,  setExercise]  = useState<Exercise | null>(null)
-  const exerciseIndexRef          = useRef(0)
-  const [pendingId, setPendingId] = useState<string | null>(null)
-  const [steps, setSteps]         = useState<LessonStep[]>(PHASE_STEPS)
+  const [exercise,       setExercise]       = useState<Exercise | null>(null)
+  const [exerciseCursor, setExerciseCursor] = useState<ExerciseCursor | null>(null)
+  const exerciseIndexRef                    = useRef(0)
+  const [pendingId,      setPendingId]      = useState<string | null>(null)
+  const [steps,          setSteps]          = useState<LessonStep[]>(PHASE_STEPS)
 
   const progress = Math.round(
     (steps.filter((s) => s.status === 'done').length / steps.length) * 100,
@@ -47,6 +48,11 @@ export function useLessonSession({ send }: Options) {
     exerciseIndexRef.current++
     setExercise(mapExercise(be, exerciseIndexRef.current))
     setPendingId(be.id)
+  }, [])
+
+  // Called by ClassroomLayout when WS 'exercise_cursor_updated' event arrives
+  const onCursorUpdated = useCallback((cursor: ExerciseCursor) => {
+    setExerciseCursor(cursor)
   }, [])
 
   // Called by ClassroomLayout when WS 'phase_change' event arrives
@@ -72,5 +78,5 @@ export function useLessonSession({ send }: Options) {
     [pendingId, send],
   )
 
-  return { question: exercise, progress, steps, submitAnswer, onExercise, onPhaseChange }
+  return { question: exercise, exerciseCursor, progress, steps, submitAnswer, onExercise, onPhaseChange, onCursorUpdated }
 }
