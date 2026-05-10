@@ -137,4 +137,7 @@ export interface OrchestratorResult {
   exercise:       ExerciseData | null
   ended:          boolean
   exerciseCursor: ExerciseCursor | null  // Phase 3: item-level cursor broadcast
+  // Phase 6: real lesson stats — populated only when ended=true
+  exerciseScore:   number       // state.exerciseCount (correct answers)
+  vocabularyCount: number       // state.vocabularyTaught.length
 }

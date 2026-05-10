@@ -6,6 +6,8 @@ import { getSubscription } from '../billing/subscription-service.js'
 
 const router = Router()
 
+const MAX_LESSON_MS = Number(process.env.PAID_PLAN_LESSON_MINUTES ?? 50) * 60_000
+
 // POST /lesson/start — subscription required; creates lesson session + usage record
 router.post('/lesson/start', requireAuth, async (req: Request, res: Response) => {
   const userId = req.user!.userId
@@ -73,6 +75,79 @@ router.post('/lesson/start', requireAuth, async (req: Request, res: Response) =>
   } catch (err) {
     console.error('[lesson] start error:', err instanceof Error ? err.message : err)
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to start lesson session' })
+  }
+})
+
+// GET /lesson/continuation-status — Phase 6
+// Returns whether the student can continue an active lesson or should start a new one.
+// Frontend uses this to show "Continue" vs "Start new lesson" UI.
+// Backend remains authoritative — the WS layer independently validates on connection.
+router.get('/lesson/continuation-status', requireAuth, async (req: Request, res: Response) => {
+  const userId = req.user!.userId
+  try {
+    const sub = await getSubscription(userId)
+    const canStartNew = !!(sub && sub.status === 'active' && sub.minutesRemaining > 0
+      && (!sub.expiresAt || sub.expiresAt > new Date()))
+
+    // Check for an in-progress lesson session that has not been explicitly completed
+    const activeRow = await query<{
+      session_id:  string
+      lesson_id:   string | null
+      section_id:  string
+      teacher_id:  string
+      voice_id:    string
+      started_at:  Date
+    }>(
+      `SELECT ls.session_id, ls.lesson_id, ls.section_id, ls.teacher_id, ls.voice_id,
+              plu.started_at
+       FROM lesson_sessions ls
+       JOIN paid_lesson_usage plu
+         ON plu.session_id = ls.session_id AND plu.user_id = ls.user_id
+       WHERE ls.user_id = $1
+         AND ls.status  = 'active'
+         AND plu.status = 'active'
+       ORDER BY plu.started_at DESC
+       LIMIT 1`,
+      [userId],
+    )
+
+    const active = activeRow.rows[0]
+    let canContinue     = false
+    let remainingMinutes: number | null = null
+
+    if (active) {
+      const elapsedMs   = Date.now() - new Date(active.started_at).getTime()
+      const remainingMs = Math.max(0, MAX_LESSON_MS - elapsedMs)
+      if (remainingMs > 60_000) {
+        canContinue      = true
+        remainingMinutes = Math.floor(remainingMs / 60_000)
+      }
+    }
+
+    // Last completed section — used to suggest which section to start next
+    const lastRow = await query<{ section_id: string }>(
+      `SELECT ls.section_id
+       FROM lesson_sessions ls
+       WHERE ls.user_id = $1 AND ls.status = 'completed'
+       ORDER BY ls.updated_at DESC NULLS LAST, ls.created_at DESC
+       LIMIT 1`,
+      [userId],
+    )
+
+    res.json({
+      canContinue,
+      canStartNew,
+      activeSessionId:    canContinue && active ? active.session_id  : null,
+      activeSectionId:    canContinue && active ? active.section_id  : null,
+      activeTeacherId:    canContinue && active ? active.teacher_id  : null,
+      activeVoiceId:      canContinue && active ? active.voice_id    : null,
+      remainingMinutes,
+      lastCompletedSection:         lastRow.rows[0]?.section_id       ?? null,
+      subscriptionMinutesRemaining: sub?.minutesRemaining             ?? 0,
+    })
+  } catch (err) {
+    console.error('[lesson] continuation-status error:', err instanceof Error ? err.message : err)
+    res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to check continuation status' })
   }
 })
 

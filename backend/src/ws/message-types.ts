@@ -202,6 +202,15 @@ export interface OutboundTipList {
   tips: TipRecord[]
 }
 
+/**
+ * Phase 6: Sent 5 minutes before the 50-minute hard cap expires.
+ * Frontend may show a subtle timer. Teacher receives this via remainingSeconds context.
+ */
+export interface OutboundLessonTimeWarning {
+  type:        'lesson_time_warning'
+  remainingMs: number
+}
+
 export type OutboundMessage =
   | OutboundAiText
   | OutboundAudioChunk
@@ -220,3 +229,4 @@ export type OutboundMessage =
   | OutboundExerciseCursorUpdated
   | OutboundTipAdded
   | OutboundTipList
+  | OutboundLessonTimeWarning

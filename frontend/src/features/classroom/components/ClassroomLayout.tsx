@@ -193,9 +193,14 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   // Two-stage lesson end: first show modal inside classroom, then full results on click
   const [showFullResults, setShowFullResults] = useState(false)
   // Paid lesson end
-  type PaidLessonSummary = { lessonId: string; durationMin: number; phasesReached: string[] }
-  const [paidLessonEnded,   setPaidLessonEnded]   = useState(false)
-  const [paidLessonSummary, setPaidLessonSummary] = useState<PaidLessonSummary | null>(null)
+  type PaidLessonSummary = {
+    lessonId: string; durationMin: number; phasesReached: string[]
+    exerciseScore: number; vocabularyCount: number
+  }
+  const [paidLessonEnded,    setPaidLessonEnded]    = useState(false)
+  const [paidLessonSummary,  setPaidLessonSummary]  = useState<PaidLessonSummary | null>(null)
+  // Phase 6: 5-minute pre-timeout warning — number of minutes remaining, null = no warning
+  const [lessonTimeWarning, setLessonTimeWarning] = useState<number | null>(null)
   // Paid lesson exit guard
   const [showPaidLeaveModal, setShowPaidLeaveModal] = useState(false)
   // Phase 5: tips drawer
@@ -272,12 +277,18 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       case 'lesson_end':
         if (!isDemoMode) {
           setPaidLessonSummary({
-            lessonId:      msg.summary.lessonId,
-            durationMin:   msg.summary.durationMin,
-            phasesReached: msg.summary.phasesReached,
+            lessonId:       msg.summary.lessonId,
+            durationMin:    msg.summary.durationMin,
+            phasesReached:  msg.summary.phasesReached,
+            exerciseScore:  msg.summary.exerciseScore,   // Phase 6: real value
+            vocabularyCount: msg.summary.vocabularyCount, // Phase 6: real value
           })
           setPaidLessonEnded(true)
         }
+        break
+      case 'lesson_time_warning':
+        // Phase 6: 5-minute warning before lesson hard cap
+        if (!isDemoMode) setLessonTimeWarning(Math.floor(msg.remainingMs / 60_000))
         break
       case 'error':
         console.error('[Classroom WS] error:', msg.code, msg.message)
@@ -664,10 +675,26 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         />
       )}
 
+      {/* Phase 6: 5-minute time warning banner */}
+      {!isDemoMode && lessonTimeWarning !== null && !paidLessonEnded && (
+        <div style={{
+          position: 'fixed', top: 64, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 130, background: 'rgba(251,191,36,0.95)', backdropFilter: 'blur(4px)',
+          borderRadius: 12, padding: '8px 20px', fontSize: 13, fontWeight: 700,
+          color: '#78350f', boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span style={{ fontSize: 16 }}>⏱</span>
+          {lessonTimeWarning} {lessonTimeWarning === 1 ? 'minute' : 'minutes'} remaining in this lesson
+        </div>
+      )}
+
       {/* Paid lesson: completion modal */}
       {!isDemoMode && paidLessonEnded && paidLessonSummary && (
         <PaidLessonCompleteModal
           durationMin={paidLessonSummary.durationMin}
+          exerciseScore={paidLessonSummary.exerciseScore}
+          vocabularyCount={paidLessonSummary.vocabularyCount}
           onContinue={() => navigate('/learning')}
         />
       )}
@@ -863,10 +890,12 @@ function LessonCompleteModal({ teacherMessage, onViewResults }: {
   )
 }
 
-// ── Paid lesson complete modal ────────────────────────────────────────────────
-function PaidLessonCompleteModal({ durationMin, onContinue }: {
-  durationMin: number
-  onContinue:  () => void
+// ── Paid lesson complete modal (Phase 6: shows real lesson stats) ─────────────
+function PaidLessonCompleteModal({ durationMin, exerciseScore, vocabularyCount, onContinue }: {
+  durationMin:     number
+  exerciseScore:   number
+  vocabularyCount: number
+  onContinue:      () => void
 }) {
   return (
     <div style={{
@@ -876,7 +905,7 @@ function PaidLessonCompleteModal({ durationMin, onContinue }: {
     }}>
       <div style={{
         background: 'white', borderRadius: 24, padding: '32px 28px',
-        maxWidth: 400, width: '100%',
+        maxWidth: 420, width: '100%',
         boxShadow: '0 32px 64px rgba(15,23,42,0.22)',
         textAlign: 'center',
       }}>
@@ -888,11 +917,40 @@ function PaidLessonCompleteModal({ durationMin, onContinue }: {
         }}>
           ✓ Lesson complete
         </div>
-        <div style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', marginBottom: 10, lineHeight: 1.3 }}>
+        <div style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', marginBottom: 16, lineHeight: 1.3 }}>
           Great work!
         </div>
-        <div style={{ fontSize: 14, color: '#64748B', marginBottom: 24, lineHeight: 1.6 }}>
-          You completed a {durationMin}-minute lesson. Your progress has been saved.
+
+        {/* Real lesson stats */}
+        <div style={{
+          display: 'flex', gap: 10, marginBottom: 20, justifyContent: 'center',
+        }}>
+          <div style={{
+            flex: 1, background: '#f8f7ff', borderRadius: 14, padding: '12px 8px', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#6E7CFB' }}>{durationMin}</div>
+            <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600, marginTop: 2 }}>minutes</div>
+          </div>
+          {exerciseScore > 0 && (
+            <div style={{
+              flex: 1, background: '#f0fdf4', borderRadius: 14, padding: '12px 8px', textAlign: 'center',
+            }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: '#16a34a' }}>{exerciseScore}</div>
+              <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600, marginTop: 2 }}>correct answers</div>
+            </div>
+          )}
+          {vocabularyCount > 0 && (
+            <div style={{
+              flex: 1, background: '#fff8f0', borderRadius: 14, padding: '12px 8px', textAlign: 'center',
+            }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: '#ea7c1a' }}>{vocabularyCount}</div>
+              <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600, marginTop: 2 }}>vocabulary</div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ fontSize: 13, color: '#64748B', marginBottom: 22, lineHeight: 1.6 }}>
+          Your progress has been saved. You can continue your course in the next lesson.
         </div>
         <button
           onClick={onContinue}

@@ -543,6 +543,7 @@ ${lines.join('\n')}`
 }
 
 // ── Phase 4: Teacher agenda context — current position + return anchor + time ──
+// Phase 6: WRAP_UP phase now includes real lesson performance data for reflection.
 
 function buildTeacherAgendaContext(state: LessonState, remainingSeconds?: number): string {
   const lines: string[] = []
@@ -577,6 +578,29 @@ function buildTeacherAgendaContext(state: LessonState, remainingSeconds?: number
       .map(e => `  - ${e.errorType}: answered "${e.studentAnswer}" → correct: "${e.correctAnswer}"`)
       .join('\n')
     lines.push(`Recent session errors (watch for these):\n${errorLines}`)
+  }
+
+  // Phase 6: WRAP_UP reflection data — inject real lesson performance so the summary is specific
+  if (state.phase === 'WRAP_UP') {
+    lines.push('')
+    lines.push('=== LESSON REFLECTION DATA (use for this wrap-up) ===')
+    const completedCount = (state.completedExercises ?? []).length
+    lines.push(`Exercises completed this session: ${completedCount}`)
+    if (state.errorsThisLesson.length > 0) {
+      const topErrors = state.errorsThisLesson.slice(-3)
+      const errDetail = topErrors
+        .map(e => `  • "${e.studentAnswer}" → correct: "${e.correctAnswer}" [${e.errorType}]`)
+        .join('\n')
+      lines.push(`Errors made (mention 1-2 specifically in your summary):\n${errDetail}`)
+    } else {
+      lines.push('Errors this session: none — student performed well today.')
+    }
+    const vocab = state.vocabularyTaught ?? []
+    if (vocab.length > 0) {
+      lines.push(`Vocabulary covered: ${vocab.slice(0, 5).join(', ')}`)
+    }
+    lines.push('WRAP-UP RULE: Reference the above actual results — not generic praise.')
+    lines.push('Name 1-2 specific errors if any. Assign section workbook homework. Keep it under 60 seconds.')
   }
 
   if (lines.length === 0) return ''

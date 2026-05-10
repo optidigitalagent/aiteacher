@@ -186,6 +186,9 @@ export class LessonOrchestrator {
       exercise,
       ended:          state.phase === 'END',
       exerciseCursor,
+      // Phase 6: pass real lesson stats so lesson_end summary is accurate
+      exerciseScore:   state.phase === 'END' ? state.exerciseCount           : 0,
+      vocabularyCount: state.phase === 'END' ? state.vocabularyTaught.length : 0,
     }
   }
 

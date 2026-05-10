@@ -60,6 +60,8 @@ export type BackendMessage =
   | { type: 'exercise_cursor_updated'; cursor: ExerciseCursor }
   | { type: 'tip_added';              tip: TipRecord }
   | { type: 'tip_list';               tips: TipRecord[] }
+  // Phase 6
+  | { type: 'lesson_time_warning'; remainingMs: number }
 
 export interface TipRecord {
   id:          string

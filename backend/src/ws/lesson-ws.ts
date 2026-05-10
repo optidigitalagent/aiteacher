@@ -184,6 +184,50 @@ async function saveLessonEndTipsAsync(
   }
 }
 
+// ── Phase 6: Lesson snapshot persistence ─────────────────────────────────────
+// Saves LessonState to PostgreSQL so lessons survive beyond the 4-hour Redis TTL.
+// Called fire-and-forget on every WS disconnect while a lesson was active.
+
+async function saveLessonSnapshot(
+  lessonId:  string,
+  sessionId: string | null,
+  studentId: string,
+): Promise<void> {
+  try {
+    const stateRaw = await redis.get(lessonStateKey(lessonId))
+    if (!stateRaw) return
+    await query(
+      `INSERT INTO lesson_snapshots (lesson_id, session_id, student_id, snapshot)
+       VALUES ($1, $2, $3, $4::jsonb)`,
+      [lessonId, sessionId, studentId, stateRaw],
+    )
+    console.log(`[snapshot] saved lessonId=${lessonId}`)
+  } catch (err) {
+    console.error('[snapshot] save error:', err)
+  }
+}
+
+// If Redis TTL expired for a lesson, attempt to restore the latest snapshot (max 24h old)
+// back into Redis so the resume flow can proceed normally.
+async function restoreSnapshotToRedis(lessonId: string): Promise<string | null> {
+  try {
+    const res = await query<{ snapshot: unknown }>(
+      `SELECT snapshot FROM lesson_snapshots
+       WHERE lesson_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
+       ORDER BY created_at DESC LIMIT 1`,
+      [lessonId],
+    )
+    if (!res.rows[0]) return null
+    const raw = JSON.stringify(res.rows[0].snapshot)
+    await redis.set(lessonStateKey(lessonId), raw, 'EX', LESSON_TTL)
+    console.log(`[snapshot] restored to Redis lessonId=${lessonId}`)
+    return raw
+  } catch (err) {
+    console.error('[snapshot] restore error:', err)
+    return null
+  }
+}
+
 const orchestrator = new LessonOrchestrator()
 
 const MAX_LESSON_MS = Number(process.env.PAID_PLAN_LESSON_MINUTES ?? 50) * 60_000
@@ -201,6 +245,7 @@ interface ClientMeta {
   heartbeatRef:    ReturnType<typeof setInterval>
   timeoutRef:      ReturnType<typeof setTimeout>
   maxDurationRef:  ReturnType<typeof setTimeout> | null
+  warningRef:      ReturnType<typeof setTimeout> | null  // Phase 6: 5-min pre-timeout warning
   stt:             DeepgramSTT | null
   ttsController:   AbortController | null
   ttsActive:       boolean         // true while TTS audio is streaming to client (echo gate)
@@ -280,15 +325,20 @@ async function resumeLesson(
   meta: ClientMeta,
   existingLessonId: string,
 ): Promise<boolean> {
-  const stateRaw = await redis.get(lessonStateKey(existingLessonId))
+  // Phase 6: try Redis first; if expired, attempt DB snapshot restore
+  let stateRaw = await redis.get(lessonStateKey(existingLessonId))
   if (!stateRaw) {
-    console.log(`[ws] resume skipped — Redis TTL expired for lessonId=${existingLessonId}`)
-    return false
+    console.log(`[ws] Redis miss — attempting snapshot restore for lessonId=${existingLessonId}`)
+    stateRaw = await restoreSnapshotToRedis(existingLessonId)
+    if (!stateRaw) {
+      console.log(`[ws] resume skipped — no Redis state and no recent snapshot for lessonId=${existingLessonId}`)
+      return false
+    }
   }
 
   const state = JSON.parse(stateRaw) as LessonState
 
-  // Calculate how much time is left from the original lesson
+  // Calculate how much time is left from the original lesson start
   const originalStart = new Date(state.startedAt).getTime()
   const elapsedMs     = Date.now() - originalStart
   const remainingMs   = Math.max(0, MAX_LESSON_MS - elapsedMs)
@@ -300,17 +350,30 @@ async function resumeLesson(
   }
 
   // Restore meta state
-  meta.lessonId        = existingLessonId
-  meta.studentId       = state.studentId
-  meta.voiceId         = state.voiceId   ?? meta.voiceId
-  meta.teacherId       = state.teacherId ?? meta.teacherId
-  meta.lessonStartedAt = Date.now()
+  meta.lessonId  = existingLessonId
+  meta.studentId = state.studentId
+  meta.voiceId   = state.voiceId   ?? meta.voiceId
+  meta.teacherId = state.teacherId ?? meta.teacherId
 
-  // Reset hard cap to remaining time
+  // Phase 6 bug fix: use the ORIGINAL lesson start time, not Date.now().
+  // processInput() computes remainingMs as MAX_LESSON_MS - (Date.now() - lessonStartedAt).
+  // Setting this to Date.now() would make the AI think there are 50 full minutes remaining
+  // after every reconnect, defeating the time-aware prompting added in Phase 4.
+  meta.lessonStartedAt = originalStart
+
+  // Reset hard cap to exact remaining time
   meta.maxDurationRef = setTimeout(() => {
     send(ws, { type: 'error', code: 'SESSION_TIME_LIMIT', message: 'Maximum lesson duration reached.' })
     ws.close(4408, 'Time limit reached')
   }, remainingMs)
+
+  // Phase 6: 5-minute warning before the hard cap
+  if (remainingMs > 5 * 60_000) {
+    meta.warningRef = setTimeout(() => {
+      send(ws, { type: 'lesson_time_warning', remainingMs: 5 * 60_000 })
+      console.log(`[paid-lesson] time_warning_sent remainingMs=300000 session=${meta.sessionId}`)
+    }, remainingMs - 5 * 60_000)
+  }
 
   // Restart STT for new connection
   meta.stt = new DeepgramSTT((transcript) => {
@@ -382,6 +445,14 @@ async function handleLessonStart(
     send(ws, { type: 'error', code: 'SESSION_TIME_LIMIT', message: 'Maximum lesson duration reached.' })
     ws.close(4408, 'Time limit reached')
   }, MAX_LESSON_MS)
+
+  // Phase 6: warn 5 minutes before the hard cap
+  if (MAX_LESSON_MS > 5 * 60_000) {
+    meta.warningRef = setTimeout(() => {
+      send(ws, { type: 'lesson_time_warning', remainingMs: 5 * 60_000 })
+      console.log(`[paid-lesson] time_warning_sent session=${meta.sessionId}`)
+    }, MAX_LESSON_MS - 5 * 60_000)
+  }
 
   await query(
     `INSERT INTO lessons (id, student_id, grammar_target, lesson_topic, textbook_unit)
@@ -504,6 +575,14 @@ async function handleFocusLessonStart(
     send(ws, { type: 'error', code: 'SESSION_TIME_LIMIT', message: 'Maximum lesson duration reached.' })
     ws.close(4408, 'Time limit reached')
   }, MAX_LESSON_MS)
+
+  // Phase 6: warn 5 minutes before the hard cap
+  if (MAX_LESSON_MS > 5 * 60_000) {
+    meta.warningRef = setTimeout(() => {
+      send(ws, { type: 'lesson_time_warning', remainingMs: 5 * 60_000 })
+      console.log(`[paid-lesson] time_warning_sent session=${meta.sessionId}`)
+    }, MAX_LESSON_MS - 5 * 60_000)
+  }
 
   // When a specific section is selected, use its metadata as the authoritative
   // source for grammarTarget and lessonTopic — not the unit-level defaults.
@@ -680,16 +759,17 @@ async function processInput(
   }
 
   if (result.ended) {
+    // Phase 6: calculate elapsed from original lesson start (not WS connect time)
     const durationMin = meta.lessonStartedAt
       ? Math.round((Date.now() - meta.lessonStartedAt) / 60_000)
       : 0
     send(ws, {
       type: 'lesson_end',
       summary: {
-        lessonId:       meta.lessonId,
-        phasesReached:  getPhasesUpTo(result.previousPhase),
-        exerciseScore:  0,
-        vocabularyCount: 0,
+        lessonId:        meta.lessonId,
+        phasesReached:   getPhasesUpTo(result.previousPhase),
+        exerciseScore:   result.exerciseScore,    // Phase 6: real value from state.exerciseCount
+        vocabularyCount: result.vocabularyCount,  // Phase 6: real value from state.vocabularyTaught.length
         durationMin,
       },
     })
@@ -940,6 +1020,7 @@ export function attachLessonWS(server: Server): void {
       heartbeatRef,
       timeoutRef:      setTimeout(() => ws.terminate(), INACTIVITY_TIMEOUT_MS),
       maxDurationRef:  null,
+      warningRef:      null,  // Phase 6
       stt:             null,
       ttsController:   null,
       ttsActive:       false,
@@ -1018,10 +1099,17 @@ export function attachLessonWS(server: Server): void {
       clearInterval(meta.heartbeatRef)
       clearTimeout(meta.timeoutRef)
       if (meta.maxDurationRef) clearTimeout(meta.maxDurationRef)
+      if (meta.warningRef)     clearTimeout(meta.warningRef)    // Phase 6
       meta.ttsController?.abort()
       meta.stt?.close()
       clients.delete(ws)
       console.log(`[ws] client disconnected, total=${clients.size}`)
+
+      // Phase 6: persist snapshot to PostgreSQL before billing finalize.
+      // This allows resume beyond the 4-hour Redis TTL.
+      if (meta.lessonId && meta.studentId) {
+        void saveLessonSnapshot(meta.lessonId, meta.sessionId, meta.studentId)
+      }
 
       // Cost instrumentation + finalize paid lesson usage
       if (meta.usageId && meta.userId && meta.lessonStartedAt) {
