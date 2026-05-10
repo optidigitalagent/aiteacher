@@ -1,4 +1,5 @@
 import type { LessonPhase, LessonState } from '../lesson/types.js'
+import type { TipRecord } from '../lesson/tips-service.js'
 import { getFocusUnit } from '../lesson/focus-content.js'
 import {
   TEACHING_METHODOLOGY_PROMPT,
@@ -21,6 +22,7 @@ export interface PromptContext {
   ragContext: string
   teacherName?: string         // 'Alex' (default) | 'Emma'
   remainingSeconds?: number   // Phase 4: remaining lesson time for time-aware prompting
+  studentTips?: TipRecord[]   // Phase 5: persistent tips from previous lessons
 }
 
 // Core teaching intelligence — how Alex behaves as a teacher in every phase
@@ -527,6 +529,19 @@ Max 6 words. Quality over quantity. Only words from the Student Book text above.
   }
 }
 
+// ── Phase 5: Student learning profile — persistent tips from previous lessons ──
+
+function buildStudentTipsContext(tips?: TipRecord[]): string {
+  if (!tips || tips.length === 0) return ''
+  const lines = tips.slice(0, 5).map((t) => {
+    const ex = t.example ? ` (e.g. "${t.example.slice(0, 80)}")` : ''
+    return `• [${t.category}] ${t.title}: ${t.explanation}${ex}`
+  })
+  return `=== STUDENT LEARNING PROFILE — PREVIOUS LESSONS ===
+Note these patterns when relevant — reference naturally, do NOT recite this list:
+${lines.join('\n')}`
+}
+
 // ── Phase 4: Teacher agenda context — current position + return anchor + time ──
 
 function buildTeacherAgendaContext(state: LessonState, remainingSeconds?: number): string {
@@ -670,6 +685,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     errorPatterns, grammarMastery, ragContext,
     teacherName = 'Alex',
     remainingSeconds,
+    studentTips,
   } = ctx
 
   const resolvedTeacher = teacherName === 'Emma' ? 'Emma' : 'Alex'
@@ -705,6 +721,9 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   // Phase 4: per-teacher turn-style hint
   const personaStyleHint = buildPersonaStyleHint(resolvedTeacher)
 
+  // Phase 5: student learning profile from persistent tips
+  const tipsContext = buildStudentTipsContext(studentTips)
+
   // void grammarMastery — unused but kept in PromptContext for future phases
   void grammarMastery
 
@@ -716,7 +735,7 @@ You praise the THINKING, not the person: "Good reasoning." / "That's the right i
 Student: ${studentName}, age ${studentAge}, level ${studentLevel}
 ${lessonHeader}${errorInfo ? `\n${errorInfo}` : ''}
 ${personaStyleHint}
-${agendaContext ? `\n${agendaContext}\n` : ''}
+${agendaContext ? `\n${agendaContext}\n` : ''}${tipsContext ? `\n${tipsContext}\n` : ''}
 ${focusSection || ragContext}
 
 ${topicLock}

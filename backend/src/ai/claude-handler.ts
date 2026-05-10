@@ -11,6 +11,7 @@ import {
   type PromptContext,
 } from './prompt-builder.js'
 import { queryRAG } from './rag.js'
+import { getTipsForContext } from '../lesson/tips-service.js'
 
 const MODEL = 'claude-sonnet-4-6'
 
@@ -104,10 +105,12 @@ function fallback(state: LessonState): AIResponse {
 const handler: AIHandlerFn = async (state: LessonState, inputText: string, callCtx?: OrchestratorCallContext) => {
   if (!client) throw new Error('[claude] client not initialised')
 
-  const [student, history, ragContext] = await Promise.all([
+  const [student, history, ragContext, studentTips] = await Promise.all([
     loadStudent(state.studentId),
     loadHistory(state.lessonId),
     queryRAG(state.grammarTarget, state.lessonTopic, state.textbookUnit),
+    // Phase 5: load recent tips for cross-session learning memory (max 5, section-relevant first)
+    getTipsForContext(state.studentId, state.focusLesson, 5),
   ])
 
   const ctx: PromptContext = {
@@ -123,6 +126,8 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string, callC
     remainingSeconds: callCtx?.remainingMs !== undefined
       ? Math.floor(callCtx.remainingMs / 1000)
       : undefined,
+    // Phase 5: persistent tips for cross-session learning continuity
+    studentTips: studentTips.length > 0 ? studentTips : undefined,
   }
 
   const systemPrompt = buildSystemPrompt(ctx)

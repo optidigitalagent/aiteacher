@@ -17,16 +17,19 @@ import {
   type LessonConfig,
   type FocusLessonConfig,
 } from './message-types.js'
-import type { LessonPhase, LessonState } from '../lesson/types.js'
+import type { LessonPhase, LessonState, ErrorRecord } from '../lesson/types.js'
 import { getFocusUnit } from '../lesson/focus-content.js'
 import { getTeachersBookSection } from '../lesson/focus-teachers-book.js'
 import { getFocusStudentBookSection } from '../lesson/focus-student-book.js'
 import { LessonOrchestrator } from '../lesson/orchestrator.js'
+import type { ExerciseErrorData } from '../lesson/orchestrator.js'
 import { DeepgramSTT } from '../voice/stt.js'
 import { speakToClient } from '../voice/tts.js'
 import { loadExercise, recordAnswer } from '../exercises/exercise-store.js'
 import { validateAnswer } from '../exercises/validator.js'
 import { updateStudentProfile } from '../lesson/profile-updater.js'
+import { saveTip, getStudentTips } from '../lesson/tips-service.js'
+import type { TipRecord } from '../lesson/tips-service.js'
 import { getOrCreateSectionCard } from '../lesson/slide-cache.js'
 import type { StudentConfused } from './message-types.js'
 
@@ -110,6 +113,75 @@ function buildFocusGreeting(
   body += ` Open your book to this section. Tell me when you're on the page.`
 
   return `Hello! I'm ${tName}, your English teacher. ${body}`
+}
+
+// ── Phase 5: Map exercise type to ErrorRecord errorType ──────────────────────
+
+function toErrorType(exerciseType: string): ErrorRecord['errorType'] {
+  if (exerciseType === 'form_transformation') return 'form'
+  if (exerciseType === 'reconstruction')      return 'word_order'
+  return 'other'
+}
+
+// ── Phase 5: Save tips derived from lesson data at lesson end ────────────────
+// Called fire-and-forget after result.ended. Reads Redis state for error history.
+
+async function saveLessonEndTipsAsync(
+  lessonId:  string,
+  studentId: string,
+  ws:        WebSocket,
+): Promise<void> {
+  try {
+    const stateRaw = await redis.get(lessonStateKey(lessonId))
+    if (!stateRaw) return
+    const state = JSON.parse(stateRaw) as LessonState
+
+    const saved: TipRecord[] = []
+
+    // Tips from exercise errors (CORRECTION source)
+    for (const err of state.errorsThisLesson ?? []) {
+      if (!err.correctAnswer || err.correctAnswer.length > 255) continue
+      const tip = await saveTip({
+        studentId,
+        lessonId,
+        section:  state.focusLesson,
+        category: err.errorType === 'vocabulary' ? 'VOCAB' : 'COMMON_MISTAKE',
+        title:    err.correctAnswer.slice(0, 255),
+        explanation:
+          `Student wrote "${err.studentAnswer.slice(0, 100)}" — correct form is "${err.correctAnswer.slice(0, 100)}"`,
+        example: err.exercise?.slice(0, 200),
+        source:  'correction',
+      })
+      if (tip) saved.push(tip)
+    }
+
+    // Tips from vocabulary taught (VOCABULARY source)
+    for (const word of state.vocabularyTaught ?? []) {
+      if (!word || word.length > 200) continue
+      const tip = await saveTip({
+        studentId,
+        lessonId,
+        section:     state.focusLesson,
+        category:    'VOCAB',
+        title:       word.slice(0, 255),
+        explanation: `Vocabulary introduced in section ${state.focusLesson ?? 'this lesson'}`,
+        source:      'vocabulary',
+      })
+      if (tip) saved.push(tip)
+    }
+
+    // Broadcast new tips to frontend if still connected
+    for (const tip of saved) {
+      if (ws.readyState === WebSocket.OPEN) {
+        send(ws, { type: 'tip_added', tip })
+      }
+    }
+
+    const total = (state.errorsThisLesson?.length ?? 0) + (state.vocabularyTaught?.length ?? 0)
+    console.log(`[tips] lesson_end saved=${saved.length} skipped_dupes=${total - saved.length} lessonId=${lessonId}`)
+  } catch (err) {
+    console.error('[tips] saveLessonEndTipsAsync error:', err)
+  }
 }
 
 const orchestrator = new LessonOrchestrator()
@@ -527,6 +599,15 @@ async function handleFocusLessonStart(
     if (sb?.type === 'Grammar') sendSectionCardAsync(ws, config.section)
   }
 
+  // Phase 5: send recent tips so the frontend Tips drawer can populate immediately
+  void getStudentTips(effectiveStudentId, 30).then((tips) => {
+    if (tips.length > 0 && ws.readyState === WebSocket.OPEN) {
+      send(ws, { type: 'tip_list', tips })
+    }
+  }).catch((err: unknown) => {
+    console.error('[tips] tip_list send error:', err)
+  })
+
   await ttsStream(ws, meta, greeting)
 }
 
@@ -621,13 +702,17 @@ async function processInput(
       ).catch((err: unknown) => console.error('[ws] session status update error:', err))
     }
 
+    // Capture IDs before clearing meta (async operations below use these)
+    const endedLessonId  = meta.lessonId
+    const endedStudentId = meta.studentId
+
     // Update student profile async — don't block the response
-    if (meta.studentId) {
-      const lessonId  = meta.lessonId
-      const studentId = meta.studentId
-      updateStudentProfile(lessonId, studentId).catch((err: unknown) => {
+    if (endedStudentId && endedLessonId) {
+      updateStudentProfile(endedLessonId, endedStudentId).catch((err: unknown) => {
         console.error('[ws] profile update failed:', err)
       })
+      // Phase 5: save learning tips derived from lesson data (errors + vocabulary)
+      void saveLessonEndTipsAsync(endedLessonId, endedStudentId, ws)
     }
 
     meta.lessonId = null
@@ -690,7 +775,15 @@ async function handleExerciseAnswer(
   const validation = await validateAnswer(exercise, answer)
 
   await recordAnswer(exerciseId, meta.lessonId, answer, validation.correct)
-  await orchestrator.recordExerciseResult(meta.lessonId, validation.correct)
+
+  // Phase 5: pass error details so errorsThisLesson is populated for tips and agenda context
+  const errorData: ExerciseErrorData | undefined = validation.correct ? undefined : {
+    exercise:      exercise.question,
+    studentAnswer: answer,
+    correctAnswer: exercise.correct_answer,
+    errorType:     toErrorType(exercise.type),
+  }
+  await orchestrator.recordExerciseResult(meta.lessonId, validation.correct, errorData)
 
   send(ws, { type: 'feedback', correct: validation.correct, explanation: validation.feedback })
 
@@ -738,6 +831,36 @@ async function handleStudentConfused(
   if (msg.lastExercise)       parts.push(`Current exercise: "${msg.lastExercise}"`)
   if (msg.studentLastAnswer)  parts.push(`Student\'s last answer: "${msg.studentLastAnswer}"`)
   parts.push('Follow the CONFUSION PROTOCOL. Identify the specific knowledge gap. Present a MINI TEACHING CARD in display_text.')
+
+  // Phase 5: save a confusion tip (non-blocking — runs before AI responds)
+  const capturedLessonId  = meta.lessonId
+  const capturedStudentId = meta.studentId
+  if (capturedStudentId) {
+    void (async () => {
+      try {
+        const stateRaw = await redis.get(lessonStateKey(capturedLessonId))
+        if (!stateRaw) return
+        const st = JSON.parse(stateRaw) as LessonState
+        const exerciseContext = msg.lastExercise
+          ? ` — exercise: "${msg.lastExercise.slice(0, 100)}"`
+          : ''
+        const tip = await saveTip({
+          studentId:   capturedStudentId,
+          lessonId:    capturedLessonId,
+          section:     st.focusLesson,
+          category:    'GRAMMAR',
+          title:       st.grammarTarget.slice(0, 255),
+          explanation: `Student needed clarification during ${st.phase} phase${exerciseContext}`,
+          source:      'confusion',
+        })
+        if (tip && ws.readyState === WebSocket.OPEN) {
+          send(ws, { type: 'tip_added', tip })
+        }
+      } catch (err) {
+        console.error('[tips] confusion tip error:', err)
+      }
+    })()
+  }
 
   const confusionContext = parts.join('\n')
   await processInput(ws, meta, confusionContext, true)

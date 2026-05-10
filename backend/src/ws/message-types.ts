@@ -64,6 +64,8 @@ export type StudentConfused   = Extract<InboundMessage, { type: 'student_confuse
 // ─── Outbound (Server → Client) ──────────────────────────────────────────────
 
 import type { LessonPhase, SlideSpec, ExerciseCursor } from '../lesson/types.js'
+import type { TipRecord } from '../lesson/tips-service.js'
+export type { TipRecord }
 
 export interface OutboundAiText {
   type:         'ai_text'
@@ -182,6 +184,24 @@ export interface OutboundExerciseCursorUpdated {
 
 export type { ExerciseCursor }
 
+/**
+ * Phase 5: Sent when a new learning tip is created (confusion, correction, vocabulary).
+ * Frontend appends to the local tip list.
+ */
+export interface OutboundTipAdded {
+  type: 'tip_added'
+  tip:  TipRecord
+}
+
+/**
+ * Phase 5: Sent at lesson start with the student's recent tip history.
+ * Allows the frontend to show the Tips drawer without a separate REST call.
+ */
+export interface OutboundTipList {
+  type: 'tip_list'
+  tips: TipRecord[]
+}
+
 export type OutboundMessage =
   | OutboundAiText
   | OutboundAudioChunk
@@ -198,3 +218,5 @@ export type OutboundMessage =
   | OutboundTeacherTurnEnd
   | OutboundLessonReady
   | OutboundExerciseCursorUpdated
+  | OutboundTipAdded
+  | OutboundTipList
