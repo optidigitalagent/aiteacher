@@ -549,10 +549,14 @@ async function processInput(
   }
   meta.aiProcessing = true
 
-  console.log(`[paid-lesson] ai_turn_started input_chars=${text.trim().length}`)
+  // Phase 4: compute remaining lesson time for time-aware AI prompting
+  const elapsedMs   = meta.lessonStartedAt ? Date.now() - meta.lessonStartedAt : 0
+  const remainingMs = Math.max(0, MAX_LESSON_MS - elapsedMs)
+
+  console.log(`[paid-lesson] ai_turn_started input_chars=${text.trim().length} remaining_min=${Math.round(remainingMs / 60_000)}`)
   let result: Awaited<ReturnType<typeof orchestrator.process>> | undefined
   try {
-    result = await orchestrator.process(meta.lessonId, text)
+    result = await orchestrator.process(meta.lessonId, text, { remainingMs })
   } finally {
     meta.aiProcessing = false
   }

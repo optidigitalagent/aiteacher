@@ -44,7 +44,12 @@ function stubResponse(state: LessonState): AIResponse {
 
 // ── AI handler plugin (Phase 3 replaces this with Claude) ────────────────────
 
-export type AIHandlerFn = (state: LessonState, input: string) => Promise<AIResponse>
+// Phase 4: call-site context forwarded from the WS layer to the AI handler
+export interface OrchestratorCallContext {
+  remainingMs?: number  // remaining lesson milliseconds for time-aware prompting
+}
+
+export type AIHandlerFn = (state: LessonState, input: string, ctx?: OrchestratorCallContext) => Promise<AIResponse>
 
 let aiHandler: AIHandlerFn = async (state) => stubResponse(state)
 
@@ -55,7 +60,7 @@ export function registerAIHandler(fn: AIHandlerFn): void {
 // ── Orchestrator ──────────────────────────────────────────────────────────────
 
 export class LessonOrchestrator {
-  async process(lessonId: string, inputText: string): Promise<OrchestratorResult> {
+  async process(lessonId: string, inputText: string, callCtx?: OrchestratorCallContext): Promise<OrchestratorResult> {
     const state = await this.loadState(lessonId)
     const previousPhase = state.phase
 
@@ -69,8 +74,8 @@ export class LessonOrchestrator {
     state.exchangeCount++
     if (state.phase === 'DEEP_THINKING') state.deepThinkingExchanges++
 
-    // Get AI response (stub or Claude)
-    const aiResp = await aiHandler(state, inputText)
+    // Get AI response (stub or Claude) — forward remaining-time context for time-aware prompting
+    const aiResp = await aiHandler(state, inputText, callCtx)
 
     // Apply AI signal first (forward-only), then check rule-based transitions
     const aiTarget   = applyAISignal(state, aiResp.next_action)

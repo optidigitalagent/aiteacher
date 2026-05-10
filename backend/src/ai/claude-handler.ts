@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import 'dotenv/config'
 import redis, { LESSON_TTL, lessonContextKey } from '../db/redis.js'
 import { query } from '../db/postgres.js'
-import { registerAIHandler, type AIHandlerFn } from '../lesson/orchestrator.js'
+import { registerAIHandler, type AIHandlerFn, type OrchestratorCallContext } from '../lesson/orchestrator.js'
 import type { LessonState, AIResponse, ExerciseData } from '../lesson/types.js'
 import {
   buildSystemPrompt,
@@ -101,7 +101,7 @@ function fallback(state: LessonState): AIResponse {
 
 // ── Main AI handler ───────────────────────────────────────────────────────────
 
-const handler: AIHandlerFn = async (state: LessonState, inputText: string) => {
+const handler: AIHandlerFn = async (state: LessonState, inputText: string, callCtx?: OrchestratorCallContext) => {
   if (!client) throw new Error('[claude] client not initialised')
 
   const [student, history, ragContext] = await Promise.all([
@@ -119,6 +119,10 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string) => {
     grammarMastery: student.grammar_mastery ?? {},
     ragContext,
     teacherName:    state.teacherId === 'emma' ? 'Emma' : 'Alex',
+    // Phase 4: remaining lesson time for time-aware teacher prompting
+    remainingSeconds: callCtx?.remainingMs !== undefined
+      ? Math.floor(callCtx.remainingMs / 1000)
+      : undefined,
   }
 
   const systemPrompt = buildSystemPrompt(ctx)

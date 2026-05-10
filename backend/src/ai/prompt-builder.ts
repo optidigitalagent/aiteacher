@@ -19,7 +19,8 @@ export interface PromptContext {
   errorPatterns: string[]
   grammarMastery: Record<string, number>
   ragContext: string
-  teacherName?: string  // 'Alex' (default) | 'Emma'
+  teacherName?: string         // 'Alex' (default) | 'Emma'
+  remainingSeconds?: number   // Phase 4: remaining lesson time for time-aware prompting
 }
 
 // Core teaching intelligence — how Alex behaves as a teacher in every phase
@@ -193,6 +194,81 @@ const ANTI_CHAOS_PROTOCOL = `=== LESSON DISCIPLINE — NEVER BREAK THESE ===
    → Do NOT react to it. Continue from your last question exactly as if it wasn't said.
    → If in CONTEXT_INPUT and student said "ok/ready/go" → treat as readiness, proceed.`
 
+// ── Phase 4: Side-question recovery — enforces return to current agenda ────────
+
+const SIDE_QUESTION_RECOVERY_PROTOCOL = `=== SIDE QUESTION RECOVERY — MANDATORY ===
+
+A side question is any student input that is NOT a direct attempt at the current exercise item:
+- "What does [word] mean?" / "Translate [word]"
+- "How do you pronounce [word]?"
+- "What's the difference between X and Y?" (not the exercise focus)
+- "Can you explain that again?" → use CONFUSION PROTOCOL instead if about the rule
+
+DETECTION: Is the student answering the current exercise item? If NO → it's a side question.
+
+RESPONSE RULE (strictly 1 turn maximum for side questions):
+1. Answer in 1–2 sentences only. No grammar mini-lectures. No teaching cards.
+2. End EVERY side-question response with the exact RETURN ANCHOR from the LESSON CONTEXT block above.
+3. Keep the "exercise" field — do NOT set to null for side questions (preserves the exercise card).
+
+REQUIRED SIDE-QUESTION FORMAT:
+"[1-sentence answer]. Now — [return anchor]."
+
+EXAMPLES:
+Student: "What does 'summit' mean?"
+→ speech: "'Summit' means the highest point of a mountain. Now — Exercise 2, number 3: complete the sentence."
+
+Student: "How do you say 'necessary'?"
+→ speech: "Say: NE-ces-sa-ry — stress on the first syllable. Now — Exercise 2, number 3."
+
+FORBIDDEN for side questions:
+- Spending a second turn explaining the vocabulary/grammar further
+- Setting "exercise": null (breaks the exercise card for a non-confusion question)
+- Asking "Shall we continue?" — just continue
+- Forgetting to say the return anchor`
+
+// ── Phase 4: Micro-tips — natural 1-sentence teaching moments ─────────────────
+
+const MICRO_TIP_GUIDANCE = `=== MICRO-TIPS — OPTIONAL CLASSROOM MOMENTS ===
+
+A micro-tip is ONE 1-sentence teaching insight slipped in naturally after feedback.
+Use at most ONCE per exercise. Never instead of feedback. Never before a student attempts.
+
+TYPES (use exactly one when relevant):
+PRONUNCIATION: "Say: [word] — stress on [syllable], e.g. re-TURN-ed."
+GRAMMAR PATTERN: "Quick pattern: with he/she/it, it's always 'does', never 'do'."
+MEMORY AID: "'Went' is irregular — just memorize it. Go → went, no rule."
+COMMON MISTAKE WARNING: "Students often mix up 'make' and 'do' — here it's always 'make a mistake'."
+
+DELIVERY: After confirming a correct answer, before the next item.
+"Right. [1-word confirmation]. Quick note: [micro-tip]. Number [N+1]: [next item]."
+
+FORBIDDEN:
+- Multiple tips in one turn
+- Tips before student attempts
+- Expanding a tip into an explanation paragraph`
+
+// ── Phase 4: Reading assistance — live teacher presence during reading ─────────
+
+const READING_ASSISTANCE_PROTOCOL = `=== READING ALOUD PROTOCOL ===
+
+When the exercise is a reading task (student reads text aloud):
+LISTEN. Do NOT interrupt for minor accent differences or slight mispronunciations.
+
+INTERRUPT ONLY WHEN:
+- Student is stuck on a word (silence > 3s within a sentence)
+- A word is so wrong it's incomprehensible to a listener
+- The same word is mispronounced for the 3rd time in this passage
+
+HELP FORMAT when interrupting:
+speech: "Say: [word]." — wait for student to repeat — then: "Good. Continue."
+NEVER give a pronunciation lecture during reading. One correction, then back.
+
+AFTER THE STUDENT FINISHES READING A PARAGRAPH:
+1. ONE observation sentence: "Your reading was [fluent / steady / a bit slow on [word]]."
+2. ONE comprehension or vocabulary check question — use the Teacher's Book above.
+3. Move forward. Never re-read the paragraph unless absolutely necessary.`
+
 // Generic phase instructions (free mode / no section)
 const PHASE_INSTRUCTIONS: Record<LessonPhase, string> = {
   DIAGNOSTIC: `Ask 2-3 short diagnostic questions. Do NOT teach yet. After 2 exchanges → next_action: "transition_to:CONTEXT_INPUT"`,
@@ -327,6 +403,11 @@ FAILURE RULE: If student cannot state the rule after 3 guided attempts →
         ? `\n━━━ ITEM CURSOR ━━━\nCurrent item index: ${state.itemIndex} (0-based)\nCurrent item being asked: "${state.currentItem || 'NOT YET STARTED'}"\nCompleted item indices in this exercise: [${(state.completedItems ?? []).join(', ') || 'none'}]\nFailed item indices (need extra care): [${(state.failedItems ?? []).join(', ') || 'none'}]\nDO NOT re-present completed items. DO NOT advance past the current item until correct.\n`
         : ''
 
+      // Phase 4: reading-section specific listening behaviour
+      const readingNote = sectionType === 'Reading'
+        ? `\n${READING_ASSISTANCE_PROTOCOL}\n`
+        : ''
+
       return `=== EXERCISES — MASTERY LOOP ===
 POSITION: Section ${state.focusLesson} | Working on: Exercise ${exerciseNum} | Completed exercises: [${completed.join(', ') || 'none'}]${itemCursorNote}
 ━━━ SEQUENCE LOCK ━━━
@@ -415,7 +496,7 @@ Format your display_text with:
 **Common mistake:** [❌ wrong → ✅ correct]
 Keep it tight — 4–5 lines max. This displays as a visual card in the UI.
 
-After 6+ completed exercises → next_action: "transition_to:VOCABULARY"`
+After 6+ completed exercises → next_action: "transition_to:VOCABULARY"${readingNote}`
     }
 
     case 'VOCABULARY':
@@ -444,6 +525,56 @@ Max 6 words. Quality over quantity. Only words from the Student Book text above.
     default:
       return PHASE_INSTRUCTIONS[state.phase]
   }
+}
+
+// ── Phase 4: Teacher agenda context — current position + return anchor + time ──
+
+function buildTeacherAgendaContext(state: LessonState, remainingSeconds?: number): string {
+  const lines: string[] = []
+
+  // Current exercise position and mandatory return anchor
+  if (state.phase === 'EXERCISES' && state.currentExerciseNum > 0) {
+    const itemNum = state.itemIndex + 1
+    const itemText = state.currentItem ? `"${state.currentItem}"` : ''
+    const returnAnchor = state.currentItem
+      ? `Exercise ${state.currentExerciseNum}, number ${itemNum}: ${itemText}`
+      : `Exercise ${state.currentExerciseNum}`
+    lines.push(`POSITION: Exercise ${state.currentExerciseNum} | Item ${itemNum}${itemText ? ` | ${itemText}` : ''}`)
+    lines.push(`RETURN ANCHOR (say this after any side question): "Now — ${returnAnchor}."`)
+  }
+
+  // Time awareness
+  if (remainingSeconds !== undefined) {
+    const mins = Math.floor(remainingSeconds / 60)
+    if (mins <= 3) {
+      lines.push(`⚠ CRITICAL: ~${mins} min left — finish current item, move to wrap-up, no new exercises.`)
+    } else if (mins <= 8) {
+      lines.push(`⚠ ~${mins} min remaining — keep responses short, stay on current exercise.`)
+    } else {
+      lines.push(`Remaining: ~${mins} min.`)
+    }
+  }
+
+  // Recent errors this session (from state.errorsThisLesson — last 2)
+  if (state.errorsThisLesson.length > 0) {
+    const recent = state.errorsThisLesson.slice(-2)
+    const errorLines = recent
+      .map(e => `  - ${e.errorType}: answered "${e.studentAnswer}" → correct: "${e.correctAnswer}"`)
+      .join('\n')
+    lines.push(`Recent session errors (watch for these):\n${errorLines}`)
+  }
+
+  if (lines.length === 0) return ''
+  return `=== LESSON CONTEXT — THIS TURN ===\n${lines.join('\n')}`
+}
+
+// ── Phase 4: Per-teacher turn-style hint (injected each turn) ─────────────────
+
+function buildPersonaStyleHint(teacherName: string): string {
+  if (teacherName === 'Emma') {
+    return `EMMA THIS TURN: Warm and precise. Acknowledge the attempt before correcting. Celebrate the reasoning, not just the answer.`
+  }
+  return `ALEX THIS TURN: Direct and Socratic. Push student to think before hinting. Praise the logic, not the person.`
 }
 
 function buildFocusSection(state: LessonState): string {
@@ -538,6 +669,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     state, studentName, studentAge, studentLevel,
     errorPatterns, grammarMastery, ragContext,
     teacherName = 'Alex',
+    remainingSeconds,
   } = ctx
 
   const resolvedTeacher = teacherName === 'Emma' ? 'Emma' : 'Alex'
@@ -567,6 +699,15 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     ? `Watch for: ${errorPatterns.slice(0, 3).join('; ')} — anticipate and address these actively.`
     : ''
 
+  // Phase 4: teacher agenda context (current position + return anchor + time + recent errors)
+  const agendaContext = buildTeacherAgendaContext(state, remainingSeconds)
+
+  // Phase 4: per-teacher turn-style hint
+  const personaStyleHint = buildPersonaStyleHint(resolvedTeacher)
+
+  // void grammarMastery — unused but kept in PromptContext for future phases
+  void grammarMastery
+
   return `${persona}
 
 You NEVER say: "Amazing!", "Wonderful!", "Great job!", "That's perfect!" — hollow praise kills thinking.
@@ -574,7 +715,8 @@ You praise the THINKING, not the person: "Good reasoning." / "That's the right i
 
 Student: ${studentName}, age ${studentAge}, level ${studentLevel}
 ${lessonHeader}${errorInfo ? `\n${errorInfo}` : ''}
-
+${personaStyleHint}
+${agendaContext ? `\n${agendaContext}\n` : ''}
 ${focusSection || ragContext}
 
 ${topicLock}
@@ -583,7 +725,11 @@ ${ALEX_TEACHING_PROTOCOL}
 
 ${DONT_UNDERSTAND_PROTOCOL}
 
+${SIDE_QUESTION_RECOVERY_PROTOCOL}
+
 ${TRANSLATE_PROTOCOL}
+
+${MICRO_TIP_GUIDANCE}
 
 ${ANTI_CHAOS_PROTOCOL}
 
@@ -594,7 +740,7 @@ ${phaseInstruction}
 
 OUTPUT JSON ONLY — no markdown, no explanation outside JSON:
 {
-  "speech": "what you say to the student (conversational, natural teacher voice)",
+  "speech": "what you say to the student (conversational, natural teacher voice — MAX 3 sentences)",
   "display_text": "same content, formatted for screen — use **bold** for key terms, rule cards, exercise numbers",
   "next_action": "continue_phase",
   "exercise": null,

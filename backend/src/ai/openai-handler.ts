@@ -2,7 +2,7 @@ import OpenAI from 'openai'
 import 'dotenv/config'
 import redis, { LESSON_TTL, lessonContextKey } from '../db/redis.js'
 import { query } from '../db/postgres.js'
-import { registerAIHandler, type AIHandlerFn } from '../lesson/orchestrator.js'
+import { registerAIHandler, type AIHandlerFn, type OrchestratorCallContext } from '../lesson/orchestrator.js'
 import type { LessonState, AIResponse, ExerciseData } from '../lesson/types.js'
 import {
   buildSystemPrompt,
@@ -99,7 +99,8 @@ function fallback(state: LessonState): AIResponse {
 
 // ── Main AI handler ───────────────────────────────────────────────────────────
 
-const handler: AIHandlerFn = async (state: LessonState, inputText: string) => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const handler: AIHandlerFn = async (state: LessonState, inputText: string, _ctx?: OrchestratorCallContext) => {
   if (!client) throw new Error('[openai] client not initialised')
 
   const [student, history, ragContext] = await Promise.all([
