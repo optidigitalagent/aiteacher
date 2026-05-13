@@ -71,6 +71,11 @@ export function useLessonSession({ send }: Options) {
         return s
       }),
     )
+    // Clear the exercise cursor when leaving the EXERCISES phase so stale exercise
+    // cards don't remain visible during VOCABULARY, DEEP_THINKING, and WRAP_UP.
+    if (from === 'EXERCISES') {
+      setExerciseCursor(null)
+    }
   }, [])
 
   // Called when lesson resumes to restore phase awareness

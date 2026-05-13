@@ -375,6 +375,13 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     setConfirmedAnswer('')
   }, [question?.id])
 
+  // Clear feedback and answer when the phase changes so stale feedback banners
+  // don't persist after the EXERCISES phase ends with no new exercise arriving.
+  useEffect(() => {
+    setFeedback(null)
+    setAnswer('')
+  }, [currentPhase])
+
   // ── Event handlers ────────────────────────────────────────────────────────
   const handleCheck = useCallback(() => {
     if (!answer.trim() || !question) return

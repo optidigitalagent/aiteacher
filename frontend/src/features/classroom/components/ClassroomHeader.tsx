@@ -75,7 +75,7 @@ export default function ClassroomHeader({ meta, isDemo, onExit, remainingMin }: 
               color: remainingMin <= 5 ? '#d97706' : '#6E7CFB',
             }}>
               <span style={{ fontSize: 10 }}>⏱</span>
-              {remainingMin} min
+              {remainingMin > 0 ? `${remainingMin} min` : 'Finishing…'}
             </div>
           )}
           <div style={{

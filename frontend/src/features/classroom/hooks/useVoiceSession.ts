@@ -46,13 +46,15 @@ export function useVoiceSession({ send }: Options): VoiceState & {
     setIsListening(false)
   }, [])
 
-  // Toggle mic on/off
+  // Toggle mic on/off.
+  // Stopping recording does NOT send interrupt — that comes from paidToggle only when
+  // the teacher is actively speaking. Sending interrupt on normal stop causes the backend
+  // to set interruptPending=true, which then skips TTS for the student's response.
   const toggle = useCallback(async () => {
     if (isListening) {
       if (streamRef.current) stopPCMCapture(streamRef.current)
       streamRef.current = null
       setIsListening(false)
-      send({ type: 'interrupt' })
       return
     }
 

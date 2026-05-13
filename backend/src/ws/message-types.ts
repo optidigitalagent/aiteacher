@@ -123,6 +123,7 @@ export interface OutboundTranscript {
   text: string
 }
 
+// Phase 11 error codes added: LESSON_TAKEN_OVER
 export interface OutboundError {
   type:    'error'
   code:    string

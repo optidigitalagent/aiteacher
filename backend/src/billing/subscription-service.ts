@@ -105,20 +105,27 @@ export async function finalizeUsage(usageId: string, userId: string, startedAt: 
     const minutesUsed = Math.max(0, Math.round(capped * 10) / 10) // round to 1dp
 
     await withTransaction(async (client) => {
-      await client.query(
+      // Guard: only charge if the usage record is still 'active'.
+      // Two-tab or SIGTERM double-close would otherwise add minutes twice.
+      const usageResult = await client.query<{ id: string }>(
         `UPDATE paid_lesson_usage
          SET ended_at = NOW(), minutes_used = $1, status = 'completed'
-         WHERE id = $2`,
+         WHERE id = $2 AND status = 'active'
+         RETURNING id`,
         [minutesUsed, usageId],
       )
 
-      await client.query(
-        `UPDATE user_lesson_profiles
-         SET paid_minutes_used = LEAST(paid_minutes_limit, paid_minutes_used + $1),
-             updated_at = NOW()
-         WHERE user_id = $2`,
-        [minutesUsed, userId],
-      )
+      // Only update the profile counter if this call actually finalized the record.
+      // Subsequent calls (same usageId, already 'completed') are no-ops.
+      if (usageResult.rowCount && usageResult.rowCount > 0) {
+        await client.query(
+          `UPDATE user_lesson_profiles
+           SET paid_minutes_used = LEAST(paid_minutes_limit, paid_minutes_used + $1),
+               updated_at = NOW()
+           WHERE user_id = $2`,
+          [minutesUsed, userId],
+        )
+      }
     })
 
     console.log(`[billing] usage finalized: user=${userId} minutes=${minutesUsed}`)
