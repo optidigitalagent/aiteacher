@@ -5,13 +5,16 @@ export type StepStatus = 'done' | 'active' | 'upcoming'
 export type FeedbackState = 'correct' | 'wrong' | null
 
 export interface Exercise {
-  id:       string
-  index:    number
-  total:    number
-  prompt:   string
-  hint:     string
-  sentence: string  // contains "________" placeholder
-  answer:   string
+  id:           string
+  index:        number
+  total:        number
+  prompt:       string
+  hint:         string
+  sentence:     string  // contains "________" placeholder
+  answer:       string
+  exerciseType?: string
+  skillFocus?:  string
+  items?:       string[]
 }
 
 export interface LessonStep {
