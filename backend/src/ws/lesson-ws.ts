@@ -113,7 +113,7 @@ function buildFocusGreeting(
     }
   }
 
-  body += ` Open your book to this section. Tell me when you're on the page.`
+  body += ` We'll work through the exercises together on screen — no physical book needed. When you're ready to begin, click the "I'm ready" button below.`
 
   return `Hello! I'm ${tName}, your English teacher. ${body}`
 }
@@ -279,11 +279,18 @@ interface ClientMeta {
   aiCallCount:     number          // number of orchestrator.process() calls this session
   ttsCharCount:    number          // total characters sent to TTS this session
   // Serialization guard: prevents concurrent processInput() calls from racing
-  // on the same lesson state. If true, new input is dropped until AI returns.
+  // on the same lesson state. If a second input arrives while AI is processing,
+  // it is held in queuedInput and replayed when the current turn completes.
   aiProcessing:    boolean
+  queuedInput:     string | null
   // Set when interrupt arrives while aiProcessing=true so ttsStream() skips
   // the subsequent TTS — the student already has the mic open.
   interruptPending: boolean
+  // Click-to-send: STT transcripts accumulate here without auto-processing.
+  // mic_stop from frontend triggers processInput with the accumulated text.
+  pendingTranscript: string
+  // True when mic_stop arrived before UtteranceEnd — process on next UtteranceEnd.
+  pendingMicStop:    boolean
   // Phase 11: tracks when THIS connection's billing period started.
   // Separate from lessonStartedAt (which is the original lesson wall-clock start
   // used for timeout/remaining-time calculations). Using lessonStartedAt for
@@ -452,19 +459,32 @@ async function resumeLesson(
   // Phase 2 recovery: start periodic remaining-time broadcast using restored start time
   startTimerBroadcast(ws, meta)
 
-  // Restart STT for new connection
-  meta.stt = new DeepgramSTT((transcript) => {
-    send(ws, { type: 'transcript', text: transcript })
-    if (meta.ttsActive) {
-      console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
-      return
-    }
-    if (!shouldProcessTranscript(transcript)) return
-    send(ws, { type: 'student_message', text: transcript })
-    processInput(ws, meta, transcript).catch((err: unknown) =>
-      console.error('[paid-lesson] processInput error (stt resume):', err),
-    )
-  })
+  // Restart STT for new connection (click-to-send mode)
+  meta.pendingTranscript = ''
+  meta.pendingMicStop    = false
+  meta.stt = new DeepgramSTT(
+    (transcript) => {
+      if (meta.ttsActive) {
+        console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
+        return
+      }
+      if (!shouldProcessTranscript(transcript)) return
+      if (meta.pendingMicStop) {
+        meta.pendingMicStop    = false
+        meta.pendingTranscript = ''
+        send(ws, { type: 'student_message', text: transcript })
+        processInput(ws, meta, transcript).catch((err: unknown) =>
+          console.error('[paid-lesson] processInput error (stt-micstop resume):', err))
+      } else {
+        meta.pendingTranscript = meta.pendingTranscript
+          ? meta.pendingTranscript + ' ' + transcript
+          : transcript
+      }
+    },
+    (interim) => {
+      if (!meta.ttsActive) send(ws, { type: 'transcript', text: interim })
+    },
+  )
 
   const tName   = teacherDisplayName(meta.teacherId ?? undefined)
   const exNote  = state.currentExerciseNum > 0
@@ -591,18 +611,29 @@ async function handleLessonStart(
   pipeline.set(activeSessionKey(effectiveStudentId),  lessonId,                     'EX', LESSON_TTL)
   await pipeline.exec()
 
-  meta.stt = new DeepgramSTT((transcript) => {
-    send(ws, { type: 'transcript', text: transcript })
-    if (meta.ttsActive) {
-      console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
-      return
-    }
-    if (!shouldProcessTranscript(transcript)) return
-    send(ws, { type: 'student_message', text: transcript })
-    processInput(ws, meta, transcript).catch((err: unknown) =>
-      console.error('[paid-lesson] processInput error (stt):', err),
-    )
-  })
+  meta.stt = new DeepgramSTT(
+    (transcript) => {
+      if (meta.ttsActive) {
+        console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
+        return
+      }
+      if (!shouldProcessTranscript(transcript)) return
+      if (meta.pendingMicStop) {
+        meta.pendingMicStop    = false
+        meta.pendingTranscript = ''
+        send(ws, { type: 'student_message', text: transcript })
+        processInput(ws, meta, transcript).catch((err: unknown) =>
+          console.error('[paid-lesson] processInput error (stt-micstop):', err))
+      } else {
+        meta.pendingTranscript = meta.pendingTranscript
+          ? meta.pendingTranscript + ' ' + transcript
+          : transcript
+      }
+    },
+    (interim) => {
+      if (!meta.ttsActive) send(ws, { type: 'transcript', text: interim })
+    },
+  )
 
   // Phase 2 recovery: start periodic remaining-time broadcast
   startTimerBroadcast(ws, meta)
@@ -761,22 +792,34 @@ async function handleFocusLessonStart(
   pipeline.set(activeSessionKey(effectiveStudentId), lessonId,                     'EX', LESSON_TTL)
   await pipeline.exec()
 
-  meta.stt = new DeepgramSTT((transcript) => {
-    send(ws, { type: 'transcript', text: transcript })
-    if (meta.ttsActive) {
-      console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
-      return
-    }
-    if (!shouldProcessTranscript(transcript)) {
-      console.log(`[paid-lesson] ignored_audio_chunk reason=invalid_transcript chars=${transcript.trim().length}`)
-      return
-    }
-    console.log(`[paid-lesson] student_turn_finalized chars=${transcript.trim().length}`)
-    send(ws, { type: 'student_message', text: transcript })
-    processInput(ws, meta, transcript).catch((err: unknown) =>
-      console.error('[paid-lesson] processInput error (stt):', err),
-    )
-  })
+  meta.stt = new DeepgramSTT(
+    (transcript) => {
+      if (meta.ttsActive) {
+        console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
+        return
+      }
+      if (!shouldProcessTranscript(transcript)) {
+        console.log(`[paid-lesson] ignored_audio_chunk reason=invalid_transcript chars=${transcript.trim().length}`)
+        return
+      }
+      if (meta.pendingMicStop) {
+        meta.pendingMicStop    = false
+        meta.pendingTranscript = ''
+        console.log(`[paid-lesson] student_turn_finalized chars=${transcript.trim().length} trigger=mic_stop`)
+        send(ws, { type: 'student_message', text: transcript })
+        processInput(ws, meta, transcript).catch((err: unknown) =>
+          console.error('[paid-lesson] processInput error (stt-micstop):', err))
+      } else {
+        meta.pendingTranscript = meta.pendingTranscript
+          ? meta.pendingTranscript + ' ' + transcript
+          : transcript
+        console.log(`[paid-lesson] stt_accumulated pending_chars=${meta.pendingTranscript.length}`)
+      }
+    },
+    (interim) => {
+      if (!meta.ttsActive) send(ws, { type: 'transcript', text: interim })
+    },
+  )
 
   console.log(`[paid-lesson] lesson_start_new lessonId=${lessonId} session=${meta.sessionId} unit=${effectiveUnit} section=${config.section ?? 'none'}`)
 
@@ -819,10 +862,11 @@ async function processInput(
     return
   }
 
-  // Guard: if a previous AI call is still in-flight, drop the new input to
-  // prevent concurrent reads/writes to the same Redis lesson state.
+  // Guard: if a previous AI call is still in-flight, queue the latest input
+  // instead of silently dropping it. Only one pending input is kept (newest wins).
   if (meta.aiProcessing) {
-    console.log(`[paid-lesson] ai_turn_skipped reason=concurrent_call input_chars=${text.trim().length}`)
+    meta.queuedInput = text
+    console.log(`[paid-lesson] ai_turn_queued input_chars=${text.trim().length}`)
     return
   }
   meta.aiProcessing = true
@@ -837,6 +881,14 @@ async function processInput(
     result = await orchestrator.process(meta.lessonId, text, { remainingMs })
   } finally {
     meta.aiProcessing = false
+    // Process any input that arrived while AI was busy
+    if (meta.queuedInput) {
+      const queued    = meta.queuedInput
+      meta.queuedInput = null
+      console.log(`[paid-lesson] ai_turn_queued_replay input_chars=${queued.trim().length}`)
+      processInput(ws, meta, queued).catch((err: unknown) =>
+        console.error('[paid-lesson] processInput error (queued):', err))
+    }
   }
   if (!result) return
   meta.aiCallCount++
@@ -1156,7 +1208,10 @@ export function attachLessonWS(server: Server): void {
       aiCallCount:      0,
       ttsCharCount:     0,
       aiProcessing:     false,
+      queuedInput:      null,
       interruptPending: false,
+      pendingTranscript: '',
+      pendingMicStop:    false,
       billingStartedAt: null,
     }
 
@@ -1198,8 +1253,28 @@ export function attachLessonWS(server: Server): void {
             await handleFocusLessonStart(ws, meta, msg.payload)
             break
           case 'text_message':
+            // Typed submission clears any accumulated STT state
+            meta.pendingTranscript = ''
+            meta.pendingMicStop    = false
             await processInput(ws, meta, msg.text)
             break
+          case 'mic_stop': {
+            const pending = meta.pendingTranscript.trim()
+            if (pending) {
+              meta.pendingTranscript = ''
+              meta.pendingMicStop    = false
+              if (shouldProcessTranscript(pending)) {
+                console.log(`[paid-lesson] student_turn_finalized chars=${pending.length} trigger=mic_stop_flush`)
+                send(ws, { type: 'student_message', text: pending })
+                await processInput(ws, meta, pending)
+              }
+            } else {
+              // Deepgram hasn't fired UtteranceEnd yet — process on next fire
+              meta.pendingMicStop = true
+              console.log(`[paid-lesson] mic_stop_waiting_utterance_end`)
+            }
+            break
+          }
           case 'audio_chunk':
             if (!meta.stt) {
               console.log('[paid-lesson] ignored_audio_chunk reason=before_begin')

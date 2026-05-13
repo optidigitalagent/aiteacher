@@ -452,23 +452,26 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   }, [paidSessionId, resolvedSection, sessionMeta])
 
   // Guarded mic toggle for paid mode.
-  // When teacher is speaking: sends interrupt to backend, then opens mic.
-  // When lesson not started: blocked entirely.
+  // Click 1 — starts recording, streams PCM to backend STT (live transcript shows in input).
+  // Click 2 — stops recording, sends mic_stop so backend finalizes and processes the transcript.
+  // When teacher is speaking: sends interrupt first, then opens mic.
   const paidToggle = useCallback(async () => {
     if (!lessonStarted) {
       console.log('[paid-lesson] mic_enabled=false reason=lesson_not_started')
       return
     }
-    // Warm audio context synchronously during user gesture — ensures the
-    // AudioContext is in 'running' state before async TTS chunks arrive later.
     warmAudioContext()
+    const wasListening = isListening
     if (isSpeaking && !isListening) {
-      // Student interrupts teacher — stop backend TTS stream before opening mic
       console.log('[paid-lesson] mic_interrupt reason=student_wants_to_speak')
       send({ type: 'interrupt' })
       interruptSentRef.current = true
     }
     await toggle()
+    if (wasListening) {
+      // Mic just stopped — signal backend to finalize and process the pending transcript
+      send({ type: 'mic_stop' })
+    }
   }, [lessonStarted, isSpeaking, isListening, toggle, send])
 
   const handleExplain = useCallback(() => {
@@ -495,6 +498,13 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     setShowHelpInput(false)
     demo.handleHelpRequest(text)
   }, [helpInputValue, demo])
+
+  const handleReady = useCallback(() => {
+    const readyText = "I'm ready."
+    pushUser(readyText)
+    setTyping()
+    send({ type: 'text_message', text: readyText })
+  }, [pushUser, setTyping, send])
 
   const questionForPanel = question
     ? { ...question, answer: confirmedAnswer }
@@ -734,13 +744,32 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                   }}>
                     {lastMsg.text}
                   </div>
-                  <div style={{
-                    marginTop: 18, fontSize: 12, color: '#94A3B8', fontWeight: 500,
-                    display: 'flex', alignItems: 'center', gap: 6,
-                  }}>
-                    <span style={{ fontSize: 14 }}>🎤</span>
-                    Use the microphone or type your response below
-                  </div>
+                  {currentPhase === 'DIAGNOSTIC' ? (
+                    <button
+                      onClick={handleReady}
+                      style={{
+                        marginTop: 20, width: '100%', padding: '12px 20px',
+                        background: 'linear-gradient(135deg,#6E7CFB,#9B8CFF)',
+                        color: 'white', border: 'none', borderRadius: 12,
+                        fontSize: 15, fontWeight: 700, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        boxShadow: '0 4px 16px rgba(110,124,251,0.35)',
+                        transition: 'opacity 0.15s',
+                      }}
+                      onMouseOver={e => (e.currentTarget.style.opacity = '0.88')}
+                      onMouseOut={e => (e.currentTarget.style.opacity = '1')}
+                    >
+                      Yes, I&apos;m ready <span style={{ fontSize: 18 }}>→</span>
+                    </button>
+                  ) : (
+                    <div style={{
+                      marginTop: 18, fontSize: 12, color: '#94A3B8', fontWeight: 500,
+                      display: 'flex', alignItems: 'center', gap: 6,
+                    }}>
+                      <span style={{ fontSize: 14 }}>🎤</span>
+                      Use the microphone or type your response below
+                    </div>
+                  )}
                 </div>
               )
             })()}
@@ -801,7 +830,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           onSubmit={handleSubmit}
           onToggleMic={isDemoMode ? toggleDemoMic : paidToggle}
           onExplain={handleExplain}
-          showExplain={isDemoMode}
+          showExplain={lessonStarted || isDemoMode}
           inputDisabled={
             (isDemoMode && !demo.lessonStarted) ||
             (isDemoMode && demo.phase === 'complete') ||

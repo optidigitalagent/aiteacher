@@ -59,13 +59,11 @@ export function useVoiceSession({ send }: Options): VoiceState & {
       return
     }
 
-    // Warm the AudioContext BEFORE stopping current playback so the context
-    // created by the next teacher TTS response is already in 'running' state.
-    // This call runs synchronously inside the user-gesture callback chain,
-    // satisfying browser autoplay policy for future audio.
-    warmAudioContext()
-    // Starting mic: stop any ongoing TTS first
+    // Stop current TTS playback first (kills in-flight audio nodes cleanly).
+    // THEN warm a fresh AudioContext in the same user-gesture frame so future
+    // TTS chunks can resume() without hitting autoplay policy.
     stopAudioPlayback()
+    warmAudioContext()
     isSpeakingRef.current = false
     setIsSpeaking(false)
     clearTimeout(stopSpeakRef.current)

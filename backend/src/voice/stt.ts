@@ -21,7 +21,10 @@ export class DeepgramSTT {
   // Accumulate final transcript segments until utterance truly ends
   private transcriptBuffer = ''
 
-  constructor(private onTranscript: (text: string) => void) {
+  constructor(
+    private onTranscript: (text: string) => void,
+    private onInterim?: (text: string) => void,
+  ) {
     if (!API_KEY) {
       console.warn('[stt] DEEPGRAM_API_KEY not set — voice input disabled')
       return
@@ -49,13 +52,22 @@ export class DeepgramSTT {
       this.keepAliveRef = setInterval(() => conn.keepAlive(), 8_000)
     })
 
-    // Accumulate is_final segments — do NOT fire yet
+    // Accumulate is_final segments and forward interim for live display
     conn.on(LiveTranscriptionEvents.Transcript, (data: Record<string, unknown>) => {
       const channel = data['channel'] as Record<string, unknown> | undefined
       const alts    = channel?.['alternatives'] as Array<Record<string, unknown>> | undefined
       const text    = (alts?.[0]?.['transcript'] as string) ?? ''
-      if (text && data['is_final']) {
+      if (!text) return
+      if (data['is_final']) {
         this.transcriptBuffer += (this.transcriptBuffer ? ' ' : '') + text
+        // Emit confirmed accumulated text so frontend input stays updated
+        this.onInterim?.(this.transcriptBuffer)
+      } else {
+        // Interim: show growing transcript (confirmed + current being spoken)
+        const preview = this.transcriptBuffer
+          ? this.transcriptBuffer + ' ' + text
+          : text
+        this.onInterim?.(preview)
       }
     })
 

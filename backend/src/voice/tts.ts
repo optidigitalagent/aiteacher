@@ -156,22 +156,31 @@ async function speakOpenAI(
     clearTimeout(timeoutRef)
   }
 
-  // openai SDK returns a Response-compatible object — stream the body
+  // openai SDK returns a Response-compatible object — buffer the full MP3 before sending.
+  // OpenAI TTS generates the complete audio before streaming, so HTTP chunks are arbitrary
+  // network read() boundaries (not logical audio frames). Sending partial MP3 frames causes
+  // decoding errors on the client. Buffering gives one clean decodable chunk.
   const body = (response as unknown as { body: ReadableStream<Uint8Array> | null }).body
   if (!body) return
 
-  const reader = body.getReader()
+  const reader  = body.getReader()
+  const chunks: Uint8Array[] = []
   try {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
       if (signal?.aborted) break
-      send({ type: 'audio_chunk', data: Buffer.from(value).toString('base64') })
+      chunks.push(value)
     }
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'AbortError') return
     throw err
   } finally {
     reader.cancel()
+  }
+
+  if (chunks.length > 0 && !signal?.aborted) {
+    const combined = Buffer.concat(chunks.map(c => Buffer.from(c)))
+    send({ type: 'audio_chunk', data: combined.toString('base64') })
   }
 }
