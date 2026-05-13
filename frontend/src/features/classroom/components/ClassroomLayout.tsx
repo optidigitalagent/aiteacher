@@ -187,6 +187,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const [lessonStarted,   setLessonStarted]   = useState(false)
   const [paidLessonReady, setPaidLessonReady] = useState(false)
   const beginSentRef = useRef(false)
+  // Set true when user sends interrupt so the next ai_text doesn't close the mic
+  const interruptSentRef = useRef(false)
   // Demo help input
   const [showHelpInput,   setShowHelpInput]   = useState(false)
   const [helpInputValue,  setHelpInputValue]  = useState('')
@@ -218,10 +220,15 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     switch (msg.type) {
       case 'ai_text':
         if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
-        setSpeaking(true)
-        stopRecording()  // auto-stop mic when teacher speaks — prevents echo capture
         clearTyping()
         pushAI(msg.text)
+        if (interruptSentRef.current) {
+          // Student already interrupted — mic is open, don't claim speaking or close mic
+          interruptSentRef.current = false
+        } else {
+          setSpeaking(true)
+          stopRecording()  // auto-stop mic when teacher speaks — prevents echo capture
+        }
         break
       case 'audio_chunk':
         onAudioChunk(msg.data)
@@ -250,6 +257,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         break
       case 'student_message':
         pushUser(msg.text)
+        setAnswer('')       // clear stale STT transcript from input field
+        onTranscript('')    // clear transcript state so the useEffect doesn't restore it
+        setTyping()         // show AI processing indicator (mirrors demo behavior)
         break
       case 'teacher_turn_end':
         if (!isDemoMode) onTeacherTurnEnd()
@@ -341,7 +351,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   }, [isAuthLoading, isAuthenticated, isDemoMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Side effects ──────────────────────────────────────────────────────────
-  useEffect(() => { if (transcript) setAnswer(transcript) }, [transcript])
+  // Only mirror STT transcript into the answer field while mic is actively recording.
+  // Guarding on isListening prevents stale partial transcripts from overwriting
+  // text the student has typed manually between voice turns.
+  useEffect(() => { if (transcript && isListening) setAnswer(transcript) }, [transcript, isListening])
 
   useEffect(() => {
     setAnswer('')
@@ -416,6 +429,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       // Student interrupts teacher — stop backend TTS stream before opening mic
       console.log('[paid-lesson] mic_interrupt reason=student_wants_to_speak')
       send({ type: 'interrupt' })
+      interruptSentRef.current = true
     }
     await toggle()
   }, [lessonStarted, isSpeaking, isListening, toggle, send])
@@ -653,7 +667,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
             (isDemoMode && demo.phase === 'complete') ||
             (!isDemoMode && !lessonStarted)
           }
-          micDisabled={!isDemoMode && (!lessonStarted || isSpeaking)}
+          micDisabled={!isDemoMode && !lessonStarted}
           showHelpInput={isDemoMode ? showHelpInput : false}
           helpInputValue={helpInputValue}
           onHelpChange={setHelpInputValue}

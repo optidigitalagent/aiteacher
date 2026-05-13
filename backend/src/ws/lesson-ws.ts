@@ -281,6 +281,9 @@ interface ClientMeta {
   // Serialization guard: prevents concurrent processInput() calls from racing
   // on the same lesson state. If true, new input is dropped until AI returns.
   aiProcessing:    boolean
+  // Set when interrupt arrives while aiProcessing=true so ttsStream() skips
+  // the subsequent TTS — the student already has the mic open.
+  interruptPending: boolean
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -861,6 +864,15 @@ async function processInput(
 }
 
 async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise<void> {
+  // Student interrupted while AI was processing — skip TTS for this turn.
+  // teacher_turn_end is still sent so the frontend mic lifecycle completes cleanly.
+  if (meta.interruptPending) {
+    meta.interruptPending = false
+    meta.ttsActive = false
+    console.log(`[paid-lesson] tts_skipped reason=interrupt_pending chars=${text.length}`)
+    send(ws, { type: 'teacher_turn_end' })
+    return
+  }
   meta.ttsCharCount += text.length
   meta.ttsActive = true
   const prev = meta.ttsController
@@ -1078,11 +1090,12 @@ export function attachLessonWS(server: Server): void {
       warningRef:      null,  // Phase 6
       timerUpdateRef:  null,  // Phase 2 recovery
       stt:             null,
-      ttsController:   null,
-      ttsActive:       false,
-      aiCallCount:     0,
-      ttsCharCount:    0,
-      aiProcessing:    false,
+      ttsController:    null,
+      ttsActive:        false,
+      aiCallCount:      0,
+      ttsCharCount:     0,
+      aiProcessing:     false,
+      interruptPending: false,
     }
 
     clients.set(ws, meta)
@@ -1136,7 +1149,13 @@ export function attachLessonWS(server: Server): void {
             // Clear any buffered STT transcript so it doesn't fire after TTS stops
             meta.stt?.clearBuffer()
             meta.ttsController?.abort()
-            console.log(`[paid-lesson] interrupt received ttsActive=${meta.ttsActive}`)
+            // If interrupt arrives while AI is still processing, flag ttsStream() to
+            // skip TTS for the response that's about to arrive — the student already
+            // has the mic open and is ready to speak.
+            if (meta.aiProcessing) {
+              meta.interruptPending = true
+            }
+            console.log(`[paid-lesson] interrupt received ttsActive=${meta.ttsActive} aiProcessing=${meta.aiProcessing}`)
             break
           case 'exercise_answer':
             await handleExerciseAnswer(ws, meta, msg.exerciseId, msg.answer)
