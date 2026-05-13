@@ -2,19 +2,20 @@ import type { LessonStep } from '../types'
 import { IcCheck, ChatIcon } from './icons'
 
 interface Props {
-  steps:         LessonStep[]
-  progress:      number
-  chatOpen:      boolean
-  onOpenChat:    () => void
-  onCloseChat:   () => void
-  sectionNumber?: string
-  sectionTopic?:  string
-  exerciseCount?: number
+  steps:              LessonStep[]
+  progress:           number
+  chatOpen:           boolean
+  onOpenChat:         () => void
+  onCloseChat:        () => void
+  sectionNumber?:     string
+  sectionTopic?:      string
+  exerciseCount?:     number
+  currentExerciseNum?: number
 }
 
 export default function SectionProgressPanel({
   steps, progress, chatOpen, onOpenChat, onCloseChat,
-  sectionNumber, sectionTopic, exerciseCount,
+  sectionNumber, sectionTopic, exerciseCount, currentExerciseNum,
 }: Props) {
   const doneCount = steps.filter(s => s.status === 'done').length
   const donePct   = ((doneCount / steps.length) * 100).toFixed()
@@ -42,8 +43,23 @@ export default function SectionProgressPanel({
         {topicLabel}
       </div>
       {exerciseCount !== undefined && (
-        <div style={{ fontSize: 11, color: '#aaa', fontWeight: 600, marginBottom: 14 }}>
+        <div style={{ fontSize: 11, color: '#aaa', fontWeight: 600, marginBottom: currentExerciseNum ? 4 : 14 }}>
           {doneEx} / {totalEx} exercises
+        </div>
+      )}
+      {currentExerciseNum !== undefined && currentExerciseNum > 0 && (
+        <div style={{
+          fontSize: 11, fontWeight: 700, marginBottom: 14,
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <span style={{
+            background: 'rgba(110,124,251,0.12)',
+            color: '#6E7CFB', borderRadius: 99,
+            padding: '2px 9px', fontSize: 10.5, fontWeight: 800,
+          }}>
+            Exercise {currentExerciseNum}
+          </span>
+          <span style={{ color: '#aaa', fontSize: 10.5 }}>active</span>
         </div>
       )}
 

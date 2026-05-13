@@ -11,6 +11,24 @@ interface Props {
   onHintToggle:  () => void
 }
 
+const TYPE_LABEL: Record<string, string> = {
+  form_transformation: 'Transform',
+  error_correction:    'Correct',
+  reconstruction:      'Reconstruct',
+  free_production:     'Produce',
+  fill_gap:            'Fill in',
+  grammar_transform:   'Transform',
+  word_box:            'Word Box',
+  reading:             'Reading',
+  speaking_prompt:     'Speaking',
+  vocabulary_matching: 'Vocabulary',
+  unknown:             'Exercise',
+}
+
+function normalizeForMatch(text: string): string {
+  return text.replace(/_{2,}/g, '________').replace(/^\d+\.\s*/, '').trim()
+}
+
 export default function ExercisePanel({ question, answer, feedback, showHint, onCheck, onHintToggle }: Props) {
   const [shakeKey, setShakeKey] = useState(0)
   const prevFeedback = useRef<FeedbackState>(null)
@@ -28,6 +46,15 @@ export default function ExercisePanel({ question, answer, feedback, showHint, on
     feedback === 'wrong'   ? '#ef4444' :
                              '#6E7CFB'
 
+  const typeLabel = question.exerciseType ? (TYPE_LABEL[question.exerciseType] ?? question.exerciseType) : null
+  const showSkillFocus = question.skillFocus && question.skillFocus !== question.prompt
+
+  // Find current item index within items array for progression display
+  const items = question.items && question.items.length > 1 ? question.items : null
+  const currentItemIndex = items
+    ? items.findIndex(item => normalizeForMatch(item) === normalizeForMatch(question.sentence))
+    : -1
+
   return (
     <div style={{
       width: '100%', maxWidth: 720,
@@ -41,25 +68,47 @@ export default function ExercisePanel({ question, answer, feedback, showHint, on
       transition: 'transform 0.22s ease, box-shadow 0.22s ease',
       transform: 'translateY(-2px)',
     }}>
-      {/* Exercise badge — TODO: index/total from backend session state */}
-      <div style={{ marginBottom: 22 }}>
+      {/* Badge row — exercise number + type label */}
+      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{
           background: 'linear-gradient(135deg, #ede9ff, #f0f0ff)',
           color: '#6E7CFB', fontSize: 12, fontWeight: 700,
           padding: '5px 14px', borderRadius: 99,
           border: '1px solid rgba(110,124,251,0.2)',
         }}>
-          Exercise {question.index} of {question.total}
+          Exercise {question.index}{items && items.length > 0 ? ` · Item ${currentItemIndex >= 0 ? currentItemIndex + 1 : '?'} of ${items.length}` : ` of ${question.total}`}
         </span>
+        {typeLabel && (
+          <span style={{
+            background: 'rgba(110,124,251,0.08)',
+            color: '#6E7CFB', fontSize: 11, fontWeight: 700,
+            padding: '4px 11px', borderRadius: 99,
+            border: '1px solid rgba(110,124,251,0.15)',
+            textTransform: 'uppercase', letterSpacing: '0.04em',
+          }}>
+            {typeLabel}
+          </span>
+        )}
       </div>
 
-      {/* Prompt */}
+      {/* Prompt (instruction — what to do) */}
       <h2 style={{
-        fontSize: 26, fontWeight: 700, color: '#1a1a2e',
-        lineHeight: 1.35, marginBottom: 22, letterSpacing: '-0.4px',
+        fontSize: 22, fontWeight: 700, color: '#1a1a2e',
+        lineHeight: 1.35, marginBottom: showSkillFocus ? 8 : 22, letterSpacing: '-0.4px',
       }}>
         {question.prompt}
       </h2>
+
+      {/* SkillFocus subtitle — grammar/vocabulary focus */}
+      {showSkillFocus && (
+        <div style={{
+          fontSize: 13, color: '#6E7CFB', fontWeight: 600,
+          marginBottom: 22, fontStyle: 'italic',
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <span style={{ opacity: 0.6 }}>Focus:</span> {question.skillFocus}
+        </div>
+      )}
 
       {/* Hint chip */}
       <div style={{ marginBottom: 30 }}>
@@ -82,7 +131,7 @@ export default function ExercisePanel({ question, answer, feedback, showHint, on
         className={shakeKey > 0 ? 'cls-shake' : ''}
         style={{
           fontSize: 20, fontWeight: 600, color: '#1a1a2e',
-          lineHeight: 1.7, marginBottom: 28,
+          lineHeight: 1.7, marginBottom: 20,
           display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '0 6px',
         }}
       >
@@ -94,10 +143,36 @@ export default function ExercisePanel({ question, answer, feedback, showHint, on
           fontSize: 20, fontStyle: answer ? 'normal' : 'italic', fontWeight: 700,
           transition: 'color 0.2s, border-color 0.2s',
         }}>
-          {answer || '         '}
+          {answer || '         '}
         </span>
         <span>{parts[1]}</span>
       </div>
+
+      {/* Full items list — visible if exercise has multiple items */}
+      {items && (
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            All items in this exercise
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {items.map((item, i) => {
+              const isCurrentItem = i === currentItemIndex
+              return (
+                <div key={i} style={{
+                  padding: '5px 10px', borderRadius: 8, fontSize: 13,
+                  background: isCurrentItem ? 'rgba(110,124,251,0.08)' : 'transparent',
+                  color: isCurrentItem ? '#6E7CFB' : '#94A3B8',
+                  fontWeight: isCurrentItem ? 600 : 400,
+                  borderLeft: isCurrentItem ? '2.5px solid #6E7CFB' : '2.5px solid transparent',
+                  transition: 'all 0.15s',
+                }}>
+                  {item}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Feedback */}
       {feedback && (
@@ -115,7 +190,6 @@ export default function ExercisePanel({ question, answer, feedback, showHint, on
 
       {/* Actions */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        {/* TODO: onCheck sends answer to backend via POST /api/lesson/input */}
         <button onClick={onCheck} disabled={!answer.trim()} style={{
           padding: '14px 40px', borderRadius: 14, border: 'none',
           background: !answer.trim()

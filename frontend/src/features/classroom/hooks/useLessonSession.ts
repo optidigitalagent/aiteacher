@@ -4,6 +4,8 @@ import type { BackendExercise, ExerciseCursor, SendFn } from '../services/classr
 
 interface Options { send: SendFn }
 
+export type { ExerciseCursor }
+
 // Map backend LessonPhase → human label for the section timeline
 const PHASE_STEPS: LessonStep[] = [
   { id: 'DIAGNOSTIC',     label: 'Warm up',          status: 'active'   },
@@ -22,13 +24,16 @@ function normalizeBlank(text: string): string {
 
 function mapExercise(be: BackendExercise, index: number): Exercise {
   return {
-    id:       be.id,
-    index:    be.exerciseNumber ?? index,
-    total:    8,   // reasonable max; shown as "Exercise N of 8" until lesson ends
-    prompt:   be.instruction ?? be.skillFocus ?? 'Complete the exercise.',
-    hint:     be.hint,
-    sentence: normalizeBlank(be.question),
-    answer:   '',  // correct answer not sent by backend; populated after feedback
+    id:           be.id,
+    index:        be.exerciseNumber ?? index,
+    total:        8,
+    prompt:       be.instruction ?? be.skillFocus ?? 'Complete the exercise.',
+    hint:         be.hint,
+    sentence:     normalizeBlank(be.question),
+    answer:       '',
+    exerciseType: be.exerciseType,
+    skillFocus:   be.skillFocus,
+    items:        be.items,
   }
 }
 
@@ -38,6 +43,7 @@ export function useLessonSession({ send }: Options) {
   const exerciseIndexRef                    = useRef(0)
   const [pendingId,      setPendingId]      = useState<string | null>(null)
   const [steps,          setSteps]          = useState<LessonStep[]>(PHASE_STEPS)
+  const [currentPhase,   setCurrentPhase]   = useState<string>('DIAGNOSTIC')
 
   const progress = Math.round(
     (steps.filter((s) => s.status === 'done').length / steps.length) * 100,
@@ -57,6 +63,7 @@ export function useLessonSession({ send }: Options) {
 
   // Called by ClassroomLayout when WS 'phase_change' event arrives
   const onPhaseChange = useCallback((from: string, to: string) => {
+    setCurrentPhase(to)
     setSteps((prev) =>
       prev.map((s) => {
         if (s.id === from) return { ...s, status: 'done'   as const }
@@ -64,6 +71,11 @@ export function useLessonSession({ send }: Options) {
         return s
       }),
     )
+  }, [])
+
+  // Called when lesson resumes to restore phase awareness
+  const setPhase = useCallback((phase: string) => {
+    setCurrentPhase(phase)
   }, [])
 
   // Submit the current exercise answer (or fall back to text_message)
@@ -78,5 +90,9 @@ export function useLessonSession({ send }: Options) {
     [pendingId, send],
   )
 
-  return { question: exercise, exerciseCursor, progress, steps, submitAnswer, onExercise, onPhaseChange, onCursorUpdated }
+  return {
+    question: exercise, exerciseCursor, progress, steps,
+    submitAnswer, onExercise, onPhaseChange, onCursorUpdated,
+    currentPhase, setPhase,
+  }
 }

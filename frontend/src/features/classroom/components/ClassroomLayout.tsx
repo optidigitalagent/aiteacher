@@ -16,6 +16,7 @@ import BottomControls        from './BottomControls'
 import TeachingOverlay       from './TeachingOverlay'
 import DemoStepCenter        from './DemoStepCenter'
 import DemoResultOverlay     from './DemoResultOverlay'
+import ExerciseAnchorBanner  from './ExerciseAnchorBanner'
 import {
   createClassroomSocket,
   sendMessage,
@@ -51,6 +52,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const {
     question, exerciseCursor, progress, steps,
     submitAnswer, onExercise, onPhaseChange, onCursorUpdated,
+    currentPhase, setPhase,
   } = useLessonSession({ send })
 
   const {
@@ -270,6 +272,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         break
       case 'lesson_resumed':
         if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
+        setPhase(msg.phase)  // restore phase awareness on resume
         pushAI(msg.message)
         setSpeaking(true)
         stopRecording()  // ensure mic is off during resume greeting TTS
@@ -581,7 +584,17 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
               />
               )
             ) : teachingCard ? (
-              <TeachingOverlay card={teachingCard} onDismiss={() => setTeachingCard(null)} />
+              // Teaching card with exercise anchor — exercise context persists during side questions
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 720, alignItems: 'stretch' }}>
+                <TeachingOverlay card={teachingCard} onDismiss={() => setTeachingCard(null)} />
+                {(exerciseCursor || questionForPanel) && (
+                  <ExerciseAnchorBanner
+                    exerciseNum={exerciseCursor?.exerciseNumber ?? questionForPanel?.index ?? 1}
+                    exerciseType={exerciseCursor?.exerciseType ?? questionForPanel?.exerciseType ?? ''}
+                    instruction={exerciseCursor?.instruction ?? questionForPanel?.prompt ?? ''}
+                  />
+                )}
+              </div>
             ) : exerciseCursor ? (
               <PaidExerciseCard cursor={exerciseCursor} feedback={feedback} />
             ) : questionForPanel ? (
@@ -620,6 +633,28 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                   Connecting to your teacher…
                 </div>
               )
+            ) : currentPhase === 'CONTEXT_INPUT' ? (
+              // Reading phase context — shown when in reading/review phase with no active exercise
+              <div style={{
+                maxWidth: 400, textAlign: 'center',
+                background: 'rgba(255,255,255,0.75)',
+                backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+                borderRadius: 20,
+                border: '1px solid rgba(110,124,251,0.1)',
+                padding: '28px 32px',
+                boxShadow: '0 4px 24px rgba(110,124,251,0.08)',
+              }}>
+                <div style={{ fontSize: 32, marginBottom: 14 }}>📖</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#9B8CFF', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+                  Reading
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', marginBottom: 8, lineHeight: 1.3 }}>
+                  Review the material
+                </div>
+                <div style={{ fontSize: 14, color: '#64748B', lineHeight: 1.65 }}>
+                  Read through the content in the chat. Your teacher will guide you through the key points before exercises begin.
+                </div>
+              </div>
             ) : null}
           </div>
 
@@ -651,6 +686,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
             sectionNumber={isDemoMode ? undefined : sessionMeta?.sectionNumber}
             sectionTopic={isDemoMode ? 'Demo Lesson' : (sessionMeta?.sectionTopic ?? sessionMeta?.sectionTitle)}
             exerciseCount={isDemoMode ? 4 : sessionMeta?.exerciseCount}
+            currentExerciseNum={isDemoMode ? undefined : (exerciseCursor?.exerciseNumber ?? question?.index)}
           />
         </div>
 

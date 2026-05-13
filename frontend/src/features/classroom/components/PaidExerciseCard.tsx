@@ -39,13 +39,20 @@ export default function PaidExerciseCard({ cursor, feedback }: Props) {
     }}>
       {/* Header row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <span style={{
-          background: 'linear-gradient(135deg,#EEF0FF,#F3F0FF)',
-          color: '#6E7CFB', borderRadius: 8, padding: '4px 10px',
-          fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase',
-        }}>
-          {typeLabel}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{
+            background: 'linear-gradient(135deg,#EEF0FF,#F3F0FF)',
+            color: '#6E7CFB', borderRadius: 8, padding: '4px 10px',
+            fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase',
+          }}>
+            {typeLabel}
+          </span>
+          {cursor.exerciseNumber > 0 && (
+            <span style={{ fontSize: 12, color: '#94A3B8', fontWeight: 700 }}>
+              Exercise {cursor.exerciseNumber}
+            </span>
+          )}
+        </div>
         {itemsTotal !== undefined && (
           <span style={{ fontSize: 12, color: '#94A3B8', fontWeight: 600 }}>
             Item {itemIndex + 1} of {itemsTotal}
