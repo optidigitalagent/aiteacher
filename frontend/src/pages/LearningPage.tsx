@@ -397,6 +397,30 @@ const CSS = `
     background: var(--fl-surface); padding: 1px 6px; border-radius: 4px;
     border: 1px solid var(--fl-border-light);
   }
+  .fl-unit-header-row {
+    padding: 8px 18px 6px;
+    background: var(--fl-surface);
+    border-bottom: 1px solid var(--fl-border-light);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .fl-unit-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+    color: var(--fl-purple);
+  }
+  .fl-unit-title {
+    font-size: 12px; font-weight: 600; color: var(--fl-text-secondary);
+  }
+  .fl-resume-chip {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 5px;
+    background: rgba(123,140,255,0.12); color: var(--fl-purple);
+    border: 1px solid rgba(123,140,255,0.25);
+  }
+  .fl-quality-dot {
+    width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; margin-top: 5px;
+  }
+  .fl-quality-dot.ocr { background: #22C55E; }
+  .fl-quality-dot.structured { background: #A18BFF; }
 
   /* ── STEP 3: TEACHER CARDS ── */
   .fl-teacher-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -579,6 +603,14 @@ export default function LearningPage() {
   const [loading, setLoading]                 = useState(false)
   const [error, setError]                     = useState<string | null>(null)
   const [showAuthGate, setShowAuthGate]       = useState(false)
+  const [continuationStatus, setContinuationStatus] = useState<ContinuationStatus | null>(null)
+
+  // Fetch continuation status so we can highlight resumable sections
+  useEffect(() => {
+    if (isAuthenticated) {
+      getContinuationStatus().then(s => setContinuationStatus(s)).catch(() => {})
+    }
+  }, [isAuthenticated])
 
   // Restore setup state after OAuth login redirect
   useEffect(() => {
@@ -821,41 +853,90 @@ export default function LearningPage() {
             )}
 
             {/* ── STEP 2: Choose section ── */}
-            {stepKey === 'section' && selectedBook && (
-              <>
-                <div className="fl-step-title">Choose a section</div>
-                <div className="fl-step-sub">Pick the section you want to study from {BOOK_TITLES[selectedBook]}.</div>
-                <div className="fl-section-wrap">
-                  <div className="fl-section-header">
-                    <div>
-                      <div className="fl-section-header-title">{BOOK_TITLES[selectedBook]}</div>
-                      <div className="fl-section-header-sub">Select a section to continue</div>
-                    </div>
-                  </div>
-                  <div className="fl-section-grid">
-                    {(BOOK_SECTIONS[selectedBook] ?? []).map(sec => (
-                      <div
-                        key={sec.sectionId}
-                        className={`fl-section-card${selectedSection?.sectionId === sec.sectionId ? ' selected' : ''}${sec.disabled ? ' disabled' : ''}`}
-                        onClick={() => !sec.disabled && selectSection(sec)}
-                      >
-                        <div className="fl-section-num">{sec.sectionNumber}</div>
-                        <div className="fl-section-body">
-                          <div className="fl-section-title">{sec.title}</div>
-                          <div className="fl-section-topic">{sec.topic}</div>
-                          <div className="fl-section-meta">
-                            <span className="fl-section-tag">⏱ {sec.estimatedDuration}min</span>
-                            {sec.exerciseCount !== undefined && (
-                              <span className="fl-section-tag">◎ {sec.exerciseCount} ex.</span>
-                            )}
-                          </div>
+            {stepKey === 'section' && selectedBook && (() => {
+              const sections = BOOK_SECTIONS[selectedBook] ?? []
+              // Group sections by unit number
+              const unitGroups: { unit: number; title: string; sections: SectionData[] }[] = []
+              for (const sec of sections) {
+                const existing = unitGroups.find(g => g.unit === sec.unit)
+                if (existing) {
+                  existing.sections.push(sec)
+                } else {
+                  unitGroups.push({
+                    unit: sec.unit,
+                    title: FOCUS2_UNIT_TITLES[sec.unit] ?? `Unit ${sec.unit}`,
+                    sections: [sec],
+                  })
+                }
+              }
+              // Active session section id for resume indicator (strip "focus2-" prefix)
+              const resumeSectionId = continuationStatus?.canContinue
+                ? continuationStatus.activeSectionId
+                : null
+
+              return (
+                <>
+                  <div className="fl-step-title">Choose a section</div>
+                  <div className="fl-step-sub">Pick the section you want to study from {BOOK_TITLES[selectedBook]}.</div>
+                  <div className="fl-section-wrap">
+                    <div className="fl-section-header">
+                      <div>
+                        <div className="fl-section-header-title">{BOOK_TITLES[selectedBook]}</div>
+                        <div className="fl-section-header-sub">
+                          {unitGroups.length} units · {sections.filter(s => !s.disabled).length} available sections
                         </div>
                       </div>
-                    ))}
+                      {resumeSectionId && (
+                        <span className="fl-resume-chip">▶ Resume available</span>
+                      )}
+                    </div>
+                    <div style={{ overflowY: 'auto', maxHeight: '440px' }}>
+                      {unitGroups.map(group => (
+                        <div key={group.unit}>
+                          <div className="fl-unit-header-row">
+                            <span className="fl-unit-label">Unit {group.unit}</span>
+                            <span className="fl-unit-title">{group.title}</span>
+                          </div>
+                          <div className="fl-section-grid">
+                            {group.sections.map(sec => {
+                              const isResume = resumeSectionId === sec.sectionId
+                              return (
+                                <div
+                                  key={sec.sectionId}
+                                  className={`fl-section-card${selectedSection?.sectionId === sec.sectionId ? ' selected' : ''}${sec.disabled ? ' disabled' : ''}`}
+                                  onClick={() => !sec.disabled && selectSection(sec)}
+                                >
+                                  {sec.dataQuality && (
+                                    <div
+                                      className={`fl-quality-dot ${sec.dataQuality}`}
+                                      title={sec.dataQuality === 'ocr' ? 'Full textbook data' : 'Structured content'}
+                                    />
+                                  )}
+                                  <div className="fl-section-num">{sec.sectionNumber}</div>
+                                  <div className="fl-section-body">
+                                    <div className="fl-section-title">
+                                      {sec.title}
+                                      {isResume && <span className="fl-resume-chip" style={{ marginLeft: 6 }}>▶ Resume</span>}
+                                    </div>
+                                    <div className="fl-section-topic">{sec.topic}</div>
+                                    <div className="fl-section-meta">
+                                      <span className="fl-section-tag">⏱ {sec.estimatedDuration}min</span>
+                                      {sec.exerciseCount !== undefined && (
+                                        <span className="fl-section-tag">◎ {sec.exerciseCount} ex.</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
+                </>
+              )
+            })()}
 
             {/* ── STEP 3: Choose teacher ── */}
             {stepKey === 'teacher' && (
