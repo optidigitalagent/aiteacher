@@ -294,7 +294,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         break
       case 'lesson_timer_update':
         // Phase 2 recovery: periodic remaining-time update from backend (every 60s)
-        if (!isDemoMode) setLessonRemainingMin(Math.ceil(msg.remainingMs / 60_000))
+        // Guard: stop updating after lesson ends to avoid stale timer state
+        if (!isDemoMode && !paidLessonEnded) setLessonRemainingMin(Math.ceil(msg.remainingMs / 60_000))
         break
       case 'error':
         console.error('[Classroom WS] error:', msg.code, msg.message)

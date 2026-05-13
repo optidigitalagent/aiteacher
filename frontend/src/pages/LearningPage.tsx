@@ -755,6 +755,89 @@ export default function LearningPage() {
 
   const stepKey: StepKey = STEP_KEYS[step]
 
+  function renderSectionStep() {
+    if (!selectedBook) return null
+    const sections = BOOK_SECTIONS[selectedBook] ?? []
+    const unitGroups: { unit: number; title: string; sections: SectionData[] }[] = []
+    for (const sec of sections) {
+      const existing = unitGroups.find(g => g.unit === sec.unit)
+      if (existing) {
+        existing.sections.push(sec)
+      } else {
+        unitGroups.push({
+          unit: sec.unit,
+          title: FOCUS2_UNIT_TITLES[sec.unit] ?? `Unit ${sec.unit}`,
+          sections: [sec],
+        })
+      }
+    }
+    const resumeSectionId = continuationStatus?.canContinue
+      ? continuationStatus.activeSectionId
+      : null
+    return (
+      <>
+        <div className="fl-step-title">Choose a section</div>
+        <div className="fl-step-sub">Pick the section you want to study from {BOOK_TITLES[selectedBook]}.</div>
+        <div className="fl-section-wrap">
+          <div className="fl-section-header">
+            <div>
+              <div className="fl-section-header-title">{BOOK_TITLES[selectedBook]}</div>
+              <div className="fl-section-header-sub">
+                {unitGroups.length} units · {sections.filter(s => !s.disabled).length} available sections
+              </div>
+            </div>
+            {resumeSectionId && (
+              <span className="fl-resume-chip">▶ Resume available</span>
+            )}
+          </div>
+          <div style={{ overflowY: 'auto', maxHeight: '440px' }}>
+            {unitGroups.map(group => (
+              <div key={group.unit}>
+                <div className="fl-unit-header-row">
+                  <span className="fl-unit-label">Unit {group.unit}</span>
+                  <span className="fl-unit-title">{group.title}</span>
+                </div>
+                <div className="fl-section-grid">
+                  {group.sections.map(sec => {
+                    const isResume = resumeSectionId === sec.sectionId
+                    return (
+                      <div
+                        key={sec.sectionId}
+                        className={`fl-section-card${selectedSection?.sectionId === sec.sectionId ? ' selected' : ''}${sec.disabled ? ' disabled' : ''}`}
+                        onClick={() => !sec.disabled && selectSection(sec)}
+                      >
+                        {sec.dataQuality && (
+                          <div
+                            className={`fl-quality-dot ${sec.dataQuality}`}
+                            title={sec.dataQuality === 'ocr' ? 'Full textbook data' : 'Structured content'}
+                          />
+                        )}
+                        <div className="fl-section-num">{sec.sectionNumber}</div>
+                        <div className="fl-section-body">
+                          <div className="fl-section-title">
+                            {sec.title}
+                            {isResume && <span className="fl-resume-chip" style={{ marginLeft: 6 }}>▶ Resume</span>}
+                          </div>
+                          <div className="fl-section-topic">{sec.topic}</div>
+                          <div className="fl-section-meta">
+                            <span className="fl-section-tag">⏱ {sec.estimatedDuration}min</span>
+                            {sec.exerciseCount !== undefined && (
+                              <span className="fl-section-tag">◎ {sec.exerciseCount} ex.</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    )
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -853,90 +936,7 @@ export default function LearningPage() {
             )}
 
             {/* ── STEP 2: Choose section ── */}
-            {stepKey === 'section' && selectedBook && (() => {
-              const sections = BOOK_SECTIONS[selectedBook] ?? []
-              // Group sections by unit number
-              const unitGroups: { unit: number; title: string; sections: SectionData[] }[] = []
-              for (const sec of sections) {
-                const existing = unitGroups.find(g => g.unit === sec.unit)
-                if (existing) {
-                  existing.sections.push(sec)
-                } else {
-                  unitGroups.push({
-                    unit: sec.unit,
-                    title: FOCUS2_UNIT_TITLES[sec.unit] ?? `Unit ${sec.unit}`,
-                    sections: [sec],
-                  })
-                }
-              }
-              // Active session section id for resume indicator (strip "focus2-" prefix)
-              const resumeSectionId = continuationStatus?.canContinue
-                ? continuationStatus.activeSectionId
-                : null
-
-              return (
-                <>
-                  <div className="fl-step-title">Choose a section</div>
-                  <div className="fl-step-sub">Pick the section you want to study from {BOOK_TITLES[selectedBook]}.</div>
-                  <div className="fl-section-wrap">
-                    <div className="fl-section-header">
-                      <div>
-                        <div className="fl-section-header-title">{BOOK_TITLES[selectedBook]}</div>
-                        <div className="fl-section-header-sub">
-                          {unitGroups.length} units · {sections.filter(s => !s.disabled).length} available sections
-                        </div>
-                      </div>
-                      {resumeSectionId && (
-                        <span className="fl-resume-chip">▶ Resume available</span>
-                      )}
-                    </div>
-                    <div style={{ overflowY: 'auto', maxHeight: '440px' }}>
-                      {unitGroups.map(group => (
-                        <div key={group.unit}>
-                          <div className="fl-unit-header-row">
-                            <span className="fl-unit-label">Unit {group.unit}</span>
-                            <span className="fl-unit-title">{group.title}</span>
-                          </div>
-                          <div className="fl-section-grid">
-                            {group.sections.map(sec => {
-                              const isResume = resumeSectionId === sec.sectionId
-                              return (
-                                <div
-                                  key={sec.sectionId}
-                                  className={`fl-section-card${selectedSection?.sectionId === sec.sectionId ? ' selected' : ''}${sec.disabled ? ' disabled' : ''}`}
-                                  onClick={() => !sec.disabled && selectSection(sec)}
-                                >
-                                  {sec.dataQuality && (
-                                    <div
-                                      className={`fl-quality-dot ${sec.dataQuality}`}
-                                      title={sec.dataQuality === 'ocr' ? 'Full textbook data' : 'Structured content'}
-                                    />
-                                  )}
-                                  <div className="fl-section-num">{sec.sectionNumber}</div>
-                                  <div className="fl-section-body">
-                                    <div className="fl-section-title">
-                                      {sec.title}
-                                      {isResume && <span className="fl-resume-chip" style={{ marginLeft: 6 }}>▶ Resume</span>}
-                                    </div>
-                                    <div className="fl-section-topic">{sec.topic}</div>
-                                    <div className="fl-section-meta">
-                                      <span className="fl-section-tag">⏱ {sec.estimatedDuration}min</span>
-                                      {sec.exerciseCount !== undefined && (
-                                        <span className="fl-section-tag">◎ {sec.exerciseCount} ex.</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )
-            })()}
+            {stepKey === 'section' && selectedBook && renderSectionStep()}
 
             {/* ── STEP 3: Choose teacher ── */}
             {stepKey === 'teacher' && (

@@ -23,7 +23,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import { createServer } from 'http'
 import { checkConnection as checkPostgres, initTables } from './db/postgres.js'
 import { checkConnection as checkRedis } from './db/redis.js'
-import { attachLessonWS } from './ws/lesson-ws.js'
+import { attachLessonWS, closeAllActiveClients } from './ws/lesson-ws.js'
 import { setupOpenAI } from './ai/openai-handler.js'
 import apiRoutes     from './api/routes.js'
 import authRoutes    from './api/auth-routes.js'
@@ -119,4 +119,17 @@ async function main(): Promise<void> {
 main().catch((err) => {
   console.error('[server] startup failed:', err)
   process.exit(1)
+})
+
+// ── Graceful shutdown on SIGTERM (Railway deploy, Docker stop) ───────────────
+// Terminate all active WebSocket connections so their close handlers run
+// (billing finalization, lesson snapshot save). Wait 5s for async ops then exit.
+process.on('SIGTERM', () => {
+  console.log('[server] SIGTERM received — starting graceful shutdown')
+  const count = closeAllActiveClients()
+  console.log(`[server] terminated ${count} active WS client(s) — waiting 5s for billing finalization`)
+  setTimeout(() => {
+    console.log('[server] graceful shutdown complete')
+    process.exit(0)
+  }, 5_000)
 })

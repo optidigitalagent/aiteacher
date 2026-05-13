@@ -390,6 +390,9 @@ async function resumeLesson(
 
   // Reset hard cap to exact remaining time
   meta.maxDurationRef = setTimeout(() => {
+    // Guard: lesson may have already ended naturally before timeout fires
+    if (!meta.lessonId) return
+    console.log(`[paid-lesson] lesson_timeout session=${meta.sessionId} lessonId=${meta.lessonId}`)
     send(ws, { type: 'error', code: 'SESSION_TIME_LIMIT', message: 'Maximum lesson duration reached.' })
     ws.close(4408, 'Time limit reached')
   }, remainingMs)
@@ -414,7 +417,9 @@ async function resumeLesson(
     }
     if (!shouldProcessTranscript(transcript)) return
     send(ws, { type: 'student_message', text: transcript })
-    void processInput(ws, meta, transcript)
+    processInput(ws, meta, transcript).catch((err: unknown) =>
+      console.error('[paid-lesson] processInput error (stt resume):', err),
+    )
   })
 
   const tName   = teacherDisplayName(meta.teacherId ?? undefined)
@@ -439,7 +444,7 @@ async function resumeLesson(
         unit:           state.focusUnit,
         section:        state.focusLesson,
         exerciseNumber: state.currentExerciseNum,
-        exerciseType:   'form_transformation', // best-effort type on resume
+        exerciseType:   'unknown',   // exercise type not stored in LessonState; AI will correct on next turn
         instruction:    '',
         currentItem:    state.currentItem,
         itemIndex:      state.itemIndex ?? 0,
@@ -472,6 +477,9 @@ async function handleLessonStart(
 
   // Enforce 50-minute hard cap per paid session
   meta.maxDurationRef = setTimeout(() => {
+    // Guard: lesson may have already ended naturally before timeout fires
+    if (!meta.lessonId) return
+    console.log(`[paid-lesson] lesson_timeout session=${meta.sessionId} lessonId=${meta.lessonId}`)
     send(ws, { type: 'error', code: 'SESSION_TIME_LIMIT', message: 'Maximum lesson duration reached.' })
     ws.close(4408, 'Time limit reached')
   }, MAX_LESSON_MS)
@@ -536,7 +544,9 @@ async function handleLessonStart(
     }
     if (!shouldProcessTranscript(transcript)) return
     send(ws, { type: 'student_message', text: transcript })
-    void processInput(ws, meta, transcript)
+    processInput(ws, meta, transcript).catch((err: unknown) =>
+      console.error('[paid-lesson] processInput error (stt):', err),
+    )
   })
 
   // Phase 2 recovery: start periodic remaining-time broadcast
@@ -544,6 +554,7 @@ async function handleLessonStart(
 
   const greeting = `Hello! I'm Alex, your English teacher. Today we'll work on "${config.grammarTarget}" using the topic "${config.lessonTopic}". Let's start — tell me one thing you already know about this topic.`
 
+  console.log(`[paid-lesson] lesson_start_new lessonId=${lessonId} session=${meta.sessionId} unit=${config.textbookUnit}`)
   send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: greeting })
   await ttsStream(ws, meta, greeting)
 }
@@ -605,6 +616,9 @@ async function handleFocusLessonStart(
 
   // Enforce 50-minute hard cap per paid session
   meta.maxDurationRef = setTimeout(() => {
+    // Guard: lesson may have already ended naturally before timeout fires
+    if (!meta.lessonId) return
+    console.log(`[paid-lesson] lesson_timeout session=${meta.sessionId} lessonId=${meta.lessonId}`)
     send(ws, { type: 'error', code: 'SESSION_TIME_LIMIT', message: 'Maximum lesson duration reached.' })
     ws.close(4408, 'Time limit reached')
   }, MAX_LESSON_MS)
@@ -695,10 +709,12 @@ async function handleFocusLessonStart(
     }
     console.log(`[paid-lesson] student_turn_finalized chars=${transcript.trim().length}`)
     send(ws, { type: 'student_message', text: transcript })
-    void processInput(ws, meta, transcript)
+    processInput(ws, meta, transcript).catch((err: unknown) =>
+      console.error('[paid-lesson] processInput error (stt):', err),
+    )
   })
 
-  console.log(`[paid-lesson] ready session=${meta.sessionId} lessonId=${lessonId}`)
+  console.log(`[paid-lesson] lesson_start_new lessonId=${lessonId} session=${meta.sessionId} unit=${effectiveUnit} section=${config.section ?? 'none'}`)
 
   // Phase 2 recovery: start periodic remaining-time broadcast
   startTimerBroadcast(ws, meta)
@@ -801,6 +817,7 @@ async function processInput(
     const durationMin = meta.lessonStartedAt
       ? Math.round((Date.now() - meta.lessonStartedAt) / 60_000)
       : 0
+    console.log(`[paid-lesson] lesson_end_natural lessonId=${meta.lessonId} session=${meta.sessionId} durationMin=${durationMin} exercises=${result.exerciseScore}`)
     send(ws, {
       type: 'lesson_end',
       summary: {
@@ -1183,4 +1200,17 @@ export function attachLessonWS(server: Server): void {
   })
 
   console.log('[ws] LessonWS attached at ws://localhost/lesson')
+}
+
+/**
+ * Graceful shutdown: terminate all active WebSocket connections so their
+ * close handlers run (billing finalization, snapshot save).
+ * Called by SIGTERM handler in index.ts.
+ */
+export function closeAllActiveClients(): number {
+  const count = clients.size
+  for (const [ws] of clients) {
+    try { ws.terminate() } catch { /* ignore */ }
+  }
+  return count
 }
