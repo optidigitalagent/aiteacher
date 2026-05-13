@@ -89,7 +89,11 @@ router.get('/lesson/continuation-status', requireAuth, async (req: Request, res:
     const canStartNew = !!(sub && sub.status === 'active' && sub.minutesRemaining > 0
       && (!sub.expiresAt || sub.expiresAt > new Date()))
 
-    // Check for an in-progress lesson session that has not been explicitly completed
+    // Check for an in-progress lesson session that has not been explicitly completed.
+    // Phase 11: use lessons.started_at (original lesson creation time) instead of
+    // paid_lesson_usage.started_at. After reconnects, new usage records are created
+    // with started_at = NOW(), which would make remaining-time appear inflated.
+    // lessons.started_at is immutable — always the original start wall-clock time.
     const activeRow = await query<{
       session_id:  string
       lesson_id:   string | null
@@ -99,14 +103,13 @@ router.get('/lesson/continuation-status', requireAuth, async (req: Request, res:
       started_at:  Date
     }>(
       `SELECT ls.session_id, ls.lesson_id, ls.section_id, ls.teacher_id, ls.voice_id,
-              plu.started_at
+              l.started_at
        FROM lesson_sessions ls
-       JOIN paid_lesson_usage plu
-         ON plu.session_id = ls.session_id AND plu.user_id = ls.user_id
+       JOIN lessons l ON l.id::text = ls.lesson_id
        WHERE ls.user_id = $1
          AND ls.status  = 'active'
-         AND plu.status = 'active'
-       ORDER BY plu.started_at DESC
+         AND ls.lesson_id IS NOT NULL
+       ORDER BY l.started_at DESC
        LIMIT 1`,
       [userId],
     )

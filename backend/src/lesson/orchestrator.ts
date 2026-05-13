@@ -144,6 +144,9 @@ export class LessonOrchestrator {
         }
       }
 
+      // Persist exercise type so resume can restore the correct cursor type (Phase 11)
+      state.activeExerciseType = aiResp.exercise.type
+
       // Build cursor for this exercise response
       const itemTotal = aiResp.exercise.items?.length ?? 0
       exerciseCursor = {

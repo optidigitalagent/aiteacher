@@ -41,6 +41,7 @@ export interface LessonState {
   textbookUnit:  string
   teacherId?:   string        // 'alex' | 'emma' — persisted for resume
   voiceId?:    string        // 'onyx' | 'echo' | 'nova' | 'shimmer' — persisted for resume
+  activeExerciseType?: string  // Phase 11: persisted so resume sends correct type instead of 'unknown'
 
   // exchange counters
   exchangeCount:      number

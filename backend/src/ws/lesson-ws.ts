@@ -284,9 +284,25 @@ interface ClientMeta {
   // Set when interrupt arrives while aiProcessing=true so ttsStream() skips
   // the subsequent TTS — the student already has the mic open.
   interruptPending: boolean
+  // Phase 11: tracks when THIS connection's billing period started.
+  // Separate from lessonStartedAt (which is the original lesson wall-clock start
+  // used for timeout/remaining-time calculations). Using lessonStartedAt for
+  // finalizeUsage caused double-billing on reconnect: after the first session is
+  // finalized and a new usage record is created, elapsedMs = Date.now() - originalStart
+  // would charge the full lesson duration again instead of just the current session.
+  billingStartedAt: number | null
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
+
+// Phase 11: returns the existing WS connection that already owns a given lessonId,
+// or null if no other connection is active for it. Used to enforce single-ownership.
+function findActiveLessonOwner(lessonId: string, exclude: WebSocket): WebSocket | null {
+  for (const [ws, m] of clients) {
+    if (ws !== exclude && m.lessonId === lessonId) return ws
+  }
+  return null
+}
 
 function send(ws: WebSocket, msg: OutboundMessage): void {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
@@ -368,6 +384,14 @@ async function resumeLesson(
 
   const state = JSON.parse(stateRaw) as LessonState
 
+  // Phase 11: block resume of already-ended lessons.
+  // lesson_sessions.status = 'completed' is the primary guard, but this is a
+  // backup for the race window between lesson end and session status update.
+  if (state.phase === 'END') {
+    console.log(`[ws] resume blocked — lesson phase=END lessonId=${existingLessonId}`)
+    return false  // fall through to fresh lesson creation
+  }
+
   // Calculate how much time is left from the original lesson start
   const originalStart = new Date(state.startedAt).getTime()
   const elapsedMs     = Date.now() - originalStart
@@ -379,17 +403,34 @@ async function resumeLesson(
     return true  // handled — don't start fresh
   }
 
+  // Phase 11: enforce single-ownership — only one WS connection may own a lesson.
+  // If another tab has the same lesson open, terminate it before resuming here.
+  // This prevents two concurrent timers, two STT streams, and concurrent Redis writes.
+  const staleOwner = findActiveLessonOwner(existingLessonId, ws)
+  if (staleOwner) {
+    console.log(`[ws] evicting stale owner for lessonId=${existingLessonId} — new tab took ownership`)
+    send(staleOwner, { type: 'error', code: 'LESSON_TAKEN_OVER', message: 'This lesson was resumed in another tab.' })
+    staleOwner.terminate()
+  }
+
   // Restore meta state
   meta.lessonId  = existingLessonId
   meta.studentId = state.studentId
   meta.voiceId   = state.voiceId   ?? meta.voiceId
   meta.teacherId = state.teacherId ?? meta.teacherId
 
-  // Phase 6 bug fix: use the ORIGINAL lesson start time, not Date.now().
+  // Phase 6 bug fix: use the ORIGINAL lesson start time for timeout/remaining-time.
   // processInput() computes remainingMs as MAX_LESSON_MS - (Date.now() - lessonStartedAt).
   // Setting this to Date.now() would make the AI think there are 50 full minutes remaining
   // after every reconnect, defeating the time-aware prompting added in Phase 4.
   meta.lessonStartedAt = originalStart
+
+  // Phase 11: billing period starts NOW for this reconnection session.
+  // Each session charges only for its own duration — NOT from the original lesson start.
+  // Using originalStart here would cause double-billing: after the first session's
+  // finalizeUsage creates a new usage record, the second call charges from originalStart
+  // again, billing the full elapsed lesson time instead of just this session's time.
+  meta.billingStartedAt = Date.now()
 
   // Reset hard cap to exact remaining time
   meta.maxDurationRef = setTimeout(() => {
@@ -447,7 +488,8 @@ async function resumeLesson(
         unit:           state.focusUnit,
         section:        state.focusLesson,
         exerciseNumber: state.currentExerciseNum,
-        exerciseType:   'unknown',   // exercise type not stored in LessonState; AI will correct on next turn
+        // Phase 11: use stored exerciseType — falls back to 'unknown' only for old snapshots
+        exerciseType:   state.activeExerciseType ?? 'unknown',
         instruction:    '',
         currentItem:    state.currentItem,
         itemIndex:      state.itemIndex ?? 0,
@@ -457,6 +499,14 @@ async function resumeLesson(
         wordBoxState:   state.wordBoxState   ?? null,
       },
     })
+  }
+
+  // Phase 11: stamp lesson_id on the new usage record created for this reconnect session
+  if (meta.usageId) {
+    query(
+      `UPDATE paid_lesson_usage SET lesson_id = $1 WHERE id = $2`,
+      [existingLessonId, meta.usageId],
+    ).catch((err: unknown) => console.error('[ws] resume usage lesson_id stamp error:', err))
   }
 
   await ttsStream(ws, meta, resumeMsg)
@@ -477,6 +527,8 @@ async function handleLessonStart(
   meta.lessonId        = lessonId
   meta.studentId       = effectiveStudentId
   meta.lessonStartedAt = Date.now()
+  // Phase 11: billing period starts when this connection starts a new lesson
+  meta.billingStartedAt = Date.now()
 
   // Enforce 50-minute hard cap per paid session
   meta.maxDurationRef = setTimeout(() => {
@@ -616,6 +668,8 @@ async function handleFocusLessonStart(
   meta.lessonId        = lessonId
   meta.studentId       = effectiveStudentId
   meta.lessonStartedAt = Date.now()
+  // Phase 11: billing period starts when this connection starts a new lesson
+  meta.billingStartedAt = Date.now()
 
   // Enforce 50-minute hard cap per paid session
   meta.maxDurationRef = setTimeout(() => {
@@ -651,11 +705,18 @@ async function handleFocusLessonStart(
   )
 
   // Write lessonId back to lesson_sessions so reconnections can resume
+  // Phase 11: also stamp lesson_id on the usage record for per-lesson billing queries
   if (meta.sessionId) {
     await query(
       `UPDATE lesson_sessions SET lesson_id = $1, status = 'active', updated_at = NOW() WHERE session_id = $2`,
       [lessonId, meta.sessionId],
     )
+  }
+  if (meta.usageId) {
+    query(
+      `UPDATE paid_lesson_usage SET lesson_id = $1 WHERE id = $2`,
+      [lessonId, meta.usageId],
+    ).catch((err: unknown) => console.error('[ws] usage lesson_id stamp error:', err))
   }
 
   const initialState: LessonState = {
@@ -1096,6 +1157,7 @@ export function attachLessonWS(server: Server): void {
       ttsCharCount:     0,
       aiProcessing:     false,
       interruptPending: false,
+      billingStartedAt: null,
     }
 
     clients.set(ws, meta)
@@ -1188,8 +1250,10 @@ export function attachLessonWS(server: Server): void {
       }
 
       // Cost instrumentation + finalize paid lesson usage
-      if (meta.usageId && meta.userId && meta.lessonStartedAt) {
-        const elapsedMs       = Date.now() - meta.lessonStartedAt
+      // Phase 11: billingStartedAt tracks when THIS session's billing period began,
+      // not when the original lesson started. This prevents double-billing on reconnect.
+      if (meta.usageId && meta.userId && meta.billingStartedAt) {
+        const elapsedMs       = Date.now() - meta.billingStartedAt
         const elapsedMin      = Math.round(elapsedMs / 60_000)
         const ttsProvider     = process.env.ELEVENLABS_API_KEY ? 'elevenlabs' : 'openai'
         const aiModel         = 'claude-sonnet-4-6'
@@ -1207,7 +1271,7 @@ export function attachLessonWS(server: Server): void {
           `ttsProvider=${ttsProvider} aiModel=${aiModel} sttProvider=${sttProvider}`,
         )
 
-        finalizeUsage(meta.usageId, meta.userId, meta.lessonStartedAt).catch((err: unknown) => {
+        finalizeUsage(meta.usageId, meta.userId, meta.billingStartedAt).catch((err: unknown) => {
           console.error('[ws] finalizeUsage error:', err)
         })
       }
