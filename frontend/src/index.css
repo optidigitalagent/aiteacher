@@ -119,3 +119,32 @@
 
 .cls-slide-up { animation: cls-slide-up 0.25s ease forwards; }
 .cls-shake    { animation: cls-shake 0.4s ease; }
+
+/* ── MOBILE CLASSROOM LAYOUT ── */
+
+/* Tablet (768–900px): collapse sidebars, keep center + compact right panel */
+@media (max-width: 900px) {
+  .cls-classroom-grid {
+    grid-template-columns: 110px 1fr 120px !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+    padding-bottom: 100px !important;
+  }
+}
+
+/* Phone (<600px): minimal columns — teacher panel becomes very narrow */
+@media (max-width: 600px) {
+  .cls-classroom-grid {
+    grid-template-columns: 0 1fr 96px !important;
+    gap: 6px !important;
+    padding: 6px 8px !important;
+    padding-bottom: 96px !important;
+    overflow-x: hidden !important;
+  }
+}
+
+/* ── TIPS DRAWER ANIMATION (defined as JS inline, backup here) ── */
+@keyframes cls-slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}

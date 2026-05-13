@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '../types'
 import type { VoicePlayState } from '../hooks/useDemoSession'
 import { IcClose } from './icons'
+import { formatAIMessage } from '../utils/formatMessage'
 
 interface Props {
   messages:        ChatMessage[]
   onHide:          () => void
   isDemoMode?:     boolean
+  teacherName?:    string
   onTranslate?:    (messageId: string, text: string) => Promise<string | null>
   // Voice (demo mode only)
   voiceMuted?:     boolean
@@ -17,9 +19,10 @@ interface Props {
 }
 
 export default function ChatPanel({
-  messages, onHide, isDemoMode, onTranslate,
+  messages, onHide, isDemoMode, teacherName, onTranslate,
   voiceMuted, onToggleMute, voiceStates, voiceMessages, onPlayAudio,
 }: Props) {
+  const aiName = teacherName ?? (isDemoMode ? 'Sophie' : 'Teacher')
   const bottomRef = useRef<HTMLDivElement>(null)
   const [translatedMsgs, setTranslatedMsgs] = useState<Record<string, { text: string; showing: boolean }>>({})
   const [translatingId, setTranslatingId] = useState<string | null>(null)
@@ -142,7 +145,7 @@ export default function ChatPanel({
                   display: 'flex', alignItems: 'center', gap: 4,
                   flexDirection: msg.sender === 'user' ? 'row-reverse' : 'row',
                 }}>
-                  {msg.sender === 'ai' ? 'Sophie' : 'You'}
+                  {msg.sender === 'ai' ? aiName : 'You'}
 
                   {/* Translate button — only on AI messages in demo mode */}
                   {isDemoMode && msg.sender === 'ai' && !msg.isTyping && msg.text && onTranslate && (
@@ -207,7 +210,6 @@ export default function ChatPanel({
                   fontSize: 12.5, lineHeight: 1.55, fontWeight: 500,
                   boxShadow: msg.sender === 'ai' ? '0 2px 8px rgba(0,0,0,0.06)' : '0 4px 12px rgba(110,124,251,0.25)',
                   border: msg.sender === 'ai' ? '1px solid #f0eeff' : 'none',
-                  whiteSpace: 'pre-wrap',
                 }}>
                   {msg.isTyping ? (
                     <div style={{ display: 'flex', gap: 3, padding: '2px', alignItems: 'center' }}>
@@ -215,7 +217,9 @@ export default function ChatPanel({
                       <span className="cls-typing-dot" />
                       <span className="cls-typing-dot" />
                     </div>
-                  ) : displayText}
+                  ) : msg.sender === 'ai' && displayText
+                    ? formatAIMessage(displayText)
+                    : displayText}
                 </div>
               </div>
             </div>

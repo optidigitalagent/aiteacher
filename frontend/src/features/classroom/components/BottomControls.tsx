@@ -50,7 +50,7 @@ export default function BottomControls({
           borderRadius: 16,
           padding: '10px 14px',
           boxShadow: '0 4px 24px rgba(110,124,251,0.18), 0 0 0 1.5px rgba(110,124,251,0.2)',
-          width: 'auto', maxWidth: 780, minWidth: 680,
+          width: 'calc(100% - 32px)', maxWidth: 780,
         }}>
           <span style={{ fontSize: 13, color: '#9B8CFF', fontWeight: 700, flexShrink: 0, whiteSpace: 'nowrap' }}>
             ❓ Help:
@@ -106,7 +106,7 @@ export default function BottomControls({
         borderRadius: 99,
         padding: '12px 20px 12px 16px',
         boxShadow: '0 2px 0 rgba(255,255,255,0.95) inset, 0 4px 6px rgba(0,0,0,0.03), 0 20px 50px rgba(0,0,0,0.1), 0 0 0 1px rgba(255,255,255,0.4)',
-        width: 'auto', maxWidth: 780, minWidth: 680,
+        width: 'calc(100% - 32px)', maxWidth: 780,
       }}>
         {/* "I don't understand" button */}
         <button

@@ -1,4 +1,5 @@
 import type { TeachingCardData } from '../types'
+import { formatAIMessage } from '../utils/formatMessage'
 
 interface Props {
   card:      TeachingCardData
@@ -47,9 +48,9 @@ export default function TeachingOverlay({ card, onDismiss }: Props) {
       </h2>
 
       {/* Body */}
-      <p style={{ fontSize: 16, color: '#444', lineHeight: 1.7, margin: 0 }}>
-        {card.body}
-      </p>
+      <div style={{ fontSize: 15, color: '#374151', lineHeight: 1.7 }}>
+        {formatAIMessage(card.body)}
+      </div>
 
       {/* Rule table (optional) */}
       {card.ruleTable && (

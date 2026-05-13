@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type { TipRecord } from '../services/classroomSocket'
 
 const CATEGORY_META: Record<string, { bg: string; text: string; border: string; label: string }> = {
@@ -15,6 +16,12 @@ export default function TipsDrawer({
   tips:    TipRecord[]
   onClose: () => void
 }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+
   const grouped = tips.reduce<Record<string, TipRecord[]>>((acc, tip) => {
     acc[tip.category] ??= []
     acc[tip.category]!.push(tip)

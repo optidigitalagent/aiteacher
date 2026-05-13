@@ -45,7 +45,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const send = useCallback((payload: object) => {
     sendMessage(wsRef.current, payload)
   }, [])
-  const [wsConnectError, setWsConnectError] = useState<string | null>(null)
+  const [wsConnectError,  setWsConnectError]  = useState<string | null>(null)
+  const [wsDisconnected,  setWsDisconnected]  = useState(false)
+  const [lessonTakenOver, setLessonTakenOver] = useState(false)
   const lessonStartedRef = useRef(false)
 
   // ── Production hooks (always called — rules of hooks) ────────────────────
@@ -268,7 +270,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         break
       case 'lesson_ready':
         // Backend confirmed auth + session validation — safe to show Begin Lesson
-        if (!isDemoMode) setPaidLessonReady(true)
+        if (!isDemoMode) {
+          setPaidLessonReady(true)
+          setWsConnectError(null)   // clear any stale error from a previous connect attempt
+          setWsDisconnected(false)
+        }
         break
       case 'lesson_resumed':
         if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
@@ -312,7 +318,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         break
       case 'error':
         console.error('[Classroom WS] error:', msg.code, msg.message)
-        if (['PAYMENT_REQUIRED', 'SUBSCRIPTION_EXPIRED', 'LESSON_LIMIT_REACHED', 'AUTH_REQUIRED', 'SESSION_TIME_LIMIT'].includes(msg.code)) {
+        if (msg.code === 'LESSON_TAKEN_OVER') {
+          setLessonTakenOver(true)
+        } else if (['PAYMENT_REQUIRED', 'SUBSCRIPTION_EXPIRED', 'LESSON_LIMIT_REACHED', 'AUTH_REQUIRED', 'SESSION_TIME_LIMIT'].includes(msg.code)) {
           setWsConnectError(msg.message)
         }
         break
@@ -337,11 +345,12 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     const ws = createClassroomSocket(
       (msg) => onMessageRef.current(msg),
       () => {
-        // WS open: connection established — wait for lesson_ready event from backend
-        // (which confirms auth + session validation) before showing Begin Lesson
+        // WS open: connection established — wait for lesson_ready from backend
+        setWsDisconnected(false)
         console.log('[paid-lesson] ws_open session=' + paidSessionId)
       },
       () => {
+        setWsDisconnected(true)
         if (!lessonStartedRef.current) {
           setWsConnectError('Could not connect to your teacher. Please check your connection and try again.')
         }
@@ -517,17 +526,20 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           }
         />
 
-        <div style={{
-          flex: 1, minHeight: 0,
-          display: 'grid',
-          gridTemplateColumns: chatOpen ? '160px 1fr 265px 148px' : '160px 1fr 148px',
-          alignItems: 'stretch',
-          gap: 14,
-          padding: '16px 20px',
-          paddingBottom: 110,
-          overflow: 'hidden',
-          transition: 'grid-template-columns 0.32s cubic-bezier(0.4,0,0.2,1)',
-        }}>
+        <div
+          className="cls-classroom-grid"
+          style={{
+            flex: 1, minHeight: 0,
+            display: 'grid',
+            gridTemplateColumns: chatOpen ? '160px 1fr 265px 148px' : '160px 1fr 148px',
+            alignItems: 'stretch',
+            gap: 14,
+            padding: '16px 20px',
+            paddingBottom: 110,
+            overflow: 'hidden',
+            transition: 'grid-template-columns 0.32s cubic-bezier(0.4,0,0.2,1)',
+          }}
+        >
           {/* Left — teacher avatar + voice state */}
           <TeacherPanel
             voiceState={{
@@ -629,8 +641,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
               paidLessonReady ? (
                 <PaidBeginPanel meta={sessionMeta} onBegin={handleBeginLesson} />
               ) : (
-                <div style={{ textAlign: 'center', color: '#aaa', fontSize: 15, fontWeight: 500, lineHeight: 1.6 }}>
-                  Connecting to your teacher…
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ width: 36, height: 36, border: '3px solid #E6EAF2', borderTopColor: '#7B8CFF', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 14px' }} />
+                  <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+                  <div style={{ fontSize: 15, color: '#64748B', fontWeight: 500 }}>Connecting to your teacher…</div>
                 </div>
               )
             ) : currentPhase === 'CONTEXT_INPUT' ? (
@@ -664,6 +678,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
               messages={isDemoMode ? demo.chatMessages : messages}
               onHide={() => setChatOpen(false)}
               isDemoMode={isDemoMode}
+              teacherName={isDemoMode ? 'Sophie' : (sessionMeta?.teacherName ?? 'Teacher')}
               onTranslate={isDemoMode
                 ? (msgId, text) => demo.handleTranslateMessage(msgId, text, 'ru')
                 : undefined
@@ -731,6 +746,64 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           onStay={() => demo.setShowLeaveModal(false)}
           onLeave={() => navigate('/')}
         />
+      )}
+
+      {/* WS disconnect banner — shows when connection drops mid-lesson */}
+      {!isDemoMode && lessonStarted && wsDisconnected && !paidLessonEnded && (
+        <div style={{
+          position: 'fixed', top: 56, left: 0, right: 0, zIndex: 90,
+          background: 'rgba(245,158,11,0.95)', backdropFilter: 'blur(4px)',
+          padding: '9px 20px',
+          textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#78350f',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+        }}>
+          <span>⚡</span>
+          <span>Connection lost — trying to reconnect…</span>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: 'rgba(0,0,0,0.12)', border: 'none', borderRadius: 8,
+              color: '#78350f', padding: '4px 12px', cursor: 'pointer',
+              fontSize: 12, fontWeight: 700,
+            }}
+          >
+            Reload
+          </button>
+        </div>
+      )}
+
+      {/* LESSON_TAKEN_OVER modal — shown when another tab took ownership */}
+      {!isDemoMode && lessonTakenOver && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 250,
+          background: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 24, padding: '32px 28px',
+            maxWidth: 400, width: '100%',
+            boxShadow: '0 32px 64px rgba(15,23,42,0.22)', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 32, marginBottom: 14 }}>📱</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#0F172A', marginBottom: 10 }}>
+              Lesson opened elsewhere
+            </div>
+            <div style={{ fontSize: 14, color: '#64748B', lineHeight: 1.65, marginBottom: 24 }}>
+              This lesson was resumed in another tab or window. Your progress is saved.
+            </div>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                width: '100%', padding: '14px 20px', borderRadius: 16, border: 'none',
+                background: 'linear-gradient(135deg,#6E7CFB,#9B8CFF)',
+                color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer',
+                boxShadow: '0 8px 28px rgba(110,124,251,0.40)',
+              }}
+            >
+              Take over this tab
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Phase 6: 5-minute time warning banner */}
