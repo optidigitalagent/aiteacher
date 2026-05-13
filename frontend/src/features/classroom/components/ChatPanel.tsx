@@ -147,8 +147,8 @@ export default function ChatPanel({
                 }}>
                   {msg.sender === 'ai' ? aiName : 'You'}
 
-                  {/* Translate button — only on AI messages in demo mode */}
-                  {isDemoMode && msg.sender === 'ai' && !msg.isTyping && msg.text && onTranslate && (
+                  {/* Translate button — on AI messages when onTranslate is provided */}
+                  {msg.sender === 'ai' && !msg.isTyping && msg.text && onTranslate && (
                     <button
                       onClick={() => void handleTranslateClick(msg.id, msg.text ?? '')}
                       title={translated?.showing ? 'Show original' : 'Translate'}

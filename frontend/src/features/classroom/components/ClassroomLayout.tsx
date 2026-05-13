@@ -25,6 +25,9 @@ import {
 } from '../services/classroomSocket'
 import TipsDrawer from './TipsDrawer'
 import { useAuth, getStoredToken }      from '../../../context/AuthContext'
+import { warmAudioContext }              from '../services/voiceApi'
+
+const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
 const LESSON_UNIT = Number(import.meta.env.VITE_LESSON_UNIT ?? 1)
 const ENV_SECTION = import.meta.env.VITE_LESSON_SECTION as string | undefined
@@ -217,6 +220,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
 
   const answerRef = useRef('')
   useEffect(() => { answerRef.current = answer }, [answer])
+  // Tracks the last transcript value seen in onMessageRef so the 'transcript'
+  // handler can compare against it to avoid overwriting manually typed text.
+  const lastTranscriptRef = useRef('')
 
   // ── WS message handler ────────────────────────────────────────────────────
   const onMessageRef = useRef<(msg: BackendMessage) => void>(() => {})
@@ -251,18 +257,26 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           setTimeout(() => setAnswer(''), 1800)
         }
         break
-      case 'transcript':
+      case 'transcript': {
+        // Mirror Deepgram transcript directly into the answer field.
+        // Guard: don't overwrite text the student typed manually (i.e. answer
+        // is non-empty AND differs from the previous transcript value).
+        const prevT = lastTranscriptRef.current
+        lastTranscriptRef.current = msg.text
         onTranscript(msg.text)
+        setAnswer(prev => (!prev || prev === prevT) ? msg.text : prev)
         break
+      }
       case 'teaching_card':
         setTeachingCard({ title: 'Explanation', body: msg.displayText })
         break
       case 'section_card':
         break
       case 'student_message':
+        lastTranscriptRef.current = ''
         pushUser(msg.text)
         setAnswer('')       // clear stale STT transcript from input field
-        onTranscript('')    // clear transcript state so the useEffect doesn't restore it
+        onTranscript('')    // clear transcript state
         setTyping()         // show AI processing indicator (mirrors demo behavior)
         break
       case 'teacher_turn_end':
@@ -363,10 +377,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   }, [isAuthLoading, isAuthenticated, isDemoMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Side effects ──────────────────────────────────────────────────────────
-  // Only mirror STT transcript into the answer field while mic is actively recording.
-  // Guarding on isListening prevents stale partial transcripts from overwriting
-  // text the student has typed manually between voice turns.
-  useEffect(() => { if (transcript && isListening) setAnswer(transcript) }, [transcript, isListening])
+  // Transcript → answer mirroring is now handled directly in the WS 'transcript'
+  // case handler (onMessageRef) to avoid the isListening timing bug where the
+  // final Deepgram transcript arrives after isListening becomes false.
 
   useEffect(() => {
     setAnswer('')
@@ -424,6 +437,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const handleBeginLesson = useCallback(() => {
     if (beginSentRef.current) return  // prevent double-click
     beginSentRef.current = true
+    // Warm audio context during user gesture so TTS chunks don't hit a suspended context
+    warmAudioContext()
     console.log('[paid-lesson] begin clicked session=' + paidSessionId)
     sendMessage(wsRef.current, {
       type:    'focus_lesson_start',
@@ -444,6 +459,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       console.log('[paid-lesson] mic_enabled=false reason=lesson_not_started')
       return
     }
+    // Warm audio context synchronously during user gesture — ensures the
+    // AudioContext is in 'running' state before async TTS chunks arrive later.
+    warmAudioContext()
     if (isSpeaking && !isListening) {
       // Student interrupts teacher — stop backend TTS stream before opening mic
       console.log('[paid-lesson] mic_interrupt reason=student_wants_to_speak')
@@ -557,6 +575,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
             onExplain={handleExplain}
             teacherName={sessionMeta?.teacherName}
             teacherAvatarUrl={sessionMeta?.teacherAvatarUrl}
+            isDemo={isDemoMode}
           />
 
           {/* Center — exercise, demo step, teaching overlay, or waiting state */}
@@ -676,7 +695,55 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                   Read through the content in the chat. Your teacher will guide you through the key points before exercises begin.
                 </div>
               </div>
-            ) : null}
+            ) : (() => {
+              // Dialogue phase: no exercise active — show last teacher message prominently
+              const lastMsg = messages.filter(m => m.sender === 'ai' && !m.isTyping && m.text).slice(-1)[0]
+              if (!lastMsg?.text) return null
+              return (
+                <div style={{
+                  maxWidth: 560, width: '100%',
+                  background: 'rgba(255,255,255,0.88)',
+                  backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                  borderRadius: 24, padding: '28px 32px',
+                  boxShadow: '0 2px 0 rgba(255,255,255,1) inset, 0 20px 60px rgba(0,0,0,0.07)',
+                  border: '1px solid rgba(255,255,255,0.7)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                    <div style={{
+                      width: 36, height: 36, borderRadius: 12, flexShrink: 0,
+                      background: 'linear-gradient(135deg,#6E7CFB,#9B8CFF)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: 'white', fontSize: 13, fontWeight: 800,
+                    }}>
+                      {(sessionMeta?.teacherName ?? 'T')[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a2e' }}>
+                        {sessionMeta?.teacherName ?? 'Teacher'}
+                      </div>
+                      {isSpeaking && (
+                        <div style={{ fontSize: 11, color: '#6E7CFB', fontWeight: 600, marginTop: 1 }}>
+                          Speaking…
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{
+                    fontSize: 17, fontWeight: 600, color: '#1a1a2e',
+                    lineHeight: 1.65, letterSpacing: '-0.1px',
+                  }}>
+                    {lastMsg.text}
+                  </div>
+                  <div style={{
+                    marginTop: 18, fontSize: 12, color: '#94A3B8', fontWeight: 500,
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                    <span style={{ fontSize: 14 }}>🎤</span>
+                    Use the microphone or type your response below
+                  </div>
+                </div>
+              )
+            })()}
           </div>
 
           {/* Chat panel */}
@@ -688,7 +755,21 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
               teacherName={isDemoMode ? 'Sophie' : (sessionMeta?.teacherName ?? 'Teacher')}
               onTranslate={isDemoMode
                 ? (msgId, text) => demo.handleTranslateMessage(msgId, text, 'ru')
-                : undefined
+                : paidSessionId
+                  ? async (_msgId: string, text: string) => {
+                      try {
+                        const token = getStoredToken()
+                        const res = await fetch(`${API_BASE}/lesson/translate`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                          body: JSON.stringify({ sessionId: paidSessionId, text, targetLanguage: 'ru' }),
+                        })
+                        if (!res.ok) return null
+                        const j = (await res.json()) as { translation?: string }
+                        return j.translation ?? null
+                      } catch { return null }
+                    }
+                  : undefined
               }
               voiceMuted={isDemoMode ? demo.voiceMuted : undefined}
               onToggleMute={isDemoMode ? demo.toggleVoiceMuted : undefined}
@@ -720,6 +801,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           onSubmit={handleSubmit}
           onToggleMic={isDemoMode ? toggleDemoMic : paidToggle}
           onExplain={handleExplain}
+          showExplain={isDemoMode}
           inputDisabled={
             (isDemoMode && !demo.lessonStarted) ||
             (isDemoMode && demo.phase === 'complete') ||

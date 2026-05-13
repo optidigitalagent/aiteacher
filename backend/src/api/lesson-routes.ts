@@ -2,11 +2,27 @@ import { Router, type Request, type Response } from 'express'
 import { v4 as uuid } from 'uuid'
 import { requireAuth } from '../auth/middleware.js'
 import { query } from '../db/postgres.js'
+import redis from '../db/redis.js'
 import { getSubscription } from '../billing/subscription-service.js'
+import OpenAI from 'openai'
 
 const router = Router()
 
-const MAX_LESSON_MS = Number(process.env.PAID_PLAN_LESSON_MINUTES ?? 50) * 60_000
+const MAX_LESSON_MS       = Number(process.env.PAID_PLAN_LESSON_MINUTES ?? 50) * 60_000
+const TRANSLATE_LIMIT     = 15
+const TRANSLATE_MAX_CHARS = 500
+
+function simpleHash(s: string): string {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0
+  return Math.abs(h).toString(16)
+}
+
+let _openai: OpenAI | null = null
+function getOpenAI(): OpenAI {
+  if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  return _openai
+}
 
 // POST /lesson/start — subscription required; creates lesson session + usage record
 router.post('/lesson/start', requireAuth, async (req: Request, res: Response) => {
@@ -151,6 +167,84 @@ router.get('/lesson/continuation-status', requireAuth, async (req: Request, res:
   } catch (err) {
     console.error('[lesson] continuation-status error:', err instanceof Error ? err.message : err)
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to check continuation status' })
+  }
+})
+
+// POST /lesson/translate — translate AI teacher message for student
+// Rate-limited (15/session), cached, requires user to own an active lesson session.
+router.post('/lesson/translate', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.userId
+  const body   = req.body as Record<string, unknown>
+
+  const sessionId      = typeof body['sessionId']      === 'string' ? body['sessionId']      : null
+  const textRaw        = typeof body['text']           === 'string' ? body['text']           : null
+  const targetLanguage = typeof body['targetLanguage'] === 'string' ? body['targetLanguage'] : 'ru'
+
+  if (!sessionId || textRaw === null) {
+    res.status(400).json({ code: 'INVALID_REQUEST', message: 'sessionId and text required' })
+    return
+  }
+
+  if (!['uk', 'ru'].includes(targetLanguage)) {
+    res.status(400).json({ code: 'INVALID_REQUEST', message: 'targetLanguage must be uk or ru' })
+    return
+  }
+
+  const text = textRaw.trim().slice(0, TRANSLATE_MAX_CHARS)
+  if (!text) {
+    res.status(400).json({ code: 'INVALID_REQUEST', message: 'text cannot be empty' })
+    return
+  }
+
+  try {
+    // Verify user owns this session
+    const sessionRow = await query<{ session_id: string }>(
+      `SELECT session_id FROM lesson_sessions WHERE session_id = $1 AND user_id = $2`,
+      [sessionId, userId],
+    )
+    if (!sessionRow.rows.length) {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Session not found' })
+      return
+    }
+
+    // Rate limit
+    const xlateKey   = `lesson:translate:${sessionId}`
+    const xlateCount = await redis.incr(xlateKey)
+    if (xlateCount === 1) await redis.expire(xlateKey, 14400)
+
+    if (xlateCount > TRANSLATE_LIMIT) {
+      res.status(429).json({ code: 'TRANSLATE_LIMIT_REACHED', message: 'Translation limit reached for this session.' })
+      return
+    }
+
+    // Cache check
+    const cacheKey = `lesson:xlat:${simpleHash(text)}:${targetLanguage}`
+    const cached   = await redis.get(cacheKey)
+    if (cached) {
+      console.log('[lesson-translate] cache_hit=true')
+      res.json({ translation: cached })
+      return
+    }
+
+    const langName = targetLanguage === 'uk' ? 'Ukrainian' : 'Russian'
+    const aiResult = await getOpenAI().chat.completions.create({
+      model:       'gpt-4o-mini',
+      max_tokens:  200,
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: `Translate the following English text to ${langName}. Return only the translation, nothing else. Preserve line breaks.` },
+        { role: 'user',   content: text },
+      ],
+    })
+
+    const translation = aiResult.choices[0]?.message?.content?.trim() ?? text
+    await redis.set(cacheKey, translation, 'EX', 3600)
+
+    console.log(`[lesson-translate] session=${sessionId} lang=${targetLanguage}`)
+    res.json({ translation })
+  } catch (err) {
+    console.error('[lesson/translate] error:', err instanceof Error ? err.message : err)
+    res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Translation failed' })
   }
 })
 

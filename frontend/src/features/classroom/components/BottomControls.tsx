@@ -10,6 +10,7 @@ interface Props {
   onExplain:       () => void
   inputDisabled?:  boolean
   micDisabled?:    boolean
+  showExplain?:    boolean
   // Help input (demo mode)
   showHelpInput?:  boolean
   helpInputValue?: string
@@ -20,7 +21,7 @@ interface Props {
 
 export default function BottomControls({
   isListening, value, onChange, onSubmit, onToggleMic, onExplain,
-  inputDisabled, micDisabled,
+  inputDisabled, micDisabled, showExplain = true,
   showHelpInput, helpInputValue, onHelpChange, onHelpSubmit, onHelpClose,
 }: Props) {
   const inputRef          = useRef<HTMLInputElement>(null)
@@ -108,22 +109,24 @@ export default function BottomControls({
         boxShadow: '0 2px 0 rgba(255,255,255,0.95) inset, 0 4px 6px rgba(0,0,0,0.03), 0 20px 50px rgba(0,0,0,0.1), 0 0 0 1px rgba(255,255,255,0.4)',
         width: 'calc(100% - 32px)', maxWidth: 780,
       }}>
-        {/* "I don't understand" button */}
-        <button
-          onClick={onExplain}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0,
-            background: showHelpInput ? 'rgba(110,124,251,0.12)' : 'none',
-            border: showHelpInput ? '1.5px solid rgba(110,124,251,0.35)' : '1.5px solid #e8e8f0',
-            borderRadius: 99,
-            padding: '10px 18px', cursor: 'pointer',
-            color: showHelpInput ? '#6E7CFB' : '#555', fontSize: 13.5, fontWeight: 600,
-            transition: 'all 0.2s', whiteSpace: 'nowrap',
-          }}
-        >
-          <IcQ s={14} c={showHelpInput ? '#6E7CFB' : '#888'} />
-          I don&apos;t understand
-        </button>
+        {/* "I don't understand" button — demo only */}
+        {showExplain && (
+          <button
+            onClick={onExplain}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0,
+              background: showHelpInput ? 'rgba(110,124,251,0.12)' : 'none',
+              border: showHelpInput ? '1.5px solid rgba(110,124,251,0.35)' : '1.5px solid #e8e8f0',
+              borderRadius: 99,
+              padding: '10px 18px', cursor: 'pointer',
+              color: showHelpInput ? '#6E7CFB' : '#555', fontSize: 13.5, fontWeight: 600,
+              transition: 'all 0.2s', whiteSpace: 'nowrap',
+            }}
+          >
+            <IcQ s={14} c={showHelpInput ? '#6E7CFB' : '#888'} />
+            I don&apos;t understand
+          </button>
+        )}
 
         {/* Mic button */}
         <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>

@@ -142,6 +142,17 @@ export function stopAudioPlayback(): void {
   }
 }
 
+// Call this synchronously inside a user gesture (Begin Lesson, mic toggle) to
+// ensure the AudioContext is in 'running' state before async TTS chunks arrive.
+// Without this, the context created later in an async WS callback may be
+// suspended (autoplay policy) and playAudioChunk(strict=false) silently fails.
+export function warmAudioContext(): void {
+  const ctx = getPlayCtx()
+  if (ctx.state === 'suspended') {
+    void ctx.resume().catch(() => {})
+  }
+}
+
 /** Returns how many milliseconds of queued audio remain before playback ends. */
 export function getScheduledAudioEndMs(): number {
   if (!playCtx || playCtx.state === 'closed') return 0

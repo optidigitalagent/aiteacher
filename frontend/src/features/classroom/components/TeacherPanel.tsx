@@ -7,11 +7,12 @@ interface Props {
   onExplain: () => void
   teacherName?: string
   teacherAvatarUrl?: string
+  isDemo?: boolean
 }
 
 const WAVE_HEIGHTS = [7, 11, 16, 9, 14, 8, 18, 12, 7, 15, 10, 17, 8, 12]
 
-export default function TeacherPanel({ voiceState, onExplain, teacherName = 'Alex', teacherAvatarUrl }: Props) {
+export default function TeacherPanel({ voiceState, onExplain, teacherName = 'Alex', teacherAvatarUrl, isDemo = false }: Props) {
   const { isSpeaking, isListening } = voiceState
 
   const state: AvatarState = isListening ? 'listening' : isSpeaking ? 'speaking' : 'thinking'
@@ -104,28 +105,29 @@ export default function TeacherPanel({ voiceState, onExplain, teacherName = 'Ale
         </div>
       </div>
 
-      {/* Help card */}
-      <div style={{
-        width: '100%', background: 'white', borderRadius: 16, padding: '16px',
-        boxShadow: '0 6px 24px rgba(110,124,251,0.12)',
-        border: '1px solid rgba(110,124,251,0.12)',
-      }}>
-        <div style={{ fontWeight: 700, fontSize: 13, color: '#1a1a2e', marginBottom: 5 }}>Need help?</div>
-        <div style={{ fontSize: 12.5, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
-          I can explain this differently.
-        </div>
-        {/* TODO: on click → POST /api/lesson/explain → backend returns teaching card overlay */}
-        <button onClick={onExplain} style={{
-          width: '100%', padding: '10px 0', borderRadius: 11, border: 'none',
-          background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)',
-          color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-          boxShadow: '0 6px 20px rgba(110,124,251,0.35)',
-          transition: 'transform 0.15s, box-shadow 0.15s',
+      {/* Help card — demo only (paid lesson uses inline AI conversation for help) */}
+      {isDemo && (
+        <div style={{
+          width: '100%', background: 'white', borderRadius: 16, padding: '16px',
+          boxShadow: '0 6px 24px rgba(110,124,251,0.12)',
+          border: '1px solid rgba(110,124,251,0.12)',
         }}>
-          <IcSpark /> Explain this
-        </button>
-      </div>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#1a1a2e', marginBottom: 5 }}>Need help?</div>
+          <div style={{ fontSize: 12.5, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
+            I can explain this differently.
+          </div>
+          <button onClick={onExplain} style={{
+            width: '100%', padding: '10px 0', borderRadius: 11, border: 'none',
+            background: 'linear-gradient(135deg, #6E7CFB, #9B8CFF)',
+            color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+            boxShadow: '0 6px 20px rgba(110,124,251,0.35)',
+            transition: 'transform 0.15s, box-shadow 0.15s',
+          }}>
+            <IcSpark /> Explain this
+          </button>
+        </div>
+      )}
     </div>
   )
 }

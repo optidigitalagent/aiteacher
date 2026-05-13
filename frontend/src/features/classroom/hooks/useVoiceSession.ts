@@ -7,6 +7,7 @@ import {
   stopPCMCapture,
   playAudioChunk,
   stopAudioPlayback,
+  warmAudioContext,
   getScheduledAudioEndMs,
 } from '../services/voiceApi'
 
@@ -58,6 +59,11 @@ export function useVoiceSession({ send }: Options): VoiceState & {
       return
     }
 
+    // Warm the AudioContext BEFORE stopping current playback so the context
+    // created by the next teacher TTS response is already in 'running' state.
+    // This call runs synchronously inside the user-gesture callback chain,
+    // satisfying browser autoplay policy for future audio.
+    warmAudioContext()
     // Starting mic: stop any ongoing TTS first
     stopAudioPlayback()
     isSpeakingRef.current = false
