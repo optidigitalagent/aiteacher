@@ -483,8 +483,12 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     }
     await toggle()
     if (wasListening) {
-      // Mic just stopped — signal backend to finalize and process the pending transcript
+      // Mic just stopped — signal backend to finalize the transcript.
+      // Clear the answer field immediately so the submit arrow cannot fire
+      // exercise_answer for the same input before student_message echoes back.
       send({ type: 'mic_stop' })
+      setAnswer('')
+      lastTranscriptRef.current = ''
     }
   }, [lessonStarted, isSpeaking, isListening, toggle, send])
 

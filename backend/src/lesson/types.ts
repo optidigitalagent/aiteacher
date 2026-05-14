@@ -95,6 +95,7 @@ export interface ExerciseCursor {
   completedItems: number[]
   failedItems:    number[]
   wordBoxState?:  WordBoxState | null
+  items?:         string[]   // all items in this exercise for full-context display
 }
 
 export interface ErrorRecord {

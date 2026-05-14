@@ -22,117 +22,177 @@ const TYPE_LABEL: Record<string, string> = {
 export default function PaidExerciseCard({ cursor, feedback }: Props) {
   const {
     exerciseType, instruction, currentItem,
-    itemIndex, itemTotal, completedItems, failedItems, wordBoxState,
+    itemIndex, itemTotal, completedItems, failedItems, wordBoxState, items,
   } = cursor
 
   const typeLabel  = TYPE_LABEL[exerciseType] ?? exerciseType
-  const itemsTotal = itemTotal > 0 ? itemTotal : undefined
+  const itemsTotal = itemTotal > 0 ? itemTotal : (items?.length ?? 0)
+
+  // Display items: prefer the explicit items array, fall back to itemTotal count
+  const allItems = items && items.length > 0 ? items : null
 
   return (
     <div style={{
-      background: 'white', borderRadius: 20, padding: '22px 24px',
-      boxShadow: '0 4px 24px rgba(15,23,42,0.08)', maxWidth: 540, width: '100%',
+      background: 'white', borderRadius: 20,
+      boxShadow: '0 4px 24px rgba(15,23,42,0.08)', maxWidth: 580, width: '100%',
       border: feedback === 'correct' ? '2px solid #22c55e'
             : feedback === 'wrong'   ? '2px solid #ef4444'
             : '2px solid transparent',
       transition: 'border-color 0.25s',
+      display: 'flex', flexDirection: 'column',
+      maxHeight: '70vh', overflow: 'hidden',
     }}>
-      {/* Header row */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{
-            background: 'linear-gradient(135deg,#EEF0FF,#F3F0FF)',
-            color: '#6E7CFB', borderRadius: 8, padding: '4px 10px',
-            fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase',
-          }}>
-            {typeLabel}
-          </span>
-          {cursor.exerciseNumber > 0 && (
-            <span style={{ fontSize: 12, color: '#94A3B8', fontWeight: 700 }}>
-              Exercise {cursor.exerciseNumber}
+      {/* Scrollable body */}
+      <div style={{ overflowY: 'auto', padding: '22px 24px', flex: 1 }}>
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              background: 'linear-gradient(135deg,#EEF0FF,#F3F0FF)',
+              color: '#6E7CFB', borderRadius: 8, padding: '4px 10px',
+              fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase',
+            }}>
+              {typeLabel}
+            </span>
+            {cursor.exerciseNumber > 0 && (
+              <span style={{ fontSize: 12, color: '#94A3B8', fontWeight: 700 }}>
+                Exercise {cursor.exerciseNumber}
+              </span>
+            )}
+          </div>
+          {itemsTotal > 0 && (
+            <span style={{ fontSize: 12, color: '#94A3B8', fontWeight: 600 }}>
+              Item {itemIndex + 1} of {itemsTotal}
             </span>
           )}
         </div>
-        {itemsTotal !== undefined && (
-          <span style={{ fontSize: 12, color: '#94A3B8', fontWeight: 600 }}>
-            Item {itemIndex + 1} of {itemsTotal}
-          </span>
-        )}
-      </div>
 
-      {/* Exercise instruction */}
-      {instruction && (
-        <div style={{
-          fontSize: 13, color: '#64748B', fontWeight: 500, marginBottom: 14,
-          lineHeight: 1.55, fontStyle: 'italic',
-        }}>
-          {instruction}
-        </div>
-      )}
-
-      {/* Item progress dots */}
-      {itemsTotal !== undefined && itemsTotal > 1 && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-          {Array.from({ length: itemsTotal }, (_, i) => {
-            const done   = completedItems.includes(i)
-            const failed = failedItems.includes(i)
-            const active = i === itemIndex
-            return (
-              <div key={i} style={{
-                width: 28, height: 6, borderRadius: 3,
-                background: done && !failed ? '#22c55e'
-                          : failed          ? '#ef4444'
-                          : active          ? '#6E7CFB'
-                          : '#E6EAF2',
-                transition: 'background 0.2s',
-              }} />
-            )
-          })}
-        </div>
-      )}
-
-      {/* Current item text */}
-      <div style={{
-        background: 'linear-gradient(135deg,#F8F7FF,#FFF8F4)',
-        borderRadius: 14, padding: '14px 16px', marginBottom: 14,
-        fontSize: 15, color: '#0F172A', fontWeight: 600, lineHeight: 1.6,
-      }}>
-        {currentItem || '…'}
-      </div>
-
-      {/* Word box (vocabulary exercises) */}
-      {wordBoxState && wordBoxState.available.length > 0 && (
-        <div style={{ marginBottom: 4 }}>
-          <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Word box
+        {/* Exercise instruction — prominent, readable */}
+        {instruction && (
+          <div style={{
+            fontSize: 14, color: '#0F172A', fontWeight: 600, marginBottom: 16,
+            lineHeight: 1.6,
+            background: 'linear-gradient(135deg,#F8F7FF,#FFF8F4)',
+            borderRadius: 12, padding: '12px 14px',
+          }}>
+            {instruction}
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {wordBoxState.available.map((word) => {
-              const used = wordBoxState.used.includes(word)
+        )}
+
+        {/* Item progress dots */}
+        {itemsTotal > 1 && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+            {Array.from({ length: itemsTotal }, (_, i) => {
+              const done   = completedItems.includes(i)
+              const failed = failedItems.includes(i)
+              const active = i === itemIndex
               return (
-                <span key={word} style={{
-                  padding: '5px 11px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                  background: used ? '#F1F5F9' : 'linear-gradient(135deg,#EEF0FF,#F3F0FF)',
-                  color: used ? '#CBD5E1' : '#6E7CFB',
-                  textDecoration: used ? 'line-through' : 'none',
-                  border: used ? '1.5px solid #E6EAF2' : '1.5px solid #C7CBF9',
-                  transition: 'all 0.15s',
-                }}>
-                  {word}
-                </span>
+                <div key={i} style={{
+                  width: 28, height: 6, borderRadius: 3,
+                  background: done && !failed ? '#22c55e'
+                            : failed          ? '#ef4444'
+                            : active          ? '#6E7CFB'
+                            : '#E6EAF2',
+                  transition: 'background 0.2s',
+                }} />
               )
             })}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Feedback banner */}
+        {/* Current item — highlighted and prominent */}
+        <div style={{
+          background: 'linear-gradient(135deg,#EEF0FF,#F3F0FF)',
+          borderRadius: 14, padding: '14px 16px', marginBottom: 14,
+          fontSize: 16, color: '#3730a3', fontWeight: 700, lineHeight: 1.6,
+          border: '1.5px solid rgba(110,124,251,0.25)',
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#6E7CFB', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Current item
+          </span>
+          {currentItem || '…'}
+        </div>
+
+        {/* All items list — full exercise context */}
+        {allItems && allItems.length > 1 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{
+              fontSize: 11, color: '#94A3B8', fontWeight: 700, marginBottom: 8,
+              textTransform: 'uppercase', letterSpacing: '0.04em',
+            }}>
+              All items
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {allItems.map((item, i) => {
+                const done   = completedItems.includes(i)
+                const failed = failedItems.includes(i)
+                const active = i === itemIndex
+                return (
+                  <div key={i} style={{
+                    padding: '7px 12px', borderRadius: 9, fontSize: 13,
+                    background: active  ? 'rgba(110,124,251,0.10)'
+                              : done    ? 'rgba(34,197,94,0.07)'
+                              : failed  ? 'rgba(239,68,68,0.07)'
+                              : 'transparent',
+                    color: active  ? '#4338ca'
+                         : done    ? '#15803d'
+                         : failed  ? '#b91c1c'
+                         : '#64748B',
+                    fontWeight: active ? 700 : 400,
+                    borderLeft: active  ? '3px solid #6E7CFB'
+                               : done   ? '3px solid #22c55e'
+                               : failed ? '3px solid #ef4444'
+                               : '3px solid transparent',
+                    transition: 'all 0.15s',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    {done && !failed && <span style={{ fontSize: 12, color: '#22c55e' }}>✓</span>}
+                    {failed && <span style={{ fontSize: 12, color: '#ef4444' }}>✗</span>}
+                    {!done && !failed && <span style={{ fontSize: 11, color: '#CBD5E1', fontWeight: 700, minWidth: 16 }}>{i + 1}.</span>}
+                    <span>{item}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Word box (vocabulary exercises) */}
+        {wordBoxState && wordBoxState.available.length > 0 && (
+          <div style={{ marginBottom: 4 }}>
+            <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Word box
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {wordBoxState.available.map((word) => {
+                const used = wordBoxState.used.includes(word)
+                return (
+                  <span key={word} style={{
+                    padding: '5px 11px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                    background: used ? '#F1F5F9' : 'linear-gradient(135deg,#EEF0FF,#F3F0FF)',
+                    color: used ? '#CBD5E1' : '#6E7CFB',
+                    textDecoration: used ? 'line-through' : 'none',
+                    border: used ? '1.5px solid #E6EAF2' : '1.5px solid #C7CBF9',
+                    transition: 'all 0.15s',
+                  }}>
+                    {word}
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Feedback banner — outside scroll area so always visible */}
       {feedback && (
         <div style={{
-          marginTop: 14, borderRadius: 10, padding: '9px 14px',
+          borderTop: '1px solid #F1F5F9',
+          padding: '10px 24px',
           background: feedback === 'correct' ? '#f0fdf4' : '#fef2f2',
           color:      feedback === 'correct' ? '#16a34a' : '#dc2626',
           fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8,
+          borderRadius: '0 0 20px 20px',
         }}>
           <span style={{ fontSize: 16 }}>{feedback === 'correct' ? '✓' : '✗'}</span>
           {feedback === 'correct' ? 'Correct!' : 'Not quite — listen to the teacher.'}

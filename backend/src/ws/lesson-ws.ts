@@ -458,20 +458,28 @@ async function resumeLesson(
         console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
         return
       }
-      if (!shouldProcessTranscript(transcript)) return
+      // mic_stop pending: combine accumulated text with new utterance, then finalize
       if (meta.pendingMicStop) {
-        meta.pendingMicStop    = false
-        meta.pendingTranscript = ''
-        send(ws, { type: 'student_message', text: transcript })
-        processInput(ws, meta, transcript).catch((err: unknown) =>
-          console.error('[paid-lesson] processInput error (stt-micstop resume):', err))
-      } else {
-        meta.pendingTranscript = meta.pendingTranscript
+        const fullText = (meta.pendingTranscript
           ? meta.pendingTranscript + ' ' + transcript
           : transcript
-        // Send full accumulated transcript so the frontend input never visually resets
-        send(ws, { type: 'transcript', text: meta.pendingTranscript })
+        ).trim()
+        meta.pendingMicStop    = false
+        meta.pendingTranscript = ''
+        if (fullText) {
+          console.log(`[paid-lesson] student_turn_finalized chars=${fullText.length} trigger=mic_stop`)
+          send(ws, { type: 'student_message', text: fullText })
+          processInput(ws, meta, fullText).catch((err: unknown) =>
+            console.error('[paid-lesson] processInput error (stt-micstop resume):', err))
+        }
+        return
       }
+      if (!shouldProcessTranscript(transcript)) return
+      meta.pendingTranscript = meta.pendingTranscript
+        ? meta.pendingTranscript + ' ' + transcript
+        : transcript
+      // Send full accumulated transcript so the frontend input never visually resets
+      send(ws, { type: 'transcript', text: meta.pendingTranscript })
     },
     (interim) => {
       if (!meta.ttsActive) {
@@ -615,19 +623,27 @@ async function handleLessonStart(
         console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
         return
       }
-      if (!shouldProcessTranscript(transcript)) return
+      // mic_stop pending: combine accumulated text with new utterance, then finalize
       if (meta.pendingMicStop) {
-        meta.pendingMicStop    = false
-        meta.pendingTranscript = ''
-        send(ws, { type: 'student_message', text: transcript })
-        processInput(ws, meta, transcript).catch((err: unknown) =>
-          console.error('[paid-lesson] processInput error (stt-micstop):', err))
-      } else {
-        meta.pendingTranscript = meta.pendingTranscript
+        const fullText = (meta.pendingTranscript
           ? meta.pendingTranscript + ' ' + transcript
           : transcript
-        send(ws, { type: 'transcript', text: meta.pendingTranscript })
+        ).trim()
+        meta.pendingMicStop    = false
+        meta.pendingTranscript = ''
+        if (fullText) {
+          console.log(`[paid-lesson] student_turn_finalized chars=${fullText.length} trigger=mic_stop`)
+          send(ws, { type: 'student_message', text: fullText })
+          processInput(ws, meta, fullText).catch((err: unknown) =>
+            console.error('[paid-lesson] processInput error (stt-micstop):', err))
+        }
+        return
       }
+      if (!shouldProcessTranscript(transcript)) return
+      meta.pendingTranscript = meta.pendingTranscript
+        ? meta.pendingTranscript + ' ' + transcript
+        : transcript
+      send(ws, { type: 'transcript', text: meta.pendingTranscript })
     },
     (interim) => {
       if (!meta.ttsActive) {
@@ -802,24 +818,31 @@ async function handleFocusLessonStart(
         console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
         return
       }
+      // mic_stop pending: combine accumulated text with new utterance, then finalize
+      if (meta.pendingMicStop) {
+        const fullText = (meta.pendingTranscript
+          ? meta.pendingTranscript + ' ' + transcript
+          : transcript
+        ).trim()
+        meta.pendingMicStop    = false
+        meta.pendingTranscript = ''
+        if (fullText) {
+          console.log(`[paid-lesson] student_turn_finalized chars=${fullText.length} trigger=mic_stop`)
+          send(ws, { type: 'student_message', text: fullText })
+          processInput(ws, meta, fullText).catch((err: unknown) =>
+            console.error('[paid-lesson] processInput error (stt-micstop):', err))
+        }
+        return
+      }
       if (!shouldProcessTranscript(transcript)) {
         console.log(`[paid-lesson] ignored_audio_chunk reason=invalid_transcript chars=${transcript.trim().length}`)
         return
       }
-      if (meta.pendingMicStop) {
-        meta.pendingMicStop    = false
-        meta.pendingTranscript = ''
-        console.log(`[paid-lesson] student_turn_finalized chars=${transcript.trim().length} trigger=mic_stop`)
-        send(ws, { type: 'student_message', text: transcript })
-        processInput(ws, meta, transcript).catch((err: unknown) =>
-          console.error('[paid-lesson] processInput error (stt-micstop):', err))
-      } else {
-        meta.pendingTranscript = meta.pendingTranscript
-          ? meta.pendingTranscript + ' ' + transcript
-          : transcript
-        console.log(`[paid-lesson] stt_accumulated pending_chars=${meta.pendingTranscript.length}`)
-        send(ws, { type: 'transcript', text: meta.pendingTranscript })
-      }
+      meta.pendingTranscript = meta.pendingTranscript
+        ? meta.pendingTranscript + ' ' + transcript
+        : transcript
+      console.log(`[paid-lesson] stt_accumulated pending_chars=${meta.pendingTranscript.length}`)
+      send(ws, { type: 'transcript', text: meta.pendingTranscript })
     },
     (interim) => {
       if (!meta.ttsActive) {

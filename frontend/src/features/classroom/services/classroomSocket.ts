@@ -20,6 +20,7 @@ export interface ExerciseCursor {
   completedItems: number[]
   failedItems:    number[]
   wordBoxState?:  { available: string[]; used: string[] } | null
+  items?:         string[]   // all items for full-context display
 }
 
 export interface BackendExercise {

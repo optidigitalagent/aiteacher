@@ -161,6 +161,7 @@ export class LessonOrchestrator {
         completedItems: state.completedItems,
         failedItems:    state.failedItems,
         wordBoxState:   state.wordBoxState,
+        items:          aiResp.exercise.items,
       }
     }
 
