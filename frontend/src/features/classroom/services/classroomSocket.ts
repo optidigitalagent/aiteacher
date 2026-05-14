@@ -21,6 +21,7 @@ export interface ExerciseCursor {
   failedItems:    number[]
   wordBoxState?:  { available: string[]; used: string[] } | null
   items?:         string[]   // all items for full-context display
+  options?:       string[]   // answer word bank (matching/vocabulary) — visible to student
 }
 
 export interface BackendExercise {
@@ -33,6 +34,7 @@ export interface BackendExercise {
   instruction?:   string
   skillFocus?:    string
   items?:         string[]
+  options?:       string[]   // answer word bank for matching/vocabulary exercises
 }
 
 export interface LessonSummary {

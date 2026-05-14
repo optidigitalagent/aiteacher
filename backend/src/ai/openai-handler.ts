@@ -69,6 +69,15 @@ function parseExercise(raw: unknown): ExerciseData | null {
     correct_answer: e['correct_answer'],
     hint:           typeof e['hint'] === 'string' ? e['hint'] : '',
     difficulty:     typeof e['difficulty'] === 'number' ? e['difficulty'] : 0.3,
+    exerciseNumber: typeof e['exerciseNumber'] === 'number' ? e['exerciseNumber'] : undefined,
+    instruction:    typeof e['instruction'] === 'string' ? e['instruction'] : undefined,
+    skillFocus:     typeof e['skillFocus'] === 'string' ? e['skillFocus'] : undefined,
+    items:          Array.isArray(e['items'])
+      ? (e['items'] as unknown[]).filter((i): i is string => typeof i === 'string')
+      : undefined,
+    options:        Array.isArray(e['options'])
+      ? (e['options'] as unknown[]).filter((i): i is string => typeof i === 'string')
+      : undefined,
   }
 }
 

@@ -466,6 +466,8 @@ async function resumeLesson(
         ).trim()
         meta.pendingMicStop    = false
         meta.pendingTranscript = ''
+        // Clear STT buffer so late Deepgram events don't bleed into the next turn
+        meta.stt?.clearBuffer()
         if (fullText) {
           console.log(`[paid-lesson] student_turn_finalized chars=${fullText.length} trigger=mic_stop`)
           send(ws, { type: 'student_message', text: fullText })
@@ -631,6 +633,7 @@ async function handleLessonStart(
         ).trim()
         meta.pendingMicStop    = false
         meta.pendingTranscript = ''
+        meta.stt?.clearBuffer()
         if (fullText) {
           console.log(`[paid-lesson] student_turn_finalized chars=${fullText.length} trigger=mic_stop`)
           send(ws, { type: 'student_message', text: fullText })
@@ -826,6 +829,7 @@ async function handleFocusLessonStart(
         ).trim()
         meta.pendingMicStop    = false
         meta.pendingTranscript = ''
+        meta.stt?.clearBuffer()
         if (fullText) {
           console.log(`[paid-lesson] student_turn_finalized chars=${fullText.length} trigger=mic_stop`)
           send(ws, { type: 'student_message', text: fullText })
@@ -951,6 +955,7 @@ async function processInput(
         instruction:    result.exercise.instruction,
         skillFocus:     result.exercise.skillFocus,
         items:          result.exercise.items,
+        options:        result.exercise.options,
       },
     })
   }
@@ -1305,6 +1310,7 @@ export function attachLessonWS(server: Server): void {
               meta.pendingTranscript = ''
               meta.pendingMicStop    = false
               if (shouldProcessTranscript(pending)) {
+                meta.stt?.clearBuffer()
                 console.log(`[paid-lesson] student_turn_finalized chars=${pending.length} trigger=mic_stop_flush`)
                 send(ws, { type: 'student_message', text: pending })
                 await processInput(ws, meta, pending)

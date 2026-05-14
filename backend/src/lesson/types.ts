@@ -96,6 +96,7 @@ export interface ExerciseCursor {
   failedItems:    number[]
   wordBoxState?:  WordBoxState | null
   items?:         string[]   // all items in this exercise for full-context display
+  options?:       string[]   // answer word bank (matching/vocabulary) — visible to student
 }
 
 export interface ErrorRecord {
@@ -128,6 +129,7 @@ export interface ExerciseData {
   instruction?:    string  // what the student must do, e.g. "Complete each sentence with the correct form"
   skillFocus?:     string  // grammar/skill being practiced
   items?:          string[] // ALL items of this exercise for card display (["1. text", "2. text", …])
+  options?:        string[] // answer word bank for matching/vocabulary exercises (visible to student)
 }
 
 export interface OrchestratorResult {

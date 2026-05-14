@@ -224,6 +224,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   // Tracks the last transcript value seen in onMessageRef so the 'transcript'
   // handler can compare against it to avoid overwriting manually typed text.
   const lastTranscriptRef = useRef('')
+  // Set true when mic_stop is sent; reset false when student_message echoes back.
+  // Prevents late Deepgram UtteranceEnd events from repopulating the answer field
+  // with the just-sent transcript after the student's turn is already being processed.
+  const awaitingStudentMessageRef = useRef(false)
 
   // ── WS message handler ────────────────────────────────────────────────────
   const onMessageRef = useRef<(msg: BackendMessage) => void>(() => {})
@@ -265,6 +269,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         }
         break
       case 'transcript': {
+        // Guard: if we already sent mic_stop and are waiting for student_message echo,
+        // discard any late UtteranceEnd transcripts — the turn is already in flight.
+        if (awaitingStudentMessageRef.current) break
         // Mirror Deepgram transcript directly into the answer field.
         // Guard: don't overwrite text the student typed manually (i.e. answer
         // is non-empty AND differs from the previous transcript value).
@@ -280,6 +287,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       case 'section_card':
         break
       case 'student_message':
+        awaitingStudentMessageRef.current = false  // turn is now processing — unblock transcript handler
         lastTranscriptRef.current = ''
         pushUser(msg.text)
         setAnswer('')       // clear stale STT transcript from input field
@@ -405,6 +413,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   // ── Event handlers ────────────────────────────────────────────────────────
   const handleCheck = useCallback(() => {
     if (!answer.trim() || !question) return
+    if (awaitingStudentMessageRef.current) return  // mic turn already in flight — don't double-fire
     pushUser(answer)
     setTyping()
     submitAnswer(answer)
@@ -486,6 +495,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       // Mic just stopped — signal backend to finalize the transcript.
       // Clear the answer field immediately so the submit arrow cannot fire
       // exercise_answer for the same input before student_message echoes back.
+      awaitingStudentMessageRef.current = true  // block late transcript events until echo arrives
       send({ type: 'mic_stop' })
       setAnswer('')
       lastTranscriptRef.current = ''

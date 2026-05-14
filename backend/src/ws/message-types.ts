@@ -95,6 +95,7 @@ export interface OutboundExercise {
     instruction?:    string    // what the student must do
     skillFocus?:     string    // grammar/skill being practiced
     items?:          string[]  // sub-items for multi-part exercises
+    options?:        string[]  // answer word bank (matching/vocabulary — visible to student)
   }
 }
 

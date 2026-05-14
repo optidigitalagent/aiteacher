@@ -22,7 +22,7 @@ const TYPE_LABEL: Record<string, string> = {
 export default function PaidExerciseCard({ cursor, feedback }: Props) {
   const {
     exerciseType, instruction, currentItem,
-    itemIndex, itemTotal, completedItems, failedItems, wordBoxState, items,
+    itemIndex, itemTotal, completedItems, failedItems, wordBoxState, items, options,
   } = cursor
 
   const typeLabel  = TYPE_LABEL[exerciseType] ?? exerciseType
@@ -153,6 +153,64 @@ export default function PaidExerciseCard({ cursor, feedback }: Props) {
                   </div>
                 )
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Matching layout — two-column when exercise is vocabulary_matching */}
+        {exerciseType === 'vocabulary_matching' && allItems && options && options.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Match these
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 10, color: '#94A3B8', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Questions</div>
+                {allItems.map((item, i) => (
+                  <div key={i} style={{
+                    padding: '7px 10px', borderRadius: 9, fontSize: 13, marginBottom: 4,
+                    background: i === itemIndex ? 'rgba(110,124,251,0.12)' : 'rgba(0,0,0,0.03)',
+                    color: i === itemIndex ? '#4338ca' : '#475569',
+                    fontWeight: i === itemIndex ? 700 : 400,
+                    borderLeft: i === itemIndex ? '3px solid #6E7CFB' : '3px solid transparent',
+                  }}>
+                    {item}
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: '#94A3B8', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Options</div>
+                {options.map((opt, i) => (
+                  <div key={i} style={{
+                    padding: '7px 10px', borderRadius: 9, fontSize: 13, marginBottom: 4,
+                    background: 'rgba(0,0,0,0.03)',
+                    color: '#475569',
+                  }}>
+                    {opt}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Answer options word bank — for non-matching exercises with a word bank */}
+        {exerciseType !== 'vocabulary_matching' && options && options.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Word bank
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {options.map((opt, i) => (
+                <span key={i} style={{
+                  padding: '5px 11px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                  background: 'linear-gradient(135deg,#EEF0FF,#F3F0FF)',
+                  color: '#6E7CFB',
+                  border: '1.5px solid #C7CBF9',
+                }}>
+                  {opt}
+                </span>
+              ))}
             </div>
           </div>
         )}
