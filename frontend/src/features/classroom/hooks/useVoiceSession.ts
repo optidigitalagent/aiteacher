@@ -29,9 +29,6 @@ export function useVoiceSession({ send }: Options): VoiceState & {
   const stopSpeakRef     = useRef<ReturnType<typeof setTimeout>>()
   // Mirrors isSpeaking but readable synchronously in callbacks (avoids stale closure)
   const isSpeakingRef    = useRef(false)
-  // Timestamp of last setSpeaking(true) — used to accept chunks within a 3s grace window
-  // even if isSpeakingRef hasn't been set yet (handles TCP ordering edge cases)
-  const lastSpeakingOnRef = useRef(0)
 
   const scheduleSpeakOff = useCallback((delayMs: number) => {
     clearTimeout(stopSpeakRef.current)
@@ -86,23 +83,14 @@ export function useVoiceSession({ send }: Options): VoiceState & {
   }, [isListening, send])
 
   // Called when backend sends an audio_chunk event (TTS streaming).
-  // Gate: discard chunks that arrive after interrupt or before teacher turn starts.
-  // Grace window: if isSpeakingRef is still false but setSpeaking(true) fired within
-  // the last 3s, accept the chunk — handles the edge case where the first audio_chunk
-  // arrives in the same event-loop tick as ai_text before the ref synchronises.
+  // Interrupt gating is handled upstream in ClassroomLayout (interruptSentRef).
+  // Here we only ensure speaking state is active — handles the race where audio_chunk
+  // arrives before isSpeakingRef is set by the ai_text handler.
   const onAudioChunk = useCallback((base64: string) => {
     if (!isSpeakingRef.current) {
-      const msSinceLastTurnStart = Date.now() - lastSpeakingOnRef.current
-      if (msSinceLastTurnStart > 3000) {
-        console.log('[paid-lesson] audio_chunk_discarded reason=not_speaking')
-        return
-      }
-      // Accept the chunk and recover the ref so subsequent chunks pass normally
       isSpeakingRef.current = true
+      setIsSpeaking(true)
     }
-    // 8s safety window: keeps isSpeaking alive between streaming chunks even if the
-    // network has a brief stall. teacher_turn_end will override this with the exact
-    // drain time via onTeacherTurnEnd, so we never linger longer than needed.
     scheduleSpeakOff(8000)
     void playAudioChunk(base64)
   }, [scheduleSpeakOff])
@@ -122,7 +110,6 @@ export function useVoiceSession({ send }: Options): VoiceState & {
   // Called by ClassroomLayout when AI starts/stops speaking (ai_text event)
   const setSpeaking = useCallback((v: boolean) => {
     isSpeakingRef.current = v
-    if (v) lastSpeakingOnRef.current = Date.now()
     setIsSpeaking(v)
     if (v) {
       // Fallback: if no audio chunks arrive, stop speaking indicator after 8s

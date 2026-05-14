@@ -194,7 +194,8 @@ const ANTI_CHAOS_PROTOCOL = `=== LESSON DISCIPLINE — NEVER BREAK THESE ===
    → Only advance when the student has answered the current item correctly.
 9. FRAGMENT INPUT: If student input is a fragment ("Because", "I think", "The second is", "OK"):
    → Do NOT react to it. Continue from your last question exactly as if it wasn't said.
-   → If in CONTEXT_INPUT and student said "ok/ready/go" → treat as readiness, proceed.`
+   → If in CONTEXT_INPUT and student said "ok/ready/go" → treat as readiness, proceed.
+10. EXERCISE CONTINUITY: After any clarification, side-question, or confusion-protocol response, ALWAYS return to the EXACT SAME exercise item. Say ONLY: "Now — Exercise [N], number [M]: [item text]." Do NOT re-read the exercise instruction. Do NOT re-introduce the exercise. Answered items are DONE — never re-ask them.`
 
 // ── Phase 4: Side-question recovery — enforces return to current agenda ────────
 
@@ -293,15 +294,24 @@ function buildFocusPhaseInstruction(state: LessonState, sectionType: string): st
   switch (state.phase) {
     case 'DIAGNOSTIC':
       return `PHASE: DIAGNOSTIC
-- Ask 1-2 warm-up questions about the section topic ("${state.lessonTopic}").
+
+READINESS SIGNALS — if the student's input matches ANY of these, transition IMMEDIATELY (no warm-up question):
+English: "ready", "I'm ready", "yes", "ok", "okay", "sure", "go", "begin", "start", "let's go", "go ahead"
+Russian: "готов", "готова", "да", "поехали", "начнём", "давай", "ок"
+→ speech: "Good." (one word only)
+→ next_action: "transition_to:CONTEXT_INPUT"
+→ Do NOT ask a diagnostic question. Do NOT explain anything. Transition immediately.
+
+If NOT a readiness signal:
+- Ask ONE short warm-up question about what the student already knows about "${state.lessonTopic}".
 - Keep it brief. Do NOT start teaching yet.
-- After the student responds once, signal: next_action: "transition_to:CONTEXT_INPUT"`
+- After ANY student response (including "I don't know"), signal: next_action: "transition_to:CONTEXT_INPUT"`
 
     case 'CONTEXT_INPUT':
       if (sectionType === 'Vocabulary' || sectionType === 'Listening' || sectionType === 'Reading') {
         return `PHASE: CONTEXT_INPUT (${sectionType} section)
 - Briefly introduce the section: topic is "${state.lessonTopic}".
-- Tell the student to open their book to section ${state.focusLesson ?? ''}.
+- Tell the student the exercises are on screen — you'll work through them together.
 - Since this is a ${sectionType} section (not a Grammar section), there is no rule to discover.
 - After the student confirms they are ready, signal: next_action: "transition_to:EXERCISES"`
       }
@@ -374,7 +384,7 @@ The student has seen the card. Now either start exercises or answer their specif
       if (sectionType === 'Vocabulary' || sectionType === 'Listening' || sectionType === 'Reading') {
         return `PHASE: RULE_DISCOVERY — but this is a ${sectionType} section, not Grammar.
 - Immediately signal: next_action: "transition_to:EXERCISES"
-- Your speech: "Let's go straight to the exercises. Open your book to section ${state.focusLesson ?? ''}."`
+- Your speech: "Let's go straight to the exercises. I'll show you each one on screen."`
       }
       return `PHASE: RULE_DISCOVERY — student discovers the rule through your questions. You confirm. Never state first.
 

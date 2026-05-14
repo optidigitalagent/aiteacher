@@ -246,7 +246,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         }
         break
       case 'audio_chunk':
-        onAudioChunk(msg.data)
+        if (!interruptSentRef.current) {
+          onAudioChunk(msg.data)
+        }
         break
       case 'exercise':
         onExercise(msg.exercise)

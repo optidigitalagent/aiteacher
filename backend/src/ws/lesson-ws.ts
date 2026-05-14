@@ -67,55 +67,23 @@ function shouldProcessTranscript(text: string): boolean {
 }
 
 function buildFocusGreeting(
-  unit: number,
+  _unit: number,
   section: string | undefined,
   grammarTarget: string,
-  textbookUnit: string,
+  _textbookUnit: string,
   teacherId?: string,
 ): string {
   const tName = teacherDisplayName(teacherId)
 
   if (!section) {
-    return `Hello! I'm ${tName}. Today we're working on ${textbookUnit}. Grammar focus: ${grammarTarget}. Tell me one example sentence using this grammar — don't worry if it's not perfect.`
+    return `Hi! I'm ${tName}. Give me one example sentence using ${grammarTarget}.`
   }
 
-  // Student Book is the authoritative source for the section title and content.
-  // Fall back to catalog entry if OCR data is unavailable (units 2–8 structured sections).
-  const sb = getFocusStudentBookSection(section)
-  const catalogEntry  = getCatalogEntry(section)
-  const sectionTitle  = sb?.lessonTitle ?? catalogEntry?.topic ?? section
-  const grammarFocus  = sb?.grammarFocus ?? catalogEntry?.grammarFocus ?? grammarTarget
+  const sb           = getFocusStudentBookSection(section)
+  const catalogEntry = getCatalogEntry(section)
+  const grammarFocus = sb?.grammarFocus ?? catalogEntry?.grammarFocus ?? grammarTarget
 
-  let body = `Today we're on section ${section} — "${sectionTitle}".`
-
-  if (grammarFocus) {
-    body += ` The grammar focus is: ${grammarFocus}.`
-  }
-
-  // Teacher Book is used only for structural info: which exercises exist and
-  // whether there is a listening task. Never for section title or page numbers.
-  const tb = getTeachersBookSection(unit, section)
-  if (tb.found && tb.section) {
-    const s = tb.section
-    const hasAnswerKeys = s.answerKeys.filter(k => !k.isVideoActivity).length > 0
-    const isListening   = s.answerKeys.some(k => k.isListeningActivity)
-    const exercises     = s.answerKeys
-      .filter(k => !k.isVideoActivity)
-      .map(k => k.exerciseRef)
-      .join(', ')
-
-    if (hasAnswerKeys) {
-      body += ` We'll work through: ${exercises}.`
-    }
-
-    if (isListening) {
-      body += ` There's a listening task — I'll guide you through the audio material.`
-    }
-  }
-
-  body += ` We'll work through the exercises together on screen. To start: what do you already know about ${grammarFocus ?? grammarTarget}? Give me one example sentence.`
-
-  return `Hello! I'm ${tName}, your English teacher. ${body}`
+  return `Hi! I'm ${tName}. Section ${section}${grammarFocus ? ` — ${grammarFocus}` : ''}. Give me one example sentence using this grammar.`
 }
 
 // ── Phase 5: Map exercise type to ErrorRecord errorType ──────────────────────
