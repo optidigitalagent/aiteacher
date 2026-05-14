@@ -742,19 +742,28 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                     <button
                       onClick={handleReady}
                       style={{
-                        marginTop: 20, width: '100%', padding: '12px 20px',
+                        marginTop: 20, width: '100%', padding: '14px 20px',
                         background: 'linear-gradient(135deg,#6E7CFB,#9B8CFF)',
-                        color: 'white', border: 'none', borderRadius: 12,
-                        fontSize: 15, fontWeight: 700, cursor: 'pointer',
+                        color: 'white', border: 'none', borderRadius: 14,
+                        fontSize: 16, fontWeight: 700, cursor: 'pointer',
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                        boxShadow: '0 4px 16px rgba(110,124,251,0.35)',
-                        transition: 'opacity 0.15s',
+                        boxShadow: '0 6px 20px rgba(110,124,251,0.40)',
+                        transition: 'transform 0.15s, opacity 0.15s',
+                        letterSpacing: '-0.1px',
                       }}
-                      onMouseOver={e => (e.currentTarget.style.opacity = '0.88')}
-                      onMouseOut={e => (e.currentTarget.style.opacity = '1')}
+                      onMouseOver={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.opacity = '0.92' }}
+                      onMouseOut={e => { (e.currentTarget as HTMLButtonElement).style.transform = ''; (e.currentTarget as HTMLButtonElement).style.opacity = '1' }}
                     >
                       Yes, I&apos;m ready <span style={{ fontSize: 18 }}>→</span>
                     </button>
+                  ) : readyClicked && currentPhase === 'DIAGNOSTIC' ? (
+                    <div style={{
+                      marginTop: 18, fontSize: 13, color: '#6E7CFB', fontWeight: 600,
+                      display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                      <div style={{ width: 14, height: 14, border: '2px solid #EEF0FF', borderTopColor: '#6E7CFB', borderRadius: '50%', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
+                      Starting your first exercise…
+                    </div>
                   ) : (
                     <div style={{
                       marginTop: 18, fontSize: 12, color: '#94A3B8', fontWeight: 500,

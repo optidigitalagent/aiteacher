@@ -76,14 +76,18 @@ function buildFocusGreeting(
   const tName = teacherDisplayName(teacherId)
 
   if (!section) {
-    return `Hi! I'm ${tName}. Give me one example sentence using ${grammarTarget}.`
+    return `Hi! I'm ${tName}, your English teacher. Today we're working on ${grammarTarget}. I'll guide you through the exercises step by step. Just let me know when you're ready to start.`
   }
 
   const sb           = getFocusStudentBookSection(section)
   const catalogEntry = getCatalogEntry(section)
   const grammarFocus = sb?.grammarFocus ?? catalogEntry?.grammarFocus ?? grammarTarget
+  const lessonTitle  = sb?.lessonTitle ?? catalogEntry?.topic ?? ''
 
-  return `Hi! I'm ${tName}. Section ${section}${grammarFocus ? ` — ${grammarFocus}` : ''}. Give me one example sentence using this grammar.`
+  const topicPart = lessonTitle ? ` Today's topic is "${lessonTitle}."` : ''
+  const focusPart = grammarFocus !== grammarTarget ? ` We'll practise ${grammarFocus}.` : ''
+
+  return `Hi! I'm ${tName}.${topicPart} Section ${section}${grammarFocus ? ` covers ${grammarFocus}` : ''}.${focusPart} We'll work through the exercises together and I'll help at every step. Let me know when you're ready!`
 }
 
 // ── Phase 5: Map exercise type to ErrorRecord errorType ──────────────────────

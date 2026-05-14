@@ -295,90 +295,96 @@ function buildFocusPhaseInstruction(state: LessonState, sectionType: string): st
     case 'DIAGNOSTIC':
       return `PHASE: DIAGNOSTIC
 
-READINESS SIGNALS — if the student's input matches ANY of these, transition IMMEDIATELY (no warm-up question):
+READINESS SIGNALS — if the student's input matches ANY of these, jump DIRECTLY to Exercise 1 (no warm-up):
 English: "ready", "I'm ready", "yes", "ok", "okay", "sure", "go", "begin", "start", "let's go", "go ahead"
 Russian: "готов", "готова", "да", "поехали", "начнём", "давай", "ок"
-→ speech: "Good." (one word only)
-→ next_action: "transition_to:CONTEXT_INPUT"
-→ Do NOT ask a diagnostic question. Do NOT explain anything. Transition immediately.
+
+When readiness signal detected:
+→ speech (MAX 2 sentences): "Let's go. Exercise 1: [instruction in one sentence]. Number 1: [first item text]."
+→ Fill the "exercise" field with Exercise 1, item 1 from the Student Book content above:
+  {
+    "type": "[form_transformation|error_correction|reconstruction|fill_gap|free_production|reading|speaking_prompt]",
+    "question": "[FIRST ITEM TEXT ONLY — exact textbook text of item 1]",
+    "correct_answer": "[expected answer for item 1 from Teacher's Book]",
+    "hint": "[a category hint — not the answer]",
+    "difficulty": 0.5,
+    "exerciseNumber": 1,
+    "instruction": "[full textbook instruction for Exercise 1]",
+    "skillFocus": "[specific grammar/skill point]",
+    "items": ["1. full item 1 text", "2. full item 2 text", "... all items of Exercise 1"]
+  }
+→ next_action: "transition_to:EXERCISES"
+→ Do NOT show a grammar overview. Do NOT ask another question. Go straight to Exercise 1.
 
 If NOT a readiness signal:
 - Ask ONE short warm-up question about what the student already knows about "${state.lessonTopic}".
 - Keep it brief. Do NOT start teaching yet.
-- After ANY student response (including "I don't know"), signal: next_action: "transition_to:CONTEXT_INPUT"`
+- After ANY student response (including "I don't know"), signal: next_action: "transition_to:EXERCISES"`
 
     case 'CONTEXT_INPUT':
       if (sectionType === 'Vocabulary' || sectionType === 'Listening' || sectionType === 'Reading') {
-        return `PHASE: CONTEXT_INPUT (${sectionType} section)
-- Briefly introduce the section: topic is "${state.lessonTopic}".
-- Tell the student the exercises are on screen — you'll work through them together.
-- Since this is a ${sectionType} section (not a Grammar section), there is no rule to discover.
-- After the student confirms they are ready, signal: next_action: "transition_to:EXERCISES"`
+        return `PHASE: CONTEXT_INPUT (${sectionType} section) — IMMEDIATE START
+
+Introduce the section AND begin Exercise 1 in the same response.
+
+IN speech (MAX 2 sentences): One brief intro line + Exercise 1 first item.
+Example: "Section topic is [topic]. Exercise 1: [instruction]. Number 1: [first item]."
+
+No rule to discover — this is a ${sectionType} section, so go straight to exercises.
+
+Include Exercise 1 in the "exercise" field:
+{
+  "type": "[fill_gap|reading|speaking_prompt|vocabulary_matching|free_production]",
+  "question": "[FIRST ITEM TEXT ONLY]",
+  "correct_answer": "[expected answer]",
+  "hint": "[category hint]",
+  "difficulty": 0.5,
+  "exerciseNumber": 1,
+  "instruction": "[full textbook instruction]",
+  "skillFocus": "[specific skill]",
+  "items": ["1. item text", "... all items"]
+}
+
+RETURN: next_action: "transition_to:EXERCISES"
+Do NOT ask the student if they are ready. Just start.`
       }
-      // Grammar section — two-state flow to prevent overview loop
-      if (!state.overviewShown) {
-        return `PHASE: CONTEXT_INPUT — GRAMMAR OVERVIEW (show exactly ONCE this lesson)
+      // Grammar section — show overview card and immediately begin Exercise 1
+      return `PHASE: CONTEXT_INPUT — GRAMMAR OVERVIEW + IMMEDIATE START
 
-This is the FIRST response for this grammar section. Do this ONE time only.
+Show the grammar overview card AND begin Exercise 1 in the same response.
 
-IN speech: One short intro line, e.g. "Here's what we're covering today —"
+IN speech (MAX 2 sentences): One brief intro line + "Exercise 1: [instruction]. Number 1: [first item]."
+Example: "Here's today's grammar focus. Exercise 1: transform each sentence. Number 1: [first item text]."
 
 IN display_text: Present the GRAMMAR OVERVIEW CARD:
 
-**Today's focus:** [exact grammar name from the grammarFocus field in Student Book data above]
+**Today's focus:** [exact grammar name from grammarFocus in Student Book data above]
 **Why it matters:** [one real-life sentence — when do speakers NEED this grammar?]
 **Key forms:**
-[Derive 2–4 lines from the OCR text above. Format each line as:]
-  [Name]: [formula] → "[short example]"
-[ONLY include forms that appear in THIS section's OCR text — never invent]
+[2–4 lines from the OCR text — format: Name: formula → "short example"]
+[ONLY forms that appear in THIS section's OCR text — never invent]
 **Common mistake:** [❌ wrong → ✅ correct — from OCR or Teacher's Book]
 
-After the card in speech: "Take a look. Ready to start?"
+Then include Exercise 1 in the "exercise" field:
+{
+  "type": "[form_transformation|error_correction|reconstruction|fill_gap|free_production]",
+  "question": "[FIRST ITEM TEXT ONLY — exact textbook text of item 1]",
+  "correct_answer": "[expected answer for item 1 from Teacher's Book]",
+  "hint": "[category hint — not the answer]",
+  "difficulty": 0.5,
+  "exerciseNumber": 1,
+  "instruction": "[full textbook instruction for Exercise 1]",
+  "skillFocus": "[specific grammar point]",
+  "items": ["1. full item text", "2. full item text", "... all items"]
+}
 
-RETURN: next_action: "overview_shown"
+RETURN: next_action: "transition_to:EXERCISES"
 
-FORBIDDEN — do NOT do any of these:
-- Ask "Which of these forms looks least familiar?"
+FORBIDDEN:
 - Ask "Open your book to page X"
-- Return next_action: "continue_phase" or "student_confirmed_reading"
-- Show more than one card or split the overview across multiple turns
-The overview is shown ONCE. The student's next reply triggers readiness detection.`
-      }
-
-      // Overview already shown — detect readiness or confusion, never repeat the card
-      return `PHASE: CONTEXT_INPUT — OVERVIEW SHOWN, AWAITING START
-
-The grammar overview card has already been presented this lesson.
-DO NOT show it again. DO NOT say "Before we start..." or "Let me break it down..." or repeat the card.
-
-━━━ READINESS SIGNALS (ANY of these → go to exercises immediately) ━━━
-English:  ok, okay, yes, yeah, yep, sure, right, got it, understand, understood,
-          good, fine, go, ready, let's go, let's start, start, begin, continue, next,
-          I'm ready, I understand, I see, sounds good, makes sense, clear
-Grammar topic: student names the grammar topic (e.g. "Present Simple", "questions")
-Russian: да, понял, поняла, готов, готова, хорошо, начнём, ок, всё понятно, давай
-
-━━━ CONFUSION SIGNALS (ONLY these trigger a brief explanation) ━━━
-"I don't understand", "don't understand", "confused", "explain", "can you explain",
-"what does X mean", "what is X", "I don't get it", "не понимаю", "объясни",
-"что значит", "как это работает", "I'm lost", "help"
-
-IF READINESS SIGNAL detected:
-→ speech: "Good. Exercise 1." (exactly this — short, direct)
-→ Include the FIRST item of Exercise 1 in the "exercise" field
-→ next_action: "transition_to:EXERCISES"
-
-IF CONFUSION SIGNAL about a specific form:
-→ Explain ONLY that form in 1–2 sentences. Show just the relevant rule line.
-→ End with: "Does that help? Ready to start?"
-→ next_action: "continue_phase"
-
-IF UNCLEAR (no signal either way):
-→ Ask once: "Ready to start Exercise 1?"
-→ next_action: "continue_phase"
-
-CRITICAL: Never re-present the full card. Never say "Here's a structured overview..."
-The student has seen the card. Now either start exercises or answer their specific question.`
+- Ask "Ready to start?" — just start
+- Show overview without also starting exercises
+The overview and Exercise 1 happen simultaneously in one response.`
 
     case 'RULE_DISCOVERY':
       if (sectionType === 'Vocabulary' || sectionType === 'Listening' || sectionType === 'Reading') {
