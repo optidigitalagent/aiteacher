@@ -27,7 +27,7 @@ const PHASE_INTRO: Record<LessonPhase, (s: LessonState) => string> = {
   DEEP_THINKING: (_) =>
     `Almost done! Hillary said: "It is not the mountain we conquer, but ourselves." Do you agree? Answer in 2–3 sentences, using past tense at least once.`,
   WRAP_UP: (s) =>
-    `Excellent lesson! You practised ${s.grammarTarget} and worked through real exercises. For homework: open your textbook, unit ${s.textbookUnit}, exercises 3 and 4. See you next lesson!`,
+    `Excellent lesson! You practised ${s.grammarTarget} and worked through real exercises. For homework: review the vocabulary we covered today and try to use it in conversation. See you next lesson!`,
   END: (_) =>
     `Lesson complete. Well done!`,
 }
@@ -162,6 +162,7 @@ export class LessonOrchestrator {
         failedItems:    state.failedItems,
         wordBoxState:   state.wordBoxState,
         items:          aiResp.exercise.items,
+        options:        aiResp.exercise.options,
       }
     }
 

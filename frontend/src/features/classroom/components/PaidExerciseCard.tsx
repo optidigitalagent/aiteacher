@@ -16,7 +16,12 @@ const TYPE_LABEL: Record<string, string> = {
   word_box:            'Word Box',
   reading:             'Reading',
   speaking_prompt:     'Speaking',
-  vocabulary_matching: 'Vocabulary',
+  vocabulary_matching: 'Match',
+  matching:            'Match',
+}
+
+function isMatchingExercise(exerciseType: string): boolean {
+  return exerciseType === 'vocabulary_matching' || exerciseType === 'matching'
 }
 
 export default function PaidExerciseCard({ cursor, feedback }: Props) {
@@ -157,8 +162,8 @@ export default function PaidExerciseCard({ cursor, feedback }: Props) {
           </div>
         )}
 
-        {/* Matching layout — two-column when exercise is vocabulary_matching */}
-        {exerciseType === 'vocabulary_matching' && allItems && options && options.length > 0 && (
+        {/* Matching layout — two-column when exercise has both left column items and right column options */}
+        {isMatchingExercise(exerciseType) && allItems && allItems.length > 0 && options && options.length > 0 && (
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Match these
@@ -195,7 +200,7 @@ export default function PaidExerciseCard({ cursor, feedback }: Props) {
         )}
 
         {/* Answer options word bank — for non-matching exercises with a word bank */}
-        {exerciseType !== 'vocabulary_matching' && options && options.length > 0 && (
+        {!isMatchingExercise(exerciseType) && options && options.length > 0 && (
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 11, color: '#94A3B8', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Word bank

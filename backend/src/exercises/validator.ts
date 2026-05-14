@@ -21,8 +21,14 @@ export async function validateAnswer(
     return { correct: true, score: 1.0, feedback: 'Exactly right!' }
   }
 
-  // Free production always needs AI (open-ended, many valid answers)
-  // Other types: AI for semantic evaluation of non-exact answers
+  // Structured exercises (form, correction, reconstruction, gap-fill, matching):
+  // Do NOT call AI evaluation — it can hallucinate and accept wrong answers.
+  // The teacherbook correct_answer is the authoritative source; require an exact match.
+  if (exercise.type !== 'free_production') {
+    return { correct: false, score: 0, feedback: 'Not quite — listen to the teacher for the correct form.' }
+  }
+
+  // Open-ended production tasks: use AI to evaluate the many valid answers.
   return aiEvaluate(exercise, studentAnswer)
 }
 
@@ -32,7 +38,8 @@ async function aiEvaluate(
 ): Promise<ValidationResult> {
   const apiKey = process.env.OPENAI_API_KEY ?? ''
   if (!apiKey) {
-    return { correct: true, score: 0.5, feedback: 'Answer recorded.' }
+    // Cannot evaluate without key — mark as incorrect so the teacher loop handles it.
+    return { correct: false, score: 0.5, feedback: 'Answer received.' }
   }
 
   const client = new OpenAI({ apiKey })

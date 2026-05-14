@@ -62,6 +62,14 @@ function parseExercise(raw: unknown): ExerciseData | null {
   if (!raw || typeof raw !== 'object') return null
   const e = raw as Record<string, unknown>
   if (typeof e['question'] !== 'string' || typeof e['correct_answer'] !== 'string') return null
+
+  const items = Array.isArray(e['items'])
+    ? (e['items'] as unknown[]).filter((i): i is string => typeof i === 'string')
+    : undefined
+  const options = Array.isArray(e['options'])
+    ? (e['options'] as unknown[]).filter((o): o is string => typeof o === 'string')
+    : undefined
+
   return {
     id:             '',
     type:           (e['type'] as ExerciseData['type']) ?? 'form_transformation',
@@ -72,6 +80,8 @@ function parseExercise(raw: unknown): ExerciseData | null {
     exerciseNumber: typeof e['exerciseNumber'] === 'number' ? e['exerciseNumber'] : undefined,
     instruction:    typeof e['instruction'] === 'string' ? e['instruction'] : undefined,
     skillFocus:     typeof e['skillFocus'] === 'string' ? e['skillFocus'] : undefined,
+    items:          items && items.length > 0 ? items : undefined,
+    options:        options && options.length > 0 ? options : undefined,
   }
 }
 
@@ -92,8 +102,8 @@ function parseSafe(text: string): AIResponse | null {
 
 function fallback(state: LessonState): AIResponse {
   return {
-    speech:        "I'm thinking... could you repeat that?",
-    display_text:  "I'm thinking... could you repeat that?",
+    speech:        'Let me try that again. What did you say?',
+    display_text:  'Let me try that again. What did you say?',
     next_action:   'continue_phase',
     exercise:      null,
     internal_note: `[fallback] parse error in phase ${state.phase}`,

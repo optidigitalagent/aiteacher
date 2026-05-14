@@ -49,6 +49,9 @@ export const InboundMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('mic_stop'),
   }),
   z.object({
+    type: z.literal('mic_start'),
+  }),
+  z.object({
     type:               z.literal('student_confused'),
     sectionId:          z.string().optional(),
     phase:              z.string().optional(),

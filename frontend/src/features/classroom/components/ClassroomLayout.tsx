@@ -499,6 +499,13 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       send({ type: 'mic_stop' })
       setAnswer('')
       lastTranscriptRef.current = ''
+    } else {
+      // Mic just started — reset any stuck guard from a previous turn where
+      // student_message never arrived (e.g. backend error mid-processing).
+      // This prevents transcripts from being silently blocked on the new turn.
+      awaitingStudentMessageRef.current = false
+      lastTranscriptRef.current = ''
+      send({ type: 'mic_start' })
     }
   }, [lessonStarted, isSpeaking, isListening, toggle, send])
 

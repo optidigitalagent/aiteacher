@@ -267,6 +267,8 @@ interface ClientMeta {
   pendingTranscript: string
   // True when mic_stop arrived before UtteranceEnd — process on next UtteranceEnd.
   pendingMicStop:    boolean
+  // Timeout handle: fires 2.5s after pendingMicStop if UtteranceEnd never arrives.
+  pendingMicStopTimeoutRef: ReturnType<typeof setTimeout> | null
   // Phase 11: tracks when THIS connection's billing period started.
   // Separate from lessonStartedAt (which is the original lesson wall-clock start
   // used for timeout/remaining-time calculations). Using lessonStartedAt for
@@ -460,6 +462,10 @@ async function resumeLesson(
       }
       // mic_stop pending: combine accumulated text with new utterance, then finalize
       if (meta.pendingMicStop) {
+        if (meta.pendingMicStopTimeoutRef) {
+          clearTimeout(meta.pendingMicStopTimeoutRef)
+          meta.pendingMicStopTimeoutRef = null
+        }
         const fullText = (meta.pendingTranscript
           ? meta.pendingTranscript + ' ' + transcript
           : transcript
@@ -627,6 +633,10 @@ async function handleLessonStart(
       }
       // mic_stop pending: combine accumulated text with new utterance, then finalize
       if (meta.pendingMicStop) {
+        if (meta.pendingMicStopTimeoutRef) {
+          clearTimeout(meta.pendingMicStopTimeoutRef)
+          meta.pendingMicStopTimeoutRef = null
+        }
         const fullText = (meta.pendingTranscript
           ? meta.pendingTranscript + ' ' + transcript
           : transcript
@@ -823,6 +833,10 @@ async function handleFocusLessonStart(
       }
       // mic_stop pending: combine accumulated text with new utterance, then finalize
       if (meta.pendingMicStop) {
+        if (meta.pendingMicStopTimeoutRef) {
+          clearTimeout(meta.pendingMicStopTimeoutRef)
+          meta.pendingMicStopTimeoutRef = null
+        }
         const fullText = (meta.pendingTranscript
           ? meta.pendingTranscript + ' ' + transcript
           : transcript
@@ -1258,6 +1272,7 @@ export function attachLessonWS(server: Server): void {
       interruptPending: false,
       pendingTranscript: '',
       pendingMicStop:    false,
+      pendingMicStopTimeoutRef: null,
       billingStartedAt: null,
     }
 
@@ -1304,11 +1319,28 @@ export function attachLessonWS(server: Server): void {
             meta.pendingMicStop    = false
             await processInput(ws, meta, msg.text)
             break
+          case 'mic_start': {
+            // New recording starting — reset any stale state from previous recording.
+            // Clears stuck pendingMicStop, stale transcript, and Deepgram buffer.
+            if (meta.pendingMicStopTimeoutRef) {
+              clearTimeout(meta.pendingMicStopTimeoutRef)
+              meta.pendingMicStopTimeoutRef = null
+            }
+            meta.pendingMicStop    = false
+            meta.pendingTranscript = ''
+            meta.stt?.clearBuffer()
+            console.log(`[paid-lesson] mic_start — state reset`)
+            break
+          }
           case 'mic_stop': {
             const pending = meta.pendingTranscript.trim()
             if (pending) {
               meta.pendingTranscript = ''
               meta.pendingMicStop    = false
+              if (meta.pendingMicStopTimeoutRef) {
+                clearTimeout(meta.pendingMicStopTimeoutRef)
+                meta.pendingMicStopTimeoutRef = null
+              }
               if (shouldProcessTranscript(pending)) {
                 meta.stt?.clearBuffer()
                 console.log(`[paid-lesson] student_turn_finalized chars=${pending.length} trigger=mic_stop_flush`)
@@ -1316,9 +1348,27 @@ export function attachLessonWS(server: Server): void {
                 await processInput(ws, meta, pending)
               }
             } else {
-              // Deepgram hasn't fired UtteranceEnd yet — process on next fire
+              // UtteranceEnd hasn't fired yet — wait for it, but set a 2.5s fallback
+              // so the turn isn't silently lost if Deepgram is slow or audio ends cleanly.
               meta.pendingMicStop = true
               console.log(`[paid-lesson] mic_stop_waiting_utterance_end`)
+              if (meta.pendingMicStopTimeoutRef) clearTimeout(meta.pendingMicStopTimeoutRef)
+              meta.pendingMicStopTimeoutRef = setTimeout(() => {
+                if (!meta.pendingMicStop) return  // already handled by UtteranceEnd
+                meta.pendingMicStop             = false
+                meta.pendingMicStopTimeoutRef   = null
+                const delayed = meta.pendingTranscript.trim()
+                meta.pendingTranscript = ''
+                meta.stt?.clearBuffer()
+                if (delayed && shouldProcessTranscript(delayed)) {
+                  console.log(`[paid-lesson] student_turn_finalized chars=${delayed.length} trigger=mic_stop_timeout`)
+                  send(ws, { type: 'student_message', text: delayed })
+                  processInput(ws, meta, delayed).catch((err: unknown) =>
+                    console.error('[paid-lesson] processInput error (mic_stop_timeout):', err))
+                } else {
+                  console.log(`[paid-lesson] mic_stop_timeout_no_text`)
+                }
+              }, 2500)
             }
             break
           }
@@ -1361,9 +1411,10 @@ export function attachLessonWS(server: Server): void {
     ws.on('close', () => {
       clearInterval(meta.heartbeatRef)
       clearTimeout(meta.timeoutRef)
-      if (meta.maxDurationRef)  clearTimeout(meta.maxDurationRef)
-      if (meta.warningRef)      clearTimeout(meta.warningRef)    // Phase 6
-      if (meta.timerUpdateRef)  clearInterval(meta.timerUpdateRef) // Phase 2 recovery
+      if (meta.maxDurationRef)           clearTimeout(meta.maxDurationRef)
+      if (meta.warningRef)               clearTimeout(meta.warningRef)
+      if (meta.timerUpdateRef)           clearInterval(meta.timerUpdateRef)
+      if (meta.pendingMicStopTimeoutRef) clearTimeout(meta.pendingMicStopTimeoutRef)
       meta.ttsController?.abort()
       meta.stt?.close()
       clients.delete(ws)
