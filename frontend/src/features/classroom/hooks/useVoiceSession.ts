@@ -91,7 +91,10 @@ export function useVoiceSession({ send }: Options): VoiceState & {
       console.log('[paid-lesson] audio_chunk_discarded reason=not_speaking')
       return
     }
-    scheduleSpeakOff(2000)
+    // 8s safety window: keeps isSpeaking alive between streaming chunks even if the
+    // network has a brief stall. teacher_turn_end will override this with the exact
+    // drain time via onTeacherTurnEnd, so we never linger longer than needed.
+    scheduleSpeakOff(8000)
     void playAudioChunk(base64)
   }, [scheduleSpeakOff])
 

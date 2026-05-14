@@ -109,11 +109,11 @@ function buildFocusGreeting(
     }
 
     if (isListening) {
-      body += ` There's a listening task — you'll play the audio from your book and tell me what you hear. I have the answer key.`
+      body += ` There's a listening task — I'll guide you through the audio material.`
     }
   }
 
-  body += ` We'll work through the exercises together on screen — no physical book needed. When you're ready to begin, click the "I'm ready" button below.`
+  body += ` We'll work through the exercises together on screen. To start: what do you already know about ${grammarFocus ?? grammarTarget}? Give me one example sentence.`
 
   return `Hello! I'm ${tName}, your English teacher. ${body}`
 }
@@ -459,7 +459,11 @@ async function resumeLesson(
   // Phase 2 recovery: start periodic remaining-time broadcast using restored start time
   startTimerBroadcast(ws, meta)
 
-  // Restart STT for new connection (click-to-send mode)
+  // Restart STT for new connection (click-to-send mode).
+  // Always close the previous STT first to avoid duplicate Deepgram connections
+  // and queue-flush errors if the old instance is still in CONNECTING state.
+  meta.stt?.close()
+  meta.stt              = null
   meta.pendingTranscript = ''
   meta.pendingMicStop    = false
   meta.stt = new DeepgramSTT(
@@ -479,10 +483,18 @@ async function resumeLesson(
         meta.pendingTranscript = meta.pendingTranscript
           ? meta.pendingTranscript + ' ' + transcript
           : transcript
+        // Send full accumulated transcript so the frontend input never visually resets
+        send(ws, { type: 'transcript', text: meta.pendingTranscript })
       }
     },
     (interim) => {
-      if (!meta.ttsActive) send(ws, { type: 'transcript', text: interim })
+      if (!meta.ttsActive) {
+        // Prefix with already-finalized segments so frontend shows growing text, not a reset
+        const fullInterim = meta.pendingTranscript
+          ? meta.pendingTranscript + ' ' + interim
+          : interim
+        send(ws, { type: 'transcript', text: fullInterim })
+      }
     },
   )
 
@@ -628,17 +640,23 @@ async function handleLessonStart(
         meta.pendingTranscript = meta.pendingTranscript
           ? meta.pendingTranscript + ' ' + transcript
           : transcript
+        send(ws, { type: 'transcript', text: meta.pendingTranscript })
       }
     },
     (interim) => {
-      if (!meta.ttsActive) send(ws, { type: 'transcript', text: interim })
+      if (!meta.ttsActive) {
+        const fullInterim = meta.pendingTranscript
+          ? meta.pendingTranscript + ' ' + interim
+          : interim
+        send(ws, { type: 'transcript', text: fullInterim })
+      }
     },
   )
 
   // Phase 2 recovery: start periodic remaining-time broadcast
   startTimerBroadcast(ws, meta)
 
-  const greeting = `Hello! I'm Alex, your English teacher. Today we'll work on "${config.grammarTarget}" using the topic "${config.lessonTopic}". Let's start — tell me one thing you already know about this topic.`
+  const greeting = `Hello! I'm Alex, your English teacher. Today we'll work on "${config.grammarTarget}" — the topic is "${config.lessonTopic}". To begin: can you give me one example sentence using this grammar?`
 
   console.log(`[paid-lesson] lesson_start_new lessonId=${lessonId} session=${meta.sessionId} unit=${config.textbookUnit}`)
   send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: greeting })
@@ -814,10 +832,16 @@ async function handleFocusLessonStart(
           ? meta.pendingTranscript + ' ' + transcript
           : transcript
         console.log(`[paid-lesson] stt_accumulated pending_chars=${meta.pendingTranscript.length}`)
+        send(ws, { type: 'transcript', text: meta.pendingTranscript })
       }
     },
     (interim) => {
-      if (!meta.ttsActive) send(ws, { type: 'transcript', text: interim })
+      if (!meta.ttsActive) {
+        const fullInterim = meta.pendingTranscript
+          ? meta.pendingTranscript + ' ' + interim
+          : interim
+        send(ws, { type: 'transcript', text: fullInterim })
+      }
     },
   )
 
@@ -1277,7 +1301,11 @@ export function attachLessonWS(server: Server): void {
           }
           case 'audio_chunk':
             if (!meta.stt) {
-              console.log('[paid-lesson] ignored_audio_chunk reason=before_begin')
+              console.log(`[paid-lesson] ignored_audio_chunk reason=before_begin ws_state=${ws.readyState}`)
+              return
+            }
+            if (ws.readyState !== WebSocket.OPEN) {
+              console.log(`[paid-lesson] ignored_audio_chunk reason=ws_not_open ws_state=${ws.readyState}`)
               return
             }
             meta.stt.send(msg.data)

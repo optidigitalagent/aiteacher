@@ -47,8 +47,14 @@ export class DeepgramSTT {
 
     conn.on(LiveTranscriptionEvents.Open, () => {
       this.ready = true
-      for (const buf of this.queue) conn.send(toArrayBuffer(buf))
-      this.queue = []
+      const pending = this.queue.splice(0)
+      for (const buf of pending) {
+        try {
+          conn.send(toArrayBuffer(buf))
+        } catch (err) {
+          console.error('[stt] queue flush send error:', err)
+        }
+      }
       this.keepAliveRef = setInterval(() => conn.keepAlive(), 8_000)
     })
 
@@ -92,12 +98,23 @@ export class DeepgramSTT {
     this.conn = conn
   }
 
+  // Max 120 buffered chunks (~30 seconds at 4 chunks/s). Beyond this we drop
+  // oldest chunks to prevent unbounded memory growth during slow Deepgram connect.
+  private static readonly MAX_QUEUE = 120
+
   send(base64: string): void {
     if (!this.conn) return
     const buf = Buffer.from(base64, 'base64')
     if (this.ready) {
-      this.conn.send(toArrayBuffer(buf))
+      try {
+        this.conn.send(toArrayBuffer(buf))
+      } catch (err) {
+        console.error('[stt] send error (conn may be closing):', err)
+      }
     } else {
+      if (this.queue.length >= DeepgramSTT.MAX_QUEUE) {
+        this.queue.shift()  // drop oldest to prevent memory growth
+      }
       this.queue.push(buf)
     }
   }

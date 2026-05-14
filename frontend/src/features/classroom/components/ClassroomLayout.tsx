@@ -25,7 +25,7 @@ import {
 } from '../services/classroomSocket'
 import TipsDrawer from './TipsDrawer'
 import { useAuth, getStoredToken }      from '../../../context/AuthContext'
-import { warmAudioContext }              from '../services/voiceApi'
+import { warmAudioContext, getScheduledAudioEndMs } from '../services/voiceApi'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -232,12 +232,16 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
         clearTyping()
         pushAI(msg.text)
+        // Always mark the teacher as speaking so TTS audio is never silently discarded.
+        // When the student intentionally interrupted (interruptSentRef=true), keep the
+        // mic open — stopRecording() would close it mid-recording. The mic will close
+        // naturally on the NEXT ai_text once the student's recorded answer is processed.
+        setSpeaking(true)
         if (interruptSentRef.current) {
-          // Student already interrupted — mic is open, don't claim speaking or close mic
           interruptSentRef.current = false
+          // mic stays open — student is mid-recording after their interrupt
         } else {
-          setSpeaking(true)
-          stopRecording()  // auto-stop mic when teacher speaks — prevents echo capture
+          stopRecording()  // prevent echo when teacher speaks
         }
         break
       case 'audio_chunk':
@@ -462,10 +466,17 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     }
     warmAudioContext()
     const wasListening = isListening
-    if (isSpeaking && !isListening) {
-      console.log('[paid-lesson] mic_interrupt reason=student_wants_to_speak')
+    // Only send interrupt when TTS audio is actively playing (>500ms left).
+    // If the audio is just draining its final frames (≤500ms remaining), treat
+    // this as a normal mic-start — sending interrupt here would set interruptSentRef,
+    // which previously caused the teacher's next response TTS to be silently discarded.
+    const audioRemaining = getScheduledAudioEndMs()
+    if (isSpeaking && !isListening && audioRemaining > 500) {
+      console.log(`[paid-lesson] mic_interrupt reason=student_wants_to_speak audioRemainingMs=${Math.round(audioRemaining)}`)
       send({ type: 'interrupt' })
       interruptSentRef.current = true
+    } else if (isSpeaking && !isListening) {
+      console.log(`[paid-lesson] mic_start_no_interrupt reason=audio_draining audioRemainingMs=${Math.round(audioRemaining)}`)
     }
     await toggle()
     if (wasListening) {
