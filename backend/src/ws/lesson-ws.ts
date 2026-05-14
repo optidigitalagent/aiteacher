@@ -244,12 +244,16 @@ function startTimerBroadcast(ws: WebSocket, meta: ClientMeta): void {
   }
 
   meta.timerUpdateRef = setInterval(() => {
-    if (!meta.lessonStartedAt) return
-    const remaining = Math.max(0, MAX_LESSON_MS - (Date.now() - meta.lessonStartedAt))
-    send(ws, { type: 'lesson_timer_update', remainingMs: remaining })
-    if (remaining <= 0) {
-      clearInterval(meta.timerUpdateRef!)
-      meta.timerUpdateRef = null
+    try {
+      if (!meta.lessonStartedAt) return
+      const remaining = Math.max(0, MAX_LESSON_MS - (Date.now() - meta.lessonStartedAt))
+      send(ws, { type: 'lesson_timer_update', remainingMs: remaining })
+      if (remaining <= 0) {
+        clearInterval(meta.timerUpdateRef!)
+        meta.timerUpdateRef = null
+      }
+    } catch (err) {
+      console.error('[ws] timer broadcast error (ignored):', (err instanceof Error ? err.message : err))
     }
   }, 60_000)
 }
@@ -312,7 +316,17 @@ function findActiveLessonOwner(lessonId: string, exclude: WebSocket): WebSocket 
 }
 
 function send(ws: WebSocket, msg: OutboundMessage): void {
-  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
+  if (ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.send(JSON.stringify(msg))
+    } catch (err) {
+      // ws.send() can throw if the socket transitions to CLOSING between the
+      // readyState check and the actual send (race on event loop boundary).
+      // Log and continue — do not let the error escape into an unguarded caller
+      // (e.g. setInterval) where it would become an uncaughtException and crash.
+      console.error('[ws] send error (ignored):', (err instanceof Error ? err.message : err))
+    }
+  }
 }
 
 function resetInactivityTimer(ws: WebSocket, meta: ClientMeta): void {
@@ -1030,8 +1044,12 @@ async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise
     // and disable the mic until the queued audio actually finishes playing.
     send(ws, { type: 'teacher_turn_end' })
   } catch (err: unknown) {
-    if (err instanceof Error && err.name !== 'AbortError') {
-      console.error('[ws] TTS error:', err.message)
+    const isAbort = err instanceof Error && err.name === 'AbortError'
+    if (!isAbort) {
+      console.error('[ws] TTS error:', err instanceof Error ? err.message : err)
+      // Send teacher_turn_end so the frontend mic lifecycle completes even on TTS failure.
+      // Without this the frontend stays in isSpeaking=true forever and the mic never enables.
+      send(ws, { type: 'teacher_turn_end' })
     }
     // Do NOT send teacher_turn_end on abort — frontend already handles interruption
   } finally {
@@ -1208,7 +1226,11 @@ export function attachLessonWS(server: Server): void {
     // ──────────────────────────────────────────────────────────────────────
 
     const heartbeatRef = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.ping()
+      try {
+        if (ws.readyState === WebSocket.OPEN) ws.ping()
+      } catch (err) {
+        console.error('[ws] ping error (ignored):', (err instanceof Error ? err.message : err))
+      }
     }, HEARTBEAT_INTERVAL_MS)
 
     const meta: ClientMeta = {

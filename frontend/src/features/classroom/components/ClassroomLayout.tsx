@@ -51,6 +51,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const [wsConnectError,  setWsConnectError]  = useState<string | null>(null)
   const [wsDisconnected,  setWsDisconnected]  = useState(false)
   const [lessonTakenOver, setLessonTakenOver] = useState(false)
+  const [readyClicked,    setReadyClicked]    = useState(false)
   const lessonStartedRef = useRef(false)
 
   // ── Production hooks (always called — rules of hooks) ────────────────────
@@ -511,11 +512,13 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   }, [helpInputValue, demo])
 
   const handleReady = useCallback(() => {
+    if (readyClicked) return
+    setReadyClicked(true)
     const readyText = "I'm ready."
     pushUser(readyText)
     setTyping()
     send({ type: 'text_message', text: readyText })
-  }, [pushUser, setTyping, send])
+  }, [readyClicked, pushUser, setTyping, send])
 
   const questionForPanel = question
     ? { ...question, answer: confirmedAnswer }
@@ -694,28 +697,6 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                   <div style={{ fontSize: 15, color: '#64748B', fontWeight: 500 }}>Connecting to your teacher…</div>
                 </div>
               )
-            ) : currentPhase === 'CONTEXT_INPUT' ? (
-              // Reading phase context — shown when in reading/review phase with no active exercise
-              <div style={{
-                maxWidth: 400, textAlign: 'center',
-                background: 'rgba(255,255,255,0.75)',
-                backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-                borderRadius: 20,
-                border: '1px solid rgba(110,124,251,0.1)',
-                padding: '28px 32px',
-                boxShadow: '0 4px 24px rgba(110,124,251,0.08)',
-              }}>
-                <div style={{ fontSize: 32, marginBottom: 14 }}>📖</div>
-                <div style={{ fontSize: 12, fontWeight: 800, color: '#9B8CFF', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
-                  Reading
-                </div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', marginBottom: 8, lineHeight: 1.3 }}>
-                  Review the material
-                </div>
-                <div style={{ fontSize: 14, color: '#64748B', lineHeight: 1.65 }}>
-                  Read through the content in the chat. Your teacher will guide you through the key points before exercises begin.
-                </div>
-              </div>
             ) : (() => {
               // Dialogue phase: no exercise active — show last teacher message prominently
               const lastMsg = messages.filter(m => m.sender === 'ai' && !m.isTyping && m.text).slice(-1)[0]
@@ -755,7 +736,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                   }}>
                     {lastMsg.text}
                   </div>
-                  {currentPhase === 'DIAGNOSTIC' ? (
+                  {currentPhase === 'DIAGNOSTIC' && !readyClicked ? (
                     <button
                       onClick={handleReady}
                       style={{

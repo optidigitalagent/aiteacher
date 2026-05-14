@@ -22,6 +22,17 @@ function resolveOpenAIVoice(voiceId?: string): OpenAIVoice {
   return 'nova'
 }
 
+// AbortSignal.any was added in Node 20.3.0 — polyfill for older Railway builds
+function combineSignals(...signals: AbortSignal[]): AbortSignal {
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals)
+  const ctrl = new AbortController()
+  for (const sig of signals) {
+    if (sig.aborted) { ctrl.abort(sig.reason); break }
+    sig.addEventListener('abort', () => ctrl.abort(sig.reason), { once: true })
+  }
+  return ctrl.signal
+}
+
 // Once ElevenLabs fails with a billing/auth error, skip it for the whole process lifetime
 let elevenLabsDisabled = false
 
@@ -67,7 +78,7 @@ async function speakElevenLabs(
   const timeoutCtrl = new AbortController()
   const timeoutRef  = setTimeout(() => timeoutCtrl.abort(), 10_000)
   const combined    = signal
-    ? AbortSignal.any([signal, timeoutCtrl.signal])
+    ? combineSignals(signal, timeoutCtrl.signal)
     : timeoutCtrl.signal
 
   let response: Response
@@ -132,8 +143,8 @@ async function speakOpenAI(
 
   const timeoutCtrl = new AbortController()
   const timeoutRef  = setTimeout(() => timeoutCtrl.abort(), 15_000)
-  const combined    = signal
-    ? AbortSignal.any([signal, timeoutCtrl.signal])
+  const combinedSignal = signal
+    ? combineSignals(signal, timeoutCtrl.signal)
     : timeoutCtrl.signal
 
   let response: Response
@@ -145,7 +156,7 @@ async function speakOpenAI(
         input:           text,
         response_format: 'mp3',
       },
-      { signal: combined },
+      { signal: combinedSignal },
     )
     response = speechResponse as unknown as Response
   } catch (err: unknown) {
@@ -180,7 +191,7 @@ async function speakOpenAI(
   }
 
   if (chunks.length > 0 && !signal?.aborted) {
-    const combined = Buffer.concat(chunks.map(c => Buffer.from(c)))
-    send({ type: 'audio_chunk', data: combined.toString('base64') })
+    const mp3Buffer = Buffer.concat(chunks.map(c => Buffer.from(c)))
+    send({ type: 'audio_chunk', data: mp3Buffer.toString('base64') })
   }
 }
