@@ -123,6 +123,14 @@ export class DeepgramSTT {
     this.transcriptBuffer = ''
   }
 
+  // Returns and clears the accumulated is_final buffer so mic_stop can submit
+  // immediately without waiting for UtteranceEnd.
+  flushBuffer(): string {
+    const text = this.transcriptBuffer.trim()
+    this.transcriptBuffer = ''
+    return text
+  }
+
   close(): void {
     if (!this.conn) return
     if (this.keepAliveRef) clearInterval(this.keepAliveRef)

@@ -442,6 +442,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     if (question) {
       handleCheck()
     } else {
+      if (awaitingStudentMessageRef.current) return  // guard: mic turn already in flight
       pushUser(answer)
       setTyping()
       send({ type: 'text_message', text: answer })
@@ -478,6 +479,12 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     }
     warmAudioContext()
     const wasListening = isListening
+    // Block new recording while the previous turn's student_message echo hasn't arrived.
+    // Without this guard the student can double-send by stopping and immediately restarting.
+    if (!wasListening && awaitingStudentMessageRef.current) {
+      console.log('[paid-lesson] mic_start blocked: previous turn still processing')
+      return
+    }
     // Only send interrupt when TTS audio is actively playing (>500ms left).
     // If the audio is just draining its final frames (≤500ms remaining), treat
     // this as a normal mic-start — sending interrupt here would set interruptSentRef,

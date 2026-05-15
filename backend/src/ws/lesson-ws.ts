@@ -267,8 +267,12 @@ interface ClientMeta {
   pendingTranscript: string
   // True when mic_stop arrived before UtteranceEnd — process on next UtteranceEnd.
   pendingMicStop:    boolean
-  // Timeout handle: fires 2.5s after pendingMicStop if UtteranceEnd never arrives.
+  // Timeout handle: fires 0.8s after pendingMicStop if UtteranceEnd never arrives.
   pendingMicStopTimeoutRef: ReturnType<typeof setTimeout> | null
+  // True only while the student has an active mic recording open (mic_start received,
+  // not yet finalized by mic_stop). Gates all STT callbacks so late Deepgram events
+  // from a previous recording cannot contaminate the next turn.
+  micActive: boolean
   // Phase 11: tracks when THIS connection's billing period started.
   // Separate from lessonStartedAt (which is the original lesson wall-clock start
   // used for timeout/remaining-time calculations). Using lessonStartedAt for
@@ -451,54 +455,11 @@ async function resumeLesson(
   // Always close the previous STT first to avoid duplicate Deepgram connections
   // and queue-flush errors if the old instance is still in CONNECTING state.
   meta.stt?.close()
-  meta.stt              = null
+  meta.stt               = null
   meta.pendingTranscript = ''
   meta.pendingMicStop    = false
-  meta.stt = new DeepgramSTT(
-    (transcript) => {
-      if (meta.ttsActive) {
-        console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
-        return
-      }
-      // mic_stop pending: combine accumulated text with new utterance, then finalize
-      if (meta.pendingMicStop) {
-        if (meta.pendingMicStopTimeoutRef) {
-          clearTimeout(meta.pendingMicStopTimeoutRef)
-          meta.pendingMicStopTimeoutRef = null
-        }
-        const fullText = (meta.pendingTranscript
-          ? meta.pendingTranscript + ' ' + transcript
-          : transcript
-        ).trim()
-        meta.pendingMicStop    = false
-        meta.pendingTranscript = ''
-        // Clear STT buffer so late Deepgram events don't bleed into the next turn
-        meta.stt?.clearBuffer()
-        if (fullText) {
-          console.log(`[paid-lesson] student_turn_finalized chars=${fullText.length} trigger=mic_stop`)
-          send(ws, { type: 'student_message', text: fullText })
-          processInput(ws, meta, fullText).catch((err: unknown) =>
-            console.error('[paid-lesson] processInput error (stt-micstop resume):', err))
-        }
-        return
-      }
-      if (!shouldProcessTranscript(transcript)) return
-      meta.pendingTranscript = meta.pendingTranscript
-        ? meta.pendingTranscript + ' ' + transcript
-        : transcript
-      // Send full accumulated transcript so the frontend input never visually resets
-      send(ws, { type: 'transcript', text: meta.pendingTranscript })
-    },
-    (interim) => {
-      if (!meta.ttsActive) {
-        // Prefix with already-finalized segments so frontend shows growing text, not a reset
-        const fullInterim = meta.pendingTranscript
-          ? meta.pendingTranscript + ' ' + interim
-          : interim
-        send(ws, { type: 'transcript', text: fullInterim })
-      }
-    },
-  )
+  meta.micActive         = false  // set true on next mic_start
+  meta.stt = createSTT(ws, meta)
 
   const tName   = teacherDisplayName(meta.teacherId ?? undefined)
   const exNote  = state.currentExerciseNum > 0
@@ -625,48 +586,8 @@ async function handleLessonStart(
   pipeline.set(activeSessionKey(effectiveStudentId),  lessonId,                     'EX', LESSON_TTL)
   await pipeline.exec()
 
-  meta.stt = new DeepgramSTT(
-    (transcript) => {
-      if (meta.ttsActive) {
-        console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
-        return
-      }
-      // mic_stop pending: combine accumulated text with new utterance, then finalize
-      if (meta.pendingMicStop) {
-        if (meta.pendingMicStopTimeoutRef) {
-          clearTimeout(meta.pendingMicStopTimeoutRef)
-          meta.pendingMicStopTimeoutRef = null
-        }
-        const fullText = (meta.pendingTranscript
-          ? meta.pendingTranscript + ' ' + transcript
-          : transcript
-        ).trim()
-        meta.pendingMicStop    = false
-        meta.pendingTranscript = ''
-        meta.stt?.clearBuffer()
-        if (fullText) {
-          console.log(`[paid-lesson] student_turn_finalized chars=${fullText.length} trigger=mic_stop`)
-          send(ws, { type: 'student_message', text: fullText })
-          processInput(ws, meta, fullText).catch((err: unknown) =>
-            console.error('[paid-lesson] processInput error (stt-micstop):', err))
-        }
-        return
-      }
-      if (!shouldProcessTranscript(transcript)) return
-      meta.pendingTranscript = meta.pendingTranscript
-        ? meta.pendingTranscript + ' ' + transcript
-        : transcript
-      send(ws, { type: 'transcript', text: meta.pendingTranscript })
-    },
-    (interim) => {
-      if (!meta.ttsActive) {
-        const fullInterim = meta.pendingTranscript
-          ? meta.pendingTranscript + ' ' + interim
-          : interim
-        send(ws, { type: 'transcript', text: fullInterim })
-      }
-    },
-  )
+  meta.micActive = false  // set true on first mic_start
+  meta.stt = createSTT(ws, meta)
 
   // Phase 2 recovery: start periodic remaining-time broadcast
   startTimerBroadcast(ws, meta)
@@ -825,52 +746,8 @@ async function handleFocusLessonStart(
   pipeline.set(activeSessionKey(effectiveStudentId), lessonId,                     'EX', LESSON_TTL)
   await pipeline.exec()
 
-  meta.stt = new DeepgramSTT(
-    (transcript) => {
-      if (meta.ttsActive) {
-        console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
-        return
-      }
-      // mic_stop pending: combine accumulated text with new utterance, then finalize
-      if (meta.pendingMicStop) {
-        if (meta.pendingMicStopTimeoutRef) {
-          clearTimeout(meta.pendingMicStopTimeoutRef)
-          meta.pendingMicStopTimeoutRef = null
-        }
-        const fullText = (meta.pendingTranscript
-          ? meta.pendingTranscript + ' ' + transcript
-          : transcript
-        ).trim()
-        meta.pendingMicStop    = false
-        meta.pendingTranscript = ''
-        meta.stt?.clearBuffer()
-        if (fullText) {
-          console.log(`[paid-lesson] student_turn_finalized chars=${fullText.length} trigger=mic_stop`)
-          send(ws, { type: 'student_message', text: fullText })
-          processInput(ws, meta, fullText).catch((err: unknown) =>
-            console.error('[paid-lesson] processInput error (stt-micstop):', err))
-        }
-        return
-      }
-      if (!shouldProcessTranscript(transcript)) {
-        console.log(`[paid-lesson] ignored_audio_chunk reason=invalid_transcript chars=${transcript.trim().length}`)
-        return
-      }
-      meta.pendingTranscript = meta.pendingTranscript
-        ? meta.pendingTranscript + ' ' + transcript
-        : transcript
-      console.log(`[paid-lesson] stt_accumulated pending_chars=${meta.pendingTranscript.length}`)
-      send(ws, { type: 'transcript', text: meta.pendingTranscript })
-    },
-    (interim) => {
-      if (!meta.ttsActive) {
-        const fullInterim = meta.pendingTranscript
-          ? meta.pendingTranscript + ' ' + interim
-          : interim
-        send(ws, { type: 'transcript', text: fullInterim })
-      }
-    },
-  )
+  meta.micActive = false  // set true on first mic_start
+  meta.stt = createSTT(ws, meta)
 
   console.log(`[paid-lesson] lesson_start_new lessonId=${lessonId} session=${meta.sessionId} unit=${effectiveUnit} section=${config.section ?? 'none'}`)
 
@@ -1205,6 +1082,65 @@ function getPhasesUpTo(phase: LessonPhase): LessonPhase[] {
   return idx >= 0 ? ALL_PHASES.slice(0, idx + 1) : []
 }
 
+// ── STT factory ───────────────────────────────────────────────────────────────
+// Single authoritative STT callback definition shared by lesson start, focus
+// lesson start, and resume. Keeps all three paths byte-for-byte identical so
+// a bug fix in callbacks applies everywhere.
+
+function createSTT(ws: WebSocket, meta: ClientMeta): DeepgramSTT {
+  return new DeepgramSTT(
+    // ── onTranscript: fires on UtteranceEnd (silence ≥ UTTERANCE_END_MS) ────
+    (transcript) => {
+      if (meta.ttsActive) {
+        console.log(`[paid-lesson] ignored_stt reason=teacher_speaking chars=${transcript.trim().length}`)
+        return
+      }
+      // mic_stop is pending — student clicked stop before UtteranceEnd arrived.
+      // Process regardless of micActive (the flag will be cleared below).
+      if (meta.pendingMicStop) {
+        if (meta.pendingMicStopTimeoutRef) {
+          clearTimeout(meta.pendingMicStopTimeoutRef)
+          meta.pendingMicStopTimeoutRef = null
+        }
+        const fullText = (meta.pendingTranscript
+          ? meta.pendingTranscript + ' ' + transcript
+          : transcript
+        ).trim()
+        meta.pendingMicStop    = false
+        meta.pendingTranscript = ''
+        meta.micActive         = false  // turn finalized — discard any further events
+        meta.stt?.clearBuffer()
+        if (fullText) {
+          console.log(`[paid-lesson] student_turn_finalized chars=${fullText.length} trigger=mic_stop`)
+          send(ws, { type: 'student_message', text: fullText })
+          processInput(ws, meta, fullText).catch((err: unknown) =>
+            console.error('[paid-lesson] processInput error (stt-micstop):', err))
+        }
+        return
+      }
+      // Discard late Deepgram events that arrive between turns
+      if (!meta.micActive) return
+      if (!shouldProcessTranscript(transcript)) {
+        console.log(`[paid-lesson] ignored_stt reason=invalid_transcript chars=${transcript.trim().length}`)
+        return
+      }
+      meta.pendingTranscript = meta.pendingTranscript
+        ? meta.pendingTranscript + ' ' + transcript
+        : transcript
+      console.log(`[paid-lesson] stt_accumulated pending_chars=${meta.pendingTranscript.length}`)
+      send(ws, { type: 'transcript', text: meta.pendingTranscript })
+    },
+    // ── onInterim: fires on is_final and interim Deepgram events ─────────────
+    (interim) => {
+      if (!meta.micActive || meta.ttsActive) return
+      const fullInterim = meta.pendingTranscript
+        ? meta.pendingTranscript + ' ' + interim
+        : interim
+      send(ws, { type: 'transcript', text: fullInterim })
+    },
+  )
+}
+
 export function attachLessonWS(server: Server): void {
   const wss = new WebSocketServer({ server, path: '/lesson' })
 
@@ -1273,6 +1209,7 @@ export function attachLessonWS(server: Server): void {
       pendingTranscript: '',
       pendingMicStop:    false,
       pendingMicStopTimeoutRef: null,
+      micActive:         false,
       billingStartedAt: null,
     }
 
@@ -1320,23 +1257,36 @@ export function attachLessonWS(server: Server): void {
             await processInput(ws, meta, msg.text)
             break
           case 'mic_start': {
-            // New recording starting — reset any stale state from previous recording.
-            // Clears stuck pendingMicStop, stale transcript, and Deepgram buffer.
+            // New recording starting — hard-reset all STT state from previous recording.
+            // This prevents stale pendingMicStop, stale transcript, and Deepgram buffer
+            // from contaminating the new turn.
             if (meta.pendingMicStopTimeoutRef) {
               clearTimeout(meta.pendingMicStopTimeoutRef)
               meta.pendingMicStopTimeoutRef = null
             }
             meta.pendingMicStop    = false
             meta.pendingTranscript = ''
+            meta.micActive         = true  // open the gate — accept STT events
             meta.stt?.clearBuffer()
-            console.log(`[paid-lesson] mic_start — state reset`)
+            console.log(`[paid-lesson] mic_start — state reset micActive=true`)
             break
           }
           case 'mic_stop': {
+            // Flush Deepgram's internal is_final buffer (segments that arrived since
+            // the last UtteranceEnd) into pendingTranscript so we can submit immediately
+            // without waiting up to 1500ms for UtteranceEnd to fire.
+            const buffered = meta.stt?.flushBuffer() ?? ''
+            if (buffered) {
+              meta.pendingTranscript = meta.pendingTranscript
+                ? meta.pendingTranscript + ' ' + buffered
+                : buffered
+            }
             const pending = meta.pendingTranscript.trim()
             if (pending) {
+              // Text is ready — submit immediately, no UtteranceEnd wait needed.
               meta.pendingTranscript = ''
               meta.pendingMicStop    = false
+              meta.micActive         = false  // turn finalized — discard further STT events
               if (meta.pendingMicStopTimeoutRef) {
                 clearTimeout(meta.pendingMicStopTimeoutRef)
                 meta.pendingMicStopTimeoutRef = null
@@ -1348,15 +1298,16 @@ export function attachLessonWS(server: Server): void {
                 await processInput(ws, meta, pending)
               }
             } else {
-              // UtteranceEnd hasn't fired yet — wait for it, but set a 2.5s fallback
-              // so the turn isn't silently lost if Deepgram is slow or audio ends cleanly.
+              // Nothing accumulated yet — UtteranceEnd may still be in flight.
+              // Wait briefly; the onTranscript callback will process when it arrives.
               meta.pendingMicStop = true
               console.log(`[paid-lesson] mic_stop_waiting_utterance_end`)
               if (meta.pendingMicStopTimeoutRef) clearTimeout(meta.pendingMicStopTimeoutRef)
               meta.pendingMicStopTimeoutRef = setTimeout(() => {
                 if (!meta.pendingMicStop) return  // already handled by UtteranceEnd
-                meta.pendingMicStop             = false
-                meta.pendingMicStopTimeoutRef   = null
+                meta.pendingMicStop           = false
+                meta.pendingMicStopTimeoutRef = null
+                meta.micActive                = false  // turn finalized
                 const delayed = meta.pendingTranscript.trim()
                 meta.pendingTranscript = ''
                 meta.stt?.clearBuffer()
@@ -1368,7 +1319,7 @@ export function attachLessonWS(server: Server): void {
                 } else {
                   console.log(`[paid-lesson] mic_stop_timeout_no_text`)
                 }
-              }, 2500)
+              }, 800)  // 800ms — enough for Deepgram's 300ms endpointing + network RTT
             }
             break
           }
