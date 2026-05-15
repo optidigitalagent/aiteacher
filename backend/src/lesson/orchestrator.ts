@@ -11,15 +11,11 @@ import {
 } from './types.js'
 import { shouldTransition, applyAISignal } from './transitions.js'
 import { saveExercise } from '../exercises/exercise-store.js'
-
-// Phase 2.6: exercise types that are safe for the current deterministic runtime
-const SUPPORTED_EXERCISE_TYPES = new Set([
-  'form_transformation', 'error_correction', 'reconstruction', 'free_production',
-  'matching', 'fill_gap', 'vocabulary', 'vocabulary_matching', 'speaking_prompt',
-])
-
-// Phase 2.7: matching exercises require options before entering structured runtime
-const MATCHING_TYPES = new Set(['matching', 'vocabulary_matching'])
+import {
+  isExerciseAllowedInCurrentRuntime,
+  getExercisePolicy,
+  validateSnapshotShape,
+} from '../exercises/protocols/index.js'
 
 // ── Stub responses per phase (replaced by Claude in Phase 3) ─────────────────
 
@@ -123,27 +119,31 @@ export class LessonOrchestrator {
     // Items within the same exercise share the same exerciseNumber → no increment.
     let exerciseCursor: ExerciseCursor | null = null
 
-    // Phase 2.6: only process exercise data if the type is supported by the current runtime.
-    // Phase 2.7: matching exercises must also have options before entering structured runtime.
+    // Defense-in-depth: exercise type + snapshot already validated by parseExercise in claude-handler,
+    // but re-check here using protocol helpers to prevent state corruption if called from other paths.
     const incomingExercise = aiResp.exercise
-    const exerciseTypeSupported = incomingExercise
-      ? SUPPORTED_EXERCISE_TYPES.has(incomingExercise.type)
+
+    const exerciseTypeAllowed = incomingExercise
+      ? isExerciseAllowedInCurrentRuntime(incomingExercise.type)
       : false
 
-    // Phase 2.7: matching without options is an incomplete snapshot — block before entering
-    // structured validation so the validator never sees a matching exercise with no options.
-    const isMatchingType       = incomingExercise ? MATCHING_TYPES.has(incomingExercise.type) : false
-    const matchingHasOptions   = !isMatchingType || (incomingExercise?.options?.length ?? 0) > 0
-    const exerciseBlocked      = Boolean(incomingExercise && (!exerciseTypeSupported || !matchingHasOptions))
+    const snapValidation = (incomingExercise && exerciseTypeAllowed)
+      ? validateSnapshotShape(incomingExercise.type, incomingExercise as unknown as Record<string, unknown>)
+      : { ok: false as const, reason: 'no exercise or type blocked' }
+
+    const exerciseBlocked = Boolean(incomingExercise && (!exerciseTypeAllowed || !snapValidation.ok))
 
     if (exerciseBlocked && incomingExercise) {
-      if (!exerciseTypeSupported) {
-        console.warn(`[orch] exercise_blocked lessonId=${lessonId} type="${incomingExercise.type}" reason=unsupported_type — preserving existing cursor`)
+      const policy = getExercisePolicy(incomingExercise.type)
+      if (!exerciseTypeAllowed) {
+        console.warn(`[exercise:policy] type="${incomingExercise.type}" allowed=false downgrade="${policy.downgradeStrategy}" lessonId=${lessonId}`)
+        console.log(`[exercise:downgrade] type="${incomingExercise.type}" strategy="${policy.downgradeStrategy}" reason="orchestrator defense-in-depth: type not allowed"`)
       } else {
         console.warn(
-          `[orch] exercise_blocked lessonId=${lessonId} type="${incomingExercise.type}" reason=matching_missing_options ` +
-          `items=${incomingExercise.items?.length ?? 0} options=0`,
+          `[exercise:snapshot] type="${incomingExercise.type}" ok=false reason="${snapValidation.reason}" lessonId=${lessonId}` +
+          ` items=${incomingExercise.items?.length ?? 0} options=${incomingExercise.options?.length ?? 0}`,
         )
+        console.log(`[exercise:downgrade] type="${incomingExercise.type}" strategy="preserve_cursor" reason="${snapValidation.reason ?? 'snapshot_invalid'}"`)
       }
       // Rebuild cursor from existing state so the frontend stays in sync
       if (state.currentExerciseNum > 0 && state.currentItem) {
@@ -252,7 +252,7 @@ export class LessonOrchestrator {
     }
 
     // Persist exercise (override AI's UUID with server UUID)
-    // Phase 2.7: also skip save when exerciseBlocked (matching without options)
+    // Skip save when exercise is blocked (unsupported type or invalid snapshot)
     const exercise = (incomingExercise && !exerciseBlocked)
       ? await saveExercise(lessonId, incomingExercise)
       : null

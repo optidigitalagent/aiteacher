@@ -12,6 +12,13 @@ import {
 } from './prompt-builder.js'
 import { queryRAG } from './rag.js'
 import { getTipsForContext } from '../lesson/tips-service.js'
+import {
+  normalizeExerciseType,
+  inferExerciseTypeFromInstruction,
+  isExerciseAllowedInCurrentRuntime,
+  getExercisePolicy,
+  validateSnapshotShape,
+} from '../exercises/protocols/index.js'
 
 const MODEL = 'claude-sonnet-4-6'
 
@@ -58,48 +65,66 @@ async function saveHistory(lessonId: string, history: ChatMessage[]): Promise<vo
 
 // ── Response parsing ──────────────────────────────────────────────────────────
 
-// Signals in instruction/question text that indicate a matching exercise,
-// regardless of what "type" the AI declared.
-const MATCHING_INSTRUCTION_SIGNALS = [
-  'match', 'with their opposites', 'questions with answers',
-  'words with definitions', 'opposites', '1-5 with ', '1–5 with ',
-  'column a', 'column b', 'match each',
-]
+// Classify raw AI exercise JSON to a canonical type using Phase 1 protocol helpers.
+// Instruction-based inference overrides AI-declared type for strong signals.
+function classifyExerciseType(e: Record<string, unknown>): { finalType: string; reason: string } {
+  const aiType = typeof e['type'] === 'string' ? e['type'].trim() : ''
 
-const VALID_EXERCISE_TYPES = new Set<string>([
-  'form_transformation', 'error_correction', 'reconstruction',
-  'free_production', 'matching', 'fill_gap', 'reading', 'vocabulary',
-  'vocabulary_matching', 'speaking_prompt',
-])
+  const instructionText = [
+    (e['instruction'] as string | undefined) ?? '',
+    (e['question']    as string | undefined) ?? '',
+  ].join(' ')
 
-function inferExerciseType(e: Record<string, unknown>): ExerciseData['type'] {
-  const declared  = typeof e['type'] === 'string' ? e['type'] : undefined
-  const instText  = ((e['instruction'] as string | undefined) ?? '').toLowerCase()
-  const questText = ((e['question']    as string | undefined) ?? '').toLowerCase()
+  const normalizedAiType = normalizeExerciseType(aiType)
+  const inferredType     = inferExerciseTypeFromInstruction(instructionText)
 
-  const isMatchingByContent = MATCHING_INSTRUCTION_SIGNALS.some(
-    sig => instText.includes(sig) || questText.includes(sig),
-  )
+  let finalType: string
+  let reason: string
 
-  if (isMatchingByContent) {
-    if (declared === 'matching' || declared === 'vocabulary_matching') {
-      return declared as ExerciseData['type']
-    }
-    if (declared && declared !== 'matching') {
-      console.warn(`[parseExercise] type_conflict declared="${declared}" instruction signals matching — overriding to "matching"`)
-    }
-    return 'matching'
+  if (inferredType && inferredType !== normalizedAiType) {
+    // Instruction text carries strong structural signal — override AI declaration
+    finalType = inferredType
+    reason    = `instruction_override: ai="${aiType}" inferred="${inferredType}"`
+  } else if (normalizedAiType !== 'unknown') {
+    finalType = normalizedAiType
+    reason    = `ai_declared: "${aiType}" normalized="${normalizedAiType}"`
+  } else if (inferredType) {
+    finalType = inferredType
+    reason    = `inference_fallback: ai_type_unknown inferred="${inferredType}"`
+  } else {
+    finalType = 'speaking_prompt'  // safest fallback — voice-compatible, no correct_answer required
+    reason    = 'unknown_fallback: defaulted to speaking_prompt'
   }
 
-  if (declared && VALID_EXERCISE_TYPES.has(declared)) return declared as ExerciseData['type']
-  if (declared) console.warn(`[parseExercise] unknown_type "${declared}" — defaulting to form_transformation`)
-  return 'form_transformation'
+  console.log(`[exercise:type] aiType="${aiType}" inferred="${inferredType ?? 'none'}" final="${finalType}" reason="${reason}"`)
+  return { finalType, reason }
 }
 
 function parseExercise(raw: unknown): ExerciseData | null {
   if (!raw || typeof raw !== 'object') return null
   const e = raw as Record<string, unknown>
-  if (typeof e['question'] !== 'string' || typeof e['correct_answer'] !== 'string') return null
+
+  const { finalType } = classifyExerciseType(e)
+
+  // Policy gate: block postponed/unsupported types before any further processing
+  const allowed = isExerciseAllowedInCurrentRuntime(finalType)
+  const policy  = getExercisePolicy(finalType)
+  console.log(`[exercise:policy] type="${finalType}" allowed=${allowed} status="${policy.supportStatus}" downgrade="${policy.downgradeStrategy}"`)
+
+  if (!allowed) {
+    console.log(`[exercise:downgrade] type="${finalType}" strategy="${policy.downgradeStrategy}" reason="type not allowed in current runtime"`)
+    return null
+  }
+
+  // Snapshot shape validation — delegates field requirements to protocol definition
+  const snap = e as Record<string, unknown>
+  const snapResult = validateSnapshotShape(finalType, snap)
+  console.log(`[exercise:snapshot] type="${finalType}" ok=${snapResult.ok}${snapResult.reason ? ` reason="${snapResult.reason}"` : ''}`)
+
+  if (!snapResult.ok) {
+    console.log(`[exercise:downgrade] type="${finalType}" strategy="skip_exercise" reason="${snapResult.reason ?? 'snapshot_invalid'}"`)
+    return null
+  }
 
   const items = Array.isArray(e['items'])
     ? (e['items'] as unknown[]).filter((i): i is string => typeof i === 'string')
@@ -108,19 +133,18 @@ function parseExercise(raw: unknown): ExerciseData | null {
     ? (e['options'] as unknown[]).filter((o): o is string => typeof o === 'string')
     : undefined
 
-  const resolvedType = inferExerciseType(e)
-
   return {
     id:             '',
-    type:           resolvedType,
-    question:       e['question'],
-    correct_answer: e['correct_answer'],
-    hint:           typeof e['hint'] === 'string' ? e['hint'] : '',
-    difficulty:     typeof e['difficulty'] === 'number' ? e['difficulty'] : 0.3,
+    type:           finalType,
+    question:       typeof e['question'] === 'string' ? e['question'] : '',
+    // correct_answer is optional for soft types (speaking, discussion, etc.)
+    correct_answer: typeof e['correct_answer'] === 'string' ? e['correct_answer'] : '',
+    hint:           typeof e['hint']        === 'string' ? e['hint']        : '',
+    difficulty:     typeof e['difficulty']  === 'number' ? e['difficulty']  : 0.3,
     exerciseNumber: typeof e['exerciseNumber'] === 'number' ? e['exerciseNumber'] : undefined,
     instruction:    typeof e['instruction'] === 'string' ? e['instruction'] : undefined,
-    skillFocus:     typeof e['skillFocus'] === 'string' ? e['skillFocus'] : undefined,
-    items:          items && items.length > 0 ? items : undefined,
+    skillFocus:     typeof e['skillFocus']  === 'string' ? e['skillFocus']  : undefined,
+    items:          items   && items.length   > 0 ? items   : undefined,
     options:        options && options.length > 0 ? options : undefined,
   }
 }

@@ -137,17 +137,7 @@ export interface AIResponse {
 
 export interface ExerciseData {
   id:           string
-  type:
-    | 'form_transformation'
-    | 'error_correction'
-    | 'reconstruction'
-    | 'free_production'
-    | 'matching'
-    | 'fill_gap'
-    | 'reading'
-    | 'vocabulary'
-    | 'vocabulary_matching'
-    | 'speaking_prompt'
+  type:         string   // canonical type from exercise-protocols; string to accommodate all policy types
   question:     string   // CURRENT ITEM ONLY — the single item being asked right now
   correct_answer: string
   hint:         string
