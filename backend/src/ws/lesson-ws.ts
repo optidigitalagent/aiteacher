@@ -68,6 +68,28 @@ function shouldProcessTranscript(text: string): boolean {
   return true
 }
 
+// Returns true only when student input looks like a genuine side question or
+// meta-request. Short exercise answers ("Stupid", "A", "letter B", "negative")
+// must return false so they are routed to exercise answer handling, not the
+// off-topic recovery path.
+const OFF_TOPIC_REQUEST_PATTERNS = [
+  /\bwhat\s+(does|is|are|do|did|means?|should)\b/i,
+  /\bhow\s+(do|does|did|can|should|to)\b/i,
+  /\bwhy\b/i,
+  /\bcan\s+you\b/i,
+  /\bcould\s+you\b/i,
+  /\bexplain\b/i,
+  /\brepeat\b/i,
+  /\bdon'?t\s+(understand|get)\b/i,
+  /\bI'?m\s+(confused|lost)\b/i,
+  /\bwhat\s+should\b/i,
+  /\bI\s+don'?t\s+know\s+what\b/i,
+]
+
+function looksLikeOffTopicRequest(text: string): boolean {
+  return OFF_TOPIC_REQUEST_PATTERNS.some(p => p.test(text.trim()))
+}
+
 function buildFocusGreeting(
   _unit: number,
   section: string | undefined,
@@ -847,11 +869,12 @@ async function processInput(
   const elapsedMs   = meta.lessonStartedAt ? Date.now() - meta.lessonStartedAt : 0
   const remainingMs = Math.max(0, MAX_LESSON_MS - elapsedMs)
 
-  // Inject off-topic recovery guard for regular student turns when an exercise is active.
-  // System-generated contexts (correction, confusion) set skipOffTopicGuard=true to avoid
-  // double-injecting recovery instructions that are already protocol-encoded in the context.
+  // Inject off-topic recovery guard only when the student input actually looks like
+  // a side question or meta-request. Short exercise answers ("Stupid", "A", "letter B",
+  // "negative") must NOT trigger recovery — they belong to exercise answer handling.
+  // System-generated contexts (correction, confusion) skip this entirely via skipOffTopicGuard.
   let inputText = text
-  if (!skipOffTopicGuard) {
+  if (!skipOffTopicGuard && looksLikeOffTopicRequest(text)) {
     const guard = await buildOffTopicGuard(meta.lessonId)
     if (guard) {
       inputText = text + guard
