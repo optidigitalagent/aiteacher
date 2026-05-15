@@ -510,6 +510,15 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       send({ type: 'mic_stop' })
       setAnswer('')
       lastTranscriptRef.current = ''
+      // Safety valve: if no speech was detected the backend never sends student_message,
+      // so awaitingStudentMessageRef would stay true forever and block the next mic click.
+      // Clear after 1500ms if no student_message echo arrives (covers mic_stop_timeout_no_text).
+      setTimeout(() => {
+        if (awaitingStudentMessageRef.current) {
+          awaitingStudentMessageRef.current = false
+          console.log('[paid-lesson] mic_awaiting_cleared reason=no_text_timeout')
+        }
+      }, 1500)
     } else {
       // Mic just started — reset any stuck guard from a previous turn where
       // student_message never arrived (e.g. backend error mid-processing).

@@ -1025,7 +1025,7 @@ const TYPE_TURN_B_SUPPLEMENT: Partial<Record<string, string>> = {
   speaking_prompt:     'The verb needs [tense marker]. Say the sentence again with that correction.',
 }
 
-function buildCorrectionContext(answer: string, correctAnswer: string, turn: CorrectionTurn, exerciseType?: string): string {
+function buildCorrectionContext(answer: string, correctAnswer: string, turn: CorrectionTurn, exerciseType?: string, currentItem?: string): string {
   const turnANote = exerciseType && TYPE_TURN_A_SUPPLEMENT[exerciseType]
     ? `\n  Exercise-type guidance: ${TYPE_TURN_A_SUPPLEMENT[exerciseType]}`
     : '\n  Examples: "For \'he\', do we use do or does?" / "Is this verb regular or irregular?"'
@@ -1045,11 +1045,17 @@ function buildCorrectionContext(answer: string, correctAnswer: string, turn: Cor
   Wait for the student to repeat correctly, then advance to the next item.`,
   }
 
+  // For TURN A–C: mandate ending with a retry of the current item so the student
+  // always knows what to answer next. TURN D already ends with "repeat after me".
+  const retryAnchor = (turn !== 'D' && currentItem)
+    ? `\nCLOSING REQUIREMENT: After your ${turn === 'A' ? 'guiding question' : 'hint'}, end with: "Try again — ${currentItem}" so the student knows what to answer.`
+    : ''
+
   return `[EXERCISE RESULT] Student answered: "${answer}" — INCORRECT.
 Correct answer (Teacher's Book reference — do NOT reveal until TURN D): "${correctAnswer}".
 
 CORRECTION LADDER — you are at ${turn === 'D' ? 'TURN D — REVEAL THE ANSWER' : `TURN ${turn}`}:
-${TURN_INSTRUCTIONS[turn]}
+${TURN_INSTRUCTIONS[turn]}${retryAnchor}
 
 Set "exercise": null — do NOT advance the item until the student answers correctly (or until TURN D is resolved).
 Do NOT restart at TURN A. You are at TURN ${turn}. Stay here.`
@@ -1097,16 +1103,20 @@ async function handleExerciseAnswer(
     }
 
     const exerciseDone = cursor && cursor.itemIndex >= cursor.itemTotal
-    const nextItemHint = cursor && !exerciseDone && cursor.currentItem
-      ? `\nThe orchestrator has advanced to item ${cursor.itemIndex + 1}: "${cursor.currentItem}". Present it now.`
-      : ''
-    const completionHint = exerciseDone
-      ? `\nAll items of Exercise ${cursor?.exerciseNumber ?? exercise.exerciseNumber} are now complete. Announce completion and introduce the next exercise.`
+    const continuationContract = exerciseDone
+      ? `\nEXERCISE TURN COMPLETION CONTRACT: After step 2, announce ` +
+        `"Exercise ${cursor?.exerciseNumber ?? exercise.exerciseNumber} complete." ` +
+        `Then introduce the next exercise immediately in the same response.`
+      : cursor?.currentItem
+      ? `\nEXERCISE TURN COMPLETION CONTRACT: After step 2, present item ` +
+        `${cursor.itemIndex + 1}: "${cursor.currentItem}" in the same response. ` +
+        `Do NOT stop after confirmation. Presenting the next item is mandatory.`
       : ''
 
     context = `[EXERCISE RESULT] Student answered: "${answer}" — CORRECT.
-Confirm with one word ("Exactly." / "Right." / "Correct.").
-Explain WHY in one sentence — state the grammar rule that makes this correct.${nextItemHint}${completionHint}`
+Your response MUST follow this structure in order:
+1. ONE confirmation word only: "Exactly." / "Right." / "Correct."
+2. WHY in one sentence: the rule or connection that makes this correct.${continuationContract}`
   } else if (isOpenSpeaking) {
     // Open speaking: soft improvement request — no correction ladder, no "reveal the answer"
     const scoreNote = validation.score > 0 ? ` Score: ${(validation.score * 100).toFixed(0)}/100.` : ''
@@ -1125,7 +1135,7 @@ Set exercise: null — do not advance the item yet.`
       errorType:     toErrorType(exercise.type),
     }
     const turn = await orchestrator.recordWrongAnswer(meta.lessonId, errorData)
-    context = buildCorrectionContext(answer, exercise.correct_answer, turn, exercise.type)
+    context = buildCorrectionContext(answer, exercise.correct_answer, turn, exercise.type, exercise.question)
   }
 
   // Protocol correction context already contains off-topic recovery info — skip guard.
