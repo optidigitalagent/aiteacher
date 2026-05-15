@@ -955,13 +955,41 @@ async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise
   }
 }
 
-function buildCorrectionContext(answer: string, correctAnswer: string, turn: CorrectionTurn): string {
+// Exercise-type-specific guiding questions for TURN A (narrows the hint direction)
+const TYPE_TURN_A_SUPPLEMENT: Partial<Record<string, string>> = {
+  matching:            'What connects these two items? Think about their category or relationship.',
+  vocabulary_matching: 'Think about what this word means in context. Does it fit this definition?',
+  fill_gap:            'Think about tense and agreement — what does the grammar context require here?',
+  form_transformation: 'Keep the same meaning — what specifically needs to change: verb form, word order, or auxiliary?',
+  error_correction:    'Look at the underlined element. Does it follow the grammar rule we practised?',
+  reading:             'Hear the stressed syllable — where does the stress fall in this word?',
+  speaking_prompt:     'Is the verb form correct? Think about the tense the exercise is asking for.',
+  reconstruction:      'Start with the first element. Where does the subject / auxiliary go in English?',
+}
+
+// Exercise-type-specific hints for TURN B (one concrete missing piece)
+const TYPE_TURN_B_SUPPLEMENT: Partial<Record<string, string>> = {
+  matching:            'Give a category clue: both items belong to the same semantic group — try again with that in mind.',
+  vocabulary_matching: 'Look at the sentence context. The word is used to describe [meaning area] — which option fits?',
+  fill_gap:            'The action is [ongoing / completed / relating to now] — which verb form shows that?',
+  form_transformation: 'The structure you need starts with [first word of the correct form]. What comes after that?',
+  error_correction:    'The error is specifically in the [verb / article / preposition / word order]. Read just that part aloud.',
+  speaking_prompt:     'The verb needs [tense marker]. Say the sentence again with that correction.',
+}
+
+function buildCorrectionContext(answer: string, correctAnswer: string, turn: CorrectionTurn, exerciseType?: string): string {
+  const turnANote = exerciseType && TYPE_TURN_A_SUPPLEMENT[exerciseType]
+    ? `\n  Exercise-type guidance: ${TYPE_TURN_A_SUPPLEMENT[exerciseType]}`
+    : '\n  Examples: "For \'he\', do we use do or does?" / "Is this verb regular or irregular?"'
+
+  const turnBNote = exerciseType && TYPE_TURN_B_SUPPLEMENT[exerciseType]
+    ? `\n  Exercise-type guidance: ${TYPE_TURN_B_SUPPLEMENT[exerciseType]}`
+    : '\n  Examples: "Third person singular uses ___, not \'do\'." / "This is an irregular verb: go → ..."'
+
   const TURN_INSTRUCTIONS: Record<CorrectionTurn, string> = {
     A: `TURN A (attempt 1): Ask ONE guiding question targeting the exact knowledge gap. Give ZERO part of the answer.
-  Think: what specific rule caused this error? Ask about only that.
-  Examples: "For 'he', do we use do or does?" / "Is this verb regular or irregular?"`,
-    B: `TURN B (attempt 2): Give ONE small hint — one missing piece of information. Do NOT reveal the full answer.
-  Examples: "Third person singular uses ___, not 'do'." / "This is an irregular verb: go → ..."`,
+  Think: what specific rule caused this error? Ask about only that.${turnANote}`,
+    B: `TURN B (attempt 2): Give ONE small hint — one missing piece of information. Do NOT reveal the full answer.${turnBNote}`,
     C: `TURN C (attempt 3): Give a STRONGER hint. Student is still stuck — fill in almost everything.
   Examples: "It starts with 'Does he...' — what verb comes next?" / "go → _ent in the past. Fill in the blank."`,
     D: `TURN D (attempt 4+): REVEAL THE FULL ANSWER NOW.
@@ -1034,7 +1062,7 @@ Explain WHY in one sentence — state the grammar rule that makes this correct.$
       errorType:     toErrorType(exercise.type),
     }
     const turn = await orchestrator.recordWrongAnswer(meta.lessonId, errorData)
-    context = buildCorrectionContext(answer, exercise.correct_answer, turn)
+    context = buildCorrectionContext(answer, exercise.correct_answer, turn, exercise.type)
   }
 
   await processInput(ws, meta, context)

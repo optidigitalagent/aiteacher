@@ -186,9 +186,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   demoInterruptRef.current     = demo.interruptAudio
 
   // ── Local UI state ────────────────────────────────────────────────────────
-  const [answer,          setAnswer]          = useState('')
-  const [feedback,        setFeedback]        = useState<FeedbackState>(null)
-  const [showHint,        setShowHint]        = useState(false)
+  const [answer,               setAnswer]               = useState('')
+  const [feedback,             setFeedback]             = useState<FeedbackState>(null)
+  const [feedbackExplanation,  setFeedbackExplanation]  = useState<string | null>(null)
+  const [showHint,             setShowHint]             = useState(false)
   const [chatOpen,        setChatOpen]        = useState(true)
   const [teachingCard,    setTeachingCard]    = useState<TeachingCardData | null>(null)
   const [confirmedAnswer, setConfirmedAnswer] = useState('')
@@ -263,6 +264,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         break
       case 'feedback':
         setFeedback(msg.correct ? 'correct' : 'wrong')
+        setFeedbackExplanation(msg.explanation || null)
         if (msg.correct) {
           setConfirmedAnswer(answerRef.current)
           setTimeout(() => setAnswer(''), 1800)
@@ -399,6 +401,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   useEffect(() => {
     setAnswer('')
     setFeedback(null)
+    setFeedbackExplanation(null)
     setShowHint(false)
     setConfirmedAnswer('')
   }, [question?.id])
@@ -407,6 +410,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   // don't persist after the EXERCISES phase ends with no new exercise arriving.
   useEffect(() => {
     setFeedback(null)
+    setFeedbackExplanation(null)
     setAnswer('')
   }, [currentPhase])
 
@@ -688,7 +692,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                 )}
               </div>
             ) : exerciseCursor ? (
-              <PaidExerciseCard cursor={exerciseCursor} feedback={feedback} />
+              <PaidExerciseCard cursor={exerciseCursor} feedback={feedback} feedbackExplanation={feedbackExplanation} />
             ) : questionForPanel ? (
               <ExercisePanel
                 question={questionForPanel}

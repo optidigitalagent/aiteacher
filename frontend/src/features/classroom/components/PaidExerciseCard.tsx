@@ -2,8 +2,9 @@ import type { ExerciseCursor } from '../services/classroomSocket'
 import type { FeedbackState } from '../types'
 
 interface Props {
-  cursor:   ExerciseCursor
-  feedback: FeedbackState
+  cursor:              ExerciseCursor
+  feedback:            FeedbackState
+  feedbackExplanation?: string | null
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -24,7 +25,7 @@ function isMatchingExercise(exerciseType: string): boolean {
   return exerciseType === 'vocabulary_matching' || exerciseType === 'matching'
 }
 
-export default function PaidExerciseCard({ cursor, feedback }: Props) {
+export default function PaidExerciseCard({ cursor, feedback, feedbackExplanation }: Props) {
   const {
     exerciseType, instruction, currentItem,
     itemIndex, itemTotal, completedItems, failedItems, wordBoxState, items, options,
@@ -41,7 +42,7 @@ export default function PaidExerciseCard({ cursor, feedback }: Props) {
       background: 'white', borderRadius: 20,
       boxShadow: '0 4px 24px rgba(15,23,42,0.08)', maxWidth: 580, width: '100%',
       border: feedback === 'correct' ? '2px solid #22c55e'
-            : feedback === 'wrong'   ? '2px solid #ef4444'
+            : feedback === 'wrong'   ? '2px solid #f59e0b'
             : '2px solid transparent',
       transition: 'border-color 0.25s',
       display: 'flex', flexDirection: 'column',
@@ -252,13 +253,15 @@ export default function PaidExerciseCard({ cursor, feedback }: Props) {
         <div style={{
           borderTop: '1px solid #F1F5F9',
           padding: '10px 24px',
-          background: feedback === 'correct' ? '#f0fdf4' : '#fef2f2',
-          color:      feedback === 'correct' ? '#16a34a' : '#dc2626',
-          fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8,
+          background: feedback === 'correct' ? '#f0fdf4' : '#fffbeb',
+          color:      feedback === 'correct' ? '#16a34a' : '#b45309',
+          fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8,
           borderRadius: '0 0 20px 20px',
         }}>
-          <span style={{ fontSize: 16 }}>{feedback === 'correct' ? '✓' : '✗'}</span>
-          {feedback === 'correct' ? 'Correct!' : 'Not quite — listen to the teacher.'}
+          <span style={{ fontSize: 15 }}>{feedback === 'correct' ? '✓' : '→'}</span>
+          {feedback === 'correct'
+            ? 'Correct!'
+            : (feedbackExplanation || 'Listen to the teacher.')}
         </div>
       )}
     </div>
