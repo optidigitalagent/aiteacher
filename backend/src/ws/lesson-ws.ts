@@ -493,6 +493,8 @@ async function resumeLesson(
         completedItems: state.completedItems ?? [],
         failedItems:    state.failedItems    ?? [],
         wordBoxState:   state.wordBoxState   ?? null,
+        // Phase 2.6: restore authoritative exerciseId so frontend pendingId stays in sync
+        exerciseId:     state.currentExerciseId ?? null,
       },
     })
   }
@@ -1028,7 +1030,12 @@ async function handleExerciseAnswer(
 
   await recordAnswer(exerciseId, meta.lessonId, answer, validation.correct)
 
-  send(ws, { type: 'feedback', correct: validation.correct, explanation: validation.feedback })
+  // Phase 2.6: include score in feedback event (backward-compatible — frontend ignores unknown fields)
+  send(ws, { type: 'feedback', correct: validation.correct, explanation: validation.feedback, score: validation.score })
+
+  // Phase 2.6: open speaking tasks (speaking_prompt, free_production) must NOT use
+  // the normal binary correction ladder — there is no single "correct answer" to reveal.
+  const isOpenSpeaking = exercise.type === 'speaking_prompt' || exercise.type === 'free_production'
 
   let context: string
 
@@ -1053,6 +1060,15 @@ async function handleExerciseAnswer(
     context = `[EXERCISE RESULT] Student answered: "${answer}" — CORRECT.
 Confirm with one word ("Exactly." / "Right." / "Correct.").
 Explain WHY in one sentence — state the grammar rule that makes this correct.${nextItemHint}${completionHint}`
+  } else if (isOpenSpeaking) {
+    // Open speaking: soft improvement request — no correction ladder, no "reveal the answer"
+    const scoreNote = validation.score > 0 ? ` Score: ${(validation.score * 100).toFixed(0)}/100.` : ''
+    context = `[EXERCISE RESULT - OPEN SPEAKING] Student answered: "${answer}".${scoreNote}
+Evaluator feedback: "${validation.feedback}"
+This is an open speaking task — there is no single fixed correct answer.
+Ask the student to try again with ONE specific improvement suggestion.
+Do NOT reveal a model answer. Do NOT use the correction ladder.
+Set exercise: null — do not advance the item yet.`
   } else {
     // Phase 5: pass error details so errorsThisLesson is populated for tips and agenda context
     const errorData: ExerciseErrorData = {

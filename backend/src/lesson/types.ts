@@ -73,6 +73,10 @@ export interface LessonState {
   exerciseInstruction?: string    // exercise instruction text
   exerciseOptions?:     string[]  // word bank for matching/vocabulary
 
+  // Phase 2.6: authoritative server-assigned exercise ID + correct answer for current item
+  currentExerciseId?:     string | null  // populated after saveExercise(); cleared on lesson end
+  currentCorrectAnswer?:  string         // correct_answer for the current item; '' when unknown
+
   // content tracking
   vocabularyTaught: string[]
   errorsThisLesson: ErrorRecord[]
@@ -108,6 +112,8 @@ export interface ExerciseCursor {
   wordBoxState?:  WordBoxState | null
   items?:         string[]   // all items in this exercise for full-context display
   options?:       string[]   // answer word bank (matching/vocabulary) — visible to student
+  // Phase 2.6: authoritative server-assigned exercise ID — frontend pendingId must follow this
+  exerciseId?:    string | null
 }
 
 export interface ErrorRecord {

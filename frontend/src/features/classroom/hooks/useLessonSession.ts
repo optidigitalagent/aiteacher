@@ -56,9 +56,18 @@ export function useLessonSession({ send }: Options) {
     setPendingId(be.id)
   }, [])
 
-  // Called by ClassroomLayout when WS 'exercise_cursor_updated' event arrives
+  // Called by ClassroomLayout when WS 'exercise_cursor_updated' event arrives.
+  // Phase 2.6: cursor.exerciseId is the authoritative server-assigned ID.
+  // pendingId must follow it so submitAnswer never targets a stale exercise.
   const onCursorUpdated = useCallback((cursor: ExerciseCursor) => {
     setExerciseCursor(cursor)
+    if (cursor.exerciseId != null) {
+      // Authoritative exerciseId present — sync pendingId unconditionally
+      setPendingId(cursor.exerciseId)
+    } else if (!cursor.currentItem) {
+      // No active item and no exerciseId — exercise state has cleared
+      setPendingId(null)
+    }
   }, [])
 
   // Called by ClassroomLayout when WS 'phase_change' event arrives
@@ -71,10 +80,11 @@ export function useLessonSession({ send }: Options) {
         return s
       }),
     )
-    // Clear the exercise cursor when leaving the EXERCISES phase so stale exercise
-    // cards don't remain visible during VOCABULARY, DEEP_THINKING, and WRAP_UP.
+    // Clear the exercise cursor and pendingId when leaving the EXERCISES phase so stale
+    // exercise cards don't remain visible during VOCABULARY, DEEP_THINKING, and WRAP_UP.
     if (from === 'EXERCISES') {
       setExerciseCursor(null)
+      setPendingId(null)
     }
   }, [])
 
@@ -83,16 +93,25 @@ export function useLessonSession({ send }: Options) {
     setCurrentPhase(phase)
   }, [])
 
-  // Submit the current exercise answer (or fall back to text_message)
+  // Submit the current exercise answer.
+  // Phase 2.6: requires an authoritative exerciseId from the cursor before submitting.
+  // If a structured exercise is active but exerciseId not yet received, block the submit
+  // so the AI cannot improvise instead of running the deterministic validator.
+  // text_message fallback is only safe in open-chat / speaking context (no exercise loaded).
   const submitAnswer = useCallback(
     (answer: string) => {
       if (pendingId) {
         send({ type: 'exercise_answer', exerciseId: pendingId, answer })
+      } else if (exercise !== null) {
+        // Structured exercise is visible but cursor exerciseId hasn't arrived yet — block.
+        // Sending as text_message here would bypass the validator and let the AI improvise.
+        console.warn('[submitAnswer] blocked: structured exercise active but pendingId not yet received from cursor')
       } else {
+        // No active exercise (free chat / speaking phase) — text_message is safe
         send({ type: 'text_message', text: answer })
       }
     },
-    [pendingId, send],
+    [pendingId, exercise, send],
   )
 
   return {

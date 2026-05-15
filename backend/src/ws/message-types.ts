@@ -112,6 +112,7 @@ export interface OutboundFeedback {
   type:        'feedback'
   correct:     boolean
   explanation: string
+  score?:      number  // Phase 2.6: 0.0–1.0; backward-compatible addition
 }
 
 export interface OutboundLessonEnd {

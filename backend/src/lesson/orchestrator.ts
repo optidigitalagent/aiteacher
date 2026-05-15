@@ -12,6 +12,12 @@ import {
 import { shouldTransition, applyAISignal } from './transitions.js'
 import { saveExercise } from '../exercises/exercise-store.js'
 
+// Phase 2.6: exercise types that are safe for the current deterministic runtime
+const SUPPORTED_EXERCISE_TYPES = new Set([
+  'form_transformation', 'error_correction', 'reconstruction', 'free_production',
+  'matching', 'fill_gap', 'vocabulary', 'vocabulary_matching', 'speaking_prompt',
+])
+
 // ── Stub responses per phase (replaced by Claude in Phase 3) ─────────────────
 
 const PHASE_INTRO: Record<LessonPhase, (s: LessonState) => string> = {
@@ -114,8 +120,38 @@ export class LessonOrchestrator {
     // Items within the same exercise share the same exerciseNumber → no increment.
     let exerciseCursor: ExerciseCursor | null = null
 
-    if (aiResp.exercise) {
-      const newNum = aiResp.exercise.exerciseNumber
+    // Phase 2.6: only process exercise data if the type is supported by the current runtime.
+    // Unsupported types (reading, listening, writing, etc.) must not enter the exercise state
+    // machine — they would corrupt the cursor and trigger broken validation paths.
+    const incomingExercise = aiResp.exercise
+    const exerciseTypeSupported = incomingExercise
+      ? SUPPORTED_EXERCISE_TYPES.has(incomingExercise.type)
+      : false
+
+    if (incomingExercise && !exerciseTypeSupported) {
+      console.warn(`[orch] blocked unsupported exercise type "${incomingExercise.type}" — preserving existing cursor`)
+      // Rebuild cursor from existing state so the frontend stays in sync
+      if (state.currentExerciseNum > 0 && state.currentItem) {
+        const itemTotal = state.exerciseItems?.length ?? 0
+        exerciseCursor = {
+          unit:           state.focusUnit,
+          section:        state.focusLesson,
+          exerciseNumber: state.currentExerciseNum,
+          exerciseType:   state.activeExerciseType ?? 'unknown',
+          instruction:    state.exerciseInstruction ?? '',
+          currentItem:    state.currentItem,
+          itemIndex:      state.itemIndex,
+          itemTotal,
+          completedItems: state.completedItems,
+          failedItems:    state.failedItems,
+          wordBoxState:   state.wordBoxState,
+          items:          state.exerciseItems,
+          options:        state.exerciseOptions,
+          exerciseId:     state.currentExerciseId ?? null,
+        }
+      }
+    } else if (incomingExercise) {
+      const newNum = incomingExercise.exerciseNumber
       if (newNum !== undefined && newNum > 0 && newNum !== state.currentExerciseNum) {
         // Moving to a new textbook exercise — mark previous as complete
         if (state.currentExerciseNum > 0 && !state.completedExercises.includes(state.currentExerciseNum)) {
@@ -124,31 +160,34 @@ export class LessonOrchestrator {
         state.currentExerciseNum = newNum
         // Reset item-level cursor and correction state for new exercise
         state.itemIndex       = 0
-        state.currentItem     = aiResp.exercise.question
+        state.currentItem     = incomingExercise.question
         state.completedItems  = []
         state.failedItems     = []
         state.itemRetryCount  = 0
         state.correctionTurn  = null
+        // Phase 2.6: populate correct answer for current item
+        state.currentCorrectAnswer = incomingExercise.correct_answer ?? ''
         // Cache full exercise content for orchestrator-owned cursor rebuilds
-        if (aiResp.exercise.items?.length)    state.exerciseItems       = aiResp.exercise.items
-        if (aiResp.exercise.instruction)      state.exerciseInstruction = aiResp.exercise.instruction
-        if (aiResp.exercise.options?.length)  state.exerciseOptions     = aiResp.exercise.options
+        if (incomingExercise.items?.length)    state.exerciseItems       = incomingExercise.items
+        if (incomingExercise.instruction)      state.exerciseInstruction = incomingExercise.instruction
+        if (incomingExercise.options?.length)  state.exerciseOptions     = incomingExercise.options
         console.log(`[orch] exercise advanced to #${state.currentExerciseNum}, completed=[${state.completedExercises.join(',')}]`)
       } else if (!newNum && state.currentExerciseNum === 0) {
         // Free mode or AI omitted exerciseNumber — start at 1
-        state.currentExerciseNum  = 1
-        state.itemIndex           = 0
-        state.currentItem         = aiResp.exercise.question
-        state.completedItems      = []
-        state.failedItems         = []
-        state.itemRetryCount      = 0
-        state.correctionTurn      = null
-        if (aiResp.exercise.items?.length)   state.exerciseItems       = aiResp.exercise.items
-        if (aiResp.exercise.instruction)     state.exerciseInstruction = aiResp.exercise.instruction
-        if (aiResp.exercise.options?.length) state.exerciseOptions     = aiResp.exercise.options
+        state.currentExerciseNum    = 1
+        state.itemIndex             = 0
+        state.currentItem           = incomingExercise.question
+        state.completedItems        = []
+        state.failedItems           = []
+        state.itemRetryCount        = 0
+        state.correctionTurn        = null
+        state.currentCorrectAnswer  = incomingExercise.correct_answer ?? ''
+        if (incomingExercise.items?.length)   state.exerciseItems       = incomingExercise.items
+        if (incomingExercise.instruction)     state.exerciseInstruction = incomingExercise.instruction
+        if (incomingExercise.options?.length) state.exerciseOptions     = incomingExercise.options
       } else {
         // Same exercise — check if AI is signaling a new item or returning from correction
-        const incomingItem = aiResp.exercise.question ?? ''
+        const incomingItem = incomingExercise.question ?? ''
 
         // Guard: never regress to an already-completed item
         const completedTexts = (state.exerciseItems ?? [])
@@ -160,41 +199,30 @@ export class LessonOrchestrator {
           if (!state.completedItems.includes(state.itemIndex)) {
             state.completedItems = [...state.completedItems, state.itemIndex]
           }
-          state.itemIndex      = state.completedItems.length
-          state.currentItem    = incomingItem
-          state.itemRetryCount = 0
-          state.correctionTurn = null
+          state.itemIndex             = state.completedItems.length
+          state.currentItem           = incomingItem
+          state.itemRetryCount        = 0
+          state.correctionTurn        = null
+          state.currentCorrectAnswer  = incomingExercise.correct_answer ?? ''
           console.log(`[orch] item advanced to #${state.itemIndex} within exercise #${state.currentExerciseNum}`)
         } else if (incomingItem && !state.currentItem) {
           // First item assignment OR cleared slot after recordCorrectAnswer
-          state.currentItem = incomingItem
+          state.currentItem          = incomingItem
+          state.currentCorrectAnswer = incomingExercise.correct_answer ?? ''
+        } else if (incomingExercise.correct_answer) {
+          // Same item, same exercise — refresh correct answer in case AI updated it
+          state.currentCorrectAnswer = incomingExercise.correct_answer
         }
         // Refresh instruction/options if AI provided updates
-        if (aiResp.exercise.instruction)     state.exerciseInstruction = aiResp.exercise.instruction
-        if (aiResp.exercise.options?.length) state.exerciseOptions     = aiResp.exercise.options
+        if (incomingExercise.instruction)     state.exerciseInstruction = incomingExercise.instruction
+        if (incomingExercise.options?.length) state.exerciseOptions     = incomingExercise.options
       }
 
       // Persist exercise type so resume can restore the correct cursor type (Phase 11)
-      state.activeExerciseType = aiResp.exercise.type
-
-      // Build cursor using cached state values as primary, AI response as fallback
-      const itemTotal = state.exerciseItems?.length ?? aiResp.exercise.items?.length ?? 0
-      exerciseCursor = {
-        unit:           state.focusUnit,
-        section:        state.focusLesson,
-        exerciseNumber: state.currentExerciseNum,
-        exerciseType:   aiResp.exercise.type,
-        instruction:    state.exerciseInstruction ?? aiResp.exercise.instruction ?? '',
-        currentItem:    state.currentItem,
-        itemIndex:      state.itemIndex,
-        itemTotal,
-        completedItems: state.completedItems,
-        failedItems:    state.failedItems,
-        wordBoxState:   state.wordBoxState,
-        items:          state.exerciseItems ?? aiResp.exercise.items,
-        options:        state.exerciseOptions ?? aiResp.exercise.options,
-      }
+      state.activeExerciseType = incomingExercise.type
     }
+    // If AI returns no exercise on a correction turn, do NOT clear existing cursor state.
+    // The exercise is still active — just waiting for the student's next attempt.
 
     await this.saveState(lessonId, state)
     await this.logEvent(lessonId, 'ai_response', { text: aiResp.speech, phase: state.phase })
@@ -208,9 +236,34 @@ export class LessonOrchestrator {
     }
 
     // Persist exercise (override AI's UUID with server UUID)
-    const exercise = aiResp.exercise
-      ? await saveExercise(lessonId, aiResp.exercise)
+    const exercise = (incomingExercise && exerciseTypeSupported)
+      ? await saveExercise(lessonId, incomingExercise)
       : null
+
+    // Phase 2.6: build cursor AFTER saveExercise so exerciseId is the authoritative server UUID.
+    // Also persist currentExerciseId in state for resume and recordCorrectAnswer().
+    if (exercise) {
+      state.currentExerciseId = exercise.id
+      const itemTotal = state.exerciseItems?.length ?? incomingExercise?.items?.length ?? 0
+      exerciseCursor = {
+        unit:           state.focusUnit,
+        section:        state.focusLesson,
+        exerciseNumber: state.currentExerciseNum,
+        exerciseType:   exercise.type,
+        instruction:    state.exerciseInstruction ?? incomingExercise?.instruction ?? '',
+        currentItem:    state.currentItem,
+        itemIndex:      state.itemIndex,
+        itemTotal,
+        completedItems: state.completedItems,
+        failedItems:    state.failedItems,
+        wordBoxState:   state.wordBoxState,
+        items:          state.exerciseItems ?? incomingExercise?.items,
+        options:        state.exerciseOptions ?? incomingExercise?.options,
+        exerciseId:     exercise.id,
+      }
+      // Persist updated exerciseId (second save — intentional; keeps cursor authoritative)
+      await this.saveState(lessonId, state)
+    }
 
     return {
       text:           aiResp.speech,
@@ -256,6 +309,8 @@ export class LessonOrchestrator {
     // Reset correction state
     state.itemRetryCount = 0
     state.correctionTurn = null
+    // Phase 2.6: next item's correct answer is unknown until AI responds
+    state.currentCorrectAnswer = ''
 
     await this.saveState(lessonId, state)
 
@@ -275,6 +330,8 @@ export class LessonOrchestrator {
       wordBoxState:   state.wordBoxState,
       items:          state.exerciseItems,
       options:        state.exerciseOptions,
+      // Phase 2.6: keep exerciseId stable until a new exercise loads
+      exerciseId:     state.currentExerciseId ?? null,
     }
   }
 
@@ -325,6 +382,9 @@ export class LessonOrchestrator {
     // Normalize Phase 2 correction tracking fields
     state.itemRetryCount ??= 0
     state.correctionTurn ??= null
+    // Normalize Phase 2.6 fields for old snapshots
+    state.currentExerciseId    ??= null
+    state.currentCorrectAnswer ??= ''
     return state
   }
 

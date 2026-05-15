@@ -22,6 +22,8 @@ export interface ExerciseCursor {
   wordBoxState?:  { available: string[]; used: string[] } | null
   items?:         string[]   // all items for full-context display
   options?:       string[]   // answer word bank (matching/vocabulary) — visible to student
+  // Phase 2.6: authoritative server-assigned exercise ID — pendingId must follow this
+  exerciseId?:    string | null
 }
 
 export interface BackendExercise {
@@ -50,7 +52,7 @@ export type BackendMessage =
   | { type: 'audio_chunk';      data: string }
   | { type: 'exercise';         exercise: BackendExercise }
   | { type: 'phase_change';     from: string; to: string }
-  | { type: 'feedback';         correct: boolean; explanation: string }
+  | { type: 'feedback';         correct: boolean; explanation: string; score?: number }
   | { type: 'lesson_end';       summary: LessonSummary }
   | { type: 'transcript';       text: string }
   | { type: 'error';            code: string; message: string }
