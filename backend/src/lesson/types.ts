@@ -27,6 +27,8 @@ export type LessonPhase =
   | 'WRAP_UP'
   | 'END'
 
+export type CorrectionTurn = 'A' | 'B' | 'C' | 'D'
+
 export type LessonMode = 'free' | 'focus'
 
 export interface LessonState {
@@ -61,6 +63,15 @@ export interface LessonState {
   completedItems: number[]        // item indices completed in current exercise
   failedItems:    number[]        // item indices where student made errors
   wordBoxState:   WordBoxState | null  // word-box tracking for vocabulary exercises
+
+  // Phase 2: explicit correction tracking per item
+  itemRetryCount: number          // wrong attempts on current item; 0 = first try
+  correctionTurn: CorrectionTurn | null  // ladder stage; null = not in correction
+
+  // Phase 2: full exercise content cached for orchestrator-owned cursor rebuilds
+  exerciseItems?:       string[]  // all items of current exercise
+  exerciseInstruction?: string    // exercise instruction text
+  exerciseOptions?:     string[]  // word bank for matching/vocabulary
 
   // content tracking
   vocabularyTaught: string[]
@@ -120,7 +131,17 @@ export interface AIResponse {
 
 export interface ExerciseData {
   id:           string
-  type: 'form_transformation' | 'error_correction' | 'reconstruction' | 'free_production'
+  type:
+    | 'form_transformation'
+    | 'error_correction'
+    | 'reconstruction'
+    | 'free_production'
+    | 'matching'
+    | 'fill_gap'
+    | 'reading'
+    | 'vocabulary'
+    | 'vocabulary_matching'
+    | 'speaking_prompt'
   question:     string   // CURRENT ITEM ONLY — the single item being asked right now
   correct_answer: string
   hint:         string

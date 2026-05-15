@@ -580,15 +580,31 @@ ${lines.join('\n')}`
 function buildTeacherAgendaContext(state: LessonState, remainingSeconds?: number): string {
   const lines: string[] = []
 
-  // Current exercise position and mandatory return anchor
+  // Current exercise position, completed items, and mandatory return anchor
   if (state.phase === 'EXERCISES' && state.currentExerciseNum > 0) {
     const itemNum = state.itemIndex + 1
     const itemText = state.currentItem ? `"${state.currentItem}"` : ''
     const returnAnchor = state.currentItem
       ? `Exercise ${state.currentExerciseNum}, number ${itemNum}: ${itemText}`
       : `Exercise ${state.currentExerciseNum}`
-    lines.push(`POSITION: Exercise ${state.currentExerciseNum} | Item ${itemNum}${itemText ? ` | ${itemText}` : ''}`)
+    const completedStr = state.completedItems.length > 0
+      ? ` | Completed items: [${state.completedItems.map(i => i + 1).join(', ')}] — NEVER re-ask these`
+      : ''
+    lines.push(`POSITION: Exercise ${state.currentExerciseNum} | Item ${itemNum}${itemText ? ` | ${itemText}` : ''}${completedStr}`)
     lines.push(`RETURN ANCHOR (say this after any side question): "Now — ${returnAnchor}."`)
+
+    // Phase 2: explicit correction state so AI knows which ladder step it is on
+    if (state.correctionTurn) {
+      const turnDesc: Record<string, string> = {
+        A: 'TURN A — ask ONE guiding question, give ZERO part of the answer',
+        B: 'TURN B — give ONE small hint, do not reveal the full answer',
+        C: 'TURN C — give a STRONGER hint, almost the full answer',
+        D: 'TURN D — REVEAL the full correct answer, ask student to repeat',
+      }
+      lines.push(`CORRECTION STATE: Student is on ${state.correctionTurn} of the correction ladder for item ${itemNum}.`)
+      lines.push(`Action required: ${turnDesc[state.correctionTurn] ?? `TURN ${state.correctionTurn}`}`)
+      lines.push(`Do NOT restart at TURN A. Do NOT advance the item until the student answers correctly.`)
+    }
   }
 
   // Time awareness

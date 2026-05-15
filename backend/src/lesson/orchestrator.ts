@@ -7,6 +7,7 @@ import {
   type OrchestratorResult,
   type ExerciseCursor,
   type ErrorRecord,
+  type CorrectionTurn,
 } from './types.js'
 import { shouldTransition, applyAISignal } from './transitions.js'
 import { saveExercise } from '../exercises/exercise-store.js'
@@ -62,6 +63,13 @@ export type AIHandlerFn = (state: LessonState, input: string, ctx?: Orchestrator
 
 let aiHandler: AIHandlerFn = async (state) => stubResponse(state)
 
+function retryToTurn(retryCount: number): CorrectionTurn {
+  if (retryCount <= 1) return 'A'
+  if (retryCount === 2) return 'B'
+  if (retryCount === 3) return 'C'
+  return 'D'
+}
+
 export function registerAIHandler(fn: AIHandlerFn): void {
   aiHandler = fn
 }
@@ -114,55 +122,77 @@ export class LessonOrchestrator {
           state.completedExercises = [...state.completedExercises, state.currentExerciseNum]
         }
         state.currentExerciseNum = newNum
-        // Reset item-level cursor for new exercise
-        state.itemIndex      = 0
-        state.currentItem    = aiResp.exercise.question
-        state.completedItems = []
-        state.failedItems    = []
+        // Reset item-level cursor and correction state for new exercise
+        state.itemIndex       = 0
+        state.currentItem     = aiResp.exercise.question
+        state.completedItems  = []
+        state.failedItems     = []
+        state.itemRetryCount  = 0
+        state.correctionTurn  = null
+        // Cache full exercise content for orchestrator-owned cursor rebuilds
+        if (aiResp.exercise.items?.length)    state.exerciseItems       = aiResp.exercise.items
+        if (aiResp.exercise.instruction)      state.exerciseInstruction = aiResp.exercise.instruction
+        if (aiResp.exercise.options?.length)  state.exerciseOptions     = aiResp.exercise.options
         console.log(`[orch] exercise advanced to #${state.currentExerciseNum}, completed=[${state.completedExercises.join(',')}]`)
       } else if (!newNum && state.currentExerciseNum === 0) {
         // Free mode or AI omitted exerciseNumber — start at 1
-        state.currentExerciseNum = 1
-        state.itemIndex          = 0
-        state.currentItem        = aiResp.exercise.question
-        state.completedItems     = []
-        state.failedItems        = []
+        state.currentExerciseNum  = 1
+        state.itemIndex           = 0
+        state.currentItem         = aiResp.exercise.question
+        state.completedItems      = []
+        state.failedItems         = []
+        state.itemRetryCount      = 0
+        state.correctionTurn      = null
+        if (aiResp.exercise.items?.length)   state.exerciseItems       = aiResp.exercise.items
+        if (aiResp.exercise.instruction)     state.exerciseInstruction = aiResp.exercise.instruction
+        if (aiResp.exercise.options?.length) state.exerciseOptions     = aiResp.exercise.options
       } else {
-        // Same exercise — check if this is a new item or retry
+        // Same exercise — check if AI is signaling a new item or returning from correction
         const incomingItem = aiResp.exercise.question ?? ''
-        if (incomingItem && incomingItem !== state.currentItem && state.currentItem) {
-          // Different question text within same exercise → student moved to next item
+
+        // Guard: never regress to an already-completed item
+        const completedTexts = (state.exerciseItems ?? [])
+          .filter((_, i) => state.completedItems.includes(i))
+        const isRegression = incomingItem && completedTexts.includes(incomingItem)
+
+        if (incomingItem && incomingItem !== state.currentItem && state.currentItem && !isRegression) {
+          // AI signaled a different item — treat as advancement and reset correction
           if (!state.completedItems.includes(state.itemIndex)) {
             state.completedItems = [...state.completedItems, state.itemIndex]
           }
-          state.itemIndex   = state.completedItems.length
-          state.currentItem = incomingItem
+          state.itemIndex      = state.completedItems.length
+          state.currentItem    = incomingItem
+          state.itemRetryCount = 0
+          state.correctionTurn = null
           console.log(`[orch] item advanced to #${state.itemIndex} within exercise #${state.currentExerciseNum}`)
         } else if (incomingItem && !state.currentItem) {
-          // First item of this exercise
+          // First item assignment OR cleared slot after recordCorrectAnswer
           state.currentItem = incomingItem
         }
+        // Refresh instruction/options if AI provided updates
+        if (aiResp.exercise.instruction)     state.exerciseInstruction = aiResp.exercise.instruction
+        if (aiResp.exercise.options?.length) state.exerciseOptions     = aiResp.exercise.options
       }
 
       // Persist exercise type so resume can restore the correct cursor type (Phase 11)
       state.activeExerciseType = aiResp.exercise.type
 
-      // Build cursor for this exercise response
-      const itemTotal = aiResp.exercise.items?.length ?? 0
+      // Build cursor using cached state values as primary, AI response as fallback
+      const itemTotal = state.exerciseItems?.length ?? aiResp.exercise.items?.length ?? 0
       exerciseCursor = {
-        unit:          state.focusUnit,
-        section:       state.focusLesson,
+        unit:           state.focusUnit,
+        section:        state.focusLesson,
         exerciseNumber: state.currentExerciseNum,
         exerciseType:   aiResp.exercise.type,
-        instruction:    aiResp.exercise.instruction ?? '',
+        instruction:    state.exerciseInstruction ?? aiResp.exercise.instruction ?? '',
         currentItem:    state.currentItem,
         itemIndex:      state.itemIndex,
         itemTotal,
         completedItems: state.completedItems,
         failedItems:    state.failedItems,
         wordBoxState:   state.wordBoxState,
-        items:          aiResp.exercise.items,
-        options:        aiResp.exercise.options,
+        items:          state.exerciseItems ?? aiResp.exercise.items,
+        options:        state.exerciseOptions ?? aiResp.exercise.options,
       }
     }
 
@@ -197,43 +227,89 @@ export class LessonOrchestrator {
     }
   }
 
-  // Called after student answers an exercise.
-  // Phase 5: accepts optional errorData to populate errorsThisLesson for tips and agenda context.
-  async recordExerciseResult(lessonId: string, correct: boolean, errorData?: ExerciseErrorData): Promise<void> {
+  // Called after student gives a CORRECT answer.
+  // Advances item index, resets correction state, updates counters.
+  // Returns the updated cursor for immediate broadcast to the frontend.
+  async recordCorrectAnswer(lessonId: string): Promise<ExerciseCursor | null> {
     const state = await this.loadState(lessonId)
 
-    if (correct) {
-      state.exerciseCount++
-      state.consecutiveCorrect++
-      state.consecutiveErrors = 0
-    } else {
-      state.consecutiveErrors++
-      state.consecutiveCorrect = 0
-      // Track failed item index so AI can give extra attention to it
-      if (!state.failedItems.includes(state.itemIndex)) {
-        state.failedItems = [...state.failedItems, state.itemIndex]
-      }
-      // Phase 5: populate errorsThisLesson for tip generation and agenda context
-      if (errorData) {
-        const record: ErrorRecord = {
-          exercise:      errorData.exercise,
-          studentAnswer: errorData.studentAnswer,
-          correctAnswer: errorData.correctAnswer,
-          errorType:     errorData.errorType,
-          timestamp:     new Date().toISOString(),
-        }
-        state.errorsThisLesson = [...(state.errorsThisLesson ?? []), record].slice(-10)
-      }
-    }
-
-    // Difficulty adaptation (from exercise-engine.md)
-    if (state.consecutiveErrors >= 2) {
-      state.currentDifficulty = Math.max(0.1, state.currentDifficulty - 0.2)
-    } else if (state.consecutiveCorrect >= 3) {
+    state.exerciseCount++
+    state.consecutiveCorrect++
+    state.consecutiveErrors = 0
+    if (state.consecutiveCorrect >= 3) {
       state.currentDifficulty = Math.min(1.0, state.currentDifficulty + 0.15)
     }
 
+    // Mark current item complete and advance index
+    if (!state.completedItems.includes(state.itemIndex)) {
+      state.completedItems = [...state.completedItems, state.itemIndex]
+    }
+    state.itemIndex++
+
+    // Resolve next item text from stored items array; clear if exercise is finished
+    if (state.exerciseItems?.length && state.itemIndex < state.exerciseItems.length) {
+      state.currentItem = state.exerciseItems[state.itemIndex]
+    } else {
+      state.currentItem = '' // exercise complete — AI will announce next exercise
+    }
+
+    // Reset correction state
+    state.itemRetryCount = 0
+    state.correctionTurn = null
+
     await this.saveState(lessonId, state)
+
+    if (!state.currentExerciseNum) return null
+    const itemTotal = state.exerciseItems?.length ?? 0
+    return {
+      unit:           state.focusUnit,
+      section:        state.focusLesson,
+      exerciseNumber: state.currentExerciseNum,
+      exerciseType:   state.activeExerciseType ?? 'unknown',
+      instruction:    state.exerciseInstruction ?? '',
+      currentItem:    state.currentItem,
+      itemIndex:      state.itemIndex,
+      itemTotal,
+      completedItems: state.completedItems,
+      failedItems:    state.failedItems,
+      wordBoxState:   state.wordBoxState,
+      items:          state.exerciseItems,
+      options:        state.exerciseOptions,
+    }
+  }
+
+  // Called after student gives a WRONG answer.
+  // Increments retry count, advances correction ladder, returns the turn letter.
+  async recordWrongAnswer(lessonId: string, errorData?: ExerciseErrorData): Promise<CorrectionTurn> {
+    const state = await this.loadState(lessonId)
+
+    state.consecutiveErrors++
+    state.consecutiveCorrect = 0
+    if (state.consecutiveErrors >= 2) {
+      state.currentDifficulty = Math.max(0.1, state.currentDifficulty - 0.2)
+    }
+
+    if (!state.failedItems.includes(state.itemIndex)) {
+      state.failedItems = [...state.failedItems, state.itemIndex]
+    }
+
+    state.itemRetryCount = (state.itemRetryCount ?? 0) + 1
+    const turn = retryToTurn(state.itemRetryCount)
+    state.correctionTurn = turn
+
+    if (errorData) {
+      const record: ErrorRecord = {
+        exercise:      errorData.exercise,
+        studentAnswer: errorData.studentAnswer,
+        correctAnswer: errorData.correctAnswer,
+        errorType:     errorData.errorType,
+        timestamp:     new Date().toISOString(),
+      }
+      state.errorsThisLesson = [...(state.errorsThisLesson ?? []), record].slice(-10)
+    }
+
+    await this.saveState(lessonId, state)
+    return turn
   }
 
   private async loadState(lessonId: string): Promise<LessonState> {
@@ -246,6 +322,9 @@ export class LessonOrchestrator {
     state.completedItems ??= []
     state.failedItems    ??= []
     state.wordBoxState   ??= null
+    // Normalize Phase 2 correction tracking fields
+    state.itemRetryCount ??= 0
+    state.correctionTurn ??= null
     return state
   }
 

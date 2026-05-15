@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import type { LessonState, ExerciseData } from '../lesson/types.js'
 
 type ExerciseType = ExerciseData['type']
+type GeneratableType = 'form_transformation' | 'error_correction' | 'reconstruction' | 'free_production'
 
 interface GeneratorCtx {
   state:        LessonState
@@ -90,7 +91,7 @@ Return ONLY valid JSON:
 }`
 }
 
-const PROMPTS: Record<ExerciseType, (ctx: GeneratorCtx) => string> = {
+const PROMPTS: Record<GeneratableType, (ctx: GeneratorCtx) => string> = {
   form_transformation: prompt_formTransformation,
   error_correction:    prompt_errorCorrection,
   reconstruction:      prompt_reconstruction,
@@ -123,7 +124,9 @@ export async function generateExercise(
 ): Promise<ExerciseData | null> {
   if (!process.env.OPENAI_API_KEY) return null
 
-  const systemPrompt = PROMPTS[type](ctx)
+  const promptFn = (PROMPTS as Partial<Record<ExerciseType, (ctx: GeneratorCtx) => string>>)[type]
+  if (!promptFn) return null
+  const systemPrompt = promptFn(ctx)
 
   try {
     const completion = await oai.chat.completions.create({

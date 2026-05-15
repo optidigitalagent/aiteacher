@@ -24,6 +24,7 @@ import { getFocusStudentBookSection } from '../lesson/focus-student-book.js'
 import { getCatalogEntry } from '../lesson/curriculum-catalog.js'
 import { LessonOrchestrator } from '../lesson/orchestrator.js'
 import type { ExerciseErrorData } from '../lesson/orchestrator.js'
+import type { CorrectionTurn } from '../lesson/types.js'
 import { DeepgramSTT } from '../voice/stt.js'
 import { speakToClient } from '../voice/tts.js'
 import { loadExercise, recordAnswer } from '../exercises/exercise-store.js'
@@ -564,6 +565,9 @@ async function handleLessonStart(
     completedItems: [],
     failedItems:    [],
     wordBoxState:   null,
+    // Phase 2: correction tracking
+    itemRetryCount: 0,
+    correctionTurn: null,
     exchangeCount:       0,
     exerciseCount:       0,
     consecutiveCorrect:  0,
@@ -724,6 +728,9 @@ async function handleFocusLessonStart(
     completedItems: [],
     failedItems:    [],
     wordBoxState:   null,
+    // Phase 2: correction tracking
+    itemRetryCount: 0,
+    correctionTurn: null,
     exchangeCount:       0,
     exerciseCount:       0,
     consecutiveCorrect:  0,
@@ -948,6 +955,30 @@ async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise
   }
 }
 
+function buildCorrectionContext(answer: string, correctAnswer: string, turn: CorrectionTurn): string {
+  const TURN_INSTRUCTIONS: Record<CorrectionTurn, string> = {
+    A: `TURN A (attempt 1): Ask ONE guiding question targeting the exact knowledge gap. Give ZERO part of the answer.
+  Think: what specific rule caused this error? Ask about only that.
+  Examples: "For 'he', do we use do or does?" / "Is this verb regular or irregular?"`,
+    B: `TURN B (attempt 2): Give ONE small hint — one missing piece of information. Do NOT reveal the full answer.
+  Examples: "Third person singular uses ___, not 'do'." / "This is an irregular verb: go → ..."`,
+    C: `TURN C (attempt 3): Give a STRONGER hint. Student is still stuck — fill in almost everything.
+  Examples: "It starts with 'Does he...' — what verb comes next?" / "go → _ent in the past. Fill in the blank."`,
+    D: `TURN D (attempt 4+): REVEAL THE FULL ANSWER NOW.
+  Say: "The answer is ${correctAnswer}. [Brief rule in one sentence]. Now repeat the full sentence after me."
+  Wait for the student to repeat correctly, then advance to the next item.`,
+  }
+
+  return `[EXERCISE RESULT] Student answered: "${answer}" — INCORRECT.
+Correct answer (Teacher's Book reference — do NOT reveal until TURN D): "${correctAnswer}".
+
+CORRECTION LADDER — you are at ${turn === 'D' ? 'TURN D — REVEAL THE ANSWER' : `TURN ${turn}`}:
+${TURN_INSTRUCTIONS[turn]}
+
+Set "exercise": null — do NOT advance the item until the student answers correctly (or until TURN D is resolved).
+Do NOT restart at TURN A. You are at TURN ${turn}. Stay here.`
+}
+
 async function handleExerciseAnswer(
   ws: WebSocket,
   meta: ClientMeta,
@@ -969,42 +1000,42 @@ async function handleExerciseAnswer(
 
   await recordAnswer(exerciseId, meta.lessonId, answer, validation.correct)
 
-  // Phase 5: pass error details so errorsThisLesson is populated for tips and agenda context
-  const errorData: ExerciseErrorData | undefined = validation.correct ? undefined : {
-    exercise:      exercise.question,
-    studentAnswer: answer,
-    correctAnswer: exercise.correct_answer,
-    errorType:     toErrorType(exercise.type),
-  }
-  await orchestrator.recordExerciseResult(meta.lessonId, validation.correct, errorData)
-
   send(ws, { type: 'feedback', correct: validation.correct, explanation: validation.feedback })
 
-  // Pass result to AI — enforces mastery loop and correction ladder
-  const context = validation.correct
-    ? `[EXERCISE RESULT] Student answered: "${answer}" — CORRECT.
+  let context: string
+
+  if (validation.correct) {
+    // Advance item in orchestrator and get updated cursor immediately
+    const cursor = await orchestrator.recordCorrectAnswer(meta.lessonId)
+
+    // Broadcast cursor before AI responds so frontend is immediately in sync
+    if (cursor) {
+      send(ws, { type: 'exercise_cursor_updated', cursor })
+      console.log(`[paid-lesson] cursor_advanced exercise=#${cursor.exerciseNumber} item=${cursor.itemIndex}/${cursor.itemTotal}`)
+    }
+
+    const exerciseDone = cursor && cursor.itemIndex >= cursor.itemTotal
+    const nextItemHint = cursor && !exerciseDone && cursor.currentItem
+      ? `\nThe orchestrator has advanced to item ${cursor.itemIndex + 1}: "${cursor.currentItem}". Present it now.`
+      : ''
+    const completionHint = exerciseDone
+      ? `\nAll items of Exercise ${cursor?.exerciseNumber ?? exercise.exerciseNumber} are now complete. Announce completion and introduce the next exercise.`
+      : ''
+
+    context = `[EXERCISE RESULT] Student answered: "${answer}" — CORRECT.
 Confirm with one word ("Exactly." / "Right." / "Correct.").
-Explain WHY in one sentence — state the grammar rule that makes this correct.
-Optionally ask one micro follow-up question to deepen understanding (e.g. "Why 'does' and not 'do' here?").
-Then present the next item of this exercise, or if all items are done, announce exercise completion and introduce the next exercise.`
-    : `[EXERCISE RESULT] Student answered: "${answer}" — INCORRECT.
-Known correct answer (for your reference only — do NOT reveal it yet): "${exercise.correct_answer}".
-
-CORRECTION LADDER — start at TURN A this turn. Do NOT skip ahead.
-TURN A (this turn): Ask exactly ONE guiding question that targets the specific knowledge gap.
-  Do NOT give any part of the answer. Do NOT recast the correct form yet.
-  Think: what specific rule or knowledge caused this error? Ask about that.
-  Examples:
-    Wrong auxiliary → "For 'he', do we use do or does?"
-    Wrong verb form → "Is this verb regular or irregular? What does that mean?"
-    Wrong word order → "In English questions, where does the auxiliary verb go?"
-  Set "exercise": null — do NOT advance until the retry is resolved.
-
-On the student's next response (plain text, not "[EXERCISE RESULT]"):
-  If correct → confirm + explain why + continue the exercise.
-  If still wrong → escalate to TURN B (give one small hint, not the full answer).
-  Each failed retry escalates one step: A → B → C → D.
-  Only at TURN D (3 failed retries) may you give the full answer, then ask the student to repeat it.`
+Explain WHY in one sentence — state the grammar rule that makes this correct.${nextItemHint}${completionHint}`
+  } else {
+    // Phase 5: pass error details so errorsThisLesson is populated for tips and agenda context
+    const errorData: ExerciseErrorData = {
+      exercise:      exercise.question,
+      studentAnswer: answer,
+      correctAnswer: exercise.correct_answer,
+      errorType:     toErrorType(exercise.type),
+    }
+    const turn = await orchestrator.recordWrongAnswer(meta.lessonId, errorData)
+    context = buildCorrectionContext(answer, exercise.correct_answer, turn)
+  }
 
   await processInput(ws, meta, context)
 }
