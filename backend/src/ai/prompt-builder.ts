@@ -9,6 +9,7 @@ import {
   buildFocusStudentBookContext,
   getFocusStudentBookSection,
 } from '../lesson/focus-student-book'
+import { buildBehaviorContext } from '../exercises/teacher-behaviors/index.js'
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
@@ -276,21 +277,6 @@ AFTER THE STUDENT FINISHES READING A PARAGRAPH:
 2. ONE comprehension or vocabulary check question — use the Teacher's Book above.
 3. Move forward. Never re-read the paragraph unless absolutely necessary.`
 
-// ── Phase 3: Per-exercise-type teaching hints ─────────────────────────────────
-// Injected into the teacher agenda context block so Alex knows HOW to teach
-// each exercise type — not just whether the answer is correct or not.
-
-const EXERCISE_TYPE_HINTS: Partial<Record<string, string>> = {
-  matching: `TEACH THIS EXERCISE AS: matching — present ONE left-column item per turn. Ask naturally: "Which option matches [item]?" Options are visible on screen — never read them aloud. Correct: confirm + explain the connection in one sentence. Wrong TURN A: ask what connects the two ("What do these have in common?").`,
-  vocabulary_matching: `TEACH THIS EXERCISE AS: vocabulary matching — connect word to definition/synonym. Ask: "What does [word] mean here?" or "Which option fits this meaning?" Correct: confirm + add one real-world collocation ("We also say [collocation]"). Wrong TURN A: give a context sentence from the text, not the definition.`,
-  fill_gap: `TEACH THIS EXERCISE AS: fill in the gap — focus on WHY the word fits (tense, agreement, collocation), never the word itself before TURN D. Correct: "Exactly — [brief reason the form fits here]." Wrong TURN A: ask about the grammar rule behind the gap, not the word. e.g. "Is the action finished or still connected to the present?"`,
-  form_transformation: `TEACH THIS EXERCISE AS: form transformation — student changes structure, preserves meaning. Focus on WHAT changes. Correct: name the structure ("Right — auxiliary + base verb in negatives"). Wrong TURN A: "Keep the same meaning — what specifically needs to change: verb form, word order, or auxiliary?"`,
-  error_correction: `TEACH THIS EXERCISE AS: error correction — student identifies and fixes one error. Ask "What is wrong here?" before giving any hint. Correct: name the rule they applied. Wrong TURN A: "Look at the [verb form / word order / article / preposition] — does it follow the rule we practised?"`,
-  reconstruction: `TEACH THIS EXERCISE AS: sentence reconstruction — student rebuilds from parts. Focus on word order and auxiliary placement. Correct: "Right — that's natural English word order." Wrong TURN A: "Start with the [subject / question word / auxiliary]. Where does [element] go?"`,
-  reading: `TEACH THIS EXERCISE AS: reading aloud — LISTEN silently. Do NOT interrupt for minor accent differences or mispronunciations. Interrupt ONLY if: same word wrong 3× in a row, or student fully stops (>3s silence mid-sentence). After the paragraph: ONE pacing observation + ONE comprehension question from the Teacher's Book. Never lecture during reading.`,
-  speaking_prompt: `TEACH THIS EXERCISE AS: open speaking — respond naturally but stay exercise-focused. After student speaks: check grammar accuracy first, then vocabulary, then task completion. Do NOT start a new topic or over-chat. Keep your feedback to 2 sentences. Ask a follow-up question tied to the exercise.`,
-  free_production: `TEACH THIS EXERCISE AS: open production — accept any grammatically correct answer fulfilling the task. Feedback order: name what is right → fix what is wrong → ask student to produce the corrected version. Never reject a creative answer on content grounds alone.`,
-}
 
 // Generic phase instructions (free mode / no section)
 const PHASE_INSTRUCTIONS: Record<LessonPhase, string> = {
@@ -627,10 +613,14 @@ function buildTeacherAgendaContext(state: LessonState, remainingSeconds?: number
       lines.push(`Do NOT restart at TURN A. Do NOT advance the item until the student answers correctly.`)
     }
 
-    // Phase 3: inject exercise-type-specific teaching hint so Alex knows HOW to teach this type
+    // Phase 4: inject deterministic teacher behavior context per exercise type + correction turn
     if (state.activeExerciseType) {
-      const typeHint = EXERCISE_TYPE_HINTS[state.activeExerciseType]
-      if (typeHint) lines.push(typeHint)
+      lines.push(buildBehaviorContext(
+        state.activeExerciseType,
+        state.itemIndex,
+        state.correctionTurn,
+        state.currentItem,
+      ))
     }
   }
 
