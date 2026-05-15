@@ -16,6 +16,7 @@ import {
   getExercisePolicy,
   validateSnapshotShape,
 } from '../exercises/protocols/index.js'
+import { selectProtocol } from '../exercises/runtime/index.js'
 
 // ── Stub responses per phase (replaced by Claude in Phase 3) ─────────────────
 
@@ -166,7 +167,9 @@ export class LessonOrchestrator {
         }
       }
     } else if (incomingExercise) {
+      const acceptedProtocol = selectProtocol(incomingExercise.type)
       console.log(`[orch] exercise_accepted type="${incomingExercise.type}" items=${incomingExercise.items?.length ?? 0} options=${incomingExercise.options?.length ?? 0}`)
+      console.log(`[protocol] type=${incomingExercise.type} protocol=${acceptedProtocol.protocolName} lock=${acceptedProtocol.shouldLockCurrentItem()} soft=${acceptedProtocol.shouldUseSoftFeedback()}`)
       const newNum = incomingExercise.exerciseNumber
       if (newNum !== undefined && newNum > 0 && newNum !== state.currentExerciseNum) {
         // Moving to a new textbook exercise — mark previous as complete

@@ -29,6 +29,7 @@ import { DeepgramSTT } from '../voice/stt.js'
 import { speakToClient } from '../voice/tts.js'
 import { loadExercise, recordAnswer } from '../exercises/exercise-store.js'
 import { validateAnswer } from '../exercises/validator.js'
+import { useSoftFeedback, buildProtocolOffTopicRecovery } from '../exercises/runtime/index.js'
 import { updateStudentProfile } from '../lesson/profile-updater.js'
 import { saveTip, getStudentTips } from '../lesson/tips-service.js'
 import type { TipRecord } from '../lesson/tips-service.js'
@@ -804,11 +805,29 @@ async function handleFocusLessonStart(
   await ttsStream(ws, meta, greeting)
 }
 
+// Reads the current lesson state to build an off-topic recovery suffix.
+// Appended to student input when an exercise is active so the AI knows to
+// answer briefly and return to the current item.
+async function buildOffTopicGuard(lessonId: string): Promise<string> {
+  try {
+    const stateRaw = await redis.get(lessonStateKey(lessonId))
+    if (!stateRaw) return ''
+    const state = JSON.parse(stateRaw) as LessonState
+    if (!state.currentExerciseNum || !state.currentItem) return ''
+    const type = state.activeExerciseType ?? 'unknown'
+    const recovery = buildProtocolOffTopicRecovery(type, state.currentItem, state.itemIndex ?? 0)
+    return recovery
+  } catch {
+    return ''
+  }
+}
+
 async function processInput(
   ws: WebSocket,
   meta: ClientMeta,
   text: string,
   sendCard = false,
+  skipOffTopicGuard = false,
 ): Promise<void> {
   if (!meta.lessonId) {
     send(ws, { type: 'error', code: 'NO_LESSON', message: 'Start a lesson first.' })
@@ -828,10 +847,21 @@ async function processInput(
   const elapsedMs   = meta.lessonStartedAt ? Date.now() - meta.lessonStartedAt : 0
   const remainingMs = Math.max(0, MAX_LESSON_MS - elapsedMs)
 
+  // Inject off-topic recovery guard for regular student turns when an exercise is active.
+  // System-generated contexts (correction, confusion) set skipOffTopicGuard=true to avoid
+  // double-injecting recovery instructions that are already protocol-encoded in the context.
+  let inputText = text
+  if (!skipOffTopicGuard) {
+    const guard = await buildOffTopicGuard(meta.lessonId)
+    if (guard) {
+      inputText = text + guard
+    }
+  }
+
   console.log(`[paid-lesson] ai_turn_started input_chars=${text.trim().length} remaining_min=${Math.round(remainingMs / 60_000)}`)
   let result: Awaited<ReturnType<typeof orchestrator.process>> | undefined
   try {
-    result = await orchestrator.process(meta.lessonId, text, { remainingMs })
+    result = await orchestrator.process(meta.lessonId, inputText, { remainingMs })
   } finally {
     meta.aiProcessing = false
     // Process any input that arrived while AI was busy
@@ -1049,9 +1079,10 @@ async function handleExerciseAnswer(
   // Phase 2.6: include score in feedback event (backward-compatible — frontend ignores unknown fields)
   send(ws, { type: 'feedback', correct: validation.correct, explanation: validation.feedback, score: validation.score })
 
-  // Phase 2.6: open speaking tasks (speaking_prompt, free_production) must NOT use
-  // the normal binary correction ladder — there is no single "correct answer" to reveal.
-  const isOpenSpeaking = exercise.type === 'speaking_prompt' || exercise.type === 'free_production'
+  // Soft-feedback types (speaking, discussion, roleplay, grammar_focus, etc.) must NOT
+  // use the binary correction ladder — there is no single "correct answer" to reveal.
+  // Protocol runner determines this from the exercise type's runtimeMode.
+  const isOpenSpeaking = useSoftFeedback(exercise.type)
 
   let context: string
 
@@ -1097,7 +1128,8 @@ Set exercise: null — do not advance the item yet.`
     context = buildCorrectionContext(answer, exercise.correct_answer, turn, exercise.type)
   }
 
-  await processInput(ws, meta, context)
+  // Protocol correction context already contains off-topic recovery info — skip guard.
+  await processInput(ws, meta, context, false, true)
 }
 
 async function handleStudentConfused(
@@ -1147,7 +1179,7 @@ async function handleStudentConfused(
   }
 
   const confusionContext = parts.join('\n')
-  await processInput(ws, meta, confusionContext, true)
+  await processInput(ws, meta, confusionContext, true, true)
 }
 
 /** Fire-and-forget: generate (or load from cache) a section grammar card and send to client. */
