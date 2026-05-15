@@ -122,22 +122,25 @@ export async function validateAnswer(
 
   // Unsupported types: return safe non-destructive result — do not enter correction ladder
   if (UNSUPPORTED_TYPES.has(type)) {
-    console.warn(`[validator] unsupported exercise type "${type}" reached validation — returning safe result`)
+    console.warn(`[validator] route=unsupported type="${type}" — returning safe result`)
     return { correct: false, score: 0.5, feedback: 'This exercise type is not yet supported for automated validation.' }
   }
 
   // Matching types: voice-safe letter normalization
   if (MATCHING_TYPES.has(type)) {
+    console.log(`[validator] route=matching type="${type}"`)
     return validateMatchingAnswer(studentAnswer, exercise.correct_answer)
   }
 
   // Deterministic types: require exact match (AI hallucination risk too high)
   if (DETERMINISTIC_TYPES.has(type)) {
+    console.log(`[validator] route=deterministic type="${type}"`)
     return { correct: false, score: 0, feedback: 'Not quite — listen to the teacher for the correct form.' }
   }
 
   // AI semantic evaluation: reconstruction, free_production, speaking_prompt
   if (AI_EVAL_TYPES.has(type)) {
+    console.log(`[validator] route=ai_eval type="${type}"`)
     const result = await aiEvaluate(exercise, studentAnswer)
 
     // Soft pass for open speaking tasks: score ≥ 0.5 counts as correct for progression.

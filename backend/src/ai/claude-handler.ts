@@ -58,6 +58,44 @@ async function saveHistory(lessonId: string, history: ChatMessage[]): Promise<vo
 
 // ── Response parsing ──────────────────────────────────────────────────────────
 
+// Signals in instruction/question text that indicate a matching exercise,
+// regardless of what "type" the AI declared.
+const MATCHING_INSTRUCTION_SIGNALS = [
+  'match', 'with their opposites', 'questions with answers',
+  'words with definitions', 'opposites', '1-5 with ', '1–5 with ',
+  'column a', 'column b', 'match each',
+]
+
+const VALID_EXERCISE_TYPES = new Set<string>([
+  'form_transformation', 'error_correction', 'reconstruction',
+  'free_production', 'matching', 'fill_gap', 'reading', 'vocabulary',
+  'vocabulary_matching', 'speaking_prompt',
+])
+
+function inferExerciseType(e: Record<string, unknown>): ExerciseData['type'] {
+  const declared  = typeof e['type'] === 'string' ? e['type'] : undefined
+  const instText  = ((e['instruction'] as string | undefined) ?? '').toLowerCase()
+  const questText = ((e['question']    as string | undefined) ?? '').toLowerCase()
+
+  const isMatchingByContent = MATCHING_INSTRUCTION_SIGNALS.some(
+    sig => instText.includes(sig) || questText.includes(sig),
+  )
+
+  if (isMatchingByContent) {
+    if (declared === 'matching' || declared === 'vocabulary_matching') {
+      return declared as ExerciseData['type']
+    }
+    if (declared && declared !== 'matching') {
+      console.warn(`[parseExercise] type_conflict declared="${declared}" instruction signals matching — overriding to "matching"`)
+    }
+    return 'matching'
+  }
+
+  if (declared && VALID_EXERCISE_TYPES.has(declared)) return declared as ExerciseData['type']
+  if (declared) console.warn(`[parseExercise] unknown_type "${declared}" — defaulting to form_transformation`)
+  return 'form_transformation'
+}
+
 function parseExercise(raw: unknown): ExerciseData | null {
   if (!raw || typeof raw !== 'object') return null
   const e = raw as Record<string, unknown>
@@ -70,9 +108,11 @@ function parseExercise(raw: unknown): ExerciseData | null {
     ? (e['options'] as unknown[]).filter((o): o is string => typeof o === 'string')
     : undefined
 
+  const resolvedType = inferExerciseType(e)
+
   return {
     id:             '',
-    type:           (e['type'] as ExerciseData['type']) ?? 'form_transformation',
+    type:           resolvedType,
     question:       e['question'],
     correct_answer: e['correct_answer'],
     hint:           typeof e['hint'] === 'string' ? e['hint'] : '',

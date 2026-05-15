@@ -323,7 +323,7 @@ When readiness signal detected:
 → speech (MAX 2 sentences): "Let's go. Exercise 1: [instruction in one sentence]. Number 1: [first item text]."
 → Fill the "exercise" field with Exercise 1, item 1 from the Student Book content above:
   {
-    "type": "[form_transformation|error_correction|reconstruction|fill_gap|free_production|reading|speaking_prompt]",
+    "type": "[form_transformation|error_correction|reconstruction|fill_gap|matching|vocabulary_matching|free_production|reading|speaking_prompt]",
     "question": "[FIRST ITEM TEXT ONLY — exact textbook text of item 1]",
     "correct_answer": "[expected answer for item 1 from Teacher's Book]",
     "hint": "[a category hint — not the answer]",
@@ -331,7 +331,8 @@ When readiness signal detected:
     "exerciseNumber": 1,
     "instruction": "[full textbook instruction for Exercise 1]",
     "skillFocus": "[specific grammar/skill point]",
-    "items": ["1. full item 1 text", "2. full item 2 text", "... all items of Exercise 1"]
+    "items": ["1. full item 1 text", "2. full item 2 text", "... all items of Exercise 1"],
+    "options": ["a. option text", "b. option text", "... RIGHT column for matching exercises; word bank if provided; null for open exercises"]
   }
 → next_action: "transition_to:EXERCISES"
 → Do NOT show a grammar overview. Do NOT ask another question. Go straight to Exercise 1.
@@ -354,7 +355,7 @@ No rule to discover — this is a ${sectionType} section, so go straight to exer
 
 Include Exercise 1 in the "exercise" field:
 {
-  "type": "[fill_gap|reading|speaking_prompt|vocabulary_matching|free_production]",
+  "type": "[fill_gap|matching|vocabulary_matching|reading|speaking_prompt|free_production]",
   "question": "[FIRST ITEM TEXT ONLY]",
   "correct_answer": "[expected answer]",
   "hint": "[category hint]",
@@ -362,7 +363,8 @@ Include Exercise 1 in the "exercise" field:
   "exerciseNumber": 1,
   "instruction": "[full textbook instruction]",
   "skillFocus": "[specific skill]",
-  "items": ["1. item text", "... all items"]
+  "items": ["1. item text", "... all items"],
+  "options": ["a. option text", "b. option text", "... RIGHT column for matching; null for open exercises"]
 }
 
 RETURN: next_action: "transition_to:EXERCISES"
@@ -387,7 +389,7 @@ IN display_text: Present the GRAMMAR OVERVIEW CARD:
 
 Then include Exercise 1 in the "exercise" field:
 {
-  "type": "[form_transformation|error_correction|reconstruction|fill_gap|free_production]",
+  "type": "[form_transformation|error_correction|reconstruction|fill_gap|matching|vocabulary_matching|free_production]",
   "question": "[FIRST ITEM TEXT ONLY — exact textbook text of item 1]",
   "correct_answer": "[expected answer for item 1 from Teacher's Book]",
   "hint": "[category hint — not the answer]",
@@ -395,7 +397,8 @@ Then include Exercise 1 in the "exercise" field:
   "exerciseNumber": 1,
   "instruction": "[full textbook instruction for Exercise 1]",
   "skillFocus": "[specific grammar point]",
-  "items": ["1. full item text", "2. full item text", "... all items"]
+  "items": ["1. full item text", "2. full item text", "... all items"],
+  "options": ["a. option text", "b. option text", "... RIGHT column for matching exercises; null for open exercises"]
 }
 
 RETURN: next_action: "transition_to:EXERCISES"
@@ -512,7 +515,7 @@ On the retry turn (plain student text): evaluate, escalate ladder if needed, con
 ━━━ EXERCISE LEARNING CARD — fill ALL fields on every new item ━━━
 {
   "exercise": {
-    "type": "form_transformation | error_correction | reconstruction | free_production",
+    "type": "form_transformation | error_correction | reconstruction | fill_gap | matching | vocabulary_matching | free_production | speaking_prompt",
     "question": "[CURRENT ITEM TEXT ONLY — the single question/sentence the student must answer RIGHT NOW — exact textbook text]",
     "correct_answer": "[exact expected answer for this current item only]",
     "hint": "[progressive hint: start with the category, not the answer — e.g. 'Think about the auxiliary for he/she/it']",

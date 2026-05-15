@@ -18,6 +18,9 @@ const SUPPORTED_EXERCISE_TYPES = new Set([
   'matching', 'fill_gap', 'vocabulary', 'vocabulary_matching', 'speaking_prompt',
 ])
 
+// Phase 2.7: matching exercises require options before entering structured runtime
+const MATCHING_TYPES = new Set(['matching', 'vocabulary_matching'])
+
 // ── Stub responses per phase (replaced by Claude in Phase 3) ─────────────────
 
 const PHASE_INTRO: Record<LessonPhase, (s: LessonState) => string> = {
@@ -121,15 +124,27 @@ export class LessonOrchestrator {
     let exerciseCursor: ExerciseCursor | null = null
 
     // Phase 2.6: only process exercise data if the type is supported by the current runtime.
-    // Unsupported types (reading, listening, writing, etc.) must not enter the exercise state
-    // machine — they would corrupt the cursor and trigger broken validation paths.
+    // Phase 2.7: matching exercises must also have options before entering structured runtime.
     const incomingExercise = aiResp.exercise
     const exerciseTypeSupported = incomingExercise
       ? SUPPORTED_EXERCISE_TYPES.has(incomingExercise.type)
       : false
 
-    if (incomingExercise && !exerciseTypeSupported) {
-      console.warn(`[orch] blocked unsupported exercise type "${incomingExercise.type}" — preserving existing cursor`)
+    // Phase 2.7: matching without options is an incomplete snapshot — block before entering
+    // structured validation so the validator never sees a matching exercise with no options.
+    const isMatchingType       = incomingExercise ? MATCHING_TYPES.has(incomingExercise.type) : false
+    const matchingHasOptions   = !isMatchingType || (incomingExercise?.options?.length ?? 0) > 0
+    const exerciseBlocked      = Boolean(incomingExercise && (!exerciseTypeSupported || !matchingHasOptions))
+
+    if (exerciseBlocked && incomingExercise) {
+      if (!exerciseTypeSupported) {
+        console.warn(`[orch] exercise_blocked lessonId=${lessonId} type="${incomingExercise.type}" reason=unsupported_type — preserving existing cursor`)
+      } else {
+        console.warn(
+          `[orch] exercise_blocked lessonId=${lessonId} type="${incomingExercise.type}" reason=matching_missing_options ` +
+          `items=${incomingExercise.items?.length ?? 0} options=0`,
+        )
+      }
       // Rebuild cursor from existing state so the frontend stays in sync
       if (state.currentExerciseNum > 0 && state.currentItem) {
         const itemTotal = state.exerciseItems?.length ?? 0
@@ -151,6 +166,7 @@ export class LessonOrchestrator {
         }
       }
     } else if (incomingExercise) {
+      console.log(`[orch] exercise_accepted type="${incomingExercise.type}" items=${incomingExercise.items?.length ?? 0} options=${incomingExercise.options?.length ?? 0}`)
       const newNum = incomingExercise.exerciseNumber
       if (newNum !== undefined && newNum > 0 && newNum !== state.currentExerciseNum) {
         // Moving to a new textbook exercise — mark previous as complete
@@ -236,7 +252,8 @@ export class LessonOrchestrator {
     }
 
     // Persist exercise (override AI's UUID with server UUID)
-    const exercise = (incomingExercise && exerciseTypeSupported)
+    // Phase 2.7: also skip save when exerciseBlocked (matching without options)
+    const exercise = (incomingExercise && !exerciseBlocked)
       ? await saveExercise(lessonId, incomingExercise)
       : null
 

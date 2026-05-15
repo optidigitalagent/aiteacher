@@ -486,17 +486,25 @@ async function resumeLesson(
         exerciseNumber: state.currentExerciseNum,
         // Phase 11: use stored exerciseType — falls back to 'unknown' only for old snapshots
         exerciseType:   state.activeExerciseType ?? 'unknown',
-        instruction:    '',
+        // Phase 2.7: restore full instruction + items + options so matching exercises display correctly
+        instruction:    state.exerciseInstruction ?? '',
         currentItem:    state.currentItem,
         itemIndex:      state.itemIndex ?? 0,
-        itemTotal:      0,
+        itemTotal:      state.exerciseItems?.length ?? 0,
         completedItems: state.completedItems ?? [],
         failedItems:    state.failedItems    ?? [],
         wordBoxState:   state.wordBoxState   ?? null,
+        items:          state.exerciseItems,
+        options:        state.exerciseOptions,
         // Phase 2.6: restore authoritative exerciseId so frontend pendingId stays in sync
         exerciseId:     state.currentExerciseId ?? null,
       },
     })
+    console.log(
+      `[ws] resume_cursor_sent type=${state.activeExerciseType ?? 'unknown'} ` +
+      `items=${state.exerciseItems?.length ?? 0} options=${state.exerciseOptions?.length ?? 0} ` +
+      `exerciseId=${state.currentExerciseId ?? 'none'}`,
+    )
   }
 
   // Phase 11: stamp lesson_id on the new usage record created for this reconnect session
@@ -636,9 +644,17 @@ async function handleFocusLessonStart(
       [meta.sessionId, meta.userId],
     )
     const existingLessonId = existingRow.rows[0]?.lesson_id
+    console.log(
+      `[paid-lesson] focus_lesson_start_path session=${meta.sessionId} ` +
+      `existing_lesson=${existingLessonId ?? 'none'}`,
+    )
     if (existingLessonId) {
       const resumed = await resumeLesson(ws, meta, existingLessonId)
-      if (resumed) return
+      if (resumed) {
+        console.log(`[paid-lesson] focus_lesson_start_resumed lessonId=${existingLessonId} session=${meta.sessionId}`)
+        return
+      }
+      console.log(`[paid-lesson] focus_lesson_start_resume_failed_new_lesson session=${meta.sessionId}`)
       // Redis expired — fall through to create a new lesson
     }
   }
@@ -1434,7 +1450,7 @@ export function attachLessonWS(server: Server): void {
       }
     })
 
-    ws.on('close', () => {
+    ws.on('close', (code: number, reason: Buffer) => {
       clearInterval(meta.heartbeatRef)
       clearTimeout(meta.timeoutRef)
       if (meta.maxDurationRef)           clearTimeout(meta.maxDurationRef)
@@ -1444,7 +1460,10 @@ export function attachLessonWS(server: Server): void {
       meta.ttsController?.abort()
       meta.stt?.close()
       clients.delete(ws)
-      console.log(`[ws] client disconnected, total=${clients.size}`)
+      console.log(
+        `[ws] client disconnected code=${code} reason="${reason.toString() || '(none)'}" ` +
+        `session=${meta.sessionId ?? 'none'} lessonId=${meta.lessonId ?? 'none'} total=${clients.size}`,
+      )
 
       // Phase 6: persist snapshot to PostgreSQL before billing finalize.
       // This allows resume beyond the 4-hour Redis TTL.
@@ -1481,7 +1500,7 @@ export function attachLessonWS(server: Server): void {
     })
 
     ws.on('error', (err: Error) => {
-      console.error('[ws] client error:', err.message)
+      console.error(`[ws] client error session=${meta.sessionId ?? 'none'} lessonId=${meta.lessonId ?? 'none'}: ${err.message}`)
     })
   })
 

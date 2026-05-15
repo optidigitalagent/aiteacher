@@ -55,7 +55,11 @@ export class DeepgramSTT {
           console.error('[stt] queue flush send error:', err)
         }
       }
-      this.keepAliveRef = setInterval(() => conn.keepAlive(), 8_000)
+      this.keepAliveRef = setInterval(() => {
+        try { conn.keepAlive() } catch (err) {
+          console.error('[stt] keepAlive error (ignored):', err)
+        }
+      }, 8_000)
     })
 
     // Accumulate is_final segments and forward interim for live display
@@ -133,8 +137,15 @@ export class DeepgramSTT {
 
   close(): void {
     if (!this.conn) return
-    if (this.keepAliveRef) clearInterval(this.keepAliveRef)
+    const c = this.conn
+    this.conn = null  // prevent double-close race
+    if (this.keepAliveRef) {
+      clearInterval(this.keepAliveRef)
+      this.keepAliveRef = null
+    }
     this.transcriptBuffer = ''
-    this.conn.finish()
+    try { c.finish() } catch (err) {
+      console.error('[stt] close error (ignored):', err)
+    }
   }
 }
