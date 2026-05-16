@@ -289,6 +289,47 @@ export class LessonOrchestrator {
     // If AI returns no exercise on a correction turn, do NOT clear existing cursor state.
     // The exercise is still active — just waiting for the student's next attempt.
 
+    // ── Item continuity enforcement for locked exercises ──────────────────────
+    // When a locked exercise has an unresolved item and this turn was NOT a
+    // structured exercise-answer turn (correct/wrong via handleExerciseAnswer),
+    // append a backend-authoritative re-anchor to the AI speech so the student
+    // always knows which item to answer next — even if the AI drifted after an
+    // explanation or side question.
+    //
+    // Skipped when:
+    //   • wasExerciseAnswerTurn — correct/wrong answer turns already carry their
+    //     own anchors (continuationContract / retryAnchor in buildCorrectionContext)
+    //   • confirmsCorrect — AI opened with a confirmation word → likely a correct-
+    //     answer voice turn; do not double-state the item
+    //   • itemInTail — the current item text already appears at the end of the AI
+    //     response, so the AI anchored correctly without our help
+    const wasExerciseAnswerTurn = inputText.includes('[EXERCISE RESULT]')
+    if (
+      !wasExerciseAnswerTurn &&
+      state.phase === 'EXERCISES' &&
+      state.currentExerciseNum > 0 &&
+      state.currentItem &&
+      state.activeExerciseType &&
+      selectProtocol(state.activeExerciseType).shouldLockCurrentItem()
+    ) {
+      const itemNum   = (state.itemIndex ?? 0) + 1
+      // Strip "N." / "N)" prefix to avoid "Number 3: 3. interesting" redundancy
+      const itemLabel = state.currentItem.replace(/^\d+[.)]\s*/, '').trim() || state.currentItem
+      const reAnchor  = `Now let's continue. Number ${itemNum}: ${itemLabel}`
+      const confirmsCorrect = /^(correct|right|exactly|yes|good|perfect|well done|not bad)/i
+        .test(aiResp.speech.trim())
+      const tail      = aiResp.speech.slice(-100).toLowerCase()
+      const checkLen  = Math.min(itemLabel.length, 8)
+      const itemInTail = checkLen >= 4 && tail.includes(itemLabel.slice(0, checkLen).toLowerCase())
+      if (!confirmsCorrect && !itemInTail) {
+        aiResp.speech += `\n\n${reAnchor}`
+        console.log(
+          `[continuity] re_anchor_appended exercise=#${state.currentExerciseNum} ` +
+          `item=${itemNum} type=${state.activeExerciseType}`,
+        )
+      }
+    }
+
     await this.saveState(lessonId, state)
     await this.logEvent(lessonId, 'ai_response', { text: aiResp.speech, phase: state.phase })
 

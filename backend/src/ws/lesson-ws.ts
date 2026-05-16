@@ -84,6 +84,10 @@ const OFF_TOPIC_REQUEST_PATTERNS = [
   /\bI'?m\s+(confused|lost)\b/i,
   /\bwhat\s+should\b/i,
   /\bI\s+don'?t\s+know\s+what\b/i,
+  // Bare single-word confusion that the patterns above miss: "How?", "What?", "Why?", "Huh?"
+  /^\s*(how|what|why|huh)\s*[?!.]*\s*$/i,
+  // "what do you mean" — common rephrasing not caught by the what+verb pattern above
+  /\bwhat\s+do\s+you\s+mean\b/i,
 ]
 
 function looksLikeOffTopicRequest(text: string): boolean {

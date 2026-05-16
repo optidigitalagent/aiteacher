@@ -76,9 +76,17 @@ Set "exercise": null — stay on the current matching item.`
   },
 
   buildOffTopicRecovery(currentItem: string, itemIndex: number): string {
-    const itemNum = itemIndex + 1
-    const itemHint = currentItem ? ` ("${currentItem.slice(0, 40)}")` : ''
-    return `\n\n[PROTOCOL: OFF-TOPIC RECOVERY] Answer the question briefly. Then redirect: "Now, which option matches number ${itemNum}${itemHint}?"`
+    const itemNum  = itemIndex + 1
+    // Strip leading "N." / "N)" prefix so the anchor phrase is not doubly-numbered
+    const label    = currentItem.replace(/^\d+[.)]\s*/, '').trim() || currentItem
+    const itemHint = label ? ` ("${label.slice(0, 40)}")` : ''
+    return (
+      `\n\n[PROTOCOL: OFF-TOPIC RECOVERY — LOCKED EXERCISE]\n` +
+      `Step 1: Answer the student's question in 1–2 sentences.\n` +
+      `Step 2: MANDATORY CLOSING — end your response with exactly: "Now let's continue. Number ${itemNum}${itemHint}."\n` +
+      `FORBIDDEN: Do NOT return to Number 1. Do NOT re-ask completed items. ` +
+      `The current unresolved item is Number ${itemNum}.`
+    )
   },
 
   shouldRevealAnswer(retryCount: number): boolean {
