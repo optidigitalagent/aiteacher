@@ -117,6 +117,50 @@ export function isListeningSectionSafe(type: string): boolean {
   return LISTENING_SECTION_SAFE_TYPES.has(normalizeExerciseType(type))
 }
 
+// ── Mixed exercise boundary detection ────────────────────────────────────────
+// Detects when the AI has merged two adjacent textbook exercises:
+//   Exercise N  : discussion/pair-work intro  ("In pairs discuss who your role models are.")
+//   Exercise N+1: listening comprehension Qs  ("Who inspires you?", "What does he do?")
+//
+// The merged result looks like a discussion exercise, but its items[] come from a
+// listening task — the answers require hidden audio and cannot be given by the student.
+//
+// Detection heuristic:
+//   • Instruction matches a discussion/pair-work signal ("in pairs", "discuss", "with a partner")
+//   • Exercise has ≥3 items that are ALL short (≤10 words) WH-questions
+// When both are true, the exercise is structurally invalid (cross-boundary merge) → hard skip.
+
+const DISCUSSION_INTRO_RE = /\b(in pairs|with (a|your) partner|ask and answer|discuss( with)?)\b/i
+
+export function isMixedExerciseBoundary(exercise: {
+  instruction?: string
+  items?: string[]
+}): { mixed: boolean; reason: string } {
+  const instruction = exercise.instruction ?? ''
+  const items = exercise.items ?? []
+
+  if (!DISCUSSION_INTRO_RE.test(instruction) || items.length < 3) {
+    return { mixed: false, reason: '' }
+  }
+
+  // Count items that look like listening-comprehension questions:
+  // short (≤10 words), starting with a WH-word, and not an open invitation to share opinions.
+  const comprehensionItems = items.filter(item => {
+    const text = item.replace(/^\d+[.)]\s*/, '').trim()
+    const wordCount = text.split(/\s+/).length
+    return wordCount <= 10 && /^(who|what|where|when|why|how|which)\b/i.test(text)
+  })
+
+  if (comprehensionItems.length >= 3) {
+    return {
+      mixed: true,
+      reason: `discussion_intro_with_${comprehensionItems.length}_comprehension_items`,
+    }
+  }
+
+  return { mixed: false, reason: '' }
+}
+
 // ── Snapshot shape validation ─────────────────────────────────────────────────
 
 export function validateExerciseSnapshotShape(

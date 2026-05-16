@@ -19,6 +19,7 @@ import {
   isInstructionResourceBlocked,
   isListeningSectionSafe,
   getExercisePolicy,
+  isMixedExerciseBoundary,
 } from '../exercises/protocols/index.js'
 import { getFocusStudentBookSection } from '../lesson/focus-student-book.js'
 
@@ -299,6 +300,22 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string, callC
     ) {
       console.log(
         `[exercise:skip] type="${aiResp.exercise.type}" reason="speech_references_invisible_options"`,
+      )
+      aiResp.exercise = null
+    }
+  }
+
+  // ── Mixed exercise boundary block ────────────────────────────────────────
+  // Catches exercises where the AI merged Exercise N (discussion intro) with
+  // Exercise N+1 (listening comprehension questions) into one JSON object.
+  // These items require hidden audio — they cannot be answered without the recording.
+  // The guard fires even when the declared type is allowed (e.g. "discussion")
+  // because the content signals cross-boundary contamination.
+  if (aiResp.exercise) {
+    const mixCheck = isMixedExerciseBoundary(aiResp.exercise)
+    if (mixCheck.mixed) {
+      console.log(
+        `[exercise:skip] type="${aiResp.exercise.type}" reason="mixed_exercise_boundary:${mixCheck.reason}"`,
       )
       aiResp.exercise = null
     }

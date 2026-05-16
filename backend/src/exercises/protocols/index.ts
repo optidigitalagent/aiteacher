@@ -38,6 +38,7 @@ export {
   shouldDowngradeExercise,
   getDowngradeStrategy,
   validateExerciseSnapshotShape,
+  isMixedExerciseBoundary,
 } from './exercise-type-classifier.js'
 
 export {
