@@ -177,6 +177,21 @@ export class LessonOrchestrator {
       if (!exerciseTypeAllowed) {
         console.warn(`[exercise:policy] type="${incomingExercise.type}" allowed=false downgrade="${policy.downgradeStrategy}" lessonId=${lessonId}`)
         console.log(`[exercise:downgrade] type="${incomingExercise.type}" strategy="${policy.downgradeStrategy}" reason="orchestrator defense-in-depth: type not allowed"`)
+        // Advance cursor past the blocked exercise so the AI's next prompt reflects the skipped number.
+        // Without this the AI sees "Working on: Exercise N" where N is the blocked one and invents content.
+        const blockedNum = incomingExercise.exerciseNumber
+        if (blockedNum && blockedNum > state.currentExerciseNum) {
+          if (!state.completedExercises.includes(state.currentExerciseNum) && state.currentExerciseNum > 0) {
+            state.completedExercises = [...state.completedExercises, state.currentExerciseNum]
+          }
+          state.currentExerciseNum = blockedNum
+          state.currentItem        = ''
+          state.itemIndex          = 0
+          state.completedItems     = []
+          state.failedItems        = []
+          state.correctionTurn     = null
+          console.log(`[exercise:skip_advance] advanced cursor to skipped exercise #${blockedNum} lessonId=${lessonId}`)
+        }
       } else {
         console.warn(
           `[exercise:snapshot] type="${incomingExercise.type}" ok=false reason="${snapValidation.reason}" lessonId=${lessonId}` +
