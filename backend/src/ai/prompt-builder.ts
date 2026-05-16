@@ -10,6 +10,7 @@ import {
   getFocusStudentBookSection,
 } from '../lesson/focus-student-book'
 import { buildBehaviorContext } from '../exercises/teacher-behaviors/index.js'
+import { buildTeacherBrainGuidance } from './teacher-brain/index.js'
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
@@ -943,6 +944,17 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   // void grammarMastery — unused but kept in PromptContext for future phases
   void grammarMastery
 
+  // Teacher Brain Phase B: structured guidance injection (additive — does not change existing behavior)
+  const teacherBrainGuidance = state.phase === 'EXERCISES'
+    ? buildTeacherBrainGuidance({
+        state,
+        studentName,
+        studentLevel,
+        teacherName: resolvedTeacher,
+        remainingSeconds,
+      })
+    : ''
+
   return `${persona}
 
 You NEVER say: "Amazing!", "Wonderful!", "Great job!", "That's perfect!" — hollow praise kills thinking.
@@ -969,7 +981,7 @@ ${MICRO_TIP_GUIDANCE}
 ${ANTI_CHAOS_PROTOCOL}
 
 ${OPEN_TASK_GUIDANCE}
-
+${teacherBrainGuidance ? `\n${teacherBrainGuidance}\n` : ''}
 === CURRENT INSTRUCTION ===
 ${phaseInstruction}
 
