@@ -182,7 +182,11 @@ export class LessonOrchestrator {
           `[exercise:snapshot] type="${incomingExercise.type}" ok=false reason="${snapValidation.reason}" lessonId=${lessonId}` +
           ` items=${incomingExercise.items?.length ?? 0} options=${incomingExercise.options?.length ?? 0}`,
         )
-        console.log(`[exercise:downgrade] type="${incomingExercise.type}" strategy="preserve_cursor" reason="${snapValidation.reason ?? 'snapshot_invalid'}"`)
+        if (snapValidation.reason === 'speaking_structured_items_invalid') {
+          console.log(`[exercise:skip] type="${incomingExercise.type}" reason="speaking_structured_items_invalid" items=${incomingExercise.items?.length ?? 0}`)
+        } else {
+          console.log(`[exercise:downgrade] type="${incomingExercise.type}" strategy="preserve_cursor" reason="${snapValidation.reason ?? 'snapshot_invalid'}"`)
+        }
       }
       // Rebuild cursor from existing state so the frontend stays in sync
       if (state.currentExerciseNum > 0 && state.currentItem) {

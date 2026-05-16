@@ -50,7 +50,14 @@ function validateDeterministicSnapshot(type: string, snap: Snapshot): SnapshotVa
 }
 
 function validateSpeakingSnapshot(type: string, snap: Snapshot): SnapshotValidationResult {
-  if (!hasNonEmptyString(snap, 'question', 'item', 'prompt')) {
+  // Speaking/discussion exercises must be a single open prompt — never a structured item list.
+  // items.length > 1 means the AI merged a discussion intro with listening comprehension questions,
+  // producing an invalid shape that creates item-cursor progression (e.g. item=0/8).
+  const items = snap['items']
+  if (Array.isArray(items) && items.length > 1) {
+    return { ok: false, reason: `speaking_structured_items_invalid` }
+  }
+  if (!hasNonEmptyString(snap, 'question', 'item', 'prompt', 'instruction')) {
     return { ok: false, reason: `${type}: must have a prompt or question.` }
   }
   return { ok: true }
@@ -66,8 +73,9 @@ const DETERMINISTIC_TYPES = new Set([
   'error_correction', 'replace_substitute_words', 'tick_cross', 'true_false',
 ])
 const SPEAKING_TYPES = new Set([
-  'speaking_prompt', 'discussion', 'roleplay', 'show_interest_agree_disagree',
-  'brainstorm_60_second', 'show_what_you_know', 'grammar_focus', 'remember_this',
+  'speaking_prompt', 'discussion', 'roleplay', 'free_production',
+  'show_interest_agree_disagree', 'brainstorm_60_second', 'show_what_you_know',
+  'grammar_focus', 'remember_this',
 ])
 const POSTPONED_TYPES = new Set([
   'listening', 'gap_fill_from_audio', 'listen_check_repeat', 'pronunciation_focus',
