@@ -10,7 +10,7 @@ import {
   getFocusStudentBookSection,
 } from '../lesson/focus-student-book'
 import { buildBehaviorContext } from '../exercises/teacher-behaviors/index.js'
-import { buildTeacherBrainGuidance } from './teacher-brain/index.js'
+import { buildPaidLessonTeacherBrainContext } from './teacher-brain/index.js'
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
@@ -174,11 +174,10 @@ HARD SKIP any exercise where the student must recall what they heard:
   ❌ Match speakers with statements
   ❌ Answer questions about what you heard
   ❌ Any fill_gap, true_false, tick_cross, matching whose answers come from the recording
-ONLY run exercises the student can answer from visible text alone:
-  ✅ Discussion / speaking prompts on the section topic
-  ✅ Vocabulary the student already knows or that appears in a visible word box
-  ✅ Speaking: "What do you know about [topic]?" / "What would you do in this situation?"
-If no visible-text exercise is available → skip to next section with:
+ONLY run exercises with non-audio exercise types explicitly defined in the section content above.
+Each such exercise must have a specific textbook instruction and type in the Student Book content.
+Do NOT invent speaking prompts about the section topic — only run actual textbook exercises.
+If no non-audio textbook exercises exist in this section → skip to next section with:
   Speech: "This section needs the audio we don't have. Let's move on."
 FORBIDDEN: saying "choose from the options on screen" or "from the word bank" when no options exist in the exercise JSON.
 
@@ -944,9 +943,11 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   // void grammarMastery — unused but kept in PromptContext for future phases
   void grammarMastery
 
-  // Teacher Brain Phase B: structured guidance injection (additive — does not change existing behavior)
-  const teacherBrainGuidance = state.phase === 'EXERCISES'
-    ? buildTeacherBrainGuidance({
+  // Teacher Brain Phase C: primary behavioral contract for paid (focus) lessons.
+  // Applies to all phases in focus mode, not just EXERCISES.
+  // Overrides conflicting rules in OPEN_TASK_GUIDANCE and ANTI_CHAOS_PROTOCOL.
+  const teacherBrainGuidance = isFocusMode
+    ? buildPaidLessonTeacherBrainContext({
         state,
         studentName,
         studentLevel,

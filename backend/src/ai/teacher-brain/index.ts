@@ -77,6 +77,7 @@ export {
 
 export {
   buildTeacherBrainGuidance,
+  buildPaidLessonTeacherBrainContext,
   validateTeacherResponse,
   buildContextComposerOutput,
   buildBehaviorPolicyOutput,

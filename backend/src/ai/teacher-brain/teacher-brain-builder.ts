@@ -8,8 +8,8 @@
 
 import type { LessonState } from '../../lesson/types.js'
 import type { TeacherBrainContext } from './teacher-brain.types.js'
-import { CORRECTION_LADDER_DESCRIPTIONS } from './teacher-brain.constants.js'
-import { getRulesForMode } from './teacher-brain-rules.js'
+import { CORRECTION_LADDER_DESCRIPTIONS, TEACHER_COMMUNICATION_PRINCIPLES } from './teacher-brain.constants.js'
+import { getRulesForMode, ANTI_CHAOS_RULES, SKIP_RULES } from './teacher-brain-rules.js'
 import { selectExamples, formatExampleForPrompt } from './teacher-brain-examples.js'
 import {
   normalizeTeacherBrainContext,
@@ -78,6 +78,113 @@ function buildExamplesSection(ctx: TeacherBrainContext): string {
 
   const formatted = examples.map(formatExampleForPrompt).join('\n\n')
   return `--- RELEVANT EXAMPLES ---\n${formatted}`
+}
+
+// ── Phase C: Primary paid lesson Teacher Brain context ──────────────────────
+//
+// Replaces buildTeacherBrainGuidance for focus mode.
+// Applies to all lesson phases, not just EXERCISES.
+// Contains explicit OVERRIDE declaration so conflicting rules above are superseded.
+
+export function buildPaidLessonTeacherBrainContext(input: TeacherBrainGuidanceInput): string {
+  const ctx = normalizeTeacherBrainContext(input as NormalizeContextInput)
+
+  const sections = [
+    buildCoreSection(),
+    buildRuntimeTruthSection(ctx),
+    buildBehaviorContractSection(ctx),
+    buildForbiddenSection(ctx),
+    buildExamplesSection(ctx),
+  ].filter(Boolean)
+
+  return [
+    '╔═══════════════════════════════════════════════╗',
+    '║  TEACHER BRAIN — PRIMARY BEHAVIORAL CONTRACT  ║',
+    '║  OVERRIDES any conflicting rules stated above ║',
+    '╚═══════════════════════════════════════════════╝',
+    sections.join('\n\n'),
+    '════════════════════════════════════════════════',
+  ].join('\n')
+}
+
+function buildCoreSection(): string {
+  const principles = (TEACHER_COMMUNICATION_PRINCIPLES as readonly string[])
+    .slice(0, 8)
+    .map(p => `• ${p}`)
+    .join('\n')
+  return `── CORE TEACHER BRAIN ──\n${principles}`
+}
+
+function buildRuntimeTruthSection(ctx: TeacherBrainContext): string {
+  const lines: string[] = ['── CURRENT RUNTIME TRUTH (backend-authoritative — never infer) ──']
+
+  lines.push(`Phase: ${ctx.phase} | Exercise: ${ctx.exercise.exerciseNum} | Type: ${ctx.exercise.exerciseType}`)
+  lines.push(`Mode: ${ctx.exercise.runtimeMode.toUpperCase()}`)
+
+  if (ctx.exercise.isUnsupported) {
+    lines.push(`STATUS: UNSUPPORTED — ${ctx.exercise.unsupportedReason ?? 'requires unavailable resource'}`)
+    lines.push('REQUIRED ACTION: One-sentence skip + present next exercise in same response')
+    if (ctx.completedExercises.length > 0) {
+      lines.push(`Completed exercises: [${ctx.completedExercises.join(', ')}] — permanently closed`)
+    }
+    return lines.join('\n')
+  }
+
+  if (ctx.exercise.currentItem) {
+    lines.push(`Item ${ctx.exercise.itemIndex} (0-based): "${ctx.exercise.currentItem}"`)
+  }
+
+  if (ctx.exercise.correctionTurn) {
+    lines.push(`CORRECTION STATE: TURN ${ctx.exercise.correctionTurn} — ${CORRECTION_LADDER_DESCRIPTIONS[ctx.exercise.correctionTurn]}`)
+    lines.push('Do NOT re-derive correction turn from history. Do NOT restart at TURN A.')
+  }
+
+  if (ctx.exercise.completedItems.length > 0) {
+    lines.push(`Completed items: [${ctx.exercise.completedItems.join(', ')}] — NEVER re-ask`)
+  }
+
+  if (ctx.completedExercises.length > 0) {
+    lines.push(`Completed exercises: [${ctx.completedExercises.join(', ')}] — permanently closed`)
+  }
+
+  lines.push('AI cursor authority: READ ONLY — backend owns exerciseNum, itemIndex, correctionTurn')
+
+  return lines.join('\n')
+}
+
+function buildBehaviorContractSection(ctx: TeacherBrainContext): string {
+  const mode = ctx.exercise.runtimeMode
+  const rules = getRulesForMode(mode)
+
+  if (rules.length === 0) return ''
+
+  const topRules = (rules as readonly string[]).slice(0, 6).map(r => `• ${r}`).join('\n')
+
+  let correctionNote = ''
+  if (ctx.exercise.correctionTurn && mode !== 'soft_speaking' && mode !== 'grammar_explanation') {
+    correctionNote = `\nCURRENT TURN ${ctx.exercise.correctionTurn}: ${CORRECTION_LADDER_DESCRIPTIONS[ctx.exercise.correctionTurn]}`
+  }
+
+  return `── EXERCISE BEHAVIOR CONTRACT (${mode}) ──\n${topRules}${correctionNote}`
+}
+
+function buildForbiddenSection(ctx: TeacherBrainContext): string {
+  const coreRules = (ANTI_CHAOS_RULES.rules as readonly string[]).slice(0, 8).map(r => `✗ ${r}`).join('\n')
+
+  const skipAddendum = ctx.exercise.isUnsupported || ctx.exercise.runtimeMode === 'unsupported'
+    ? '\nSKIP RULES (exercise is UNSUPPORTED):\n' +
+      (SKIP_RULES.rules as readonly string[]).slice(0, 5).map(r => `✗ ${r}`).join('\n')
+    : ''
+
+  const listeningOverride =
+    '\nLISTENING SECTION OVERRIDE (supersedes OPEN_TASK_GUIDANCE above):\n' +
+    '✗ Do NOT convert listening exercises into "discuss the topic" speaking sessions\n' +
+    '✗ Do NOT invent speaking prompts about the listening section topic\n' +
+    '✗ Do NOT ask the student to guess what was said in an audio recording\n' +
+    '✓ If exercise type is listening/audio_reconstruction → hard skip + next textbook exercise in same response\n' +
+    '✓ Only run exercises with explicit non-audio types present in the section content above'
+
+  return `── FORBIDDEN BEHAVIORS (override all above) ──\n${coreRules}${skipAddendum}${listeningOverride}`
 }
 
 // Phase C hook: validate AI's structured response against backend state.

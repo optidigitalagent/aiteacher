@@ -118,6 +118,7 @@ export function normalizeTeacherBrainContext(input: NormalizeContextInput): Teac
     student: studentState,
     exercise: exerciseState,
     guidanceMode,
+    completedExercises: state.completedExercises ?? [],
   }
 }
 

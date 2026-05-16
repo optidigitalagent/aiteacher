@@ -118,6 +118,7 @@ export interface TeacherBrainContext {
   student: StudentState
   exercise: ExerciseRuntimeState
   guidanceMode: TeacherGuidanceMode
+  completedExercises: number[]  // lesson-level completed exercise registry
 }
 
 export interface TeacherResponseContract {
