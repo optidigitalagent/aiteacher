@@ -160,6 +160,23 @@ Speech (1 sentence): "That exercise needs the audio recording. Moving on to the 
 Then immediately introduce the next supported text or speaking exercise from the Student Book.
 FORBIDDEN: "Play Track X", "Listen to the recording", "listen and answer", or any audio reference.
 
+LISTENING SECTION (sectionType = Listening):
+The student has NO access to the audio recording. Answers cannot be recalled from audio.
+HARD SKIP any exercise where the student must recall what they heard:
+  ❌ Fill the gaps (answers come from audio)
+  ❌ True/False about the recording
+  ❌ Tick the words you hear
+  ❌ Match speakers with statements
+  ❌ Answer questions about what you heard
+  ❌ Any fill_gap, true_false, tick_cross, matching whose answers come from the recording
+ONLY run exercises the student can answer from visible text alone:
+  ✅ Discussion / speaking prompts on the section topic
+  ✅ Vocabulary the student already knows or that appears in a visible word box
+  ✅ Speaking: "What do you know about [topic]?" / "What would you do in this situation?"
+If no visible-text exercise is available → skip to next section with:
+  Speech: "This section needs the audio we don't have. Let's move on."
+FORBIDDEN: saying "choose from the options on screen" or "from the word bank" when no options exist in the exercise JSON.
+
 PAIR/GROUP TASK ("In pairs..."): Adapt solo:
 "Let's do this together. [Ask the question directly to the student]."
 Make it a genuine short conversation, not a drill.
@@ -335,7 +352,34 @@ If NOT a readiness signal:
 - After ANY student response (including "I don't know"), signal: next_action: "transition_to:EXERCISES"`
 
     case 'CONTEXT_INPUT':
-      if (sectionType === 'Vocabulary' || sectionType === 'Listening' || sectionType === 'Reading') {
+      if (sectionType === 'Listening') {
+        return `PHASE: CONTEXT_INPUT (Listening section) — SPEAKING EXERCISES ONLY
+
+The student does NOT have the audio recording. Do NOT run any exercise that requires recalling audio.
+
+Introduce the section topic and immediately offer a speaking exercise the student can do without audio.
+IN speech (MAX 2 sentences): Brief topic intro + first speaking prompt.
+Example: "Today's topic is [topic]. Let me ask you: [speaking question]."
+
+Include a speaking exercise in the "exercise" field:
+{
+  "type": "speaking_prompt",
+  "question": "[An open question about the section topic that the student can answer freely]",
+  "correct_answer": "",
+  "hint": "[Optional: a vocabulary hint or sentence starter]",
+  "difficulty": 0.4,
+  "exerciseNumber": 1,
+  "instruction": "Share your thoughts on this question.",
+  "skillFocus": "[topic or vocabulary focus]",
+  "items": null,
+  "options": null
+}
+
+RETURN: next_action: "transition_to:EXERCISES"
+FORBIDDEN: fill_gap, true_false, tick_cross, matching where answers depend on the recording.`
+      }
+
+      if (sectionType === 'Vocabulary' || sectionType === 'Reading') {
         return `PHASE: CONTEXT_INPUT (${sectionType} section) — IMMEDIATE START
 
 Introduce the section AND begin Exercise 1 in the same response.
@@ -347,7 +391,7 @@ No rule to discover — this is a ${sectionType} section, so go straight to exer
 
 Include Exercise 1 in the "exercise" field:
 {
-  "type": "[fill_gap|matching|vocabulary_matching|reading|speaking_prompt|free_production]",
+  "type": "[matching|vocabulary_matching|reading|speaking_prompt|free_production]",
   "question": "[FIRST ITEM TEXT ONLY]",
   "correct_answer": "[expected answer]",
   "hint": "[category hint]",

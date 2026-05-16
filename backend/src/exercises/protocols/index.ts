@@ -34,6 +34,7 @@ export {
   getExercisePolicy,
   isExerciseAllowedInCurrentRuntime,
   isInstructionResourceBlocked,
+  isListeningSectionSafe,
   shouldDowngradeExercise,
   getDowngradeStrategy,
   validateExerciseSnapshotShape,

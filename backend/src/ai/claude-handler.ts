@@ -17,8 +17,10 @@ import {
   inferExerciseTypeFromInstruction,
   isExerciseAllowedInCurrentRuntime,
   isInstructionResourceBlocked,
+  isListeningSectionSafe,
   getExercisePolicy,
 } from '../exercises/protocols/index.js'
+import { getFocusStudentBookSection } from '../lesson/focus-student-book.js'
 
 const MODEL = 'claude-sonnet-4-6'
 
@@ -266,6 +268,41 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string, callC
   }
 
   const aiResp = parseSafe(aiText) ?? fallback(state)
+
+  // ── Listening-section implicit audio block ────────────────────────────────
+  // Exercises in a Listening section implicitly require the student to recall
+  // audio content that doesn't exist in this runtime. Block any type that isn't
+  // explicitly safe for Listening sections (i.e., self-contained speaking tasks).
+  if (aiResp.exercise && state.focusLesson) {
+    const sb = getFocusStudentBookSection(state.focusLesson)
+    if (sb?.type === 'Listening' && !isListeningSectionSafe(aiResp.exercise.type)) {
+      console.log(
+        `[exercise:skip] type="${aiResp.exercise.type}" reason="listening_section_implicit_audio"` +
+        ` section="${state.focusLesson}"`,
+      )
+      aiResp.exercise = null
+    }
+  }
+
+  // ── Invisible-options block ───────────────────────────────────────────────
+  // If the AI speech tells the student to choose from visible options or a word
+  // bank, but the exercise JSON has no options array, the student has nothing to
+  // choose from. Skip the exercise before it enters runtime.
+  if (aiResp.exercise && !aiResp.exercise.options?.length) {
+    const sl = aiResp.speech.toLowerCase()
+    if (
+      sl.includes('from the options') ||
+      sl.includes('options on screen') ||
+      sl.includes('from the word bank') ||
+      sl.includes('word bank') ||
+      sl.includes('choose from')
+    ) {
+      console.log(
+        `[exercise:skip] type="${aiResp.exercise.type}" reason="speech_references_invisible_options"`,
+      )
+      aiResp.exercise = null
+    }
+  }
 
   // Roll conversation history
   history.push({ role: 'user',      content: inputText })

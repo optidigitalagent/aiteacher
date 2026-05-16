@@ -94,6 +94,29 @@ export function isInstructionResourceBlocked(instruction: string): { blocked: bo
   return { blocked: false, reason: '' }
 }
 
+// ── Listening-section safety check ───────────────────────────────────────────
+// Exercise types that are safe to run inside a Listening section because they
+// do NOT require the student to recall audio content (they use visible text or
+// free speaking instead). Everything else in a Listening section is implicitly
+// audio-dependent and must be hard-skipped.
+
+const LISTENING_SECTION_SAFE_TYPES = new Set<string>([
+  'speaking_prompt',
+  'discussion',
+  'roleplay',
+  'show_interest_agree_disagree',
+  'brainstorm_60_second',
+  'show_what_you_know',
+  'grammar_focus',
+  'remember_this',
+  'free_production',
+  'write_sentences_from_prompts',
+])
+
+export function isListeningSectionSafe(type: string): boolean {
+  return LISTENING_SECTION_SAFE_TYPES.has(normalizeExerciseType(type))
+}
+
 // ── Snapshot shape validation ─────────────────────────────────────────────────
 
 export function validateExerciseSnapshotShape(

@@ -369,7 +369,17 @@ export class LessonOrchestrator {
       const tail      = aiResp.speech.slice(-100).toLowerCase()
       const checkLen  = Math.min(itemLabel.length, 8)
       const itemInTail = checkLen >= 4 && tail.includes(itemLabel.slice(0, checkLen).toLowerCase())
-      if (!allItemsDone && !confirmsCorrect && !itemInTail) {
+      // Skip re-anchor when AI speech already references a later item
+      // (AI advanced correctly on its own — appending old anchor would confuse student)
+      const mentionsLaterItem = (() => {
+        const sl = aiResp.speech.toLowerCase()
+        const maxN = state.exerciseItems?.length ?? 20
+        for (let n = anchorIndex + 2; n <= maxN; n++) {
+          if (sl.includes(`number ${n}`)) return true
+        }
+        return false
+      })()
+      if (!allItemsDone && !confirmsCorrect && !itemInTail && !mentionsLaterItem) {
         aiResp.speech += `\n\n${reAnchor}`
         console.log(
           `[continuity] re_anchor_appended exercise=#${state.currentExerciseNum} ` +
