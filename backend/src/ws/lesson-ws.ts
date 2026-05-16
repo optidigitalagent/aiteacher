@@ -489,6 +489,24 @@ async function resumeLesson(
   meta.micActive         = false  // set true on next mic_start
   meta.stt = createSTT(ws, meta)
 
+  // Guard: advance cursor past any completed items so a stale/corrupted itemIndex
+  // is never re-sent to the student on resume.
+  if (
+    state.currentExerciseNum > 0 &&
+    state.exerciseItems?.length &&
+    (state.completedItems ?? []).includes(state.itemIndex ?? 0)
+  ) {
+    const completedSet = state.completedItems ?? []
+    let next = state.itemIndex ?? 0
+    while (completedSet.includes(next) && next < state.exerciseItems.length) {
+      next++
+    }
+    state.itemIndex   = next
+    state.currentItem = next < state.exerciseItems.length ? state.exerciseItems[next] : ''
+    await redis.set(lessonStateKey(existingLessonId), JSON.stringify(state), 'EX', LESSON_TTL)
+    console.log(`[ws] resume_cursor_corrected itemIndex=${next} exercise=#${state.currentExerciseNum}`)
+  }
+
   const tName   = teacherDisplayName(meta.teacherId ?? undefined)
   const exNote  = state.currentExerciseNum > 0
     ? ` We were on Exercise ${state.currentExerciseNum}.`

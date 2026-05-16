@@ -247,9 +247,11 @@ export class LessonOrchestrator {
         const incomingItem = incomingExercise.question ?? ''
 
         // Guard: never regress to an already-completed item
-        const completedTexts = (state.exerciseItems ?? [])
-          .filter((_, i) => state.completedItems.includes(i))
-        const isRegression = incomingItem && completedTexts.includes(incomingItem)
+        // Normalise both sides (strip "N."/"N)" prefix, lowercase) so "clever" matches "1. clever"
+        const stripItemPrefix = (s: string) => s.replace(/^\d+[.)]\s*/, '').trim().toLowerCase()
+        const normIncoming    = stripItemPrefix(incomingItem)
+        const isRegression    = normIncoming !== '' && (state.exerciseItems ?? [])
+          .some((item, i) => state.completedItems.includes(i) && stripItemPrefix(item) === normIncoming)
 
         // For locked protocol types (matching, deterministic), item cursor is authoritative
         // from recordCorrectAnswer() only. AI item text must not override that position —
@@ -271,8 +273,13 @@ export class LessonOrchestrator {
           state.currentCorrectAnswer  = incomingExercise.correct_answer ?? ''
           console.log(`[orch] item advanced to #${state.itemIndex} within exercise #${state.currentExerciseNum}`)
         } else if (incomingItem && !state.currentItem) {
-          // First item assignment OR cleared slot after recordCorrectAnswer
-          state.currentItem          = incomingItem
+          // For locked types: prefer the authoritative items array over whatever the AI returned
+          // (AI may re-send a completed item text when currentItem was cleared by recordCorrectAnswer)
+          if (isLocked && state.exerciseItems?.length && (state.itemIndex ?? 0) < state.exerciseItems.length) {
+            state.currentItem = state.exerciseItems[state.itemIndex ?? 0]
+          } else {
+            state.currentItem = incomingItem
+          }
           state.currentCorrectAnswer = incomingExercise.correct_answer ?? ''
         } else if (incomingExercise.correct_answer) {
           // Same item, same exercise — refresh correct answer in case AI updated it
@@ -288,6 +295,30 @@ export class LessonOrchestrator {
     }
     // If AI returns no exercise on a correction turn, do NOT clear existing cursor state.
     // The exercise is still active — just waiting for the student's next attempt.
+
+    // ── Completed-item regression guard ──────────────────────────────────────
+    // Repair cursor if AI processing regressed itemIndex to a completed slot.
+    // Runs unconditionally so it also catches races on correction turns and
+    // cases where the AI changes exerciseNumber mid-exercise, resetting state.
+    if (
+      state.phase === 'EXERCISES' &&
+      state.currentExerciseNum > 0 &&
+      state.completedItems.length > 0 &&
+      state.completedItems.includes(state.itemIndex ?? 0) &&
+      state.exerciseItems?.length
+    ) {
+      let next = state.itemIndex ?? 0
+      while (state.completedItems.includes(next) && next < state.exerciseItems.length) {
+        next++
+      }
+      const corrected = next < state.exerciseItems.length ? state.exerciseItems[next] : ''
+      console.log(
+        `[orch] regression_corrected itemIndex=${state.itemIndex}→${next} ` +
+        `completedItems=[${state.completedItems.join(',')}] exercise=#${state.currentExerciseNum}`,
+      )
+      state.itemIndex   = next
+      state.currentItem = corrected
+    }
 
     // ── Item continuity enforcement for locked exercises ──────────────────────
     // When a locked exercise has an unresolved item and this turn was NOT a
@@ -312,16 +343,33 @@ export class LessonOrchestrator {
       state.activeExerciseType &&
       selectProtocol(state.activeExerciseType).shouldLockCurrentItem()
     ) {
-      const itemNum   = (state.itemIndex ?? 0) + 1
+      // Defense-in-depth: if itemIndex still points to a completed item (e.g. exerciseItems
+      // was not available for the regression guard above), find the first non-completed item.
+      let anchorIndex = state.itemIndex ?? 0
+      let anchorItem  = state.currentItem
+      if (state.completedItems.includes(anchorIndex) && state.exerciseItems?.length) {
+        for (let i = 0; i < state.exerciseItems.length; i++) {
+          if (!state.completedItems.includes(i)) {
+            anchorIndex = i
+            anchorItem  = state.exerciseItems[i]
+            break
+          }
+        }
+      }
+      // Skip re-anchor when every item is already completed (exercise is finishing)
+      const allItemsDone = state.exerciseItems?.length
+        ? state.exerciseItems.every((_, i) => state.completedItems.includes(i))
+        : state.completedItems.includes(anchorIndex)
+      const itemNum   = anchorIndex + 1
       // Strip "N." / "N)" prefix to avoid "Number 3: 3. interesting" redundancy
-      const itemLabel = state.currentItem.replace(/^\d+[.)]\s*/, '').trim() || state.currentItem
+      const itemLabel = anchorItem.replace(/^\d+[.)]\s*/, '').trim() || anchorItem
       const reAnchor  = `Now let's continue. Number ${itemNum}: ${itemLabel}`
       const confirmsCorrect = /^(correct|right|exactly|yes|good|perfect|well done|not bad)/i
         .test(aiResp.speech.trim())
       const tail      = aiResp.speech.slice(-100).toLowerCase()
       const checkLen  = Math.min(itemLabel.length, 8)
       const itemInTail = checkLen >= 4 && tail.includes(itemLabel.slice(0, checkLen).toLowerCase())
-      if (!confirmsCorrect && !itemInTail) {
+      if (!allItemsDone && !confirmsCorrect && !itemInTail) {
         aiResp.speech += `\n\n${reAnchor}`
         console.log(
           `[continuity] re_anchor_appended exercise=#${state.currentExerciseNum} ` +
