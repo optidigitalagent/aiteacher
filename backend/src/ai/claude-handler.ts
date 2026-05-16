@@ -16,6 +16,7 @@ import {
   normalizeExerciseType,
   inferExerciseTypeFromInstruction,
   isExerciseAllowedInCurrentRuntime,
+  isInstructionResourceBlocked,
   getExercisePolicy,
 } from '../exercises/protocols/index.js'
 
@@ -112,6 +113,19 @@ function parseExercise(raw: unknown): ExerciseData | null {
 
   if (!allowed) {
     console.log(`[exercise:downgrade] type="${finalType}" strategy="${policy.downgradeStrategy}" reason="type not allowed in current runtime"`)
+    return null
+  }
+
+  // Resource-content gate: block exercises whose instruction/question text references
+  // unsupported resources (audio, image, long-text writing) even when the classified
+  // type is allowed. Catches type="speaking_prompt" + instruction="Look at the photos...".
+  const instructionText = [
+    (e['instruction'] as string | undefined) ?? '',
+    (e['question']    as string | undefined) ?? '',
+  ].join(' ')
+  const resourceBlock = isInstructionResourceBlocked(instructionText)
+  if (resourceBlock.blocked) {
+    console.log(`[exercise:skip] type="${finalType}" reason="${resourceBlock.reason}"`)
     return null
   }
 

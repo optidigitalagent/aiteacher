@@ -63,6 +63,37 @@ export function getDowngradeStrategy(type: string): DowngradeStrategy {
   return getExercisePolicy(type).downgradeStrategy
 }
 
+// ── Forbidden resource content check ─────────────────────────────────────────
+// Defense-in-depth: blocks exercises whose instruction/question text contains
+// keywords that indicate an unsupported resource (audio, image, long-text writing)
+// even when the AI-declared exercise type passes the policy gate.
+// Primary case: AI returns type="speaking_prompt" with
+// instruction="Look at the photos and describe each person."
+
+const FORBIDDEN_RESOURCE_KEYWORDS: Array<{ keyword: string; reason: string }> = [
+  { keyword: 'listen',          reason: 'requires_audio' },
+  { keyword: 'audio',           reason: 'requires_audio' },
+  { keyword: 'mp3',             reason: 'requires_audio' },
+  { keyword: 'track',           reason: 'requires_audio' },
+  { keyword: 'photo',           reason: 'requires_image' },
+  { keyword: 'photos',          reason: 'requires_image' },
+  { keyword: 'picture',         reason: 'requires_image' },
+  { keyword: 'pictures',        reason: 'requires_image' },
+  { keyword: 'read the text',   reason: 'requires_long_text' },
+  { keyword: 'write an email',  reason: 'requires_writing_mode' },
+  { keyword: 'write a letter',  reason: 'requires_writing_mode' },
+]
+
+export function isInstructionResourceBlocked(instruction: string): { blocked: boolean; reason: string } {
+  const lower = instruction.toLowerCase()
+  for (const { keyword, reason } of FORBIDDEN_RESOURCE_KEYWORDS) {
+    if (lower.includes(keyword)) {
+      return { blocked: true, reason: `${reason}:keyword="${keyword}"` }
+    }
+  }
+  return { blocked: false, reason: '' }
+}
+
 // ── Snapshot shape validation ─────────────────────────────────────────────────
 
 export function validateExerciseSnapshotShape(

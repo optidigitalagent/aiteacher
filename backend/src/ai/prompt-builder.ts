@@ -144,15 +144,21 @@ FORBIDDEN:
 - Never skip back to the exercise before the student answers the Try this item.
 - Never give a 3-paragraph explanation — the card IS the explanation.`
 
-// How Alex handles special task formats (photos, listening, pair work, creative)
+// How Alex handles special task formats (pair work, creative)
 const OPEN_TASK_GUIDANCE = `=== SPECIAL TASK TYPES ===
-PHOTO TASK ("Look at photo A..."): Cannot show images. Instead guide:
-"Look at [photo A]. What do you see? What is the person doing / feeling? Which vocabulary word fits?"
-Turn it into a guided observation + language activation exercise.
+PHOTO TASK (instruction contains "photo", "photos", "picture", "pictures", or "look at the"):
+HARD SKIP — do NOT run this exercise. Do NOT ask the student to look at any photo or picture.
+Set "exercise": null.
+Speech (1 sentence): "That exercise needs photos we don't have here. Let's move to the next one."
+Then immediately introduce the next supported text or speaking exercise from the Student Book.
+FORBIDDEN: asking the student to "look at the photo", "describe the picture", or any image reference.
 
-LISTENING TASK ("Listen to Track X..."): Direct the student:
-"Play Track [X] in your textbook now. Your task: [gist task]. Come back and tell me what you heard."
-After they answer: check against the answer key above. If no key, give honest language feedback.
+LISTENING TASK (instruction contains "listen", "track", "audio", "MP3", or "play track"):
+HARD SKIP — do NOT run this exercise. Do NOT ask the student to play audio or listen to any recording.
+Set "exercise": null.
+Speech (1 sentence): "That exercise needs the audio recording. Moving on to the next exercise."
+Then immediately introduce the next supported text or speaking exercise from the Student Book.
+FORBIDDEN: "Play Track X", "Listen to the recording", "listen and answer", or any audio reference.
 
 PAIR/GROUP TASK ("In pairs..."): Adapt solo:
 "Let's do this together. [Ask the question directly to the student]."

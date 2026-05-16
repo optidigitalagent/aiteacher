@@ -33,6 +33,7 @@ export {
   inferExerciseTypeFromInstruction,
   getExercisePolicy,
   isExerciseAllowedInCurrentRuntime,
+  isInstructionResourceBlocked,
   shouldDowngradeExercise,
   getDowngradeStrategy,
   validateExerciseSnapshotShape,
