@@ -120,9 +120,32 @@ export class LessonOrchestrator {
     // Items within the same exercise share the same exerciseNumber → no increment.
     let exerciseCursor: ExerciseCursor | null = null
 
-    // Defense-in-depth: exercise type + snapshot already validated by parseExercise in claude-handler,
-    // but re-check here using protocol helpers to prevent state corruption if called from other paths.
+    // parseExercise() in claude-handler intentionally skips snapshot validation so that
+    // subsequent items (same exerciseNumber) can reach the orchestrator even when the AI
+    // omits items/options that are already rendered on screen. We enrich from cached state
+    // before running snapshot validation here — the authoritative gate for new exercises.
     const incomingExercise = aiResp.exercise
+
+    // Enrich subsequent items in the same exercise with cached state data.
+    // AI may omit items/options for item N+1 (they are already visible to the student).
+    // Without enrichment the snapshot validation below would block the exercise, leaving
+    // state.currentExerciseId pointing at the previous item and causing stale-UUID
+    // validation failures when the student submits the next answer.
+    if (incomingExercise && state.currentExerciseNum > 0) {
+      const sameExercise = !incomingExercise.exerciseNumber
+        || incomingExercise.exerciseNumber === state.currentExerciseNum
+      if (sameExercise) {
+        if (!incomingExercise.items?.length && state.exerciseItems?.length) {
+          incomingExercise.items = state.exerciseItems
+        }
+        if (!incomingExercise.options?.length && state.exerciseOptions?.length) {
+          incomingExercise.options = state.exerciseOptions
+        }
+        if (!incomingExercise.instruction && state.exerciseInstruction) {
+          incomingExercise.instruction = state.exerciseInstruction
+        }
+      }
+    }
 
     const exerciseTypeAllowed = incomingExercise
       ? isExerciseAllowedInCurrentRuntime(incomingExercise.type)
@@ -213,7 +236,15 @@ export class LessonOrchestrator {
           .filter((_, i) => state.completedItems.includes(i))
         const isRegression = incomingItem && completedTexts.includes(incomingItem)
 
-        if (incomingItem && incomingItem !== state.currentItem && state.currentItem && !isRegression) {
+        // For locked protocol types (matching, deterministic), item cursor is authoritative
+        // from recordCorrectAnswer() only. AI item text must not override that position —
+        // the AI may return a slightly different string (e.g. "Number 2: serious" vs "2. serious")
+        // which would otherwise trigger a spurious double-advancement.
+        const isLocked = state.activeExerciseType
+          ? selectProtocol(state.activeExerciseType).shouldLockCurrentItem()
+          : false
+
+        if (!isLocked && incomingItem && incomingItem !== state.currentItem && state.currentItem && !isRegression) {
           // AI signaled a different item — treat as advancement and reset correction
           if (!state.completedItems.includes(state.itemIndex)) {
             state.completedItems = [...state.completedItems, state.itemIndex]

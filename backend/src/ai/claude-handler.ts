@@ -17,7 +17,6 @@ import {
   inferExerciseTypeFromInstruction,
   isExerciseAllowedInCurrentRuntime,
   getExercisePolicy,
-  validateSnapshotShape,
 } from '../exercises/protocols/index.js'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -116,15 +115,10 @@ function parseExercise(raw: unknown): ExerciseData | null {
     return null
   }
 
-  // Snapshot shape validation — delegates field requirements to protocol definition
-  const snap = e as Record<string, unknown>
-  const snapResult = validateSnapshotShape(finalType, snap)
-  console.log(`[exercise:snapshot] type="${finalType}" ok=${snapResult.ok}${snapResult.reason ? ` reason="${snapResult.reason}"` : ''}`)
-
-  if (!snapResult.ok) {
-    console.log(`[exercise:downgrade] type="${finalType}" strategy="skip_exercise" reason="${snapResult.reason ?? 'snapshot_invalid'}"`)
-    return null
-  }
+  // Snapshot shape validation is deferred to orchestrator.process(), where it runs
+  // AFTER enriching the exercise with cached state data (items/options). Validating
+  // here would block subsequent matching/deterministic items that omit those fields
+  // because they are already rendered on the student's screen.
 
   const items = Array.isArray(e['items'])
     ? (e['items'] as unknown[]).filter((i): i is string => typeof i === 'string')
