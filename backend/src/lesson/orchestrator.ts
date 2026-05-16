@@ -101,8 +101,23 @@ export class LessonOrchestrator {
     const aiResp = await aiHandler(state, inputText, callCtx)
 
     // Apply AI signal first (forward-only), then check rule-based transitions
-    const aiTarget   = applyAISignal(state, aiResp.next_action)
-    const ruleTarget = shouldTransition(state)
+    const rawAiTarget = applyAISignal(state, aiResp.next_action)
+    const ruleTarget  = shouldTransition(state)
+
+    // Locked-exercise phase guard: if a hard-lock item is unresolved, AI cannot drive a phase exit
+    let aiTarget = rawAiTarget
+    if (
+      rawAiTarget !== null &&
+      state.phase === 'EXERCISES' &&
+      state.currentExerciseNum > 0 &&
+      state.currentItem &&
+      state.activeExerciseType &&
+      selectProtocol(state.activeExerciseType).shouldLockCurrentItem()
+    ) {
+      console.log(`[phase_guard] blocked transition_to=${rawAiTarget} reason=active_locked_exercise type=${state.activeExerciseType}`)
+      aiTarget = null
+    }
+
     const target: LessonPhase | null = aiTarget ?? ruleTarget
 
     let phaseChanged = false
