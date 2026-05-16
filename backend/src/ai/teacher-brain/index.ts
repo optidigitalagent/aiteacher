@@ -16,6 +16,10 @@ export type {
   RuleGroup,
   ActionDefinition,
   CorrectionTurn,
+  TeacherBrainStructuredResponse,
+  ParsedTeacherBrainResponse,
+  TeacherBrainValidationState,
+  TeacherBrainValidationResult,
 } from './teacher-brain.types.js'
 
 export {
@@ -59,6 +63,7 @@ export {
   getActionDefinition,
   getForbiddenReason,
   validateActionIntegrity,
+  validateTeacherBrainAction,
 } from './teacher-brain-actions.js'
 
 export {
@@ -73,6 +78,8 @@ export {
   extractTeacherText,
   buildValidationLog,
   RESPONSE_CONTRACT_SCHEMA,
+  parseTeacherBrainResponse,
+  stripTeacherBrainBlock,
 } from './teacher-brain-response-contract.js'
 
 export {
@@ -82,4 +89,5 @@ export {
   buildContextComposerOutput,
   buildBehaviorPolicyOutput,
   buildExampleRetrieverOutput,
+  buildStructuredOutputInstruction,
 } from './teacher-brain-builder.js'

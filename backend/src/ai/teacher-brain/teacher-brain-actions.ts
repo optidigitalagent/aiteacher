@@ -1,4 +1,11 @@
-import type { TeacherAction, ForbiddenAction, ActionDefinition } from './teacher-brain.types.js'
+import type {
+  TeacherAction,
+  ForbiddenAction,
+  ActionDefinition,
+  TeacherBrainStructuredResponse,
+  TeacherBrainValidationState,
+  TeacherBrainValidationResult,
+} from './teacher-brain.types.js'
 
 export const ALLOWED_ACTIONS: readonly ActionDefinition[] = [
   {
@@ -130,7 +137,63 @@ export function getForbiddenReason(action: string): string | undefined {
   return FORBIDDEN_ACTIONS.find(f => f.action === action)?.reason
 }
 
-// Future Phase C: validate AI's proposed action against current backend state
+// Phase D: validate proposed Teacher Brain action against current lesson state.
+// Returns { ok, reason }. Logs only — does NOT mutate state.
+export function validateTeacherBrainAction(
+  structured: TeacherBrainStructuredResponse,
+  state: TeacherBrainValidationState,
+): TeacherBrainValidationResult {
+  const { action, exerciseNum, itemIndex, unsupportedReason } = structured
+
+  if (!isAllowedAction(action)) {
+    return { ok: false, reason: `action "${action}" not in allowed list` }
+  }
+
+  // Cannot act on a completed exercise (except closing-actions)
+  const closingActions = new Set(['complete_lesson', 'transition_next_exercise', 'complete_exercise'])
+  if (
+    exerciseNum !== undefined &&
+    state.completedExercises.includes(exerciseNum) &&
+    !closingActions.has(action)
+  ) {
+    return { ok: false, reason: `exercise ${exerciseNum} is already completed` }
+  }
+
+  // Cannot target a completed item with item-level actions
+  const itemActions = new Set(['present_item', 'continue_current_item', 'request_retry'])
+  if (
+    itemIndex !== undefined &&
+    state.completedItems.includes(itemIndex) &&
+    itemActions.has(action)
+  ) {
+    return { ok: false, reason: `item ${itemIndex} is already completed` }
+  }
+
+  // skip_exercise requires an unsupportedReason
+  if (action === 'skip_exercise' && !unsupportedReason) {
+    return { ok: false, reason: 'skip_exercise requires unsupportedReason' }
+  }
+
+  // Exercise mismatch: AI referencing a different exercise than backend state
+  const allowsExerciseShift = new Set([
+    'transition_next_exercise', 'complete_lesson', 'skip_exercise', 'complete_exercise',
+  ])
+  if (
+    exerciseNum !== undefined &&
+    state.currentExerciseNum > 0 &&
+    exerciseNum !== state.currentExerciseNum &&
+    !allowsExerciseShift.has(action)
+  ) {
+    return {
+      ok: false,
+      reason: `action references exercise ${exerciseNum} but backend is on exercise ${state.currentExerciseNum}`,
+    }
+  }
+
+  return { ok: true }
+}
+
+// Legacy Phase C stub — kept for backwards compat
 export interface ActionValidationResult {
   valid: boolean
   reason?: string

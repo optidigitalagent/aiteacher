@@ -1,4 +1,10 @@
-import type { TeacherResponseContract, TeacherAction, CorrectionTurn } from './teacher-brain.types.js'
+import type {
+  TeacherResponseContract,
+  TeacherAction,
+  CorrectionTurn,
+  TeacherBrainStructuredResponse,
+  ParsedTeacherBrainResponse,
+} from './teacher-brain.types.js'
 import { isAllowedAction } from './teacher-brain-actions.js'
 
 // Strict structured response schema for AI outputs.
@@ -90,6 +96,78 @@ export const RESPONSE_CONTRACT_SCHEMA = `STRUCTURED RESPONSE CONTRACT (future im
 // Serialize a contract to JSON string for logging/inspection
 export function serializeContract(contract: TeacherResponseContract): string {
   return JSON.stringify(contract, null, 2)
+}
+
+// ── Phase D: structured output block parser ────────────────────────────────────
+
+const TB_BLOCK_RE = /<TEACHER_BRAIN_JSON>([\s\S]*?)<\/TEACHER_BRAIN_JSON>/
+
+// Strip <TEACHER_BRAIN_JSON>...</TEACHER_BRAIN_JSON> from any string (speech / display_text safety)
+export function stripTeacherBrainBlock(text: string): string {
+  return text.replace(TB_BLOCK_RE, '').trim()
+}
+
+// Parse and extract the optional structured Teacher Brain block from raw AI output.
+// The block may appear after the main JSON response (or inside speech field).
+// Returns visibleText (block stripped), structured (if valid), parseError (if malformed).
+export function parseTeacherBrainResponse(rawText: string): ParsedTeacherBrainResponse {
+  const match = TB_BLOCK_RE.exec(rawText)
+  if (!match) {
+    return { visibleText: rawText }
+  }
+
+  const visibleText = rawText.replace(TB_BLOCK_RE, '').trim()
+  const jsonStr = (match[1] ?? '').trim()
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(jsonStr)
+  } catch {
+    return {
+      visibleText: visibleText || rawText,
+      parseError: 'invalid JSON in TEACHER_BRAIN_JSON block',
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return {
+      visibleText: visibleText || rawText,
+      parseError: 'TEACHER_BRAIN_JSON block is not an object',
+    }
+  }
+
+  const obj = parsed as Record<string, unknown>
+
+  if (typeof obj['teacher_text'] !== 'string') {
+    return {
+      visibleText: visibleText || rawText,
+      parseError: 'teacher_text must be a string',
+    }
+  }
+
+  if (typeof obj['action'] !== 'string' || !isAllowedAction(obj['action'])) {
+    return {
+      visibleText: visibleText || rawText,
+      parseError: `invalid or disallowed action: "${String(obj['action'])}"`,
+    }
+  }
+
+  const structured: TeacherBrainStructuredResponse = {
+    teacher_text: obj['teacher_text'] as string,
+    action: obj['action'] as TeacherAction,
+    exerciseNum: typeof obj['exerciseNum'] === 'number' ? obj['exerciseNum'] : undefined,
+    itemIndex: typeof obj['itemIndex'] === 'number' ? obj['itemIndex'] : undefined,
+    confidence: typeof obj['confidence'] === 'number' ? obj['confidence'] : undefined,
+    reason: typeof obj['reason'] === 'string' ? obj['reason'] : undefined,
+    targetExerciseNum: typeof obj['targetExerciseNum'] === 'number' ? obj['targetExerciseNum'] : undefined,
+    targetItemIndex: typeof obj['targetItemIndex'] === 'number' ? obj['targetItemIndex'] : undefined,
+    unsupportedReason: typeof obj['unsupportedReason'] === 'string' ? obj['unsupportedReason'] : undefined,
+  }
+
+  // If visibleText is empty (block-only response), fall back to teacher_text as visible content
+  const finalVisibleText = visibleText || structured.teacher_text
+
+  return { visibleText: finalVisibleText, structured }
 }
 
 // Safe parse: try to extract teacher_text from whatever AI returned

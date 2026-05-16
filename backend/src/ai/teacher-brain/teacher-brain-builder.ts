@@ -95,6 +95,7 @@ export function buildPaidLessonTeacherBrainContext(input: TeacherBrainGuidanceIn
     buildBehaviorContractSection(ctx),
     buildForbiddenSection(ctx),
     buildExamplesSection(ctx),
+    buildStructuredOutputInstruction(),
   ].filter(Boolean)
 
   return [
@@ -185,6 +186,31 @@ function buildForbiddenSection(ctx: TeacherBrainContext): string {
     '✓ Only run exercises with explicit non-audio types present in the section content above'
 
   return `── FORBIDDEN BEHAVIORS (override all above) ──\n${coreRules}${skipAddendum}${listeningOverride}`
+}
+
+// Phase D: returns the structured output instruction injected into paid lesson prompts.
+// Tells the AI to optionally append a <TEACHER_BRAIN_JSON> block after its JSON response.
+export function buildStructuredOutputInstruction(): string {
+  const allowedActions = [
+    'present_item', 'continue_current_item', 'confirm_correct',
+    'transition_next_exercise', 'skip_exercise', 'complete_lesson',
+    'clarify_item', 'side_question_answered', 'request_retry',
+    'complete_item', 'complete_exercise', 'ask_clarification',
+    'answer_side_question', 'resume_current_item',
+  ].join(' | ')
+
+  return [
+    '── STRUCTURED OUTPUT (optional) ──',
+    'After your JSON response, you MAY append a Teacher Brain block:',
+    '<TEACHER_BRAIN_JSON>',
+    '{"teacher_text":"Good. Number 2: funny.","action":"continue_current_item","exerciseNum":1,"itemIndex":1,"confidence":0.9,"reason":"student answered item 1 correctly"}',
+    '</TEACHER_BRAIN_JSON>',
+    `Allowed actions: ${allowedActions}`,
+    '• teacher_text must match your speech (short form is fine)',
+    '• reason is one short operational phrase — no chain-of-thought',
+    '• This block is advisory; backend validates before acting',
+    '• Omitting this block is safe — lesson continues normally',
+  ].join('\n')
 }
 
 // Phase C hook: validate AI's structured response against backend state.

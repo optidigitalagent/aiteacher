@@ -163,3 +163,36 @@ export interface ActionDefinition {
   description: string
   backendEffect: string
 }
+
+// Phase D: structured output contract parsed from <TEACHER_BRAIN_JSON> blocks
+export interface TeacherBrainStructuredResponse {
+  teacher_text: string
+  action: TeacherAction
+  exerciseNum?: number
+  itemIndex?: number
+  confidence?: number
+  reason?: string
+  targetExerciseNum?: number
+  targetItemIndex?: number
+  unsupportedReason?: string
+}
+
+export interface ParsedTeacherBrainResponse {
+  visibleText: string
+  structured?: TeacherBrainStructuredResponse
+  parseError?: string
+}
+
+// Slim state projection passed to validateTeacherBrainAction — avoids importing LessonState
+export interface TeacherBrainValidationState {
+  completedExercises: number[]
+  completedItems: number[]
+  currentExerciseNum: number
+  itemIndex: number
+  correctionTurn: string | null
+}
+
+export interface TeacherBrainValidationResult {
+  ok: boolean
+  reason?: string
+}

@@ -10,6 +10,11 @@ import {
   type ChatMessage,
   type PromptContext,
 } from './prompt-builder.js'
+import {
+  parseTeacherBrainResponse,
+  stripTeacherBrainBlock,
+  validateTeacherBrainAction,
+} from './teacher-brain/index.js'
 import { queryRAG } from './rag.js'
 import { getTipsForContext } from '../lesson/tips-service.js'
 import {
@@ -268,7 +273,45 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string, callC
     clearTimeout(timeout)
   }
 
-  const aiResp = parseSafe(aiText) ?? fallback(state)
+  // ── Phase D: extract optional <TEACHER_BRAIN_JSON> block ─────────────────
+  // Strip the block BEFORE parseSafe() so JSON.parse receives only the main JSON.
+  // Fallback is transparent: if no block present, strippedText === aiText.
+  const { visibleText: strippedText, structured: tbStructured, parseError: tbParseError } =
+    parseTeacherBrainResponse(aiText)
+
+  if (tbParseError) {
+    console.log(`[teacher_brain] parse_error reason="${tbParseError}"`)
+  }
+
+  const aiResp = parseSafe(strippedText) ?? fallback(state)
+
+  // Safety strip: remove any TB block that ended up inside speech / display_text
+  aiResp.speech       = stripTeacherBrainBlock(aiResp.speech)
+  aiResp.display_text = stripTeacherBrainBlock(aiResp.display_text)
+
+  // Log and validate the structured action (observation mode — no state mutation)
+  if (tbStructured) {
+    const validation = validateTeacherBrainAction(tbStructured, {
+      completedExercises: state.completedExercises,
+      completedItems:     state.completedItems,
+      currentExerciseNum: state.currentExerciseNum,
+      itemIndex:          state.itemIndex,
+      correctionTurn:     state.correctionTurn,
+    })
+    if (validation.ok) {
+      console.log(
+        `[teacher_brain] action=${tbStructured.action} valid=true` +
+        ` exercise=${tbStructured.exerciseNum ?? 'n/a'}` +
+        ` item=${tbStructured.itemIndex ?? 'n/a'}` +
+        (tbStructured.confidence !== undefined ? ` confidence=${tbStructured.confidence}` : ''),
+      )
+    } else {
+      console.log(
+        `[teacher_brain] invalid_action action=${tbStructured.action}` +
+        ` reason="${validation.reason}"`,
+      )
+    }
+  }
 
   // ── Listening-section implicit audio block ────────────────────────────────
   // Exercises in a Listening section implicitly require the student to recall
