@@ -55,7 +55,8 @@ function stubResponse(state: LessonState): AIResponse {
 
 // Phase 4: call-site context forwarded from the WS layer to the AI handler
 export interface OrchestratorCallContext {
-  remainingMs?: number  // remaining lesson milliseconds for time-aware prompting
+  remainingMs?: number         // remaining lesson milliseconds for time-aware prompting
+  enginePromptContext?: string // Engine Authority Migration: injected as second system block
 }
 
 // Phase 5: error detail passed from WS layer to populate errorsThisLesson
