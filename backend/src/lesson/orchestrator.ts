@@ -190,6 +190,10 @@ export class LessonOrchestrator {
           state.completedItems     = []
           state.failedItems        = []
           state.correctionTurn     = null
+          // Phase G: hard-close the skipped exercise to suppress any re-anchor from it
+          if (!state.completedExercises.includes(blockedNum)) {
+            state.completedExercises = [...state.completedExercises, blockedNum]
+          }
           console.log(`[exercise:skip_advance] advanced cursor to skipped exercise #${blockedNum} lessonId=${lessonId}`)
         }
       } else {
@@ -292,14 +296,26 @@ export class LessonOrchestrator {
           state.currentCorrectAnswer  = incomingExercise.correct_answer ?? ''
           console.log(`[orch] item advanced to #${state.itemIndex} within exercise #${state.currentExerciseNum}`)
         } else if (incomingItem && !state.currentItem) {
-          // For locked types: prefer the authoritative items array over whatever the AI returned
-          // (AI may re-send a completed item text when currentItem was cleared by recordCorrectAnswer)
-          if (isLocked && state.exerciseItems?.length && (state.itemIndex ?? 0) < state.exerciseItems.length) {
-            state.currentItem = state.exerciseItems[state.itemIndex ?? 0]
+          // Phase G: guard against resurrecting a completed exercise.
+          // If exercise is hard-closed (completedExercises includes it) or all items
+          // are exhausted (itemIndex past end), do NOT re-populate currentItem —
+          // the AI may return stale item data after announcing exercise complete.
+          const exerciseHardClosed = state.completedExercises.includes(state.currentExerciseNum)
+          const exerciseItemsDone  = state.exerciseItems?.length
+            ? (state.itemIndex ?? 0) >= state.exerciseItems.length
+            : false
+          if (!exerciseHardClosed && !exerciseItemsDone) {
+            // For locked types: prefer the authoritative items array over whatever the AI returned
+            // (AI may re-send a completed item text when currentItem was cleared by recordCorrectAnswer)
+            if (isLocked && state.exerciseItems?.length && (state.itemIndex ?? 0) < state.exerciseItems.length) {
+              state.currentItem = state.exerciseItems[state.itemIndex ?? 0]
+            } else {
+              state.currentItem = incomingItem
+            }
+            state.currentCorrectAnswer = incomingExercise.correct_answer ?? ''
           } else {
-            state.currentItem = incomingItem
+            console.log(`[orch] cursor_resurrection_blocked exercise=#${state.currentExerciseNum} closed=${exerciseHardClosed} itemsDone=${exerciseItemsDone}`)
           }
-          state.currentCorrectAnswer = incomingExercise.correct_answer ?? ''
         } else if (incomingExercise.correct_answer) {
           // Same item, same exercise — refresh correct answer in case AI updated it
           state.currentCorrectAnswer = incomingExercise.correct_answer
@@ -379,6 +395,12 @@ export class LessonOrchestrator {
       const allItemsDone = state.exerciseItems?.length
         ? state.exerciseItems.every((_, i) => state.completedItems.includes(i))
         : state.completedItems.includes(anchorIndex)
+      // Phase G: also skip when exercise is hard-closed via completedExercises
+      // or itemIndex is past the end of the items array (exercise done via voice turns)
+      const exerciseHardClosed = state.completedExercises.includes(state.currentExerciseNum)
+      const exerciseItemsExhausted = state.exerciseItems?.length
+        ? (state.itemIndex ?? 0) >= state.exerciseItems.length
+        : false
       const itemNum   = anchorIndex + 1
       // Strip "N." / "N)" prefix to avoid "Number 3: 3. interesting" redundancy
       const itemLabel = anchorItem.replace(/^\d+[.)]\s*/, '').trim() || anchorItem
@@ -398,7 +420,7 @@ export class LessonOrchestrator {
         }
         return false
       })()
-      if (!allItemsDone && !confirmsCorrect && !itemInTail && !mentionsLaterItem) {
+      if (!allItemsDone && !confirmsCorrect && !itemInTail && !mentionsLaterItem && !exerciseHardClosed && !exerciseItemsExhausted) {
         aiResp.speech += `\n\n${reAnchor}`
         console.log(
           `[continuity] re_anchor_appended exercise=#${state.currentExerciseNum} ` +
@@ -488,6 +510,11 @@ export class LessonOrchestrator {
       state.currentItem = state.exerciseItems[state.itemIndex]
     } else {
       state.currentItem = '' // exercise complete — AI will announce next exercise
+      // Phase G: hard-close the exercise so re-anchor and cursor resurrection are blocked
+      if (state.currentExerciseNum > 0 && !state.completedExercises.includes(state.currentExerciseNum)) {
+        state.completedExercises = [...state.completedExercises, state.currentExerciseNum]
+        console.log(`[orch] exercise_hard_closed #${state.currentExerciseNum} all items done`)
+      }
     }
 
     // Reset correction state

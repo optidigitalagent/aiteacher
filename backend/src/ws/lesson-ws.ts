@@ -94,6 +94,44 @@ function looksLikeOffTopicRequest(text: string): boolean {
   return OFF_TOPIC_REQUEST_PATTERNS.some(p => p.test(text.trim()))
 }
 
+// Phase G: detect student intent to move to the next exercise after exercise completion.
+// Covers voice-transcribed variants like "Let's next", "next exercise", "we have done this".
+const TRANSITION_INTENT_RE = /\b(next|continue|move on|let'?s go|let me go|skip to|done|we'?ve done|already did|we have done|finished|let'?s next|let'?s do next|next one|next exercise)\b/i
+
+function looksLikeTransitionIntent(text: string): boolean {
+  return TRANSITION_INTENT_RE.test(text.trim())
+}
+
+// Phase G: returns a [EXERCISE COMPLETE] signal when exercise is done and student wants to move on.
+// Injected into the AI input to prevent "I'm thinking..." and stale re-anchor after completion.
+async function buildExerciseCompletionSignal(lessonId: string, text: string): Promise<string> {
+  try {
+    if (!looksLikeTransitionIntent(text)) return ''
+    const stateRaw = await redis.get(lessonStateKey(lessonId))
+    if (!stateRaw) return ''
+    const state = JSON.parse(stateRaw) as LessonState
+    if (state.phase !== 'EXERCISES' || !state.currentExerciseNum) return ''
+
+    const exerciseHardClosed = state.completedExercises.includes(state.currentExerciseNum)
+    const exerciseItemsDone  = state.exerciseItems?.length
+      ? (state.itemIndex ?? 0) >= state.exerciseItems.length
+      : false
+
+    if (!exerciseHardClosed && !exerciseItemsDone) return ''
+
+    const nextNum = state.currentExerciseNum + 1
+    console.log(`[ws] exercise_completion_signal injected exercise=#${state.currentExerciseNum} student="${text.trim()}"`)
+    return `[EXERCISE ${state.currentExerciseNum} COMPLETE — TRANSITION REQUIRED] ` +
+      `Exercise ${state.currentExerciseNum} is fully done. ` +
+      `Student says: "${text.trim()}" — they want to move forward. ` +
+      `MANDATORY: Do NOT say "I'm thinking" or "could you repeat that". ` +
+      `Announce Exercise ${nextNum} immediately. ` +
+      `If Exercise ${nextNum} needs audio or photo, skip it and go to Exercise ${nextNum + 1}.`
+  } catch {
+    return ''
+  }
+}
+
 function buildFocusGreeting(
   _unit: number,
   section: string | undefined,
@@ -896,10 +934,19 @@ async function processInput(
   // "negative") must NOT trigger recovery — they belong to exercise answer handling.
   // System-generated contexts (correction, confusion) skip this entirely via skipOffTopicGuard.
   let inputText = text
-  if (!skipOffTopicGuard && looksLikeOffTopicRequest(text)) {
-    const guard = await buildOffTopicGuard(meta.lessonId)
-    if (guard) {
-      inputText = text + guard
+  if (!skipOffTopicGuard) {
+    if (looksLikeOffTopicRequest(text)) {
+      const guard = await buildOffTopicGuard(meta.lessonId)
+      if (guard) {
+        inputText = text + guard
+      }
+    } else {
+      // Phase G: detect exercise-complete + transition intent to prevent stale re-anchor
+      // and the "I'm thinking..." forbidden response after exercise completion.
+      const completionSignal = await buildExerciseCompletionSignal(meta.lessonId, text)
+      if (completionSignal) {
+        inputText = completionSignal
+      }
     }
   }
 
@@ -1070,21 +1117,50 @@ const TYPE_TURN_B_SUPPLEMENT: Partial<Record<string, string>> = {
   speaking_prompt:     'The verb needs [tense marker]. Say the sentence again with that correction.',
 }
 
+// Phase G: derive a manifest-aware TURN A hint based on the expected answer.
+// Prevents AI from asking "do or does?" when the correct answer is "Have" (Present Perfect).
+function deriveAnswerContext(correctAnswer: string): string {
+  const lower = correctAnswer.toLowerCase().trim()
+  if (['have', 'has', 'had'].includes(lower)) {
+    return `The expected answer is a Present Perfect auxiliary. Focus your guiding question on which auxiliary verb starts Present Perfect questions. Do NOT ask about "do or does".`
+  }
+  if (['is', 'are', 'was', 'were', 'am'].includes(lower)) {
+    return `The expected answer is a form of "be". Ask about which "be" form matches the subject and tense here.`
+  }
+  if (lower === 'do') {
+    return `The expected answer is "do". Focus on Present Simple questions with I/you/we/they.`
+  }
+  if (lower === 'does') {
+    return `The expected answer is "does". Focus on Present Simple questions with he/she/it.`
+  }
+  if (lower === 'did') {
+    return `The expected answer is "did". Focus on Past Simple question formation.`
+  }
+  if (['will', 'would', 'can', 'could', 'shall', 'should', 'may', 'might', 'must'].includes(lower)) {
+    return `The expected answer is a modal verb. Ask about which modal fits this context.`
+  }
+  return ''
+}
+
 function buildCorrectionContext(answer: string, correctAnswer: string, turn: CorrectionTurn, exerciseType?: string, currentItem?: string): string {
+  // Phase G: manifest-aware TURN A — override generic examples with answer-specific context
+  const answerContext = deriveAnswerContext(correctAnswer)
   const turnANote = exerciseType && TYPE_TURN_A_SUPPLEMENT[exerciseType]
     ? `\n  Exercise-type guidance: ${TYPE_TURN_A_SUPPLEMENT[exerciseType]}`
-    : '\n  Examples: "For \'he\', do we use do or does?" / "Is this verb regular or irregular?"'
+    : answerContext
+    ? `\n  ${answerContext}`
+    : '\n  Think: what specific grammar rule or form determines the correct answer here?'
 
   const turnBNote = exerciseType && TYPE_TURN_B_SUPPLEMENT[exerciseType]
     ? `\n  Exercise-type guidance: ${TYPE_TURN_B_SUPPLEMENT[exerciseType]}`
-    : '\n  Examples: "Third person singular uses ___, not \'do\'." / "This is an irregular verb: go → ..."'
+    : '\n  Focus on the one specific element the student got wrong.'
 
   const TURN_INSTRUCTIONS: Record<CorrectionTurn, string> = {
     A: `TURN A (attempt 1): Ask ONE guiding question targeting the exact knowledge gap. Give ZERO part of the answer.
   Think: what specific rule caused this error? Ask about only that.${turnANote}`,
     B: `TURN B (attempt 2): Give ONE small hint — one missing piece of information. Do NOT reveal the full answer.${turnBNote}`,
     C: `TURN C (attempt 3): Give a STRONGER hint. Student is still stuck — fill in almost everything.
-  Examples: "It starts with 'Does he...' — what verb comes next?" / "go → _ent in the past. Fill in the blank."`,
+  Example: "The auxiliary here is not 'do' — think about which tense this question uses, then say the auxiliary."`,
     D: `TURN D (attempt 4+): REVEAL THE FULL ANSWER NOW.
   Say: "The answer is ${correctAnswer}. [Brief rule in one sentence]. Now repeat the full sentence after me."
   Wait for the student to repeat correctly, then advance to the next item.`,

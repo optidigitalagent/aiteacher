@@ -186,6 +186,8 @@ export function buildManifestPromptBlock(manifest: SectionExerciseManifest): str
     `RULE 3: AI cannot mix items across exercise boundaries.`,
     `RULE 4: On skip, announce skip + move to next executable exercise in the SAME response.`,
     `RULE 5: After skip, stale current-item anchor is void — do NOT re-anchor to skipped exercise items.`,
+    `RULE 6: After ANY exercise is complete (all items done or announced as done), do NOT return to any item from that exercise. Exercise complete = closed forever.`,
+    `RULE 7: When student says "next", "let's next", "next exercise", "we have done this" after exercise completion — immediately move to the next exercise. FORBIDDEN: "I'm thinking..." or any item from the completed exercise.`,
     ``,
     ...exerciseLines,
     `=== END MANIFEST ===`,
