@@ -9,7 +9,7 @@
 import type { LessonState } from '../../lesson/types.js'
 import type { TeacherBrainContext } from './teacher-brain.types.js'
 import { CORRECTION_LADDER_DESCRIPTIONS, TEACHER_COMMUNICATION_PRINCIPLES } from './teacher-brain.constants.js'
-import { getRulesForMode, ANTI_CHAOS_RULES, SKIP_RULES } from './teacher-brain-rules.js'
+import { getRulesForMode, ANTI_CHAOS_RULES, SKIP_RULES, HUMAN_TUTOR_RULES } from './teacher-brain-rules.js'
 import { selectExamples, formatExampleForPrompt } from './teacher-brain-examples.js'
 import {
   normalizeTeacherBrainContext,
@@ -104,6 +104,7 @@ export function buildPaidLessonTeacherBrainContext(input: TeacherBrainGuidanceIn
     buildExecutabilitySection(ctx, state),
     buildSpeechRuntimeSyncSection(ctx),    // Phase E.1: speech/runtime consistency rule
     buildBehaviorContractSection(ctx),
+    buildHumanTutorSection(ctx, state),    // Phase H: human tutor behavior
     buildForbiddenSection(ctx),
     buildExamplesSection(ctx),
     buildStructuredOutputInstruction(),
@@ -267,6 +268,40 @@ function buildForbiddenSection(ctx: TeacherBrainContext): string {
     '✓ Only run exercises with explicit non-audio types present in the section content above'
 
   return `── FORBIDDEN BEHAVIORS (override all above) ──\n${coreRules}${skipAddendum}${listeningOverride}`
+}
+
+// Phase H: Human tutor behavior — UI-aware teaching, STT tolerance, transition handling.
+// Injected in EXERCISES phase only; focuses the AI on natural human teacher patterns.
+function buildHumanTutorSection(ctx: TeacherBrainContext, state: LessonState): string {
+  if (ctx.phase !== 'EXERCISES') return ''
+
+  const { runtimeMode, currentItem, correctionTurn } = ctx.exercise
+
+  const lines: string[] = [
+    '── HUMAN TUTOR BEHAVIOR (Phase H) ──',
+    ...HUMAN_TUTOR_RULES.rules.slice(0, 8).map(r => `• ${r}`),
+  ]
+
+  if (currentItem) {
+    lines.push(`Item on screen: "${currentItem}" — do NOT repeat this verbatim in speech again`)
+  }
+
+  if (runtimeMode === 'deterministic_sequential' || runtimeMode === 'matching_sequential') {
+    lines.push('EXERCISE INTENT: student must produce the FORM shown (question / gap fill / transformation) — not semantic content')
+  }
+
+  if (correctionTurn === 'D') {
+    lines.push('TURN D — after student repeats correctly: confirm once ("Exactly.") then advance to next item. Do NOT ask to repeat again.')
+  }
+
+  const isExerciseComplete =
+    (state.completedItems?.length ?? 0) > 0 &&
+    (state.itemIndex ?? 0) >= (state.completedItems?.length ?? 0)
+  if (isExerciseComplete) {
+    lines.push('TRANSITION STATE: exercise items complete — any student response is a transition signal → move to next exercise immediately')
+  }
+
+  return lines.join('\n')
 }
 
 // Phase D: returns the structured output instruction injected into paid lesson prompts.

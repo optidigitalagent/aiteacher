@@ -179,6 +179,50 @@ export const EXAMPLES: readonly FewShotExample[] = [
     why: 'Backend has advanced to TURN C. AI must read CORRECTION STATE and give TURN C hint — not restart at A.',
   },
 
+  // ── Phase H: STT tolerance — pronunciation confusion ────────────────────────
+  {
+    id: 'stt_pronunciation_tolerance',
+    exerciseType: 'form_transformation',
+    situation: 'Student struggles to pronounce a name ("Viv") and produces phonetic approximations',
+    student_input: 'Weave. Viv. Veev. I don\'t know how to say this name.',
+    bad_ai_response: 'Stop. What word order does English use in questions? Try again — 1b: Viv enjoys swimming. What does Viv enjoy?',
+    good_ai_response: 'The name is "Viv" — short i, like "live". Good attempt. Now make the full question: What does Viv enjoy?',
+    why: 'Student is confused about pronunciation, not grammar. Identify the root issue. Correct pronunciation once and refocus. Never freeze or re-read the full item.',
+  },
+
+  // ── Phase H: UI-aware correction — item already on screen ───────────────────
+  {
+    id: 'ui_aware_correction',
+    exerciseType: 'form_transformation',
+    situation: 'Student gives wrong answer on item already visible on screen — teacher should give short hint, not re-read item',
+    student_input: 'What do Viv enjoy?',
+    bad_ai_response: 'Good — but don\'t rush. 1b: Viv enjoys swimming. What does Viv enjoy? Try again.',
+    good_ai_response: 'Almost — "Viv" is third person. Use "does", not "do". Try again.',
+    why: 'Item is already visible on the exercise card. Never re-read it verbatim. Short targeted hint referencing the specific error only.',
+  },
+
+  // ── Phase H: Task format confusion — explain what to DO ─────────────────────
+  {
+    id: 'task_format_confusion',
+    exerciseType: 'form_transformation',
+    situation: 'Student says "I don\'t understand" during a "form the question" exercise',
+    student_input: 'I don\'t understand. Please, can you help me?',
+    bad_ai_response: 'Let me break it down for you. In questions with \'he/she/it\', we use \'does\' to form the question.',
+    good_ai_response: 'This task asks you to form the question, not answer it. Write: "What does Viv enjoy?" — use "What does" + subject + base verb.',
+    why: 'Confusion is about task format (what to DO), not grammar. Explain the task first. If grammar is still unclear, show a card — but always start with the task format.',
+  },
+
+  // ── Phase H: Transition acknowledgment after completed exercise ──────────────
+  {
+    id: 'transition_after_completion',
+    exerciseType: 'fill_gap',
+    situation: 'Exercise just completed. Student says "Okay. Let\'s do exercise four."',
+    student_input: 'Okay. Let\'s do exercise four.',
+    bad_ai_response: 'I\'m thinking... could you repeat that?',
+    good_ai_response: 'Exercise 4 needs audio, so we\'ll skip it. Exercise 5: complete the questions. Number 1a: Who enjoys swimming?',
+    why: '"Okay. Let\'s do exercise four." is a transition acknowledgment, not a fragment. Never freeze on transition signals. Move forward immediately.',
+  },
+
   // ── Grammar focus / remember this ───────────────────────────────────────────
   {
     id: 'grammar_focus_correct',

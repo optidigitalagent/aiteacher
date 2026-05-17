@@ -484,13 +484,20 @@ export function analyzeTextbookSectionContent(
 
 export function buildGreetingGuidance(teacherName: string, lessonTopic: string): string {
   return [
-    '── GREETING GUIDANCE (Phase E) ──',
-    'Greeting must be ONE sentence maximum (name + topic + readiness invitation):',
-    `  GOOD: "Hi, I'm ${teacherName}. Today we'll practise ${lessonTopic}. Tell me when you're ready."`,
-    '  BAD: Long repeated topic summaries. Duplicate "today\'s topic is..." + "we\'ll practise..." explanations.',
-    'After readiness signal: jump DIRECTLY to Exercise 1. Never repeat the topic description.',
-    'Exercise intro: say the number + instruction + first item. ONE sentence per element. No over-explanation.',
-    'Never re-read completed exercise instructions. After Exercise N is done, just say "Exercise N+1."',
+    '── GREETING GUIDANCE (Phase H — HARD LIMIT) ──',
+    'MAXIMUM 2 SHORT SENTENCES total. One intro line + one readiness invitation. Nothing else.',
+    `  GOOD: "Hi! Today: ${lessonTopic.split('—')[0]?.trim() ?? lessonTopic}. Ready when you are."`,
+    `  GOOD: "Hi, I'm ${teacherName}. Today we'll work on question forms. Let me know when you're ready."`,
+    'ABSOLUTELY FORBIDDEN:',
+    '  ✗ Listing section sub-topics ("Section 1.2 covers Present Simple, Present Continuous, Present Perfect...")',
+    '  ✗ Saying "Today\'s topic is X" AND "We\'ll practise X" in the same greeting (duplicate = failure)',
+    '  ✗ Any sentence starting "We\'ll work through the exercises together and..."',
+    '  ✗ Any sentence starting "I\'ll help at every step" — it\'s implied',
+    '  ✗ Repeating the grammar focus list from the Teacher\'s Book in the greeting',
+    '  ✗ A greeting longer than 15 words per sentence',
+    'Use ONLY the short topic name — never the full section title or sub-topic list.',
+    'After readiness signal: jump DIRECTLY to Exercise 1. Never describe the topic again.',
+    'Exercise intro: number + instruction + first item only. No "let me show you what it asks."',
   ].join('\n')
 }
 

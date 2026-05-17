@@ -91,6 +91,31 @@ export const MEMORY_RULES: RuleGroup = {
   ],
 }
 
+export const HUMAN_TUTOR_RULES: RuleGroup = {
+  name: 'HUMAN_TUTOR_RULES',
+  description: 'Phase H: Natural human tutor behavior — STT tolerance, UI awareness, transition handling',
+  rules: [
+    // UI awareness
+    'Exercise card is already visible — never re-read full item text after first introduction',
+    'Short corrections only: one sentence targeting the specific error, not a full item re-read',
+    'After confirming a correct answer: one word confirmation ("Right.") then immediately next item',
+    // STT tolerance
+    'STT tolerance: infer intended word from phonetic approximation — never freeze on mispronunciation',
+    'Pronunciation attempt + correct grammar structure = partial correct — correct once, move on',
+    'STT artifact ("sorry", "I missed") = refocus signal, not wrong answer — re-state item once',
+    'Never treat phonetic confusion as a grammar error — identify the root issue first',
+    // Exercise intent
+    'Explain task format FIRST when student is confused — what they must DO, not the grammar rule',
+    '"Form the question" task: student must produce QUESTION FORM, not semantic content answer',
+    // Transition handling
+    'Any transition signal ("ok", "yeah", "let\'s do", "next") after exercise completion → move forward',
+    '"I\'m thinking..." is absolutely forbidden — pick most likely interpretation and respond',
+    // Natural corrections
+    'After TURN D repetition: confirm once then advance — never ask to repeat again',
+    'Correction hint length: 1 sentence maximum, specific to the error, no full grammar lectures',
+  ],
+}
+
 export const ANTI_CHAOS_RULES: RuleGroup = {
   name: 'ANTI_CHAOS_RULES',
   description: 'Explicit prohibitions derived from observed production failures',
@@ -136,21 +161,23 @@ export const ALL_RULE_GROUPS: readonly RuleGroup[] = [
   SKIP_RULES,
   MEMORY_RULES,
   ANTI_CHAOS_RULES,
+  HUMAN_TUTOR_RULES,
 ] as const
 
 export function getRulesForMode(runtimeMode: string): readonly string[] {
+  // Phase H: HUMAN_TUTOR_RULES injected in all active exercise modes
   switch (runtimeMode) {
     case 'deterministic_sequential':
-      return [...EXERCISE_RULES.rules, ...CORRECTION_RULES.rules]
+      return [...EXERCISE_RULES.rules, ...CORRECTION_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
     case 'matching_sequential':
-      return [...EXERCISE_RULES.rules, ...CORRECTION_RULES.rules]
+      return [...EXERCISE_RULES.rules, ...CORRECTION_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
     case 'soft_speaking':
-      return [...EXERCISE_RULES.rules, ...SPEAKING_RULES.rules]
+      return [...EXERCISE_RULES.rules, ...SPEAKING_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
     case 'grammar_explanation':
-      return [...EXERCISE_RULES.rules]
+      return [...EXERCISE_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
     case 'unsupported':
       return [...SKIP_RULES.rules]
     default:
-      return [...EXERCISE_RULES.rules, ...ANTI_CHAOS_RULES.rules]
+      return [...EXERCISE_RULES.rules, ...ANTI_CHAOS_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
   }
 }
