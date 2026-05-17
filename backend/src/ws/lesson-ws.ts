@@ -17,14 +17,13 @@ import {
   type LessonConfig,
   type FocusLessonConfig,
 } from './message-types.js'
-import type { LessonPhase, LessonState, ErrorRecord } from '../lesson/types.js'
+import type { LessonPhase, LessonState, ErrorRecord, ExerciseCursor, CorrectionTurn } from '../lesson/types.js'
 import { getFocusUnit } from '../lesson/focus-content.js'
 import { getTeachersBookSection } from '../lesson/focus-teachers-book.js'
 import { getFocusStudentBookSection } from '../lesson/focus-student-book.js'
 import { getCatalogEntry } from '../lesson/curriculum-catalog.js'
 import { LessonOrchestrator } from '../lesson/orchestrator.js'
 import type { ExerciseErrorData } from '../lesson/orchestrator.js'
-import type { CorrectionTurn } from '../lesson/types.js'
 import { DeepgramSTT } from '../voice/stt.js'
 import { speakToClient } from '../voice/tts.js'
 import { loadExercise, recordAnswer } from '../exercises/exercise-store.js'
@@ -34,6 +33,8 @@ import { updateStudentProfile } from '../lesson/profile-updater.js'
 import { saveTip, getStudentTips } from '../lesson/tips-service.js'
 import type { TipRecord } from '../lesson/tips-service.js'
 import { getOrCreateSectionCard } from '../lesson/slide-cache.js'
+import { getManifestExerciseEntry } from '../lesson/section-manifest.js'
+import type { ManifestItem } from '../lesson/section-manifest.js'
 import type { StudentConfused } from './message-types.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
@@ -888,6 +889,134 @@ async function handleFocusLessonStart(
 }
 
 // Reads the current lesson state to build an off-topic recovery suffix.
+// ── Phase G.1: Manifest-authoritative voice answer validation ─────────────────
+//
+// For manifest-backed deterministic_sequential exercises, student voice answers
+// are validated here — against the manifest — before being forwarded to the AI.
+// The AI receives an [EXERCISE RESULT] block and only verbalizes the decision.
+// This removes AI control over item progression entirely for these exercises.
+
+function validateManifestAnswer(studentText: string, item: ManifestItem): boolean {
+  const norm = (s: string) =>
+    s.trim().toLowerCase().replace(/[.,!?;:'"]/g, '').replace(/\s+/g, ' ')
+  const ns = norm(studentText)
+  const ne = norm(item.correctAnswer)
+
+  // 1. Exact match (student says exactly "do" or exactly the expected sentence)
+  if (ns === ne) return true
+
+  // 2. Student says the full sentence with blank filled correctly
+  if (item.text.includes('___')) {
+    const filled = item.text.replace('___', item.correctAnswer)
+    if (ns === norm(filled)) return true
+  }
+
+  // 3. Single-word expected answer — accept if student utterance is short (≤4 words)
+  //    and contains the expected word. Guards against false positives from long sentences.
+  if (!item.correctAnswer.includes(' ')) {
+    const words = ns.split(' ')
+    if (words.length <= 4 && words.includes(ne)) return true
+  }
+
+  return false
+}
+
+interface ManifestVoiceResult {
+  correct:        boolean
+  cursor:         ExerciseCursor | null    // set when correct
+  correctionTurn: CorrectionTurn | null   // set when incorrect
+  exerciseNum:    number
+  itemIndex:      number
+  item:           ManifestItem
+}
+
+// Attempts manifest-authoritative validation for the current voice input.
+// Returns null when conditions are not met (not a deterministic manifest exercise, etc.).
+async function tryManifestValidateVoice(
+  lessonId: string,
+  studentText: string,
+): Promise<ManifestVoiceResult | null> {
+  try {
+    const stateRaw = await redis.get(lessonStateKey(lessonId))
+    if (!stateRaw) return null
+    const state = JSON.parse(stateRaw) as LessonState
+
+    if (state.phase !== 'EXERCISES')     return null
+    if (!state.currentExerciseNum)       return null
+    if (!state.currentItem)              return null
+    if (!state.focusLesson)              return null
+
+    // Look up exercise in manifest — must be deterministic_sequential with items
+    const manifestEx = getManifestExerciseEntry(state.focusLesson, state.currentExerciseNum)
+    if (!manifestEx || manifestEx.runtimeMode !== 'deterministic_sequential') return null
+    if (!manifestEx.items?.length) return null
+
+    const itemIdx = state.itemIndex ?? 0
+    const item    = manifestEx.items[itemIdx]
+    if (!item || !item.correctAnswer) return null
+
+    // Exercise already hard-closed — do not validate
+    if (state.completedExercises.includes(state.currentExerciseNum)) return null
+
+    const correct = validateManifestAnswer(studentText, item)
+    console.log(
+      `[manifest] voice_validate exercise=#${state.currentExerciseNum} ` +
+      `item=${itemIdx} correct=${correct} student="${studentText.slice(0, 60)}"`,
+    )
+
+    if (correct) {
+      const cursor = await orchestrator.recordCorrectAnswer(lessonId)
+      return { correct: true, cursor, correctionTurn: null, exerciseNum: state.currentExerciseNum, itemIndex: itemIdx, item }
+    } else {
+      const errorData: ExerciseErrorData = {
+        exercise:      item.text,
+        studentAnswer: studentText,
+        correctAnswer: item.correctAnswer,
+        errorType:     'other',
+      }
+      const turn = await orchestrator.recordWrongAnswer(lessonId, errorData)
+      return { correct: false, cursor: null, correctionTurn: turn, exerciseNum: state.currentExerciseNum, itemIndex: itemIdx, item }
+    }
+  } catch (err) {
+    console.error('[manifest] voice_validate error:', err instanceof Error ? err.message : err)
+    return null
+  }
+}
+
+// Builds the [EXERCISE RESULT] context block injected as AI input after manifest validation.
+// Mirrors the format used by handleExerciseAnswer so the AI prompt is identical for both
+// click-based and voice-based answers in deterministic exercises.
+function buildManifestVoiceContext(mv: ManifestVoiceResult, studentText: string): string {
+  if (mv.correct) {
+    const cursor = mv.cursor
+    const exerciseDone = cursor ? cursor.itemIndex >= cursor.itemTotal : false
+    const continuationContract = exerciseDone
+      ? `\nEXERCISE TURN COMPLETION CONTRACT: After step 2, announce ` +
+        `"Exercise ${mv.exerciseNum} complete." ` +
+        `Then introduce the next exercise immediately in the same response.`
+      : cursor?.currentItem
+      ? `\nEXERCISE TURN COMPLETION CONTRACT: After step 2, present item ` +
+        `${cursor.itemIndex + 1}: "${cursor.currentItem}" in the same response. ` +
+        `Do NOT stop after confirmation. Presenting the next item is mandatory.`
+      : ''
+
+    return (
+      `[EXERCISE RESULT] Student answered: "${studentText}" — CORRECT.\n` +
+      `Your response MUST follow this structure in order:\n` +
+      `1. ONE confirmation word only: "Exactly." / "Right." / "Correct."\n` +
+      `2. WHY in one sentence: the rule or connection that makes this correct.${continuationContract}`
+    )
+  } else {
+    return buildCorrectionContext(
+      studentText,
+      mv.item.correctAnswer,
+      mv.correctionTurn!,
+      undefined,
+      mv.item.text,
+    )
+  }
+}
+
 // Appended to student input when an exercise is active so the AI knows to
 // answer briefly and return to the current item.
 async function buildOffTopicGuard(lessonId: string): Promise<string> {
@@ -934,6 +1063,7 @@ async function processInput(
   // "negative") must NOT trigger recovery — they belong to exercise answer handling.
   // System-generated contexts (correction, confusion) skip this entirely via skipOffTopicGuard.
   let inputText = text
+  let manifestValidation: ManifestVoiceResult | null = null
   if (!skipOffTopicGuard) {
     if (looksLikeOffTopicRequest(text)) {
       const guard = await buildOffTopicGuard(meta.lessonId)
@@ -946,6 +1076,31 @@ async function processInput(
       const completionSignal = await buildExerciseCompletionSignal(meta.lessonId, text)
       if (completionSignal) {
         inputText = completionSignal
+      } else {
+        // Phase G.1: manifest-authoritative voice validation for deterministic exercises.
+        // For fill_gap / grammar_drill exercises backed by section manifest, backend
+        // validates the answer now — AI only verbalizes the result.
+        // This path does NOT fire for transition intents (handled above) or off-topic
+        // requests (handled above), so the AI never controls item advancement here.
+        manifestValidation = await tryManifestValidateVoice(meta.lessonId, text)
+        if (manifestValidation) {
+          inputText = buildManifestVoiceContext(manifestValidation, text)
+          // Broadcast cursor immediately so frontend is in sync before AI responds
+          if (manifestValidation.cursor) {
+            send(ws, { type: 'exercise_cursor_updated', cursor: manifestValidation.cursor })
+            console.log(
+              `[manifest] cursor_advanced exercise=#${manifestValidation.cursor.exerciseNumber} ` +
+              `item=${manifestValidation.cursor.itemIndex}/${manifestValidation.cursor.itemTotal}`,
+            )
+          }
+          // Broadcast feedback so frontend updates correction UI instantly
+          send(ws, {
+            type:        'feedback',
+            correct:      manifestValidation.correct,
+            explanation: '',
+            score:       manifestValidation.correct ? 1.0 : 0,
+          })
+        }
       }
     }
   }

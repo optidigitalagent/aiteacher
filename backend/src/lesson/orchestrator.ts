@@ -17,6 +17,7 @@ import {
   validateSnapshotShape,
 } from '../exercises/protocols/index.js'
 import { selectProtocol } from '../exercises/runtime/index.js'
+import { getManifestForSection } from './section-manifest.js'
 
 // ── Stub responses per phase (replaced by Claude in Phase 3) ─────────────────
 
@@ -245,12 +246,33 @@ export class LessonOrchestrator {
         state.failedItems     = []
         state.itemRetryCount  = 0
         state.correctionTurn  = null
+        state.exerciseCorrectAnswers = []
         // Phase 2.6: populate correct answer for current item
         state.currentCorrectAnswer = incomingExercise.correct_answer ?? ''
         // Cache full exercise content for orchestrator-owned cursor rebuilds
         if (incomingExercise.items?.length)    state.exerciseItems       = incomingExercise.items
         if (incomingExercise.instruction)      state.exerciseInstruction = incomingExercise.instruction
         if (incomingExercise.options?.length)  state.exerciseOptions     = incomingExercise.options
+
+        // Phase G.1: if section manifest defines this as a deterministic_sequential exercise,
+        // override items and correct answers from manifest — they are backend-authoritative.
+        // AI-returned items and correct_answer may be incomplete or wrong; manifest is ground truth.
+        if (state.focusLesson) {
+          const manifest = getManifestForSection(state.focusLesson)
+          const manifestEx = manifest?.exercises.find(e => e.num === newNum)
+          if (manifestEx?.runtimeMode === 'deterministic_sequential' && manifestEx.items?.length) {
+            state.exerciseItems          = manifestEx.items.map(i => i.text)
+            state.exerciseCorrectAnswers = manifestEx.items.map(i => i.correctAnswer)
+            state.currentItem            = manifestEx.items[0]?.text ?? state.currentItem
+            state.currentCorrectAnswer   = manifestEx.items[0]?.correctAnswer ?? state.currentCorrectAnswer
+            if (manifestEx.instruction) state.exerciseInstruction = manifestEx.instruction
+            console.log(
+              `[orch] manifest_override exercise=#${newNum} items=${state.exerciseItems.length} ` +
+              `correctAnswers=[${state.exerciseCorrectAnswers.map(a => `"${a}"`).join(',')}]`,
+            )
+          }
+        }
+
         console.log(`[orch] exercise advanced to #${state.currentExerciseNum}, completed=[${state.completedExercises.join(',')}]`)
       } else if (!newNum && state.currentExerciseNum === 0) {
         // Free mode or AI omitted exerciseNumber — start at 1
@@ -520,8 +542,9 @@ export class LessonOrchestrator {
     // Reset correction state
     state.itemRetryCount = 0
     state.correctionTurn = null
-    // Phase 2.6: next item's correct answer is unknown until AI responds
-    state.currentCorrectAnswer = ''
+    // Phase G.1: prefer manifest-authoritative correct answer for next item.
+    // Falls back to '' (unknown) when not a manifest-backed exercise; AI will supply it.
+    state.currentCorrectAnswer = state.exerciseCorrectAnswers?.[state.itemIndex] ?? ''
 
     await this.saveState(lessonId, state)
 
@@ -596,6 +619,8 @@ export class LessonOrchestrator {
     // Normalize Phase 2.6 fields for old snapshots
     state.currentExerciseId    ??= null
     state.currentCorrectAnswer ??= ''
+    // Normalize Phase G.1 field for old snapshots
+    state.exerciseCorrectAnswers ??= []
     return state
   }
 

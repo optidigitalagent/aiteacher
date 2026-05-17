@@ -171,6 +171,13 @@ export function getManifestForSection(sectionId: string): SectionExerciseManifes
   return MANIFESTS[sectionId] ?? null
 }
 
+// Phase G.1: look up a single exercise entry by exercise number.
+export function getManifestExerciseEntry(sectionId: string, exerciseNum: number): ExerciseManifestEntry | null {
+  const manifest = getManifestForSection(sectionId)
+  if (!manifest) return null
+  return manifest.exercises.find(e => e.num === exerciseNum) ?? null
+}
+
 // ── Prompt block builder ──────────────────────────────────────────────────────
 // Produces the authoritative exercise manifest block injected into the system prompt.
 

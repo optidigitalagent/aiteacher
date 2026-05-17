@@ -77,6 +77,12 @@ export interface LessonState {
   currentExerciseId?:     string | null  // populated after saveExercise(); cleared on lesson end
   currentCorrectAnswer?:  string         // correct_answer for the current item; '' when unknown
 
+  // Phase G.1: manifest-authoritative correct answers for all items in current exercise.
+  // Populated from section manifest when a deterministic_sequential exercise starts.
+  // Survives correction turns so recordCorrectAnswer() can set the next item's correct answer
+  // without needing a runtime manifest lookup.
+  exerciseCorrectAnswers?: string[]
+
   // content tracking
   vocabularyTaught: string[]
   errorsThisLesson: ErrorRecord[]
