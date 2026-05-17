@@ -38,6 +38,7 @@ import type { ManifestItem } from '../lesson/section-manifest.js'
 import type { StudentConfused } from './message-types.js'
 import { exerciseEngine } from '../engine/exercise-engine.js'
 import type { EngineResult, EngineValidationResult } from '../engine/types.js'
+import { memoryService } from '../memory/index.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
@@ -1221,12 +1222,22 @@ async function processInput(
     enginePromptContext = await exerciseEngine.getPromptContext(meta.lessonId)
   } catch { /* non-fatal — AI proceeds without engine context */ }
 
+  // Memory System: load compact student memory summary for Teacher Brain (read-only).
+  // Loaded once per AI turn. Failure is non-fatal — lesson continues without memory context.
+  let memoryBlock = ''
+  if (meta.userId) {
+    try {
+      memoryBlock = await memoryService.getTeacherMemoryPromptBlock(meta.userId)
+    } catch { /* non-fatal */ }
+  }
+
   console.log(`[paid-lesson] ai_turn_started input_chars=${text.trim().length} remaining_min=${Math.round(remainingMs / 60_000)}`)
   let result: Awaited<ReturnType<typeof orchestrator.process>> | undefined
   try {
     result = await orchestrator.process(meta.lessonId, inputText, {
       remainingMs,
       enginePromptContext: enginePromptContext || undefined,
+      memoryBlock:         memoryBlock || undefined,
     })
   } finally {
     meta.aiProcessing = false
@@ -1314,6 +1325,32 @@ async function processInput(
       })
       // Phase 5: save learning tips derived from lesson data (errors + vocabulary)
       void saveLessonEndTipsAsync(endedLessonId, endedStudentId, ws)
+    }
+
+    // Record lesson completion memory — fire-and-forget
+    if (meta.userId && endedLessonId) {
+      const durationSec = meta.lessonStartedAt
+        ? Math.round((Date.now() - meta.lessonStartedAt) / 1_000)
+        : 0
+      const endedUserId = meta.userId
+      // Load completed exercises from Redis state for memory record
+      redis.get(lessonStateKey(endedLessonId)).then((raw) => {
+        try {
+          const s = raw ? JSON.parse(raw) as { completedExercises?: number[]; focusLesson?: string; phase?: string } : {}
+          return memoryService.recordLessonCompleted({
+            userId:             endedUserId,
+            sessionId:          meta.sessionId ?? endedLessonId,
+            lessonId:           endedLessonId,
+            sectionId:          s.focusLesson,
+            phaseReached:       result.previousPhase,
+            completedExercises: (s.completedExercises ?? []).map(String),
+            durationSeconds:    durationSec,
+            voiceAttemptCount:  0,
+          })
+        } catch {
+          return Promise.resolve()
+        }
+      }).catch(() => { /* fail-soft */ })
     }
 
     meta.lessonId = null
@@ -1550,8 +1587,54 @@ async function handleEngineExerciseAnswer(
   }
 
   console.log(`[engine] answer_submitted lessonId=${lessonId} answer="${answer.slice(0, 40)}"`)
+
+  // Capture exercise metadata before submit (state mutates on submitAnswer)
+  const preSubmitExercise = engineState.currentExerciseState
+  const preSubmitSpec     = preSubmitExercise?.spec
+
   const result = await exerciseEngine.submitAnswer({ lessonId, studentAnswer: answer })
   console.log(`[engine] answer_result action=${result.action} correct=${result.validation?.correct ?? 'n/a'} lessonId=${lessonId}`)
+
+  // Record validation memory event — fail-soft, never blocks lesson flow
+  if (meta.userId && result.validation && preSubmitSpec) {
+    memoryService.recordValidationEvent({
+      userId:       meta.userId,
+      sessionId:    meta.sessionId ?? lessonId,
+      lessonId,
+      exerciseId:   preSubmitExercise!.exerciseId,
+      exerciseType: preSubmitSpec.exerciseType,
+      stepId:       preSubmitSpec.steps[preSubmitExercise!.currentStepIndex]?.stepId ?? '',
+      sectionId:    engineState.sectionId,
+      topic:        preSubmitSpec.meta.skillFocus,
+      isCorrect:    result.validation.correct,
+      score:        result.validation.score,
+      retryCount:   preSubmitExercise!.retryCount,
+    }).catch(() => { /* fail-soft */ })
+  }
+
+  // Record exercise completion memory event
+  if (
+    meta.userId &&
+    preSubmitExercise &&
+    preSubmitSpec &&
+    (result.action === 'exercise_complete' || result.action === 'lesson_complete')
+  ) {
+    const completedEx = preSubmitExercise
+    const correctSteps = completedEx.completedSteps.length
+    const totalSteps   = preSubmitSpec.steps.length
+    memoryService.recordExerciseCompleted({
+      userId:       meta.userId,
+      sessionId:    meta.sessionId ?? lessonId,
+      lessonId,
+      exerciseId:   completedEx.exerciseId,
+      exerciseType: preSubmitSpec.exerciseType,
+      sectionId:    engineState.sectionId,
+      topic:        preSubmitSpec.meta.skillFocus,
+      totalSteps,
+      correctSteps,
+      totalHints:   completedEx.hintsGiven,
+    }).catch(() => { /* fail-soft */ })
+  }
 
   // Broadcast engine cursor immediately — frontend renders backend state, not GPT text
   if (result.exerciseCursor) {
@@ -1588,6 +1671,20 @@ async function handleEngineExerciseAnswer(
         durationMin,
       },
     })
+
+    // Record lesson completion memory — fire-and-forget
+    if (meta.userId) {
+      memoryService.recordLessonCompleted({
+        userId:             meta.userId,
+        sessionId:          meta.sessionId ?? lessonId,
+        lessonId,
+        sectionId:          engineState.sectionId,
+        phaseReached:       'EXERCISES',
+        completedExercises: engineState.completedExerciseIds,
+        durationSeconds:    durationMin * 60,
+        voiceAttemptCount:  0,
+      }).catch(() => { /* fail-soft */ })
+    }
     return
   }
 

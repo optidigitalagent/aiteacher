@@ -57,6 +57,7 @@ function stubResponse(state: LessonState): AIResponse {
 export interface OrchestratorCallContext {
   remainingMs?: number         // remaining lesson milliseconds for time-aware prompting
   enginePromptContext?: string // Engine Authority Migration: injected as second system block
+  memoryBlock?: string         // Memory System: compact student history summary (read-only)
 }
 
 // Phase 5: error detail passed from WS layer to populate errorsThisLesson

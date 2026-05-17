@@ -232,6 +232,8 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string, callC
       : undefined,
     // Phase 5: persistent tips for cross-session learning continuity
     studentTips: studentTips.length > 0 ? studentTips : undefined,
+    // Memory System: compact read-only student history for Teacher Brain adaptation
+    memoryBlock: callCtx?.memoryBlock,
   }
 
   const systemPrompt = buildSystemPrompt(ctx)

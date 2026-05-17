@@ -115,8 +115,7 @@ function fallback(state: LessonState): AIResponse {
 
 // ── Main AI handler ───────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const handler: AIHandlerFn = async (state: LessonState, inputText: string, _ctx?: OrchestratorCallContext) => {
+const handler: AIHandlerFn = async (state: LessonState, inputText: string, callCtx?: OrchestratorCallContext) => {
   if (!client) throw new Error('[openai] client not initialised')
 
   const [student, history, ragContext] = await Promise.all([
@@ -133,6 +132,7 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string, _ctx?
     errorPatterns:  student.error_patterns  ?? [],
     grammarMastery: student.grammar_mastery ?? {},
     ragContext,
+    memoryBlock: callCtx?.memoryBlock,
   }
 
   const systemPrompt = buildSystemPrompt(ctx)
