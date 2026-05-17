@@ -11,6 +11,7 @@ import {
 } from '../lesson/focus-student-book'
 import { buildBehaviorContext } from '../exercises/teacher-behaviors/index.js'
 import { buildPaidLessonTeacherBrainContext } from './teacher-brain/index.js'
+import { getManifestForSection, buildManifestPromptBlock } from '../lesson/section-manifest.js'
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
@@ -567,7 +568,10 @@ explicitly completed and announced with the COMPLETION ANNOUNCEMENT below.
 Do NOT re-present completed exercises [${completed.join(', ') || 'none'}].
 
 ━━━ SOURCE LOCK ━━━
-Find Exercise ${exerciseNum} in the Student Book OCR text above. Present it EXACTLY as written.
+Use the SECTION EXERCISE MANIFEST above (if present) as the primary authority for exercise structure.
+The manifest defines exactly which exercises exist, whether they are executable, and what items they contain.
+Do NOT infer exercise structure from the raw OCR text — the manifest overrides it.
+If no manifest exists: find Exercise ${exerciseNum} in the Student Book OCR text above. Present it EXACTLY as written.
 If you cannot find it, say so honestly: "I can't locate Exercise ${exerciseNum} in the text." Then skip to next.
 Do NOT invent exercises. For special formats → apply SPECIAL TASK TYPES rules above.
 
@@ -817,10 +821,15 @@ function buildFocusSection(state: LessonState): string {
   const tbCtx = buildTeachersBookContext(state.focusUnit, state.focusLesson)
   const studentCtx = buildFocusStudentBookContext(state.focusLesson)
 
+  // Phase F: inject backend-authoritative exercise manifest when available.
+  // The manifest overrides AI inference of exercise structure from raw OCR text.
+  const manifest = state.focusLesson ? getManifestForSection(state.focusLesson) : null
+  const manifestBlock = manifest ? buildManifestPromptBlock(manifest) : ''
+
   if (state.focusLesson) {
     return `
 ${studentCtx}
-
+${manifestBlock ? `\n${manifestBlock}\n` : ''}
 ${TEACHING_METHODOLOGY_PROMPT}
 
 === TEACHER'S BOOK — ANSWER KEYS AND PROCEDURE ONLY ===
@@ -835,7 +844,7 @@ ${tbCtx}
 
   return `
 ${studentCtx}
-
+${manifestBlock ? `\n${manifestBlock}\n` : ''}
 ${TEACHING_METHODOLOGY_PROMPT}
 
 ${tbCtx}
