@@ -111,3 +111,17 @@ export type {
   HiddenAnswerSourceDecision,
   SectionAnalysis,
 } from './teacher-brain-executability.js'
+
+export {
+  FORBIDDEN_AI_OUTPUT_FIELDS,
+  auditAIResponseForControlFields,
+  buildSafeFallback,
+  inferResponseGoalFromValidation,
+} from './teacher-brain-isolation.js'
+
+export type {
+  TeacherResponseGoal,
+  ValidationAlignmentResult,
+  TeacherBrainInputContract,
+  TeacherBrainOutputContract,
+} from './teacher-brain-isolation.js'
