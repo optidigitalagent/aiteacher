@@ -9,6 +9,7 @@
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",
     "ingest": "tsx src/scripts/ingest-textbook.ts",
+    "parse-textbook": "tsx src/scripts/parse-textbook.ts",
     "test": "vitest run"
   },
   "dependencies": {

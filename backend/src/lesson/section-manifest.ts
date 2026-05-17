@@ -3,6 +3,17 @@
 // Phase F: AI must NOT infer exercise order, executability, or item content from raw OCR.
 // The manifest is the single source of truth for what exercises exist, which are runnable,
 // and exactly what items they contain.
+//
+// JSON overlay: parsed manifests in backend/data/manifests/{sectionId}.json take precedence
+// over hardcoded manifests below. Use `npm run parse-textbook` to generate them.
+
+import fs   from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename    = fileURLToPath(import.meta.url)
+const __dirname     = path.dirname(__filename)
+const MANIFESTS_DIR = path.resolve(__dirname, '../../data/manifests')
 
 export type ManifestRuntimeMode =
   | 'soft_speaking'
@@ -163,12 +174,28 @@ const SECTION_1_2_MANIFEST: SectionExerciseManifest = {
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
-const MANIFESTS: Record<string, SectionExerciseManifest> = {
+const HARDCODED_MANIFESTS: Record<string, SectionExerciseManifest> = {
   '1.2': SECTION_1_2_MANIFEST,
 }
 
+// JSON overlay: try data/manifests/{sectionId}.json first, fall back to hardcoded.
+// Lazy import to avoid circular dep — textbook/ imports section-manifest types only.
 export function getManifestForSection(sectionId: string): SectionExerciseManifest | null {
-  return MANIFESTS[sectionId] ?? null
+  const jsonManifest = tryLoadJsonManifest(sectionId)
+  if (jsonManifest) return jsonManifest
+  return HARDCODED_MANIFESTS[sectionId] ?? null
+}
+
+function tryLoadJsonManifest(sectionId: string): SectionExerciseManifest | null {
+  try {
+    const filename = sectionId.replace(/\./g, '_') + '.json'
+    const filepath = path.join(MANIFESTS_DIR, filename)
+    if (!fs.existsSync(filepath)) return null
+    const raw = fs.readFileSync(filepath, 'utf-8')
+    return JSON.parse(raw) as SectionExerciseManifest
+  } catch {
+    return null
+  }
 }
 
 // Phase G.1: look up a single exercise entry by exercise number.
