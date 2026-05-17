@@ -8,17 +8,24 @@ interface Props {
 }
 
 const TYPE_LABEL: Record<string, string> = {
-  form_transformation: 'Transform',
-  error_correction:    'Correct',
-  reconstruction:      'Reconstruct',
-  free_production:     'Produce',
-  fill_gap:            'Fill in',
-  grammar_transform:   'Transform',
-  word_box:            'Word Box',
-  reading:             'Reading',
-  speaking_prompt:     'Speaking',
-  vocabulary_matching: 'Match',
-  matching:            'Match',
+  form_transformation:  'Transform',
+  error_correction:     'Correct',
+  reconstruction:       'Reconstruct',
+  free_production:      'Produce',
+  fill_gap:             'Fill in',
+  grammar_transform:    'Transform',
+  word_box:             'Word Box',
+  reading:              'Reading',
+  speaking_prompt:      'Speaking',
+  vocabulary_matching:  'Match',
+  matching:             'Match',
+  grammar_focus_fill:   'Grammar Focus',
+  grammar_drill:        'Grammar Drill',
+  personal_fill:        'Your Turn',
+  discussion:           'Discussion',
+  pair_speaking:        'Speaking',
+  fill_in_the_gap:      'Fill in',
+  sentence_transformation: 'Transform',
 }
 
 function isMatchingExercise(exerciseType: string): boolean {

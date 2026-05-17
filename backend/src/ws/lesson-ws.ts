@@ -961,13 +961,14 @@ function validateManifestAnswer(studentText: string, item: ManifestItem): boolea
 }
 
 interface ManifestVoiceResult {
-  correct:        boolean
-  cursor:         ExerciseCursor | null    // set when correct
-  correctionTurn: CorrectionTurn | null   // set when incorrect
-  exerciseNum:    number
-  itemIndex:      number
-  item:           ManifestItem
-  engineResult?:  EngineResult            // Engine Authority Migration: set when routed through engine
+  correct:         boolean
+  cursor:          ExerciseCursor | null    // set when correct
+  correctionTurn:  CorrectionTurn | null   // set when incorrect
+  exerciseNum:     number
+  itemIndex:       number
+  item:            ManifestItem
+  engineResult?:   EngineResult            // Engine Authority Migration: set when routed through engine
+  isSoftSpeaking?: boolean                 // Phase A: true for discussion/personal_fill/pair_speaking
 }
 
 // Attempts manifest-authoritative validation for the current voice input.
@@ -989,7 +990,7 @@ async function tryManifestValidateVoice(
     ) {
       const exState = engineState.currentExerciseState
       const spec    = exState.spec
-      // Only intercept deterministic_sequential exercises (exact/contains validation)
+      // Intercept deterministic_sequential exercises (exact/contains validation)
       if (spec.meta.runtimeMode === 'deterministic_sequential') {
         const result = await exerciseEngine.submitAnswer({ lessonId, studentAnswer: studentText })
         console.log(
@@ -999,7 +1000,6 @@ async function tryManifestValidateVoice(
         )
         const correct = result.action === 'step_correct' || result.action === 'exercise_complete' ||
           result.action === 'soft_pass' || result.action === 'step_revealed'
-        // Construct a ManifestVoiceResult-compatible return for the existing context-builder
         const dummyItem: ManifestItem = {
           text:          exState.spec.steps[exState.currentStepIndex]?.question ?? '',
           correctAnswer: result.validation?.correctAnswer ?? '',
@@ -1015,6 +1015,30 @@ async function tryManifestValidateVoice(
           itemIndex:      exState.currentStepIndex,
           item:           dummyItem,
           engineResult:   result,
+        }
+      }
+
+      // Phase A: intercept soft_speaking exercises (any_response — advance engine for every student turn)
+      if (spec.meta.runtimeMode === 'soft_speaking') {
+        const result = await exerciseEngine.submitAnswer({ lessonId, studentAnswer: studentText })
+        console.log(
+          `[engine] soft_speaking_advance action=${result.action} ` +
+          `exercise=#${spec.meta.exerciseNumber} lessonId=${lessonId} ` +
+          `student="${studentText.slice(0, 60)}"`,
+        )
+        const dummyItem: ManifestItem = {
+          text:          exState.spec.steps[exState.currentStepIndex]?.question ?? '',
+          correctAnswer: '',
+        }
+        return {
+          correct:         true,
+          cursor:          result.exerciseCursor,
+          correctionTurn:  null,
+          exerciseNum:     spec.meta.exerciseNumber,
+          itemIndex:       exState.currentStepIndex,
+          item:            dummyItem,
+          engineResult:    result,
+          isSoftSpeaking:  true,
         }
       }
     }
@@ -1066,12 +1090,44 @@ async function tryManifestValidateVoice(
   }
 }
 
+// Phase A: AI context for soft_speaking exercises — natural acknowledgment, not correction ladder.
+function buildSoftSpeakingContext(result: EngineResult, studentText: string): string {
+  const stateBlock = result.promptContext
+
+  let answerBlock: string
+  if (result.action === 'step_correct') {
+    const cursor   = result.exerciseCursor
+    const nextItem = cursor?.currentItem
+    const contract = nextItem
+      ? `\nNEXT STEP: After your acknowledgment, present the next item: "${nextItem}". Do not ask additional questions first.`
+      : ''
+    answerBlock = `[SPEAKING RESULT] Student answered: "${studentText}".\n` +
+      `Acknowledge naturally in 1 sentence (not "Exactly." — use "Nice." / "Good." / "Interesting."). ` +
+      `If there is one clear language error, note it in a second sentence only. Keep total response short.${contract}`
+  } else if (result.action === 'exercise_complete') {
+    const cursor   = result.exerciseCursor
+    const nextExNum = cursor?.exerciseNumber
+    const nextItem  = cursor?.currentItem
+    const contract  = nextItem
+      ? `\nEXERCISE COMPLETE: Move immediately to Exercise ${nextExNum}. Present its first item: "${nextItem}".`
+      : `\nEXERCISE COMPLETE: Move immediately to Exercise ${nextExNum ?? 'next'}.`
+    answerBlock = `[SPEAKING RESULT] Student answered: "${studentText}".\n` +
+      `Briefly acknowledge (one sentence). ${contract}`
+  } else {
+    // lesson_complete or no_change — hand off to standard path
+    answerBlock = `[SPEAKING RESULT] Student answered: "${studentText}". Continue naturally.`
+  }
+
+  return stateBlock ? stateBlock + '\n\n' + answerBlock : answerBlock
+}
+
 // Builds the [EXERCISE RESULT] context block injected as AI input after manifest validation.
 // Engine Authority Migration: when engineResult is present, delegates to buildEngineAnswerContext
 // so the AI receives the full engine state block alongside the correction/confirmation.
 function buildManifestVoiceContext(mv: ManifestVoiceResult, studentText: string): string {
   // Engine path: use richer engine context when available
   if (mv.engineResult) {
+    if (mv.isSoftSpeaking) return buildSoftSpeakingContext(mv.engineResult, studentText)
     return buildEngineAnswerContext(mv.engineResult, studentText)
   }
 
@@ -1393,6 +1449,20 @@ async function processInput(
   }
 
   console.log(`[paid-lesson] ai_turn_completed phase=${result.phase}`)
+
+  // Phase A: always broadcast engine cursor after AI turn in EXERCISES phase.
+  // Ensures PaidExerciseCard appears for soft_speaking exercises where the orchestrator
+  // does not emit a cursor, and refreshes cursor state after every AI exchange.
+  if (result.phase === 'EXERCISES' && meta.lessonId) {
+    try {
+      const liveCursor = await exerciseEngine.getCursor(meta.lessonId)
+      if (liveCursor && !result.exerciseCursor) {
+        send(ws, { type: 'exercise_cursor_updated', cursor: liveCursor })
+        console.log(`[paid-lesson] cursor_post_turn exercise=#${liveCursor.exerciseNumber} type=${liveCursor.exerciseType}`)
+      }
+    } catch { /* non-fatal */ }
+  }
+
   await ttsStream(ws, meta, result.text)
 }
 
@@ -1562,10 +1632,10 @@ function buildEngineAnswerContext(result: EngineResult, studentAnswer: string): 
       `2. WHY in one sentence: the rule or connection that makes this correct.${continuationContract}`
   } else if (result.action === 'exercise_complete') {
     const cursor = result.exerciseCursor
+    const nextExNum = cursor?.exerciseNumber ?? ''
     const continuationContract = cursor?.currentItem
-      ? `\nEXERCISE TURN COMPLETION CONTRACT: Announce exercise complete, then present ` +
-        `item 1: "${cursor.currentItem}" of the next exercise.`
-      : `\nEXERCISE TURN COMPLETION CONTRACT: Announce exercise complete. Then introduce the next exercise immediately.`
+      ? `\nEXERCISE TURN COMPLETION CONTRACT: This exercise is done. Immediately present Exercise ${nextExNum} item 1: "${cursor.currentItem}".`
+      : `\nEXERCISE TURN COMPLETION CONTRACT: This exercise is done. Move to Exercise ${nextExNum} immediately.`
     answerBlock = `[EXERCISE RESULT] Student answered: "${studentAnswer}" — CORRECT (exercise completed).\n` +
       `Your response MUST follow this structure in order:\n` +
       `1. ONE confirmation word only: "Exactly." / "Right." / "Correct."\n` +
@@ -1581,11 +1651,11 @@ function buildEngineAnswerContext(result: EngineResult, studentAnswer: string): 
       `[Brief rule in one sentence]. Now repeat the full sentence after me."\n` +
       `Wait for the student to repeat, then advance to the next item.`
   } else if (result.action === 'exercise_skipped') {
-    const cursor = result.exerciseCursor
-    answerBlock = `[ENGINE] Exercise auto-skipped (unsupported type). ` +
-      `Announce skip briefly, then introduce ` +
-      (cursor?.currentItem ? `item 1 of the next exercise: "${cursor.currentItem}"` : 'the next exercise') +
-      ` immediately.`
+    const cursor    = result.exerciseCursor
+    const nextExNum = cursor?.exerciseNumber ?? ''
+    answerBlock = `[ENGINE] Exercise auto-skipped (requires unavailable resource). ` +
+      `In one sentence: skip announcement. Then immediately present Exercise ${nextExNum}` +
+      (cursor?.currentItem ? ` item 1: "${cursor.currentItem}".` : '.')
   } else if (result.action === 'lesson_complete') {
     answerBlock = `[ENGINE] All exercises complete. Move to WRAP_UP phase. ` +
       `Summarise what the student practised and close the lesson warmly.`

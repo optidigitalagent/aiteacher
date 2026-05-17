@@ -164,25 +164,53 @@ export class ExerciseEngine {
         }
       }
 
-      // Load next exercise
-      const nextExState = shouldAutoSkip(nextSpec)
+      // Load next exercise — drain auto-skipped exercises until we reach an active one
+      let nextExState = shouldAutoSkip(nextSpec)
         ? skipExercise(initExerciseState(nextSpec))
         : initExerciseState(nextSpec)
+      let currentNextSpec = nextSpec
 
-      finalState = this.mountNextExercise(finalState, nextExState, nextSpec)
+      finalState = this.mountNextExercise(finalState, nextExState, currentNextSpec)
+
+      while (nextExState.status === 'skipped') {
+        finalState = this.closeCurrentExercise(finalState, nextExState)
+        const drained = resolveCompletedExerciseNumbers(finalState)
+        const afterSkip = findNextExercise({
+          queue:                    finalState.exerciseQueue,
+          currentIndex:             finalState.currentExerciseIndex,
+          completedExerciseNumbers: drained,
+          currentExercise:          nextExState,
+        })
+        if (!afterSkip) {
+          await saveEngineState(lessonId, finalState)
+          console.log(`[engine] lesson_complete (all remaining skipped) lessonId=${lessonId}`)
+          return {
+            action:         'lesson_complete',
+            validation,
+            exerciseCursor: null,
+            promptContext:  buildPromptContext(undefined, finalState),
+          }
+        }
+        nextExState = shouldAutoSkip(afterSkip)
+          ? skipExercise(initExerciseState(afterSkip))
+          : initExerciseState(afterSkip)
+        currentNextSpec = afterSkip
+        finalState = this.mountNextExercise(finalState, nextExState, afterSkip)
+      }
+
       await saveEngineState(lessonId, finalState)
 
       console.log(
-        `[engine] exercise_complete → next #${nextSpec.meta.exerciseNumber} ` +
-        `type=${nextSpec.exerciseType} lessonId=${lessonId}`,
+        `[engine] exercise_complete → next #${currentNextSpec.meta.exerciseNumber} ` +
+        `type=${currentNextSpec.exerciseType} lessonId=${lessonId}`,
       )
 
       return {
-        action:           nextExState.status === 'skipped' ? 'exercise_skipped' : 'exercise_complete',
+        action:           'exercise_complete',
         validation,
         exerciseCursor:   formatCursor(nextExState, finalState),
         promptContext:    buildPromptContext(nextExState, finalState),
-        nextExerciseSpec: nextSpec,
+        nextExerciseSpec: currentNextSpec,
       }
     }
 

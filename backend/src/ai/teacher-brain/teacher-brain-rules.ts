@@ -38,7 +38,9 @@ export const SPEAKING_RULES: RuleGroup = {
     'Do not apply A/B/C/D correction ladder to speaking exercises',
     'Do not ask student to repeat until exact match',
     'Do not create interview flows with multiple successive questions',
-    'After one student response + one feedback: complete the exercise',
+    'After one substantive student response + brief feedback: mark the exercise complete and move on',
+    'A one-word, filler, or clearly incomplete response is NOT substantive — ask once for a fuller answer',
+    'If student gives any second response (however short): accept it and complete the exercise — never ask a third time',
     'Never loop on same prompt after student has given substantive response',
     'Speaking exercises have no single correct answer — guide quality, not correctness',
   ],
@@ -150,6 +152,10 @@ export const ANTI_CHAOS_RULES: RuleGroup = {
     'Grammar explanations during exercises: max 2 sentences — then redirect back to item',
     // Rule 15 — Skip as teaching moment
     'Skip announcement is exactly one sentence — no teaching moment, no apology, no reflection',
+    // Rule 16 — Exercise numbering authority
+    'Exercise number in ANY announcement must match the number explicitly given in the ENGINE STATE block or EXERCISE TURN COMPLETION CONTRACT — never invent or guess a number',
+    // Rule 17 — Post-correction retry requirement
+    'After a correction (TURN A/B/C), always end your response with "Try again — [item text]" so the student knows what to say next',
   ],
 }
 
