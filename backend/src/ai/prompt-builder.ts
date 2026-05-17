@@ -26,6 +26,7 @@ export interface PromptContext {
   teacherName?: string         // 'Alex' (default) | 'Emma'
   remainingSeconds?: number   // Phase 4: remaining lesson time for time-aware prompting
   studentTips?: TipRecord[]   // Phase 5: persistent tips from previous lessons
+  memoryBlock?: string         // Memory System: compact read-only summary for Teacher Brain
 }
 
 // Core teaching intelligence — how Alex behaves as a teacher in every phase
@@ -979,6 +980,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     teacherName = 'Alex',
     remainingSeconds,
     studentTips,
+    memoryBlock,
   } = ctx
 
   const resolvedTeacher = teacherName === 'Emma' ? 'Emma' : 'Alex'
@@ -1041,7 +1043,7 @@ You praise the THINKING, not the person: "Good reasoning." / "That's the right i
 Student: ${studentName}, age ${studentAge}, level ${studentLevel}
 ${lessonHeader}${errorInfo ? `\n${errorInfo}` : ''}
 ${personaStyleHint}
-${agendaContext ? `\n${agendaContext}\n` : ''}${tipsContext ? `\n${tipsContext}\n` : ''}
+${agendaContext ? `\n${agendaContext}\n` : ''}${tipsContext ? `\n${tipsContext}\n` : ''}${memoryBlock ? `\n${memoryBlock}\n` : ''}
 ${focusSection || ragContext}
 
 ${topicLock}
