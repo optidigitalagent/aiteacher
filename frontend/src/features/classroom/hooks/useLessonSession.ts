@@ -2,7 +2,10 @@ import { useState, useCallback, useRef } from 'react'
 import type { Exercise, LessonStep } from '../types'
 import type { BackendExercise, ExerciseCursor, SendFn } from '../services/classroomSocket'
 
-interface Options { send: SendFn }
+interface Options {
+  send:       SendFn
+  sessionId?: string   // paid lesson session ID — included in exercise_answer payloads
+}
 
 export type { ExerciseCursor }
 
@@ -17,7 +20,6 @@ const PHASE_STEPS: LessonStep[] = [
   { id: 'WRAP_UP',        label: 'Wrap up',           status: 'upcoming' },
 ]
 
-// Normalize any run of underscores to the 8-underscore blank that ExercisePanel splits on
 function normalizeBlank(text: string): string {
   return text.replace(/_{2,}/g, '________')
 }
@@ -37,36 +39,56 @@ function mapExercise(be: BackendExercise, index: number): Exercise {
   }
 }
 
-export function useLessonSession({ send }: Options) {
+export function useLessonSession({ send, sessionId }: Options) {
   const [exercise,       setExercise]       = useState<Exercise | null>(null)
   const [exerciseCursor, setExerciseCursor] = useState<ExerciseCursor | null>(null)
   const exerciseIndexRef                    = useRef(0)
   const [pendingId,      setPendingId]      = useState<string | null>(null)
   const [steps,          setSteps]          = useState<LessonStep[]>(PHASE_STEPS)
   const [currentPhase,   setCurrentPhase]   = useState<string>('DIAGNOSTIC')
+  const [isRecovering,   setIsRecovering]   = useState(false)
 
   const progress = Math.round(
     (steps.filter((s) => s.status === 'done').length / steps.length) * 100,
   )
 
-  // Called by ClassroomLayout when WS 'exercise' event arrives
+  // Called by ClassroomLayout when WS 'exercise' event arrives (legacy path)
   const onExercise = useCallback((be: BackendExercise) => {
     exerciseIndexRef.current++
     setExercise(mapExercise(be, exerciseIndexRef.current))
     setPendingId(be.id)
   }, [])
 
-  // Called by ClassroomLayout when WS 'exercise_cursor_updated' event arrives.
-  // Phase 2.6: cursor.exerciseId is the authoritative server-assigned ID.
-  // pendingId must follow it so submitAnswer never targets a stale exercise.
+  // Called when WS 'exercise_cursor_updated' arrives.
+  // exerciseCursor is the primary source of truth for paid lessons.
+  // pendingId follows cursor.exerciseId so submitAnswer always targets the live exercise.
   const onCursorUpdated = useCallback((cursor: ExerciseCursor) => {
     setExerciseCursor(cursor)
     if (cursor.exerciseId != null) {
-      // Authoritative exerciseId present — sync pendingId unconditionally
       setPendingId(cursor.exerciseId)
     } else if (!cursor.currentItem) {
-      // No active item and no exerciseId — exercise state has cleared
       setPendingId(null)
+    }
+    if (import.meta.env.DEV) {
+      console.log('[cursor] updated', {
+        exerciseId: cursor.exerciseId,
+        exerciseNumber: cursor.exerciseNumber,
+        itemIndex: cursor.itemIndex,
+        completionState: cursor.completionState,
+        expectedInputMode: cursor.expectedInputMode,
+      })
+    }
+  }, [])
+
+  // Called when WS 'lesson_state_snapshot' arrives on reconnect.
+  // Replaces any stale cursor/phase state — backend is authoritative.
+  const onStateSnapshot = useCallback((cursor: ExerciseCursor, phase: string) => {
+    setExerciseCursor(cursor)
+    if (cursor.exerciseId != null) setPendingId(cursor.exerciseId)
+    setCurrentPhase(phase)
+    setIsRecovering(false)
+    if (import.meta.env.DEV) {
+      console.log('[cursor] reconnect snapshot received', { exerciseId: cursor.exerciseId, phase })
     }
   }, [])
 
@@ -80,43 +102,61 @@ export function useLessonSession({ send }: Options) {
         return s
       }),
     )
-    // Clear the exercise cursor and pendingId when leaving the EXERCISES phase so stale
-    // exercise cards don't remain visible during VOCABULARY, DEEP_THINKING, and WRAP_UP.
+    // Clear exercise cursor and pendingId when leaving EXERCISES phase
     if (from === 'EXERCISES') {
       setExerciseCursor(null)
       setPendingId(null)
     }
   }, [])
 
-  // Called when lesson resumes to restore phase awareness
   const setPhase = useCallback((phase: string) => {
     setCurrentPhase(phase)
   }, [])
 
   // Submit the current exercise answer.
-  // Phase 2.6: requires an authoritative exerciseId from the cursor before submitting.
-  // If a structured exercise is active but exerciseId not yet received, block the submit
+  //
+  // Priority order for the exercise ID:
+  //   1. cursor.exerciseId (engine-authoritative, always preferred)
+  //   2. pendingId (set from cursor or from legacy 'exercise' event)
+  //
+  // If a cursor/exercise is active but no ID has arrived yet, block the submit
   // so the AI cannot improvise instead of running the deterministic validator.
-  // text_message fallback is only safe in open-chat / speaking context (no exercise loaded).
+  //
+  // Payload includes sessionId, inputMode, and itemIndex when available
+  // so the backend engine can route to the correct step.
   const submitAnswer = useCallback(
     (answer: string) => {
-      if (pendingId) {
-        send({ type: 'exercise_answer', exerciseId: pendingId, answer })
-      } else if (exercise !== null) {
-        // Structured exercise is visible but cursor exerciseId hasn't arrived yet — block.
-        // Sending as text_message here would bypass the validator and let the AI improvise.
-        console.warn('[submitAnswer] blocked: structured exercise active but pendingId not yet received from cursor')
+      const cursorId = exerciseCursor?.exerciseId ?? pendingId
+
+      if (cursorId) {
+        const payload: Record<string, unknown> = {
+          type:       'exercise_answer',
+          exerciseId: cursorId,
+          answer,
+        }
+        if (sessionId)                              payload.sessionId = sessionId
+        if (exerciseCursor?.expectedInputMode)      payload.inputMode = exerciseCursor.expectedInputMode
+        if (exerciseCursor?.itemIndex != null)      payload.itemIndex = exerciseCursor.itemIndex
+
+        send(payload)
+        if (import.meta.env.DEV) {
+          console.log('[cursor] answer submitted', payload)
+        }
+      } else if (exerciseCursor !== null || exercise !== null) {
+        // Exercise is visible but engine ID hasn't arrived yet — block to prevent AI improvisation
+        console.warn('[submitAnswer] blocked: exercise/cursor active but exerciseId not yet received from engine')
       } else {
-        // No active exercise (free chat / speaking phase) — text_message is safe
+        // No active exercise — safe to send as free-chat text
         send({ type: 'text_message', text: answer })
       }
     },
-    [pendingId, exercise, send],
+    [pendingId, exerciseCursor, exercise, sessionId, send],
   )
 
   return {
     question: exercise, exerciseCursor, progress, steps,
     submitAnswer, onExercise, onPhaseChange, onCursorUpdated,
     currentPhase, setPhase,
+    isRecovering, setIsRecovering, onStateSnapshot,
   }
 }

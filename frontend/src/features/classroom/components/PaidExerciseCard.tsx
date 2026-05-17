@@ -29,7 +29,10 @@ export default function PaidExerciseCard({ cursor, feedback, feedbackExplanation
   const {
     exerciseType, instruction, currentItem,
     itemIndex, itemTotal, completedItems, failedItems, wordBoxState, items, options,
+    completionState, expectedInputMode, pendingTransition,
   } = cursor
+
+  const isComplete = completionState === 'complete' || completionState === 'skipped'
 
   const typeLabel  = TYPE_LABEL[exerciseType] ?? exerciseType
   const itemsTotal = itemTotal > 0 ? itemTotal : (items?.length ?? 0)
@@ -246,10 +249,54 @@ export default function PaidExerciseCard({ cursor, feedback, feedbackExplanation
             </div>
           </div>
         )}
+
+        {/* Expected input mode hint — shown when engine specifies how the student should respond */}
+        {expectedInputMode && expectedInputMode !== 'any' && !isComplete && (
+          <div style={{
+            marginTop: 10,
+            display: 'flex', alignItems: 'center', gap: 6,
+            fontSize: 11, color: '#94A3B8', fontWeight: 600,
+          }}>
+            <span style={{ fontSize: 13 }}>
+              {expectedInputMode === 'voice' ? '🎤' : expectedInputMode === 'choice' ? '☑' : '⌨'}
+            </span>
+            {expectedInputMode === 'voice' ? 'Respond by speaking'
+              : expectedInputMode === 'choice' ? 'Select the correct option'
+              : 'Type your answer below'}
+          </div>
+        )}
+
+        {/* Pending transition indicator — backend signalling exercise/section boundary */}
+        {pendingTransition && !isComplete && (
+          <div style={{
+            marginTop: 10, padding: '6px 12px', borderRadius: 8,
+            background: 'rgba(110,124,251,0.08)',
+            fontSize: 11, color: '#6E7CFB', fontWeight: 700,
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <div style={{ width: 10, height: 10, border: '2px solid rgba(110,124,251,0.3)', borderTopColor: '#6E7CFB', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+            <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+            Moving to next exercise…
+          </div>
+        )}
       </div>
 
-      {/* Feedback banner — outside scroll area so always visible */}
-      {feedback && (
+      {/* Exercise complete banner — backend cursor says exercise is done */}
+      {isComplete && (
+        <div style={{
+          borderTop: '1px solid #F1F5F9',
+          padding: '10px 24px',
+          background: completionState === 'skipped' ? '#fffbeb' : '#f0fdf4',
+          color:      completionState === 'skipped' ? '#b45309'  : '#16a34a',
+          fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span style={{ fontSize: 15 }}>{completionState === 'skipped' ? '→' : '✓'}</span>
+          {completionState === 'skipped' ? 'Exercise skipped — moving on.' : 'Exercise complete!'}
+        </div>
+      )}
+
+      {/* Feedback banner — outside scroll area so always visible; hidden when complete banner shown */}
+      {feedback && !isComplete && (
         <div style={{
           borderTop: '1px solid #F1F5F9',
           padding: '10px 24px',

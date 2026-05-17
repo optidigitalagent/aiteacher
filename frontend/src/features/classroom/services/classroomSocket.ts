@@ -9,21 +9,25 @@ const WS_BASE = buildWsBase()
 // ── Outbound (backend → frontend) ────────────────────────────────────────────
 
 export interface ExerciseCursor {
-  unit?:          number
-  section?:       string
-  exerciseNumber: number
-  exerciseType:   string
-  instruction:    string
-  currentItem:    string
-  itemIndex:      number
-  itemTotal:      number
-  completedItems: number[]
-  failedItems:    number[]
-  wordBoxState?:  { available: string[]; used: string[] } | null
-  items?:         string[]   // all items for full-context display
-  options?:       string[]   // answer word bank (matching/vocabulary) — visible to student
-  // Phase 2.6: authoritative server-assigned exercise ID — pendingId must follow this
-  exerciseId?:    string | null
+  unit?:              number
+  section?:           string
+  sessionId?:         string                                                // for answer submission
+  exerciseNumber:     number
+  exerciseType:       string
+  instruction:        string
+  currentItem:        string
+  itemIndex:          number
+  itemTotal:          number
+  completedItems:     number[]
+  failedItems:        number[]
+  wordBoxState?:      { available: string[]; used: string[] } | null
+  items?:             string[]                                              // all items for full-context display
+  options?:           string[]                                              // answer word bank — visible to student
+  exerciseId?:        string | null                                         // authoritative server-assigned ID
+  expectedInputMode?: 'text' | 'voice' | 'choice' | 'any'                 // what kind of input the engine expects
+  completionState?:   'active' | 'complete' | 'skipped'                   // exercise lifecycle state
+  validationResult?:  { correct: boolean; explanation: string } | null     // last validation outcome
+  pendingTransition?: string | null                                         // e.g. 'exercise_complete', 'section_complete'
 }
 
 export interface BackendExercise {
@@ -65,6 +69,12 @@ export type BackendMessage =
   | { type: 'exercise_cursor_updated'; cursor: ExerciseCursor }
   | { type: 'tip_added';              tip: TipRecord }
   | { type: 'tip_list';               tips: TipRecord[] }
+  // Engine-authoritative reconnect snapshot — replaces cursor from cache
+  | { type: 'lesson_state_snapshot'; cursor: ExerciseCursor; phase: string; sessionId: string }
+  // Deterministic validation result from the exercise engine
+  | { type: 'validation_result'; correct: boolean; explanation: string; exerciseId: string; stepId?: string }
+  // Engine-level errors (distinct from auth/billing errors in 'error')
+  | { type: 'runtime_error'; code: string; message: string }
   // Phase 6
   | { type: 'lesson_time_warning'; remainingMs: number }
   // Phase 2 recovery: periodic remaining-time broadcast (every 60 seconds)

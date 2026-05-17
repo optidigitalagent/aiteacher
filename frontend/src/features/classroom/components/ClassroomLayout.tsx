@@ -59,7 +59,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     question, exerciseCursor, progress, steps,
     submitAnswer, onExercise, onPhaseChange, onCursorUpdated,
     currentPhase, setPhase,
-  } = useLessonSession({ send })
+    isRecovering, setIsRecovering, onStateSnapshot,
+  } = useLessonSession({ send, sessionId: paidSessionId ?? undefined })
 
   const {
     messages, pushUser, pushAI, setTyping, clearTyping,
@@ -219,6 +220,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   // Phase 5: tips drawer
   const [tips,     setTips]     = useState<TipRecord[]>([])
   const [showTips, setShowTips] = useState(false)
+  // Stale answer rejection message (STALE_EXERCISE_ANSWER engine error)
+  const [staleAnswerMsg, setStaleAnswerMsg] = useState<string | null>(null)
 
   const answerRef = useRef('')
   useEffect(() => { answerRef.current = answer }, [answer])
@@ -237,6 +240,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       case 'ai_text':
         if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
         clearTyping()
+        if (import.meta.env.DEV) console.log('[cursor] teacher message received (speech only, not parsed for state)')
         pushAI(msg.text)
         // Always mark the teacher as speaking so TTS audio is never silently discarded.
         // When the student intentionally interrupted (interruptSentRef=true), keep the
@@ -310,12 +314,49 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       case 'lesson_resumed':
         if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
         setPhase(msg.phase)  // restore phase awareness on resume
+        setIsRecovering(false)  // resume confirms backend state is live
         pushAI(msg.message)
         setSpeaking(true)
         stopRecording()  // ensure mic is off during resume greeting TTS
+        if (import.meta.env.DEV) console.log('[cursor] lesson_resumed clears recovering state')
         break
       case 'exercise_cursor_updated':
         onCursorUpdated(msg.cursor)
+        break
+      case 'lesson_state_snapshot':
+        // Engine-authoritative reconnect snapshot — replace any stale local state
+        onStateSnapshot(msg.cursor, msg.phase)
+        if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
+        if (import.meta.env.DEV) {
+          console.log('[cursor] reconnect snapshot received from backend', msg)
+        }
+        break
+      case 'validation_result':
+        // Engine-level validation result (complement to 'feedback' for deterministic exercises)
+        setFeedback(msg.correct ? 'correct' : 'wrong')
+        setFeedbackExplanation(msg.explanation || null)
+        if (msg.correct) {
+          setConfirmedAnswer(answerRef.current)
+          setTimeout(() => setAnswer(''), 1800)
+        }
+        if (import.meta.env.DEV) {
+          console.log('[cursor] validation result received', { correct: msg.correct, exerciseId: msg.exerciseId })
+        }
+        break
+      case 'runtime_error':
+        // Engine-level errors — distinct from auth/billing errors
+        console.error('[Classroom runtime_error]', msg.code, msg.message)
+        if (msg.code === 'INVALID_ENGINE_STATE' || msg.code === 'INVALID_SESSION') {
+          // Unrecoverable engine state — return student to lesson selection
+          navigate('/learning', { replace: true })
+        } else if (msg.code === 'STALE_EXERCISE_ANSWER') {
+          // Student answered a stale exercise — keep current cursor, show brief message
+          setStaleAnswerMsg('Your answer was for a previous exercise. Please answer the current item.')
+          setTimeout(() => setStaleAnswerMsg(null), 4000)
+          if (import.meta.env.DEV) {
+            console.log('[cursor] stale answer rejected by engine')
+          }
+        }
         break
       case 'tip_list':
         setTips(msg.tips)
@@ -351,7 +392,13 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         console.error('[Classroom WS] error:', msg.code, msg.message)
         if (msg.code === 'LESSON_TAKEN_OVER') {
           setLessonTakenOver(true)
-        } else if (['PAYMENT_REQUIRED', 'SUBSCRIPTION_EXPIRED', 'LESSON_LIMIT_REACHED', 'AUTH_REQUIRED', 'SESSION_TIME_LIMIT'].includes(msg.code)) {
+        } else if (msg.code === 'INVALID_ENGINE_STATE' || msg.code === 'INVALID_SESSION') {
+          // Unrecoverable session errors — navigate away safely
+          navigate('/learning', { replace: true })
+        } else if (msg.code === 'STALE_EXERCISE_ANSWER') {
+          setStaleAnswerMsg('Your answer was for a previous exercise. Please answer the current item.')
+          setTimeout(() => setStaleAnswerMsg(null), 4000)
+        } else if (['PAYMENT_REQUIRED', 'SUBSCRIPTION_EXPIRED', 'LESSON_LIMIT_REACHED', 'AUTH_REQUIRED', 'SESSION_TIME_LIMIT', 'RATE_LIMITED', 'UNAUTHENTICATED'].includes(msg.code)) {
           setWsConnectError(msg.message)
         }
         break
@@ -376,9 +423,15 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     const ws = createClassroomSocket(
       (msg) => onMessageRef.current(msg),
       () => {
-        // WS open: connection established — wait for lesson_ready from backend
+        // WS open: connection established — wait for lesson_ready or state snapshot from backend
         setWsDisconnected(false)
         console.log('[paid-lesson] ws_open session=' + paidSessionId)
+        // If lesson had started before disconnect, enter recovering state until
+        // backend sends lesson_state_snapshot or lesson_resumed with authoritative cursor
+        if (lessonStartedRef.current) {
+          setIsRecovering(true)
+          if (import.meta.env.DEV) console.log('[cursor] reconnecting — waiting for backend state snapshot')
+        }
       },
       () => {
         setWsDisconnected(true)
@@ -415,6 +468,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   }, [currentPhase])
 
   // ── Event handlers ────────────────────────────────────────────────────────
+  // Used by ExercisePanel's "Check" button — requires legacy question state
   const handleCheck = useCallback(() => {
     if (!answer.trim() || !question) return
     if (awaitingStudentMessageRef.current) return  // mic turn already in flight — don't double-fire
@@ -422,6 +476,24 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     setTyping()
     submitAnswer(answer)
   }, [answer, question, pushUser, setTyping, submitAnswer])
+
+  // Used by cursor-based paid exercises (PaidExerciseCard via BottomControls)
+  // Works when only exerciseCursor is set — does NOT require legacy question state
+  const handleCursorSubmit = useCallback(() => {
+    if (!answer.trim()) return
+    if (awaitingStudentMessageRef.current) return
+    if (isRecovering) {
+      if (import.meta.env.DEV) console.log('[cursor] submit blocked: recovering from reconnect')
+      return
+    }
+    if (exerciseCursor?.completionState === 'complete') {
+      if (import.meta.env.DEV) console.log('[cursor] submit blocked: exercise already complete')
+      return
+    }
+    pushUser(answer)
+    setTyping()
+    submitAnswer(answer)
+  }, [answer, isRecovering, exerciseCursor, pushUser, setTyping, submitAnswer])
 
   const handleSubmit = useCallback(() => {
     if (isDemoMode) {
@@ -444,15 +516,20 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     }
     if (!answer.trim()) return
     if (question) {
+      // Legacy path: BackendExercise loaded (old exercise event)
       handleCheck()
+    } else if (exerciseCursor) {
+      // Engine cursor path: backend engine owns the exercise, no legacy question needed
+      handleCursorSubmit()
     } else {
+      // Free dialogue / speaking phase
       if (awaitingStudentMessageRef.current) return  // guard: mic turn already in flight
       pushUser(answer)
       setTyping()
       send({ type: 'text_message', text: answer })
       setAnswer('')
     }
-  }, [isDemoMode, answer, demo.handleTextSubmit, demo.interruptAudio, question, handleCheck, pushUser, setTyping, send])
+  }, [isDemoMode, answer, demo.handleTextSubmit, demo.interruptAudio, question, exerciseCursor, handleCheck, handleCursorSubmit, pushUser, setTyping, send])
 
   // Begin Lesson: send focus_lesson_start only when user clicks the button
   const handleBeginLesson = useCallback(() => {
@@ -878,9 +955,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           inputDisabled={
             (isDemoMode && !demo.lessonStarted) ||
             (isDemoMode && demo.phase === 'complete') ||
-            (!isDemoMode && !lessonStarted)
+            (!isDemoMode && !lessonStarted) ||
+            (!isDemoMode && isRecovering) ||
+            (!isDemoMode && exerciseCursor?.completionState === 'complete')
           }
-          micDisabled={!isDemoMode && !lessonStarted}
+          micDisabled={!isDemoMode && (!lessonStarted || isRecovering)}
           showHelpInput={isDemoMode ? showHelpInput : false}
           helpInputValue={helpInputValue}
           onHelpChange={setHelpInputValue}
@@ -908,6 +987,33 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           onStay={() => demo.setShowLeaveModal(false)}
           onLeave={() => navigate('/')}
         />
+      )}
+
+      {/* Recovery banner — waits for backend state snapshot after reconnect */}
+      {!isDemoMode && isRecovering && !wsDisconnected && !paidLessonEnded && (
+        <div style={{
+          position: 'fixed', top: 56, left: 0, right: 0, zIndex: 90,
+          background: 'rgba(110,124,251,0.92)', backdropFilter: 'blur(4px)',
+          padding: '9px 20px',
+          textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'white',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+        }}>
+          <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.4)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
+          Restoring your lesson state…
+        </div>
+      )}
+
+      {/* Stale answer message — STALE_EXERCISE_ANSWER engine rejection */}
+      {!isDemoMode && staleAnswerMsg && (
+        <div style={{
+          position: 'fixed', top: 56, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 130, background: 'rgba(245,158,11,0.95)', backdropFilter: 'blur(4px)',
+          borderRadius: 12, padding: '8px 20px', fontSize: 13, fontWeight: 700,
+          color: '#78350f', boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
+          whiteSpace: 'nowrap',
+        }}>
+          {staleAnswerMsg}
+        </div>
       )}
 
       {/* WS disconnect banner — shows when connection drops mid-lesson */}
