@@ -141,7 +141,24 @@ export class LessonOrchestrator {
     // subsequent items (same exerciseNumber) can reach the orchestrator even when the AI
     // omits items/options that are already rendered on screen. We enrich from cached state
     // before running snapshot validation here — the authoritative gate for new exercises.
-    const incomingExercise = aiResp.exercise
+
+    // Engine Authority Migration Phase 3: AI Isolation Guard.
+    // When engine prompt context contains "(backend-authoritative)", the Exercise Engine owns
+    // the current exercise/step cursor. AI-returned exercise structure must be ignored here
+    // to prevent legacy cursor logic from overriding deterministic engine state.
+    // The marker is only present in buildPromptContext() when an active engine exercise exists
+    // (see engine/frontend-formatter.ts). Free-mode and transition states do NOT carry it.
+    const engineOwnsExercise = !!(callCtx?.enginePromptContext?.includes('(backend-authoritative)'))
+    let incomingExercise = aiResp.exercise
+    if (engineOwnsExercise && incomingExercise) {
+      console.log(
+        `[orch] engine_active_exercise_ignored` +
+        ` type="${incomingExercise.type}"` +
+        ` exerciseNum=${incomingExercise.exerciseNumber ?? 'n/a'}` +
+        ` lessonId=${lessonId}`,
+      )
+      incomingExercise = null
+    }
 
     // Enrich subsequent items in the same exercise with cached state data.
     // AI may omit items/options for item N+1 (they are already visible to the student).

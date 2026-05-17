@@ -98,6 +98,7 @@ export function buildPaidLessonTeacherBrainContext(input: TeacherBrainGuidanceIn
   const { state, teacherName } = input
 
   const sections = [
+    buildIsolationContractSection(),       // AI Isolation Layer: verbal-only contract
     buildCoreSection(),
     buildGreetingSection(teacherName ?? 'Alex', state),
     buildRuntimeTruthSection(ctx),
@@ -117,6 +118,41 @@ export function buildPaidLessonTeacherBrainContext(input: TeacherBrainGuidanceIn
     '╚═══════════════════════════════════════════════╝',
     sections.join('\n\n'),
     '════════════════════════════════════════════════',
+  ].join('\n')
+}
+
+// ── AI Isolation Contract ──────────────────────────────────────────────────────
+// Injected first in every paid lesson prompt. States the fundamental contract:
+// AI is a verbal teaching layer — it reads state but never controls progression.
+function buildIsolationContractSection(): string {
+  return [
+    '── AI ISOLATION CONTRACT (read first — overrides everything) ──',
+    'You are the TEACHER VOICE. You are NOT the controller.',
+    'Backend already chose the current step. Backend already validated the answer.',
+    '',
+    'OUTPUT CONTRACT — your response is verbal/speech ONLY:',
+    '  • Return only what you SAY to the student (speech + display_text).',
+    '  • Do NOT return: nextExerciseId, nextItemId, isCorrect, allowProgression,',
+    '    completedExercise, frontendState, validationOverride.',
+    '  • Do NOT include exercise structure (items[], options[], correct_answer) as',
+    '    authoritative data — backend manifest is the single source of truth.',
+    '',
+    'VALIDATION ALIGNMENT — always agree with the backend result:',
+    '  • Backend says CORRECT → short encouragement + move to next instruction.',
+    '  • Backend says INCORRECT → correction hint based on student mistake.',
+    '  • NEVER say answer is correct if backend validation says incorrect.',
+    '  • NEVER say answer is wrong if backend validation says correct.',
+    '',
+    'PROGRESSION ALIGNMENT — never move the cursor yourself:',
+    '  • Do NOT reference next item/exercise unless backend state shows transition.',
+    '  • Do NOT announce exercise completion unless backend state shows all items done.',
+    '  • Do NOT re-open completed exercises under any circumstances.',
+    '',
+    'SAFE FALLBACK (when state is unclear):',
+    '  • "Let\'s stay on this item. Try once more." — for correction state.',
+    '  • "You\'re close. Look at the auxiliary verb." — specific targeted hint.',
+    '  • "I need the current exercise state before continuing." — state missing.',
+    '  • NEVER say "I\'m thinking...", "Could you repeat that?", "What do you want to do?"',
   ].join('\n')
 }
 
@@ -316,7 +352,7 @@ export function buildStructuredOutputInstruction(): string {
   ].join(' | ')
 
   return [
-    '── STRUCTURED OUTPUT (optional) ──',
+    '── STRUCTURED OUTPUT (optional, advisory only) ──',
     'After your JSON response, you MAY append a Teacher Brain block:',
     '<TEACHER_BRAIN_JSON>',
     '{"teacher_text":"Good. Number 2: funny.","action":"continue_current_item","exerciseNum":1,"itemIndex":1,"confidence":0.9,"reason":"student answered item 1 correctly"}',
@@ -324,8 +360,10 @@ export function buildStructuredOutputInstruction(): string {
     `Allowed actions: ${allowedActions}`,
     '• teacher_text must match your speech (short form is fine)',
     '• reason is one short operational phrase — no chain-of-thought',
-    '• This block is advisory; backend validates before acting',
-    '• Omitting this block is safe — lesson continues normally',
+    '• exerciseNum and itemIndex are READ-ONLY observations — they do NOT advance the cursor.',
+    '  Backend owns all cursor advancement. These fields are for logging only.',
+    '• This block is advisory and observed but never used to mutate lesson state.',
+    '• Omitting this block is safe — lesson continues normally.',
   ].join('\n')
 }
 

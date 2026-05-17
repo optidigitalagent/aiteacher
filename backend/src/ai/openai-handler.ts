@@ -11,6 +11,7 @@ import {
   type PromptContext,
 } from './prompt-builder.js'
 import { queryRAG } from './rag.js'
+import { buildSafeFallback } from './teacher-brain/teacher-brain-isolation.js'
 
 const MODEL = process.env.OPENAI_MODEL ?? 'gpt-4o'
 
@@ -97,15 +98,12 @@ function parseSafe(text: string): AIResponse | null {
 }
 
 function fallback(state: LessonState): AIResponse {
-  let speech: string
-  if (state.phase === 'EXERCISES' && state.currentItem) {
-    const cleanItem = state.currentItem.replace(/^\d+[.)]\s*/, '').trim()
-    speech = `Let's continue. ${cleanItem}`
-  } else if (state.phase === 'EXERCISES' && state.currentExerciseNum > 0) {
-    speech = `Let's continue with Exercise ${state.currentExerciseNum}.`
-  } else {
-    speech = `Go ahead.`
-  }
+  const speech = buildSafeFallback(
+    state.phase,
+    state.currentItem,
+    state.currentExerciseNum,
+    state.correctionTurn,
+  )
   return {
     speech,
     display_text:  speech,

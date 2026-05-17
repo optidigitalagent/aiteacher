@@ -14,6 +14,9 @@ import {
   parseTeacherBrainResponse,
   stripTeacherBrainBlock,
   validateTeacherBrainAction,
+  auditAIResponseForControlFields,
+  buildSafeFallback,
+  inferResponseGoalFromValidation,
 } from './teacher-brain/index.js'
 import { detectHiddenAnswerSource } from './teacher-brain/teacher-brain-executability.js'
 import { queryRAG } from './rag.js'
@@ -166,11 +169,15 @@ function parseExercise(raw: unknown): ExerciseData | null {
   }
 }
 
-function parseSafe(text: string): AIResponse | null {
+function parseSafe(text: string, lessonId?: string, phase?: string): AIResponse | null {
   try {
     const clean = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim()
     const obj   = JSON.parse(clean) as Partial<AIResponse & { exercise: unknown }>
     if (typeof obj.speech !== 'string' || typeof obj.next_action !== 'string') return null
+    // Audit parsed object for forbidden control fields and log violations
+    if (lessonId && phase) {
+      auditAIResponseForControlFields(obj as Record<string, unknown>, lessonId, phase)
+    }
     return {
       speech:        obj.speech,
       display_text:  obj.display_text ?? obj.speech,
@@ -182,15 +189,12 @@ function parseSafe(text: string): AIResponse | null {
 }
 
 function fallback(state: LessonState): AIResponse {
-  let speech: string
-  if (state.phase === 'EXERCISES' && state.currentItem) {
-    const cleanItem = state.currentItem.replace(/^\d+[.)]\s*/, '').trim()
-    speech = `Let's continue. ${cleanItem}`
-  } else if (state.phase === 'EXERCISES' && state.currentExerciseNum > 0) {
-    speech = `Let's continue with Exercise ${state.currentExerciseNum}.`
-  } else {
-    speech = `Go ahead.`
-  }
+  const speech = buildSafeFallback(
+    state.phase,
+    state.currentItem,
+    state.currentExerciseNum,
+    state.correctionTurn,
+  )
   return {
     speech,
     display_text:  speech,
@@ -301,11 +305,41 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string, callC
     console.log(`[teacher_brain] parse_error reason="${tbParseError}"`)
   }
 
-  const aiResp = parseSafe(strippedText) ?? fallback(state)
+  const aiResp = parseSafe(strippedText, state.lessonId, state.phase) ?? fallback(state)
 
   // Safety strip: remove any TB block that ended up inside speech / display_text
   aiResp.speech       = stripTeacherBrainBlock(aiResp.speech)
   aiResp.display_text = stripTeacherBrainBlock(aiResp.display_text)
+
+  // ── Engine Authority Migration Phase 3: AI Isolation Guard ────────────────
+  // When engine prompt context contains "(backend-authoritative)", the Exercise Engine
+  // owns the current exercise/step cursor. AI-returned exercise structure is IGNORED.
+  // This prevents legacy AI cursor control from overriding deterministic engine state.
+  // The "(backend-authoritative)" marker is only present in buildPromptContext() when
+  // an active (non-free, non-transition) exercise exists — see engine/frontend-formatter.ts.
+  const engineOwnsExercise = !!(callCtx?.enginePromptContext?.includes('(backend-authoritative)'))
+  if (engineOwnsExercise && aiResp.exercise) {
+    console.log(
+      `[teacher_brain:isolation] engine_active_exercise_stripped` +
+      ` type="${aiResp.exercise.type}"` +
+      ` exerciseNum=${aiResp.exercise.exerciseNumber ?? 'n/a'}` +
+      ` lessonId=${state.lessonId}`,
+    )
+    aiResp.exercise = null
+  }
+
+  // Log teacher response goal derived from current validation/correction state
+  const responseGoal = inferResponseGoalFromValidation(
+    state.correctionTurn,
+    state.phase === 'EXERCISES' && state.currentExerciseNum > 0,
+    aiResp.next_action === 'continue_phase' && !state.correctionTurn,
+  )
+  console.log(
+    `[teacher_brain] response_goal=${responseGoal}` +
+    ` correction_turn=${state.correctionTurn ?? 'none'}` +
+    ` engine_owns=${engineOwnsExercise}` +
+    ` phase=${state.phase}`,
+  )
 
   // Log and validate the structured action (observation mode — no state mutation)
   if (tbStructured) {
