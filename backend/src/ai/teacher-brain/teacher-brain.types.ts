@@ -109,6 +109,9 @@ export interface ExerciseRuntimeState {
   completedItems: number[]
   isUnsupported: boolean
   unsupportedReason?: UnsupportedReason
+  // Phase E: content-level executability analysis signals (set when content analysis blocked the exercise)
+  contentBlockSignals?: string[]
+  contentSemanticClass?: string
 }
 
 export interface TeacherBrainContext {

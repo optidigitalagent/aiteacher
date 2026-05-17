@@ -8,6 +8,7 @@ import type {
   UnsupportedReason,
 } from './teacher-brain.types.js'
 import { EXERCISE_RUNTIME_MODE_MAP, UNSUPPORTED_EXERCISE_TYPES } from './teacher-brain.constants.js'
+import { analyzeExecutability, mapBlockReasonToUnsupportedReason } from './teacher-brain-executability.js'
 
 // ── Authority separation ─────────────────────────────────────────────────────
 //
@@ -56,8 +57,34 @@ function resolveGuidanceMode(
 
 function normalizeExerciseState(state: LessonState): ExerciseRuntimeState {
   const exerciseType = state.activeExerciseType ?? 'unknown'
-  const isUnsupported = (UNSUPPORTED_EXERCISE_TYPES as readonly string[]).includes(exerciseType)
-  const runtimeMode = resolveRuntimeMode(exerciseType)
+  const typeUnsupported = (UNSUPPORTED_EXERCISE_TYPES as readonly string[]).includes(exerciseType)
+
+  // Phase E: run content-level executability analysis when exercise data is available.
+  // This catches exercises that pass the type check but are actually blocked by content
+  // (e.g., a 'discussion' exercise whose items are listening comprehension questions).
+  let contentBlocked = false
+  let contentBlockReason: UnsupportedReason | undefined
+  let contentBlockSignals: string[] | undefined
+  let contentSemanticClass: string | undefined
+
+  if (!typeUnsupported && (state.exerciseInstruction ?? state.exerciseItems?.length)) {
+    const decision = analyzeExecutability({
+      exerciseType,
+      instruction: state.exerciseInstruction ?? '',
+      items: state.exerciseItems ?? [],
+      options: state.exerciseOptions ?? [],
+      exerciseNumber: state.currentExerciseNum,
+    })
+    if (!decision.executable && decision.reason) {
+      contentBlocked = true
+      contentBlockReason = mapBlockReasonToUnsupportedReason(decision.reason)
+      contentBlockSignals = decision.blockedSignals
+      contentSemanticClass = decision.classification
+    }
+  }
+
+  const isUnsupported = typeUnsupported || contentBlocked
+  const runtimeMode = isUnsupported ? 'unsupported' : resolveRuntimeMode(exerciseType)
 
   return {
     exerciseNum: state.currentExerciseNum,
@@ -68,7 +95,11 @@ function normalizeExerciseState(state: LessonState): ExerciseRuntimeState {
     correctionTurn: state.correctionTurn,
     completedItems: state.completedItems ?? [],
     isUnsupported,
-    unsupportedReason: isUnsupported ? resolveUnsupportedReason(exerciseType) : undefined,
+    unsupportedReason: typeUnsupported
+      ? resolveUnsupportedReason(exerciseType)
+      : contentBlockReason,
+    contentBlockSignals,
+    contentSemanticClass,
   }
 }
 

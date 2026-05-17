@@ -91,3 +91,20 @@ export {
   buildExampleRetrieverOutput,
   buildStructuredOutputInstruction,
 } from './teacher-brain-builder.js'
+
+export {
+  analyzeExecutability,
+  mapBlockReasonToUnsupportedReason,
+  formatExecutabilityForPrompt,
+  analyzeTextbookSectionContent,
+  buildGreetingGuidance,
+  EXERCISE_INTRO_RULES,
+} from './teacher-brain-executability.js'
+
+export type {
+  ExecutabilityBlockReason,
+  TextbookSemanticClass,
+  ExecutabilityInput,
+  ExecutabilityDecision,
+  SectionAnalysis,
+} from './teacher-brain-executability.js'

@@ -17,6 +17,12 @@ import {
   formatAuthorityBoundary,
   type NormalizeContextInput,
 } from './teacher-brain-context.js'
+import {
+  analyzeExecutability,
+  formatExecutabilityForPrompt,
+  buildGreetingGuidance,
+  EXERCISE_INTRO_RULES,
+} from './teacher-brain-executability.js'
 
 export interface TeacherBrainGuidanceInput {
   state: LessonState
@@ -88,10 +94,13 @@ function buildExamplesSection(ctx: TeacherBrainContext): string {
 
 export function buildPaidLessonTeacherBrainContext(input: TeacherBrainGuidanceInput): string {
   const ctx = normalizeTeacherBrainContext(input as NormalizeContextInput)
+  const { state, teacherName } = input
 
   const sections = [
     buildCoreSection(),
+    buildGreetingSection(teacherName ?? 'Alex', state),
     buildRuntimeTruthSection(ctx),
+    buildExecutabilitySection(ctx, state),
     buildBehaviorContractSection(ctx),
     buildForbiddenSection(ctx),
     buildExamplesSection(ctx),
@@ -116,6 +125,66 @@ function buildCoreSection(): string {
   return `── CORE TEACHER BRAIN ──\n${principles}`
 }
 
+// Phase E: Greeting + exercise intro cleanup guidance
+function buildGreetingSection(teacherName: string, state: LessonState): string {
+  // Only inject greeting guidance when the lesson hasn't started exercises yet
+  const needsGreeting = state.phase === 'DIAGNOSTIC' || state.exchangeCount <= 1
+  if (!needsGreeting) return ''
+
+  const topic = state.lessonTopic ?? state.grammarTarget ?? 'today\'s topic'
+  return buildGreetingGuidance(teacherName, topic)
+}
+
+// Phase E: Exercise executability gate — injects content-level analysis for the current exercise
+function buildExecutabilitySection(ctx: TeacherBrainContext, state: LessonState): string {
+  const hasExerciseData = !!(state.exerciseInstruction ?? state.exerciseItems?.length)
+  if (!hasExerciseData && !ctx.exercise.isUnsupported) return ''
+
+  // If the context already flagged this as unsupported via type, show the content block signals too
+  if (ctx.exercise.isUnsupported && ctx.exercise.contentBlockSignals?.length) {
+    const signals = ctx.exercise.contentBlockSignals.map(s => `  • ${s}`).join('\n')
+    return [
+      '── EXECUTABILITY GATE (Phase E) ──',
+      `BLOCKED — ${ctx.exercise.contentSemanticClass ?? ctx.exercise.unsupportedReason ?? 'hidden dependency'}`,
+      `Content signals detected:\n${signals}`,
+      `FORBIDDEN: adapting, converting, or improvising this exercise in any form.`,
+      `REQUIRED: one-sentence skip + present next exercise in same response.`,
+    ].join('\n')
+  }
+
+  // If the type is supported but we have content to analyze, run a fresh check
+  if (!ctx.exercise.isUnsupported && hasExerciseData) {
+    const decision = analyzeExecutability({
+      exerciseType: ctx.exercise.exerciseType,
+      instruction: state.exerciseInstruction ?? '',
+      items: state.exerciseItems ?? [],
+      options: state.exerciseOptions ?? [],
+      exerciseNumber: ctx.exercise.exerciseNum,
+    })
+
+    if (!decision.executable) {
+      return [
+        '── EXECUTABILITY GATE (Phase E) ──',
+        formatExecutabilityForPrompt(decision),
+      ].join('\n')
+    }
+
+    // Exercise is executable — confirm it and add intro rules
+    const introRules = (EXERCISE_INTRO_RULES as readonly string[])
+      .map(r => `• ${r}`)
+      .join('\n')
+    return [
+      '── EXECUTABILITY GATE (Phase E) ──',
+      `EXECUTABLE — ${decision.classification} (${decision.confidence} confidence)`,
+      `Student has all required information to attempt this exercise.`,
+      `\n── EXERCISE INTRO RULES ──`,
+      introRules,
+    ].join('\n')
+  }
+
+  return ''
+}
+
 function buildRuntimeTruthSection(ctx: TeacherBrainContext): string {
   const lines: string[] = ['── CURRENT RUNTIME TRUTH (backend-authoritative — never infer) ──']
 
@@ -123,8 +192,12 @@ function buildRuntimeTruthSection(ctx: TeacherBrainContext): string {
   lines.push(`Mode: ${ctx.exercise.runtimeMode.toUpperCase()}`)
 
   if (ctx.exercise.isUnsupported) {
-    lines.push(`STATUS: UNSUPPORTED — ${ctx.exercise.unsupportedReason ?? 'requires unavailable resource'}`)
+    const semanticNote = ctx.exercise.contentSemanticClass
+      ? ` [${ctx.exercise.contentSemanticClass}]`
+      : ''
+    lines.push(`STATUS: UNSUPPORTED${semanticNote} — ${ctx.exercise.unsupportedReason ?? 'requires unavailable resource'}`)
     lines.push('REQUIRED ACTION: One-sentence skip + present next exercise in same response')
+    lines.push('NO ADAPTATION — do not rewrite, rephrase, or convert this exercise into any other format')
     if (ctx.completedExercises.length > 0) {
       lines.push(`Completed exercises: [${ctx.completedExercises.join(', ')}] — permanently closed`)
     }
