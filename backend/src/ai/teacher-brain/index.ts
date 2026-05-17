@@ -94,10 +94,12 @@ export {
 
 export {
   analyzeExecutability,
+  detectHiddenAnswerSource,
   mapBlockReasonToUnsupportedReason,
   formatExecutabilityForPrompt,
   analyzeTextbookSectionContent,
   buildGreetingGuidance,
+  buildSpeechRuntimeConsistencyRule,
   EXERCISE_INTRO_RULES,
 } from './teacher-brain-executability.js'
 
@@ -106,5 +108,6 @@ export type {
   TextbookSemanticClass,
   ExecutabilityInput,
   ExecutabilityDecision,
+  HiddenAnswerSourceDecision,
   SectionAnalysis,
 } from './teacher-brain-executability.js'

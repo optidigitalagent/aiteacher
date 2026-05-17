@@ -21,6 +21,7 @@ import {
   analyzeExecutability,
   formatExecutabilityForPrompt,
   buildGreetingGuidance,
+  buildSpeechRuntimeConsistencyRule,
   EXERCISE_INTRO_RULES,
 } from './teacher-brain-executability.js'
 
@@ -101,6 +102,7 @@ export function buildPaidLessonTeacherBrainContext(input: TeacherBrainGuidanceIn
     buildGreetingSection(teacherName ?? 'Alex', state),
     buildRuntimeTruthSection(ctx),
     buildExecutabilitySection(ctx, state),
+    buildSpeechRuntimeSyncSection(ctx),    // Phase E.1: speech/runtime consistency rule
     buildBehaviorContractSection(ctx),
     buildForbiddenSection(ctx),
     buildExamplesSection(ctx),
@@ -183,6 +185,12 @@ function buildExecutabilitySection(ctx: TeacherBrainContext, state: LessonState)
   }
 
   return ''
+}
+
+// Phase E.1: Speech/runtime consistency — prevents the "exercise=0 desync" failure.
+// Injected on every paid lesson turn so the AI always knows the contract.
+function buildSpeechRuntimeSyncSection(ctx: TeacherBrainContext): string {
+  return buildSpeechRuntimeConsistencyRule(ctx.exercise.exerciseNum)
 }
 
 function buildRuntimeTruthSection(ctx: TeacherBrainContext): string {

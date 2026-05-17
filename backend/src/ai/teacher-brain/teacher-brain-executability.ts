@@ -1,4 +1,5 @@
 // Phase E: Exercise Executability Gate
+// Phase E.1: Hidden Answer Source Detection + Speech/Runtime Consistency
 //
 // Determines whether a textbook exercise can be solved RIGHT NOW using only
 // the currently visible runtime information — without guessing, recalling
@@ -6,10 +7,12 @@
 //
 // The question is NOT "Is this exercise educational?"
 // The question IS: "Can the student solve this using only visible data?"
+// And critically: "Is the ANSWER SOURCE visible?" (not just the question text)
 //
-// Called from two sites:
+// Called from:
 //   1. normalizeExerciseState() — enriches ExerciseRuntimeState.isUnsupported
 //   2. buildExecutabilitySection() — injects detailed analysis into AI prompt
+//   3. claude-handler.ts — post-parse hidden-answer-source block with speech patching
 
 import type { UnsupportedReason } from './teacher-brain.types.js'
 
@@ -24,18 +27,29 @@ export type ExecutabilityBlockReason =
   | 'requires_written_composition' // long-form writing (incompatible with voice)
   | 'requires_partner_card'       // pairwork with hidden partner B materials
   | 'type_permanently_blocked'    // type is in the hard-blocked list
+  | 'hidden_answer_source'        // Phase E.1: answer source not visible (Q&A matching, audio-dependent)
+  | 'orphaned_comprehension_items' // Phase E.1: items are comprehension Qs about hidden content
 
 export type TextbookSemanticClass =
   | 'discussion_intro'              // "In pairs discuss..." — standalone, no audio
   | 'warmup'                        // Pre-lesson warmup, open
   | 'listening_block'               // Core audio-required exercise
   | 'listening_followup'            // Comprehension Qs requiring prior audio recall
+  | 'listening_followup_matching'   // Phase E.1: matching Q&A where answers come from hidden audio
   | 'grammar_explanation_block'     // Grammar rule/notes (no items to answer)
   | 'grammar_drill'                 // Deterministic: fill, transform, correct
   | 'speaking_prompt_standalone'    // Open speaking — opinion-based, standalone
   | 'hidden_context_comprehension'  // Qs about unseen text/audio
+  | 'hidden_answer_source_generic'  // Phase E.1: general hidden answer source (non-audio)
   | 'standalone_executable'         // Self-contained, all data visible
   | 'unsupported_resource_task'     // External file (image/essay/pairwork) required
+
+// Phase E.1: result of detectHiddenAnswerSource() — returned for post-parse checks in claude-handler
+export interface HiddenAnswerSourceDecision {
+  detected: boolean
+  classification: 'listening_followup_matching' | 'orphaned_comprehension_items' | 'hidden_answer_source_generic' | null
+  signals: string[]
+}
 
 export interface ExecutabilityInput {
   exerciseType: string
@@ -86,6 +100,19 @@ const PAIRWORK_HIDDEN_RE =
 const THIRD_PERSON_WH_RE =
   /^(who|what|when|where|why|how)\s+(does|did|is|was|are|were|has|had)\s+(he|she|they|his|her|the\s+man|the\s+woman|the\s+person)\b/i
 
+// Phase E.1: Matching instruction that signals Q&A from a hidden audio/context source.
+// "Match the questions with answers." → answers come from a recording, not visible options.
+// This is the critical pattern: visible question text ≠ visible answer source.
+const MATCHING_QUESTION_INSTRUCTION_RE =
+  /\bmatch\s+(the\s+)?(questions?|interview\s+questions?)\s+(with|to)\s+(answers?|responses?|statements?|what\s+\w+\s+said)\b/i
+
+// Phase E.1: Any WH-question item start (for matching exercise item analysis).
+// Used to detect when matching exercise left-side items are questions (implying
+// the right-side answers come from a hidden source — audio transcript, etc.).
+// Narrower than THIRD_PERSON_WH_RE: catches "Who inspires you?" and "What does she do?"
+const QUESTION_ITEM_RE =
+  /^(who|what|when|where|why|how|which)\b/i
+
 // Permanently unsupported types (content-agnostic hard block)
 const PERMANENTLY_BLOCKED = new Set([
   'listening', 'audio_reconstruction', 'photo_task', 'image_task',
@@ -114,7 +141,9 @@ const GRAMMAR_TYPES = new Set(['grammar_focus', 'remember_this'])
 const BLOCKED_CLASSES = new Set<TextbookSemanticClass>([
   'listening_block',
   'listening_followup',
+  'listening_followup_matching',  // Phase E.1: matching Q&A with hidden audio answers
   'hidden_context_comprehension',
+  'hidden_answer_source_generic', // Phase E.1: general hidden answer source
   'unsupported_resource_task',
 ])
 
@@ -132,7 +161,7 @@ function classifySemanticType(
   exerciseType: string,
   instruction: string,
   items: string[],
-  _options: string[],
+  options: string[],
 ): TextbookSemanticClass {
   if (PERMANENTLY_BLOCKED.has(exerciseType)) {
     const isAudio = exerciseType === 'listening' || exerciseType === 'audio_reconstruction'
@@ -170,7 +199,33 @@ function classifySemanticType(
   }
 
   if (DETERMINISTIC_TYPES.has(exerciseType)) return 'grammar_drill'
-  if (MATCHING_TYPES.has(exerciseType)) return 'standalone_executable'
+
+  // Phase E.1: Matching exercise — check for hidden answer source BEFORE declaring executable.
+  // Critical distinction: visible question text ≠ visible answer source.
+  // "Match the questions with answers." → the answers come from a hidden audio/context source,
+  // not from visible options. Student sees the questions but cannot know the answers.
+  if (MATCHING_TYPES.has(exerciseType)) {
+    // Signal 1: instruction explicitly describes a Q&A matching task (audio-dependent answers)
+    if (MATCHING_QUESTION_INSTRUCTION_RE.test(instruction)) {
+      return 'listening_followup_matching'
+    }
+
+    // Signal 2: items are WH-questions AND no visible answer options
+    // Standalone matching has answer options (right side of the match).
+    // Q&A matching from audio has question items but the ANSWERS are from the recording.
+    if (items.length > 0 && options.length === 0) {
+      const questionItemCount = items.filter(i => QUESTION_ITEM_RE.test(i.trim())).length
+      // More than half the items are WH-questions → not a vocabulary/collocation match
+      if (questionItemCount > 0 && questionItemCount / items.length >= 0.5) {
+        return 'listening_followup_matching'
+      }
+      // Third-person comprehension items are an even stronger signal
+      const thirdPersonCount = countThirdPersonComprehensionItems(items)
+      if (thirdPersonCount >= 1) return 'listening_followup_matching'
+    }
+
+    return 'standalone_executable'
+  }
 
   return 'standalone_executable'
 }
@@ -186,6 +241,10 @@ function resolveBlockReason(
     case 'listening_block':
     case 'listening_followup':
       return 'requires_audio'
+    case 'listening_followup_matching':  // Phase E.1
+      return 'hidden_answer_source'
+    case 'hidden_answer_source_generic': // Phase E.1
+      return 'hidden_answer_source'
     case 'unsupported_resource_task':
       if (IMAGE_INSTRUCTION_RE.test(instruction)) return 'requires_image'
       if (WRITTEN_COMPOSITION_RE.test(instruction)) return 'requires_written_composition'
@@ -236,6 +295,27 @@ function collectBlockedSignals(
   }
   if (classification === 'listening_followup') {
     signals.push('items form a comprehension Q&A that requires prior audio knowledge')
+  }
+  // Phase E.1: matching-specific signals
+  if (MATCHING_QUESTION_INSTRUCTION_RE.test(instruction)) {
+    signals.push(
+      'instruction says "match questions with answers" — ANSWER SOURCE is a hidden audio recording, ' +
+      'not visible options. Visible question text ≠ visible answer source.',
+    )
+  }
+  if (MATCHING_TYPES.has(exerciseType) && items.length > 0 && options.length === 0) {
+    const questionItemCount = items.filter(i => QUESTION_ITEM_RE.test(i.trim())).length
+    if (questionItemCount > 0 && questionItemCount / items.length >= 0.5) {
+      signals.push(
+        `${questionItemCount}/${items.length} matching exercise items are WH-questions with no visible ` +
+        'answer options — Q&A answers derive from hidden audio context, not from visible data',
+      )
+    }
+  }
+  if (classification === 'listening_followup_matching') {
+    signals.push(
+      'matching exercise is a listening comprehension Q&A — student sees questions but answers require audio recall',
+    )
   }
   if (WRITTEN_COMPOSITION_RE.test(instruction)) {
     signals.push('instruction requires written composition (incompatible with voice lesson)')
@@ -311,6 +391,8 @@ export function mapBlockReasonToUnsupportedReason(
     case 'requires_hidden_options':    return 'requires_hidden_context'
     case 'items_from_listening_context': return 'requires_audio'
     case 'type_permanently_blocked':   return 'requires_hidden_context'
+    case 'hidden_answer_source':       return 'requires_audio'         // Phase E.1: Q&A answers from audio
+    case 'orphaned_comprehension_items': return 'requires_audio'       // Phase E.1: comprehension without source
   }
 }
 
@@ -409,6 +491,136 @@ export function buildGreetingGuidance(teacherName: string, lessonTopic: string):
     'After readiness signal: jump DIRECTLY to Exercise 1. Never repeat the topic description.',
     'Exercise intro: say the number + instruction + first item. ONE sentence per element. No over-explanation.',
     'Never re-read completed exercise instructions. After Exercise N is done, just say "Exercise N+1."',
+  ].join('\n')
+}
+
+// ── Phase E.1: Hidden answer source detection ─────────────────────────────────
+//
+// Called from claude-handler.ts as a post-parse check on the ACTUAL exercise
+// the AI returned (not the current state). This catches exercises that:
+//   • Passed the type-level check (e.g. type=matching is technically allowed)
+//   • Passed the instruction-level check (no "listen" keyword in instruction)
+//   • But have items that are comprehension Q&A whose answers come from hidden audio
+//
+// KEY PRINCIPLE: "Who inspires you?" looks like a standalone question.
+// But in the context "Match the questions with answers" without visible options,
+// the answer comes from the recording — the student has no way to answer.
+// Visible question text ≠ visible answer source.
+//
+// This function operates on the RETURNED exercise data, not state, so it catches
+// problems the prompt-side gate missed (gate runs on state, not on AI output).
+
+export function detectHiddenAnswerSource(input: ExecutabilityInput): HiddenAnswerSourceDecision {
+  const { exerciseType, instruction, items, options } = input
+
+  // Fast path: permanently blocked types are already handled upstream
+  if (PERMANENTLY_BLOCKED.has(exerciseType)) {
+    return { detected: false, classification: null, signals: [] }
+  }
+
+  const signals: string[] = []
+
+  // ── Matching exercises: hidden Q&A answer source ────────────────────────────
+  if (MATCHING_TYPES.has(exerciseType)) {
+    // Signal A: instruction explicitly describes Q&A matching ("match questions with answers")
+    if (MATCHING_QUESTION_INSTRUCTION_RE.test(instruction)) {
+      signals.push(
+        'instruction says "match questions with answers" — answer source is hidden audio/context, ' +
+        'not visible options; visible question text ≠ visible answer source',
+      )
+      return { detected: true, classification: 'listening_followup_matching', signals }
+    }
+
+    // Signal B: items are WH-questions AND no visible answer options provided
+    // A legitimate matching exercise always provides the right-side options for the student to match to.
+    // When options are absent and items are questions, the answers must come from somewhere hidden.
+    if (items.length > 0 && options.length === 0) {
+      const questionItems = items.filter(i => QUESTION_ITEM_RE.test(i.trim()))
+      if (questionItems.length > 0 && questionItems.length / items.length >= 0.5) {
+        signals.push(
+          `${questionItems.length}/${items.length} items are WH-questions with no visible answer options ` +
+          '— Q&A answer source is hidden (audio recording or prior unseen context)',
+        )
+        return { detected: true, classification: 'listening_followup_matching', signals }
+      }
+
+      // Signal C: third-person comprehension items are an even stronger signal in matching
+      const thirdPersonCount = countThirdPersonComprehensionItems(items)
+      if (thirdPersonCount >= 1) {
+        signals.push(
+          `${thirdPersonCount} item(s) are WH-questions about an unspecified 3rd-person subject ` +
+          'in a matching exercise with no visible options — answer source requires audio recall',
+        )
+        return { detected: true, classification: 'listening_followup_matching', signals }
+      }
+    }
+  }
+
+  // ── Non-soft-speaking, non-matching: 3rd-person comprehension items ──────────
+  // These types are not expected to have comprehension Q&A items about a person heard in audio.
+  // If they do, the items were likely imported from a listening section without the audio.
+  if (!SOFT_SPEAKING_TYPES.has(exerciseType) && !MATCHING_TYPES.has(exerciseType)) {
+    const thirdPersonCount = countThirdPersonComprehensionItems(items)
+    if (thirdPersonCount >= 1 && items.length >= 2) {
+      signals.push(
+        `${thirdPersonCount} item(s) are WH-questions about an unspecified 3rd-person subject ` +
+        'in a non-speaking exercise — orphaned comprehension items that require hidden audio context',
+      )
+      return { detected: true, classification: 'orphaned_comprehension_items', signals }
+    }
+  }
+
+  // ── Any exercise type: explicit context references in items ──────────────────
+  // Items that reference "the interview", "the recording", etc. have a hidden source.
+  // Soft speaking types are excluded — they may legitimately discuss a topic from context.
+  if (!SOFT_SPEAKING_TYPES.has(exerciseType) && hasContextRefInItems(items)) {
+    signals.push(
+      'items reference hidden context (recording / interview / text) — answer source not visible',
+    )
+    return { detected: true, classification: 'hidden_answer_source_generic', signals }
+  }
+
+  return { detected: false, classification: null, signals: [] }
+}
+
+// ── Phase E.1: Speech/runtime consistency rule ────────────────────────────────
+//
+// Injected into the AI prompt to prevent the SECOND class of production failure:
+// AI verbally presents "Exercise 2..." while backend shows exercise=0 because the
+// exercise JSON was blocked/rejected. The AI generates speech and JSON together;
+// when the JSON is rejected, speech remains and creates a desync the student feels.
+//
+// This rule tells the AI: if you can't include valid executable exercise JSON,
+// do NOT verbally present the exercise as a numbered structured exercise.
+
+export function buildSpeechRuntimeConsistencyRule(currentExerciseNum: number): string {
+  const cursorInfo = currentExerciseNum === 0
+    ? 'Backend cursor: no exercise accepted yet (exercise=0)'
+    : `Backend cursor: Exercise #${currentExerciseNum} currently active`
+
+  return [
+    '── SPEECH/RUNTIME SYNC RULE (Phase E.1 — CRITICAL) ──',
+    cursorInfo,
+    '',
+    'Your speech output and exercise JSON MUST be synchronized at all times.',
+    'The backend only creates a runtime cursor when it ACCEPTS your exercise JSON.',
+    'If your JSON is blocked/missing while your speech says "Exercise N...",',
+    'the student hears an exercise but has no way to submit an answer.',
+    '',
+    'REQUIRED CONTRACT:',
+    '• Say "Exercise N: [instruction]..." → MUST include exerciseNumber=N in JSON',
+    '• EXECUTABILITY GATE says BLOCKED → skip in ONE sentence + present next exercise with JSON',
+    '• Cannot produce valid executable JSON → do NOT verbally present as a numbered exercise',
+    '',
+    'FORBIDDEN (creates speech/runtime desync — breaks lesson):',
+    '✗ Verbally say "Exercise N, match the questions..." without exerciseNumber=N in JSON',
+    '✗ Include JSON for an exercise that EXECUTABILITY GATE blocked',
+    '✗ Present a numbered exercise verbally when cursor is exercise=0',
+    '✗ Name an exercise number in speech different from exerciseNumber in your JSON',
+    '',
+    'ALLOWED speech when exercise is blocked:',
+    '✓ "Exercise [N] requires a recording — moving on."',
+    '✓ Immediately follow with the next executable exercise + its JSON',
   ].join('\n')
 }
 

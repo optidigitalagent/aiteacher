@@ -15,6 +15,7 @@ import {
   stripTeacherBrainBlock,
   validateTeacherBrainAction,
 } from './teacher-brain/index.js'
+import { detectHiddenAnswerSource } from './teacher-brain/teacher-brain-executability.js'
 import { queryRAG } from './rag.js'
 import { getTipsForContext } from '../lesson/tips-service.js'
 import {
@@ -361,6 +362,39 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string, callC
         `[exercise:skip] type="${aiResp.exercise.type}" reason="mixed_exercise_boundary:${mixCheck.reason}"`,
       )
       aiResp.exercise = null
+    }
+  }
+
+  // ── Phase E.1: Hidden answer source detection ────────────────────────────────
+  // Catches exercises whose visible question text masks a hidden answer source.
+  // Production failure: "Match the questions with answers" + items like "Who inspires you?"
+  // passes all type/instruction gates but the answers come from a hidden audio recording.
+  //
+  // This runs on the ACTUAL returned exercise data, not on Redis state, so it catches
+  // what the prompt-side executability gate (which runs on state) cannot see in time.
+  //
+  // When detected: set exercise = null AND patch speech to prevent speech/runtime desync.
+  // Without speech patching: student hears "Exercise 2, match..." but backend shows exercise=0.
+  if (aiResp.exercise) {
+    const hasDecision = detectHiddenAnswerSource({
+      exerciseType: aiResp.exercise.type,
+      instruction:  aiResp.exercise.instruction ?? '',
+      items:        aiResp.exercise.items        ?? [],
+      options:      aiResp.exercise.options       ?? [],
+      exerciseNumber: aiResp.exercise.exerciseNumber,
+    })
+    if (hasDecision.detected) {
+      const exerciseNum = aiResp.exercise.exerciseNumber
+      const numStr = exerciseNum ? `Exercise ${exerciseNum}` : 'This exercise'
+      console.log(
+        `[exercise:skip] type="${aiResp.exercise.type}" reason="hidden_answer_source:${hasDecision.classification}"` +
+        ` signals="${hasDecision.signals.join('; ')}" lessonId=${state.lessonId}`,
+      )
+      // Patch speech to prevent desync: without this, student hears exercise announcement
+      // but backend cursor stays at previous value — student cannot submit an answer.
+      aiResp.speech       = `${numStr} requires context from a recording — we'll move on.`
+      aiResp.display_text = aiResp.speech
+      aiResp.exercise     = null
     }
   }
 
