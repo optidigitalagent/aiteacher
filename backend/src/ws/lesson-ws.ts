@@ -39,6 +39,7 @@ import type { StudentConfused } from './message-types.js'
 import { exerciseEngine } from '../engine/exercise-engine.js'
 import type { EngineResult, EngineValidationResult } from '../engine/types.js'
 import { memoryService } from '../memory/index.js'
+import { masterOrchestrator } from '../lesson/master-orchestrator.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
@@ -546,27 +547,19 @@ async function resumeLesson(
     console.log(`[ws] resume_cursor_corrected itemIndex=${next} exercise=#${state.currentExerciseNum}`)
   }
 
-  // Engine Authority Migration: recover engine state on reconnect.
-  // Engine state lives in a separate Redis key (engine:lesson:{id}), independent of LessonState.
+  // Master Orchestrator: recover engine state on reconnect.
+  // Engine state lives in a separate Redis key, independent of LessonState.
   // If recovery succeeds, the engine cursor is the authoritative source for the frontend.
   // If recovery fails, emit INVALID_ENGINE_STATE and continue with cached LessonState cursor.
   const engineSection = state.focusLesson ?? 'free'
   let engineCursorSent = false
-  try {
-    const engineState = await exerciseEngine.recover(existingLessonId, engineSection)
-    console.log(`[engine:recover] ok lessonId=${existingLessonId} section=${engineSection} exercises=${engineState.exerciseQueue.length}`)
-    const engineCursor = await exerciseEngine.getCursor(existingLessonId)
-    if (engineCursor) {
-      send(ws, { type: 'exercise_cursor_updated', cursor: engineCursor })
-      engineCursorSent = true
-      console.log(
-        `[engine:recover] cursor_snapshot_sent exercise=#${engineCursor.exerciseNumber} ` +
-        `item=${engineCursor.itemIndex}/${engineCursor.itemTotal} lessonId=${existingLessonId}`,
-      )
-    }
-  } catch (err) {
-    console.error('[engine:recover] failed:', err instanceof Error ? err.message : err)
-    send(ws, { type: 'error', code: 'INVALID_ENGINE_STATE', message: 'Engine state could not be recovered. Continuing with cached lesson state.' })
+  const recovery = await masterOrchestrator.recoverSession({ lessonId: existingLessonId, sectionId: engineSection })
+  if (recovery.engineCursor) {
+    send(ws, { type: 'exercise_cursor_updated', cursor: recovery.engineCursor })
+    engineCursorSent = true
+  }
+  if (recovery.error) {
+    send(ws, { type: 'error', code: recovery.error.code, message: recovery.error.message })
   }
 
   const tName   = teacherDisplayName(meta.teacherId ?? undefined)
@@ -1173,42 +1166,82 @@ async function processInput(
       if (completionSignal) {
         inputText = completionSignal
       } else {
-        // Phase G.1: manifest-authoritative voice validation for deterministic exercises.
-        // For fill_gap / grammar_drill exercises backed by section manifest, backend
-        // validates the answer now — AI only verbalizes the result.
-        // This path does NOT fire for transition intents (handled above) or off-topic
-        // requests (handled above), so the AI never controls item advancement here.
-        manifestValidation = await tryManifestValidateVoice(meta.lessonId, text)
-        if (manifestValidation) {
-          inputText = buildManifestVoiceContext(manifestValidation, text)
+        // Master Orchestrator handles deterministic engine exercises (text/voice parity).
+        // Returns null when no active deterministic exercise — fall back to legacy path.
+        const orchVoiceResult = await masterOrchestrator.handleVoiceAnswer({
+          lessonId:        meta.lessonId,
+          userId:          meta.userId,
+          sessionId:       meta.sessionId,
+          studentAnswer:   text,
+          lessonStartedAt: meta.lessonStartedAt,
+        })
 
-          // Engine path: use validation result and cursor from engine result
-          const engineResult = manifestValidation.engineResult
-          const cursorToSend = engineResult?.exerciseCursor ?? manifestValidation.cursor
-          if (cursorToSend) {
-            send(ws, { type: 'exercise_cursor_updated', cursor: cursorToSend })
-            console.log(
-              `[engine] voice_cursor_emitted exercise=#${cursorToSend.exerciseNumber} ` +
-              `item=${cursorToSend.itemIndex}/${cursorToSend.itemTotal} ` +
-              `via=${engineResult ? 'engine' : 'manifest'}`,
-            )
+        if (orchVoiceResult && !orchVoiceResult.error) {
+          // Orchestrator handled this — emit pre-events and use teacher context
+          masterOrchestrator.emitFrontendSnapshot(orchVoiceResult, (event) => send(ws, event as Parameters<typeof send>[1]), meta.lessonId)
+
+          if (orchVoiceResult.lessonComplete && orchVoiceResult.lessonSummary) {
+            const durationMin = meta.lessonStartedAt
+              ? Math.round((Date.now() - meta.lessonStartedAt) / 60_000)
+              : 0
+            send(ws, {
+              type: 'lesson_end',
+              summary: {
+                lessonId: meta.lessonId,
+                phasesReached:   ['DIAGNOSTIC', 'EXERCISES', 'WRAP_UP'],
+                exerciseScore:   orchVoiceResult.lessonSummary.exerciseScore,
+                vocabularyCount: 0,
+                durationMin,
+              },
+            })
+            meta.lessonId = null
+            meta.stt?.close()
+            meta.stt = null
+            meta.aiProcessing = false
+            if (meta.queuedInput) {
+              const queued    = meta.queuedInput
+              meta.queuedInput = null
+              processInput(ws, meta, queued).catch((err: unknown) =>
+                console.error('[paid-lesson] processInput error (queued-voice-complete):', err))
+            }
+            return
           }
 
-          // Broadcast feedback so frontend updates correction UI instantly
-          if (engineResult?.validation) {
-            send(ws, {
-              type:        'feedback',
-              correct:     engineResult.validation.correct,
-              explanation: engineResult.validation.feedback,
-              score:       engineResult.validation.score,
-            })
-          } else {
-            send(ws, {
-              type:        'feedback',
-              correct:      manifestValidation.correct,
-              explanation: '',
-              score:       manifestValidation.correct ? 1.0 : 0,
-            })
+          if (orchVoiceResult.teacherInput) {
+            inputText = orchVoiceResult.teacherInput
+          }
+        } else {
+          // Legacy path: manifest validation for non-engine or older snapshots
+          manifestValidation = await tryManifestValidateVoice(meta.lessonId, text)
+          if (manifestValidation) {
+            inputText = buildManifestVoiceContext(manifestValidation, text)
+
+            const engineResult = manifestValidation.engineResult
+            const cursorToSend = engineResult?.exerciseCursor ?? manifestValidation.cursor
+            if (cursorToSend) {
+              send(ws, { type: 'exercise_cursor_updated', cursor: cursorToSend })
+              console.log(
+                `[engine] voice_cursor_emitted exercise=#${cursorToSend.exerciseNumber} ` +
+                `item=${cursorToSend.itemIndex}/${cursorToSend.itemTotal} ` +
+                `via=${engineResult ? 'engine' : 'manifest'}`,
+              )
+            }
+
+            if (engineResult?.validation) {
+              send(ws, {
+                type:        'feedback',
+                correct:     engineResult.validation.correct,
+                explanation: engineResult.validation.feedback,
+                score:       engineResult.validation.score,
+              })
+            } else {
+              send(ws, {
+                type:        'feedback',
+                correct:      manifestValidation.correct,
+                explanation: '',
+                score:       manifestValidation.correct ? 1.0 : 0,
+              })
+            }
           }
         }
       }
@@ -1564,8 +1597,7 @@ function buildEngineAnswerContext(result: EngineResult, studentAnswer: string): 
 }
 
 // Engine-authoritative exercise answer handler.
-// Called when engine has active non-free state for this lesson.
-// GPT-based progression is bypassed — engine result drives all state updates.
+// Delegates all coordination to MasterLessonOrchestrator — WS is I/O only here.
 async function handleEngineExerciseAnswer(
   ws: WebSocket,
   meta: ClientMeta,
@@ -1573,91 +1605,24 @@ async function handleEngineExerciseAnswer(
 ): Promise<void> {
   const lessonId = meta.lessonId!
 
-  // Stale event: reject if engine has no active exercise
-  const engineState = await exerciseEngine.getState(lessonId)
-  if (!engineState?.currentExerciseState) {
-    send(ws, { type: 'error', code: 'NO_ACTIVE_EXERCISE', message: 'No active exercise in engine state.' })
-    console.log(`[engine] stale_answer_rejected reason=no_active_exercise lessonId=${lessonId}`)
+  const orchResult = await masterOrchestrator.handleStudentAnswer({
+    lessonId,
+    userId:          meta.userId,
+    sessionId:       meta.sessionId,
+    studentAnswer:   answer,
+    lessonStartedAt: meta.lessonStartedAt,
+  })
+
+  if (orchResult.error) {
+    send(ws, { type: 'error', code: orchResult.error.code, message: orchResult.error.message })
     return
   }
-  if (engineState.currentExerciseState.status === 'completed' || engineState.currentExerciseState.status === 'skipped') {
-    send(ws, { type: 'error', code: 'STALE_EXERCISE_ANSWER', message: 'Exercise already completed.' })
-    console.log(`[engine] stale_answer_rejected reason=exercise_complete lessonId=${lessonId}`)
-    return
-  }
 
-  console.log(`[engine] answer_submitted lessonId=${lessonId} answer="${answer.slice(0, 40)}"`)
+  // Emit events in deterministic order: cursor first, then feedback
+  masterOrchestrator.emitFrontendSnapshot(orchResult, (event) => send(ws, event as Parameters<typeof send>[1]), lessonId)
 
-  // Capture exercise metadata before submit (state mutates on submitAnswer)
-  const preSubmitExercise = engineState.currentExerciseState
-  const preSubmitSpec     = preSubmitExercise?.spec
-
-  const result = await exerciseEngine.submitAnswer({ lessonId, studentAnswer: answer })
-  console.log(`[engine] answer_result action=${result.action} correct=${result.validation?.correct ?? 'n/a'} lessonId=${lessonId}`)
-
-  // Record validation memory event — fail-soft, never blocks lesson flow
-  if (meta.userId && result.validation && preSubmitSpec) {
-    memoryService.recordValidationEvent({
-      userId:       meta.userId,
-      sessionId:    meta.sessionId ?? lessonId,
-      lessonId,
-      exerciseId:   preSubmitExercise!.exerciseId,
-      exerciseType: preSubmitSpec.exerciseType,
-      stepId:       preSubmitSpec.steps[preSubmitExercise!.currentStepIndex]?.stepId ?? '',
-      sectionId:    engineState.sectionId,
-      topic:        preSubmitSpec.meta.skillFocus,
-      isCorrect:    result.validation.correct,
-      score:        result.validation.score,
-      retryCount:   preSubmitExercise!.retryCount,
-    }).catch(() => { /* fail-soft */ })
-  }
-
-  // Record exercise completion memory event
-  if (
-    meta.userId &&
-    preSubmitExercise &&
-    preSubmitSpec &&
-    (result.action === 'exercise_complete' || result.action === 'lesson_complete')
-  ) {
-    const completedEx = preSubmitExercise
-    const correctSteps = completedEx.completedSteps.length
-    const totalSteps   = preSubmitSpec.steps.length
-    memoryService.recordExerciseCompleted({
-      userId:       meta.userId,
-      sessionId:    meta.sessionId ?? lessonId,
-      lessonId,
-      exerciseId:   completedEx.exerciseId,
-      exerciseType: preSubmitSpec.exerciseType,
-      sectionId:    engineState.sectionId,
-      topic:        preSubmitSpec.meta.skillFocus,
-      totalSteps,
-      correctSteps,
-      totalHints:   completedEx.hintsGiven,
-    }).catch(() => { /* fail-soft */ })
-  }
-
-  // Broadcast engine cursor immediately — frontend renders backend state, not GPT text
-  if (result.exerciseCursor) {
-    send(ws, { type: 'exercise_cursor_updated', cursor: result.exerciseCursor })
-    console.log(
-      `[engine] cursor_emitted exercise=#${result.exerciseCursor.exerciseNumber} ` +
-      `item=${result.exerciseCursor.itemIndex}/${result.exerciseCursor.itemTotal} lessonId=${lessonId}`,
-    )
-  }
-
-  // Broadcast validation feedback for immediate UI update
-  if (result.validation) {
-    send(ws, {
-      type:        'feedback',
-      correct:     result.validation.correct,
-      explanation: result.validation.feedback,
-      score:       result.validation.score,
-    })
-  }
-
-  // Handle lesson complete: emit lesson_end without going to AI
-  if (result.action === 'lesson_complete') {
-    console.log(`[engine] lesson_complete lessonId=${lessonId}`)
+  // Lesson complete — emit lesson_end, no AI call
+  if (orchResult.lessonComplete && orchResult.lessonSummary) {
     const durationMin = meta.lessonStartedAt
       ? Math.round((Date.now() - meta.lessonStartedAt) / 60_000)
       : 0
@@ -1666,33 +1631,19 @@ async function handleEngineExerciseAnswer(
       summary: {
         lessonId,
         phasesReached:   ['DIAGNOSTIC', 'EXERCISES', 'WRAP_UP'],
-        exerciseScore:   engineState.completedExerciseIds.length,
+        exerciseScore:   orchResult.lessonSummary.exerciseScore,
         vocabularyCount: 0,
         durationMin,
       },
     })
-
-    // Record lesson completion memory — fire-and-forget
-    if (meta.userId) {
-      memoryService.recordLessonCompleted({
-        userId:             meta.userId,
-        sessionId:          meta.sessionId ?? lessonId,
-        lessonId,
-        sectionId:          engineState.sectionId,
-        phaseReached:       'EXERCISES',
-        completedExercises: engineState.completedExerciseIds,
-        durationSeconds:    durationMin * 60,
-        voiceAttemptCount:  0,
-      }).catch(() => { /* fail-soft */ })
-    }
     return
   }
 
-  // Build AI context from engine result — Teacher Brain narrates, engine owns state
-  const context = buildEngineAnswerContext(result, answer)
-
-  // Protocol correction context already contains off-topic recovery info — skip guard
-  await processInput(ws, meta, context, false, true)
+  // Teacher Brain narrates engine decision — correction context already contains
+  // off-topic recovery info so the off-topic guard is skipped
+  if (orchResult.teacherInput) {
+    await processInput(ws, meta, orchResult.teacherInput, false, true)
+  }
 }
 
 async function handleExerciseAnswer(
