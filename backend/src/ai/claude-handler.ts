@@ -241,6 +241,20 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string, callC
 
   // ── Streaming call with 15s timeout ──────────────────────────────────────
 
+  // Engine Authority Migration: inject engine state as second system block when available.
+  // This gives Teacher Brain read-only visibility into deterministic exercise state.
+  // The ephemeral block stays cached; engine block is small and appended separately.
+  const systemBlocks: Anthropic.TextBlockParam[] = [
+    {
+      type:          'text',
+      text:          systemPrompt,
+      cache_control: { type: 'ephemeral' },
+    },
+  ]
+  if (callCtx?.enginePromptContext) {
+    systemBlocks.push({ type: 'text', text: callCtx.enginePromptContext })
+  }
+
   let aiText = ''
   const controller = new AbortController()
   const timeout    = setTimeout(() => controller.abort(), 15_000)
@@ -250,13 +264,7 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string, callC
       {
         model:      MODEL,
         max_tokens: 400,
-        system: [
-          {
-            type:          'text',
-            text:          systemPrompt,
-            cache_control: { type: 'ephemeral' },
-          },
-        ],
+        system:     systemBlocks,
         messages,
         stream: true,
       },

@@ -36,6 +36,8 @@ import { getOrCreateSectionCard } from '../lesson/slide-cache.js'
 import { getManifestExerciseEntry } from '../lesson/section-manifest.js'
 import type { ManifestItem } from '../lesson/section-manifest.js'
 import type { StudentConfused } from './message-types.js'
+import { exerciseEngine } from '../engine/exercise-engine.js'
+import type { EngineResult, EngineValidationResult } from '../engine/types.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
@@ -539,6 +541,29 @@ async function resumeLesson(
     console.log(`[ws] resume_cursor_corrected itemIndex=${next} exercise=#${state.currentExerciseNum}`)
   }
 
+  // Engine Authority Migration: recover engine state on reconnect.
+  // Engine state lives in a separate Redis key (engine:lesson:{id}), independent of LessonState.
+  // If recovery succeeds, the engine cursor is the authoritative source for the frontend.
+  // If recovery fails, emit INVALID_ENGINE_STATE and continue with cached LessonState cursor.
+  const engineSection = state.focusLesson ?? 'free'
+  let engineCursorSent = false
+  try {
+    const engineState = await exerciseEngine.recover(existingLessonId, engineSection)
+    console.log(`[engine:recover] ok lessonId=${existingLessonId} section=${engineSection} exercises=${engineState.exerciseQueue.length}`)
+    const engineCursor = await exerciseEngine.getCursor(existingLessonId)
+    if (engineCursor) {
+      send(ws, { type: 'exercise_cursor_updated', cursor: engineCursor })
+      engineCursorSent = true
+      console.log(
+        `[engine:recover] cursor_snapshot_sent exercise=#${engineCursor.exerciseNumber} ` +
+        `item=${engineCursor.itemIndex}/${engineCursor.itemTotal} lessonId=${existingLessonId}`,
+      )
+    }
+  } catch (err) {
+    console.error('[engine:recover] failed:', err instanceof Error ? err.message : err)
+    send(ws, { type: 'error', code: 'INVALID_ENGINE_STATE', message: 'Engine state could not be recovered. Continuing with cached lesson state.' })
+  }
+
   const tName   = teacherDisplayName(meta.teacherId ?? undefined)
   const exNote  = state.currentExerciseNum > 0
     ? ` We were on Exercise ${state.currentExerciseNum}.`
@@ -553,8 +578,9 @@ async function resumeLesson(
     message:     resumeMsg,
   })
 
-  // Phase 3: restore exercise cursor state on resume if an exercise was active
-  if (state.currentExerciseNum > 0 && state.currentItem) {
+  // Phase 3 / Engine Migration: restore exercise cursor state on resume if an exercise was active.
+  // Prefer engine cursor (already sent above) — fall back to LessonState cursor for legacy snapshots.
+  if (!engineCursorSent && state.currentExerciseNum > 0 && state.currentItem) {
     send(ws, {
       type: 'exercise_cursor_updated',
       cursor: {
@@ -578,7 +604,7 @@ async function resumeLesson(
       },
     })
     console.log(
-      `[ws] resume_cursor_sent type=${state.activeExerciseType ?? 'unknown'} ` +
+      `[ws] resume_legacy_cursor_sent type=${state.activeExerciseType ?? 'unknown'} ` +
       `items=${state.exerciseItems?.length ?? 0} options=${state.exerciseOptions?.length ?? 0} ` +
       `exerciseId=${state.currentExerciseId ?? 'none'}`,
     )
@@ -676,6 +702,14 @@ async function handleLessonStart(
   pipeline.set(lessonContextKey(lessonId),             JSON.stringify([]),            'EX', LESSON_TTL)
   pipeline.set(activeSessionKey(effectiveStudentId),  lessonId,                     'EX', LESSON_TTL)
   await pipeline.exec()
+
+  // Engine Authority Migration: init engine for free-mode lesson (empty queue)
+  try {
+    await exerciseEngine.init(lessonId, 'free')
+    console.log(`[engine] initialized lessonId=${lessonId} section=free`)
+  } catch (err) {
+    console.error('[engine] init failed (non-fatal):', err instanceof Error ? err.message : err)
+  }
 
   meta.micActive = false  // set true on first mic_start
   meta.stt = createSTT(ws, meta)
@@ -848,6 +882,16 @@ async function handleFocusLessonStart(
   pipeline.set(activeSessionKey(effectiveStudentId), lessonId,                     'EX', LESSON_TTL)
   await pipeline.exec()
 
+  // Engine Authority Migration: initialize Exercise Engine before STT/AI.
+  // Engine owns all exercise state; AI only narrates what the engine decides.
+  const engineSection = config.section ?? 'free'
+  try {
+    await exerciseEngine.init(lessonId, engineSection)
+    console.log(`[engine] initialized lessonId=${lessonId} section=${engineSection}`)
+  } catch (err) {
+    console.error('[engine] init failed (non-fatal, legacy path continues):', err instanceof Error ? err.message : err)
+  }
+
   meta.micActive = false  // set true on first mic_start
   meta.stt = createSTT(ws, meta)
 
@@ -925,15 +969,59 @@ interface ManifestVoiceResult {
   exerciseNum:    number
   itemIndex:      number
   item:           ManifestItem
+  engineResult?:  EngineResult            // Engine Authority Migration: set when routed through engine
 }
 
 // Attempts manifest-authoritative validation for the current voice input.
 // Returns null when conditions are not met (not a deterministic manifest exercise, etc.).
+// Engine Authority Migration: routes through exerciseEngine.submitAnswer() when engine
+// has active state for this lesson. Falls back to legacy orchestrator calls for old snapshots.
 async function tryManifestValidateVoice(
   lessonId: string,
   studentText: string,
 ): Promise<ManifestVoiceResult | null> {
   try {
+    // Engine path: if engine has active deterministic exercise state, use it as authority
+    const engineState = await exerciseEngine.getState(lessonId)
+    if (
+      engineState &&
+      engineState.sectionId !== 'free' &&
+      engineState.currentExerciseState &&
+      engineState.currentExerciseState.status === 'active'
+    ) {
+      const exState = engineState.currentExerciseState
+      const spec    = exState.spec
+      // Only intercept deterministic_sequential exercises (exact/contains validation)
+      if (spec.meta.runtimeMode === 'deterministic_sequential') {
+        const result = await exerciseEngine.submitAnswer({ lessonId, studentAnswer: studentText })
+        console.log(
+          `[engine] voice_validate action=${result.action} ` +
+          `exercise=#${spec.meta.exerciseNumber} lessonId=${lessonId} ` +
+          `student="${studentText.slice(0, 60)}"`,
+        )
+        const correct = result.action === 'step_correct' || result.action === 'exercise_complete' ||
+          result.action === 'soft_pass' || result.action === 'step_revealed'
+        // Construct a ManifestVoiceResult-compatible return for the existing context-builder
+        const dummyItem: ManifestItem = {
+          text:          exState.spec.steps[exState.currentStepIndex]?.question ?? '',
+          correctAnswer: result.validation?.correctAnswer ?? '',
+        }
+        const turn: CorrectionTurn | null = (!correct && result.validation)
+          ? engineValidationToTurn(result.validation)
+          : null
+        return {
+          correct,
+          cursor:         result.exerciseCursor,
+          correctionTurn: turn,
+          exerciseNum:    spec.meta.exerciseNumber,
+          itemIndex:      exState.currentStepIndex,
+          item:           dummyItem,
+          engineResult:   result,
+        }
+      }
+    }
+
+    // Legacy path: read LessonState and validate via manifest lookup
     const stateRaw = await redis.get(lessonStateKey(lessonId))
     if (!stateRaw) return null
     const state = JSON.parse(stateRaw) as LessonState
@@ -957,7 +1045,7 @@ async function tryManifestValidateVoice(
 
     const correct = validateManifestAnswer(studentText, item)
     console.log(
-      `[manifest] voice_validate exercise=#${state.currentExerciseNum} ` +
+      `[manifest] legacy_voice_validate exercise=#${state.currentExerciseNum} ` +
       `item=${itemIdx} correct=${correct} student="${studentText.slice(0, 60)}"`,
     )
 
@@ -981,9 +1069,15 @@ async function tryManifestValidateVoice(
 }
 
 // Builds the [EXERCISE RESULT] context block injected as AI input after manifest validation.
-// Mirrors the format used by handleExerciseAnswer so the AI prompt is identical for both
-// click-based and voice-based answers in deterministic exercises.
+// Engine Authority Migration: when engineResult is present, delegates to buildEngineAnswerContext
+// so the AI receives the full engine state block alongside the correction/confirmation.
 function buildManifestVoiceContext(mv: ManifestVoiceResult, studentText: string): string {
+  // Engine path: use richer engine context when available
+  if (mv.engineResult) {
+    return buildEngineAnswerContext(mv.engineResult, studentText)
+  }
+
+  // Legacy path: build from ManifestVoiceResult fields
   if (mv.correct) {
     const cursor = mv.cursor
     const exerciseDone = cursor ? cursor.itemIndex >= cursor.itemTotal : false
@@ -1082,30 +1176,54 @@ async function processInput(
         manifestValidation = await tryManifestValidateVoice(meta.lessonId, text)
         if (manifestValidation) {
           inputText = buildManifestVoiceContext(manifestValidation, text)
-          // Broadcast cursor immediately so frontend is in sync before AI responds
-          if (manifestValidation.cursor) {
-            send(ws, { type: 'exercise_cursor_updated', cursor: manifestValidation.cursor })
+
+          // Engine path: use validation result and cursor from engine result
+          const engineResult = manifestValidation.engineResult
+          const cursorToSend = engineResult?.exerciseCursor ?? manifestValidation.cursor
+          if (cursorToSend) {
+            send(ws, { type: 'exercise_cursor_updated', cursor: cursorToSend })
             console.log(
-              `[manifest] cursor_advanced exercise=#${manifestValidation.cursor.exerciseNumber} ` +
-              `item=${manifestValidation.cursor.itemIndex}/${manifestValidation.cursor.itemTotal}`,
+              `[engine] voice_cursor_emitted exercise=#${cursorToSend.exerciseNumber} ` +
+              `item=${cursorToSend.itemIndex}/${cursorToSend.itemTotal} ` +
+              `via=${engineResult ? 'engine' : 'manifest'}`,
             )
           }
+
           // Broadcast feedback so frontend updates correction UI instantly
-          send(ws, {
-            type:        'feedback',
-            correct:      manifestValidation.correct,
-            explanation: '',
-            score:       manifestValidation.correct ? 1.0 : 0,
-          })
+          if (engineResult?.validation) {
+            send(ws, {
+              type:        'feedback',
+              correct:     engineResult.validation.correct,
+              explanation: engineResult.validation.feedback,
+              score:       engineResult.validation.score,
+            })
+          } else {
+            send(ws, {
+              type:        'feedback',
+              correct:      manifestValidation.correct,
+              explanation: '',
+              score:       manifestValidation.correct ? 1.0 : 0,
+            })
+          }
         }
       }
     }
   }
 
+  // Engine Authority Migration: inject engine prompt context into AI system prompt.
+  // Teacher Brain reads engine state as a system block — it cannot modify engine state.
+  let enginePromptContext = ''
+  try {
+    enginePromptContext = await exerciseEngine.getPromptContext(meta.lessonId)
+  } catch { /* non-fatal — AI proceeds without engine context */ }
+
   console.log(`[paid-lesson] ai_turn_started input_chars=${text.trim().length} remaining_min=${Math.round(remainingMs / 60_000)}`)
   let result: Awaited<ReturnType<typeof orchestrator.process>> | undefined
   try {
-    result = await orchestrator.process(meta.lessonId, inputText, { remainingMs })
+    result = await orchestrator.process(meta.lessonId, inputText, {
+      remainingMs,
+      enginePromptContext: enginePromptContext || undefined,
+    })
   } finally {
     meta.aiProcessing = false
     // Process any input that arrived while AI was busy
@@ -1334,6 +1452,148 @@ Set "exercise": null — do NOT advance the item until the student answers corre
 Do NOT restart at TURN A. You are at TURN ${turn}. Stay here.`
 }
 
+// ── Engine Authority Migration: answer handling helpers ───────────────────────
+
+// Map engine validation hintsRemaining → correction ladder turn (A/B/C/D).
+// hintsRemaining is computed as max(0, maxRetries - retryCount - 1) in validation-hooks.ts.
+function engineValidationToTurn(v: EngineValidationResult): CorrectionTurn {
+  if (v.shouldRevealAnswer) return 'D'
+  if (v.hintsRemaining >= 2) return 'A'
+  if (v.hintsRemaining === 1) return 'B'
+  return 'C'
+}
+
+// Build the [EXERCISE RESULT] AI context block from an EngineResult.
+// The engine's promptContext (=== EXERCISE ENGINE STATE ===) is prepended so
+// Teacher Brain reads deterministic state before seeing the correction/confirmation.
+function buildEngineAnswerContext(result: EngineResult, studentAnswer: string): string {
+  const stateBlock = result.promptContext  // === EXERCISE ENGINE STATE === block
+
+  let answerBlock: string
+
+  if (result.action === 'step_correct' || result.action === 'soft_pass') {
+    const cursor = result.exerciseCursor
+    const exerciseDone = !cursor?.currentItem
+    const continuationContract = exerciseDone
+      ? `\nEXERCISE TURN COMPLETION CONTRACT: After step 2, announce exercise complete. ` +
+        `Then introduce the next exercise immediately in the same response.`
+      : cursor?.currentItem
+      ? `\nEXERCISE TURN COMPLETION CONTRACT: After step 2, present item ` +
+        `${(cursor.itemIndex ?? 0) + 1}: "${cursor.currentItem}" in the same response. ` +
+        `Do NOT stop after confirmation. Presenting the next item is mandatory.`
+      : ''
+    answerBlock = `[EXERCISE RESULT] Student answered: "${studentAnswer}" — CORRECT.\n` +
+      `Your response MUST follow this structure in order:\n` +
+      `1. ONE confirmation word only: "Exactly." / "Right." / "Correct."\n` +
+      `2. WHY in one sentence: the rule or connection that makes this correct.${continuationContract}`
+  } else if (result.action === 'exercise_complete') {
+    const cursor = result.exerciseCursor
+    const continuationContract = cursor?.currentItem
+      ? `\nEXERCISE TURN COMPLETION CONTRACT: Announce exercise complete, then present ` +
+        `item 1: "${cursor.currentItem}" of the next exercise.`
+      : `\nEXERCISE TURN COMPLETION CONTRACT: Announce exercise complete. Then introduce the next exercise immediately.`
+    answerBlock = `[EXERCISE RESULT] Student answered: "${studentAnswer}" — CORRECT (exercise completed).\n` +
+      `Your response MUST follow this structure in order:\n` +
+      `1. ONE confirmation word only: "Exactly." / "Right." / "Correct."\n` +
+      `2. WHY in one sentence.${continuationContract}`
+  } else if (result.action === 'step_wrong' && result.validation) {
+    const turn = engineValidationToTurn(result.validation)
+    const currentItem = result.exerciseCursor?.currentItem ?? ''
+    answerBlock = buildCorrectionContext(studentAnswer, result.validation.correctAnswer, turn, undefined, currentItem)
+  } else if (result.action === 'step_revealed' && result.validation) {
+    answerBlock = `[EXERCISE RESULT] Student answered: "${studentAnswer}" — INCORRECT (max retries reached).\n` +
+      `TURN D: REVEAL THE FULL ANSWER NOW.\n` +
+      `Say: "The answer is ${result.validation.correctAnswer}. ` +
+      `[Brief rule in one sentence]. Now repeat the full sentence after me."\n` +
+      `Wait for the student to repeat, then advance to the next item.`
+  } else if (result.action === 'exercise_skipped') {
+    const cursor = result.exerciseCursor
+    answerBlock = `[ENGINE] Exercise auto-skipped (unsupported type). ` +
+      `Announce skip briefly, then introduce ` +
+      (cursor?.currentItem ? `item 1 of the next exercise: "${cursor.currentItem}"` : 'the next exercise') +
+      ` immediately.`
+  } else if (result.action === 'lesson_complete') {
+    answerBlock = `[ENGINE] All exercises complete. Move to WRAP_UP phase. ` +
+      `Summarise what the student practised and close the lesson warmly.`
+  } else {
+    answerBlock = `[ENGINE] No active exercise step. Continue the lesson naturally.`
+  }
+
+  return stateBlock ? stateBlock + '\n\n' + answerBlock : answerBlock
+}
+
+// Engine-authoritative exercise answer handler.
+// Called when engine has active non-free state for this lesson.
+// GPT-based progression is bypassed — engine result drives all state updates.
+async function handleEngineExerciseAnswer(
+  ws: WebSocket,
+  meta: ClientMeta,
+  answer: string,
+): Promise<void> {
+  const lessonId = meta.lessonId!
+
+  // Stale event: reject if engine has no active exercise
+  const engineState = await exerciseEngine.getState(lessonId)
+  if (!engineState?.currentExerciseState) {
+    send(ws, { type: 'error', code: 'NO_ACTIVE_EXERCISE', message: 'No active exercise in engine state.' })
+    console.log(`[engine] stale_answer_rejected reason=no_active_exercise lessonId=${lessonId}`)
+    return
+  }
+  if (engineState.currentExerciseState.status === 'completed' || engineState.currentExerciseState.status === 'skipped') {
+    send(ws, { type: 'error', code: 'STALE_EXERCISE_ANSWER', message: 'Exercise already completed.' })
+    console.log(`[engine] stale_answer_rejected reason=exercise_complete lessonId=${lessonId}`)
+    return
+  }
+
+  console.log(`[engine] answer_submitted lessonId=${lessonId} answer="${answer.slice(0, 40)}"`)
+  const result = await exerciseEngine.submitAnswer({ lessonId, studentAnswer: answer })
+  console.log(`[engine] answer_result action=${result.action} correct=${result.validation?.correct ?? 'n/a'} lessonId=${lessonId}`)
+
+  // Broadcast engine cursor immediately — frontend renders backend state, not GPT text
+  if (result.exerciseCursor) {
+    send(ws, { type: 'exercise_cursor_updated', cursor: result.exerciseCursor })
+    console.log(
+      `[engine] cursor_emitted exercise=#${result.exerciseCursor.exerciseNumber} ` +
+      `item=${result.exerciseCursor.itemIndex}/${result.exerciseCursor.itemTotal} lessonId=${lessonId}`,
+    )
+  }
+
+  // Broadcast validation feedback for immediate UI update
+  if (result.validation) {
+    send(ws, {
+      type:        'feedback',
+      correct:     result.validation.correct,
+      explanation: result.validation.feedback,
+      score:       result.validation.score,
+    })
+  }
+
+  // Handle lesson complete: emit lesson_end without going to AI
+  if (result.action === 'lesson_complete') {
+    console.log(`[engine] lesson_complete lessonId=${lessonId}`)
+    const durationMin = meta.lessonStartedAt
+      ? Math.round((Date.now() - meta.lessonStartedAt) / 60_000)
+      : 0
+    send(ws, {
+      type: 'lesson_end',
+      summary: {
+        lessonId,
+        phasesReached:   ['DIAGNOSTIC', 'EXERCISES', 'WRAP_UP'],
+        exerciseScore:   engineState.completedExerciseIds.length,
+        vocabularyCount: 0,
+        durationMin,
+      },
+    })
+    return
+  }
+
+  // Build AI context from engine result — Teacher Brain narrates, engine owns state
+  const context = buildEngineAnswerContext(result, answer)
+
+  // Protocol correction context already contains off-topic recovery info — skip guard
+  await processInput(ws, meta, context, false, true)
+}
+
 async function handleExerciseAnswer(
   ws: WebSocket,
   meta: ClientMeta,
@@ -1344,6 +1604,21 @@ async function handleExerciseAnswer(
     send(ws, { type: 'error', code: 'NO_LESSON', message: 'Start a lesson first.' })
     return
   }
+
+  // Engine Authority Migration: route through engine when a manifest-backed lesson is active.
+  // Legacy DB-validation path is kept for free-mode lessons and exercises not in the engine.
+  try {
+    const engineState = await exerciseEngine.getState(meta.lessonId)
+    if (engineState && engineState.sectionId !== 'free' && engineState.currentExerciseState) {
+      console.log(`[engine] routing exercise_answer through engine lessonId=${meta.lessonId} exerciseId=${exerciseId}`)
+      await handleEngineExerciseAnswer(ws, meta, answer)
+      return
+    }
+  } catch (err) {
+    console.error('[engine] getState failed in handleExerciseAnswer (falling back to legacy):', err instanceof Error ? err.message : err)
+  }
+
+  // ── Legacy path: DB-stored exercise validation (free mode / non-manifest) ──
 
   const exercise = await loadExercise(exerciseId)
   if (!exercise || exercise.lessonId !== meta.lessonId) {
@@ -1372,7 +1647,7 @@ async function handleExerciseAnswer(
     // Broadcast cursor before AI responds so frontend is immediately in sync
     if (cursor) {
       send(ws, { type: 'exercise_cursor_updated', cursor })
-      console.log(`[paid-lesson] cursor_advanced exercise=#${cursor.exerciseNumber} item=${cursor.itemIndex}/${cursor.itemTotal}`)
+      console.log(`[paid-lesson] legacy_cursor_advanced exercise=#${cursor.exerciseNumber} item=${cursor.itemIndex}/${cursor.itemTotal}`)
     }
 
     const exerciseDone = cursor && cursor.itemIndex >= cursor.itemTotal
