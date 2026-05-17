@@ -174,6 +174,15 @@ export function validateTeacherBrainAction(
     return { ok: false, reason: 'skip_exercise requires unsupportedReason' }
   }
 
+  // Cannot transition while a correction turn is active (current item unresolved)
+  const transitionActions = new Set(['transition_next_exercise', 'complete_exercise'])
+  if (transitionActions.has(action) && state.correctionTurn !== null) {
+    return {
+      ok: false,
+      reason: `cannot transition during active correction turn ${state.correctionTurn} — current item unresolved`,
+    }
+  }
+
   // Exercise mismatch: AI referencing a different exercise than backend state
   const allowsExerciseShift = new Set([
     'transition_next_exercise', 'complete_lesson', 'skip_exercise', 'complete_exercise',
