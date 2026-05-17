@@ -141,20 +141,13 @@ function buildFocusGreeting(
   teacherId?: string,
 ): string {
   const tName = teacherDisplayName(teacherId)
-
-  if (!section) {
-    return `Hi! I'm ${tName}, your English teacher. Today we're working on ${grammarTarget}. I'll guide you through the exercises step by step. Just let me know when you're ready to start.`
+  let focus = grammarTarget
+  if (section) {
+    const sb           = getFocusStudentBookSection(section)
+    const catalogEntry = getCatalogEntry(section)
+    focus = sb?.grammarFocus ?? catalogEntry?.grammarFocus ?? grammarTarget
   }
-
-  const sb           = getFocusStudentBookSection(section)
-  const catalogEntry = getCatalogEntry(section)
-  const grammarFocus = sb?.grammarFocus ?? catalogEntry?.grammarFocus ?? grammarTarget
-  const lessonTitle  = sb?.lessonTitle ?? catalogEntry?.topic ?? ''
-
-  const topicPart = lessonTitle ? ` Today's topic is "${lessonTitle}."` : ''
-  const focusPart = grammarFocus !== grammarTarget ? ` We'll practise ${grammarFocus}.` : ''
-
-  return `Hi! I'm ${tName}.${topicPart} Section ${section}${grammarFocus ? ` covers ${grammarFocus}` : ''}.${focusPart} We'll work through the exercises together and I'll help at every step. Let me know when you're ready!`
+  return `Hi! I'm ${tName}. Today we'll practise ${focus}. Tell me when you're ready.`
 }
 
 // ── Phase 5: Map exercise type to ErrorRecord errorType ──────────────────────
@@ -905,9 +898,13 @@ function validateManifestAnswer(studentText: string, item: ManifestItem): boolea
   // 1. Exact match (student says exactly "do" or exactly the expected sentence)
   if (ns === ne) return true
 
-  // 2. Student says the full sentence with blank filled correctly
+  // 2. Student says the full sentence with blank filled correctly.
+  //    Strip leading "N." / "N)" item-number prefix before sentence-fill comparison —
+  //    "3. ___ you ever met him?" must normalise to "___ you ever met him?" so that
+  //    "Have you ever met him?" correctly matches after filling the blank.
   if (item.text.includes('___')) {
-    const filled = item.text.replace('___', item.correctAnswer)
+    const cleanText = item.text.replace(/^\d+[.)]\s*/, '')
+    const filled    = cleanText.replace('___', item.correctAnswer)
     if (ns === norm(filled)) return true
   }
 

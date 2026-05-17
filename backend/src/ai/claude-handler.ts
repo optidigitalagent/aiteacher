@@ -182,9 +182,18 @@ function parseSafe(text: string): AIResponse | null {
 }
 
 function fallback(state: LessonState): AIResponse {
+  let speech: string
+  if (state.phase === 'EXERCISES' && state.currentItem) {
+    const cleanItem = state.currentItem.replace(/^\d+[.)]\s*/, '').trim()
+    speech = `Let's continue. ${cleanItem}`
+  } else if (state.phase === 'EXERCISES' && state.currentExerciseNum > 0) {
+    speech = `Let's continue with Exercise ${state.currentExerciseNum}.`
+  } else {
+    speech = `Go ahead.`
+  }
   return {
-    speech:        'Let me try that again. What did you say?',
-    display_text:  'Let me try that again. What did you say?',
+    speech,
+    display_text:  speech,
     next_action:   'continue_phase',
     exercise:      null,
     internal_note: `[fallback] parse error in phase ${state.phase}`,
