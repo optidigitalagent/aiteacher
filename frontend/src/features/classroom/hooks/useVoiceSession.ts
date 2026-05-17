@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import type { VoiceState } from '../types'
+import type { VoiceState, VoiceTurnState } from '../types'
 import type { SendFn } from '../services/classroomSocket'
 import {
   requestMicPermission,
@@ -24,6 +24,7 @@ export function useVoiceSession({ send }: Options): VoiceState & {
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking,  setIsSpeaking]  = useState(false)
   const [transcript,  setTranscript]  = useState('')
+  const [voiceTurnState, setVoiceTurnState] = useState<VoiceTurnState>('idle')
 
   const streamRef        = useRef<MediaStream | null>(null)
   const stopSpeakRef     = useRef<ReturnType<typeof setTimeout>>()
@@ -45,6 +46,7 @@ export function useVoiceSession({ send }: Options): VoiceState & {
     stopPCMCapture(streamRef.current)
     streamRef.current = null
     setIsListening(false)
+    setVoiceTurnState('finalizing_transcript')
   }, [])
 
   // Toggle mic on/off.
@@ -56,6 +58,7 @@ export function useVoiceSession({ send }: Options): VoiceState & {
       if (streamRef.current) stopPCMCapture(streamRef.current)
       streamRef.current = null
       setIsListening(false)
+      setVoiceTurnState('finalizing_transcript')
       return
     }
 
@@ -73,12 +76,14 @@ export function useVoiceSession({ send }: Options): VoiceState & {
       streamRef.current = stream
       setIsListening(true)
       setTranscript('')
+      setVoiceTurnState('listening')
       console.log('[paid-lesson] mic_enabled=true reason=student_turn')
       startPCMCapture(stream, (base64) => {
         send({ type: 'audio_chunk', data: base64 })
       })
     } catch (err) {
       console.error('[voice] mic access denied:', err)
+      setVoiceTurnState('error')
     }
   }, [isListening, send])
 
@@ -100,11 +105,24 @@ export function useVoiceSession({ send }: Options): VoiceState & {
   const onTeacherTurnEnd = useCallback(() => {
     const remaining = getScheduledAudioEndMs()
     scheduleSpeakOff(Math.max(remaining + 300, 500))
+    // Return to idle after teacher finishes — voice turn fully complete
+    setTimeout(() => setVoiceTurnState('idle'), Math.max(remaining + 300, 500))
   }, [scheduleSpeakOff])
 
   // Called when backend sends a transcript event (Deepgram STT result)
   const onTranscript = useCallback((text: string) => {
     setTranscript(text)
+    // Any transcript while listening = partial preview
+    if (text) {
+      setVoiceTurnState((prev) =>
+        prev === 'listening' || prev === 'partial_transcribing' ? 'partial_transcribing' : prev
+      )
+    } else {
+      // Empty transcript clears back to listening or idle
+      setVoiceTurnState((prev) =>
+        prev === 'partial_transcribing' ? 'listening' : prev === 'finalizing_transcript' ? 'idle' : prev
+      )
+    }
   }, [])
 
   // Called by ClassroomLayout when AI starts/stops speaking (ai_text event)
@@ -112,13 +130,21 @@ export function useVoiceSession({ send }: Options): VoiceState & {
     isSpeakingRef.current = v
     setIsSpeaking(v)
     if (v) {
+      setVoiceTurnState('teacher_speaking')
       // Fallback: if no audio chunks arrive, stop speaking indicator after 8s
       scheduleSpeakOff(8000)
     } else {
       clearTimeout(stopSpeakRef.current)
       stopAudioPlayback()
+      setVoiceTurnState('idle')
     }
   }, [scheduleSpeakOff])
 
-  return { isListening, isSpeaking, transcript, toggle, stopRecording, onAudioChunk, onTranscript, setSpeaking, onTeacherTurnEnd }
+  const isPartialTranscript = voiceTurnState === 'partial_transcribing'
+
+  return {
+    isListening, isSpeaking, transcript,
+    voiceTurnState, isPartialTranscript,
+    toggle, stopRecording, onAudioChunk, onTranscript, setSpeaking, onTeacherTurnEnd,
+  }
 }

@@ -2,26 +2,27 @@ import { useRef, useState } from 'react'
 import { IcMic, IcSend, IcQ } from './icons'
 
 interface Props {
-  isListening:     boolean
-  value:           string
-  onChange:        (v: string) => void
-  onSubmit:        () => void
-  onToggleMic:     () => void
-  onExplain:       () => void
-  inputDisabled?:  boolean
-  micDisabled?:    boolean
-  showExplain?:    boolean
+  isListening:        boolean
+  value:              string
+  onChange:           (v: string) => void
+  onSubmit:           () => void
+  onToggleMic:        () => void
+  onExplain:          () => void
+  inputDisabled?:     boolean
+  micDisabled?:       boolean
+  showExplain?:       boolean
+  isPartialTranscript?: boolean
   // Help input (demo mode)
-  showHelpInput?:  boolean
-  helpInputValue?: string
-  onHelpChange?:   (v: string) => void
-  onHelpSubmit?:   () => void
-  onHelpClose?:    () => void
+  showHelpInput?:     boolean
+  helpInputValue?:    string
+  onHelpChange?:      (v: string) => void
+  onHelpSubmit?:      () => void
+  onHelpClose?:       () => void
 }
 
 export default function BottomControls({
   isListening, value, onChange, onSubmit, onToggleMic, onExplain,
-  inputDisabled, micDisabled, showExplain = true,
+  inputDisabled, micDisabled, showExplain = true, isPartialTranscript,
   showHelpInput, helpInputValue, onHelpChange, onHelpSubmit, onHelpClose,
 }: Props) {
   const inputRef          = useRef<HTMLInputElement>(null)
@@ -181,10 +182,12 @@ export default function BottomControls({
             style={{
               flex: 1, border: 'none', background: 'transparent',
               padding: '13px 0', fontSize: 15,
-              color: inputDisabled ? '#aaa' : '#1a1a2e',
+              color: isPartialTranscript ? '#aaa' : inputDisabled ? '#aaa' : '#1a1a2e',
+              fontStyle: isPartialTranscript ? 'italic' : 'normal',
               fontFamily: "'Plus Jakarta Sans', sans-serif",
               minWidth: 0,
               cursor: inputDisabled ? 'default' : 'text',
+              transition: 'color 0.15s, font-style 0.15s',
             }}
           />
           <button

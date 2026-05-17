@@ -335,6 +335,10 @@ interface ClientMeta {
   // not yet finalized by mic_stop). Gates all STT callbacks so late Deepgram events
   // from a previous recording cannot contaminate the next turn.
   micActive: boolean
+  // Voice turn deduplication: generated on mic_start, used to prevent the same
+  // voice turn from being submitted twice (e.g. UtteranceEnd + mic_stop race).
+  voiceTurnId:              string | null
+  lastSubmittedVoiceTurnId: string | null
   // Phase 11: tracks when THIS connection's billing period started.
   // Separate from lessonStartedAt (which is the original lesson wall-clock start
   // used for timeout/remaining-time calculations). Using lessonStartedAt for
@@ -1792,10 +1796,16 @@ function createSTT(ws: WebSocket, meta: ClientMeta): DeepgramSTT {
         meta.micActive         = false  // turn finalized — discard any further events
         meta.stt?.clearBuffer()
         if (fullText) {
-          console.log(`[paid-lesson] student_turn_finalized chars=${fullText.length} trigger=mic_stop`)
-          send(ws, { type: 'student_message', text: fullText })
-          processInput(ws, meta, fullText).catch((err: unknown) =>
-            console.error('[paid-lesson] processInput error (stt-micstop):', err))
+          const tid = meta.voiceTurnId
+          if (tid && tid === meta.lastSubmittedVoiceTurnId) {
+            console.log(`[voice] duplicate_turn_rejected turnId=${tid} trigger=mic_stop`)
+          } else {
+            meta.lastSubmittedVoiceTurnId = tid
+            console.log(`[voice] student_turn_submit chars=${fullText.length} turnId=${tid} trigger=mic_stop`)
+            send(ws, { type: 'student_message', text: fullText })
+            processInput(ws, meta, fullText).catch((err: unknown) =>
+              console.error('[paid-lesson] processInput error (stt-micstop):', err))
+          }
         }
         return
       }
@@ -1891,6 +1901,8 @@ export function attachLessonWS(server: Server): void {
       pendingMicStop:    false,
       pendingMicStopTimeoutRef: null,
       micActive:         false,
+      voiceTurnId:              null,
+      lastSubmittedVoiceTurnId: null,
       billingStartedAt: null,
     }
 
@@ -1948,8 +1960,9 @@ export function attachLessonWS(server: Server): void {
             meta.pendingMicStop    = false
             meta.pendingTranscript = ''
             meta.micActive         = true  // open the gate — accept STT events
+            meta.voiceTurnId       = uuid()  // new turn ID — resets dedup window
             meta.stt?.clearBuffer()
-            console.log(`[paid-lesson] mic_start — state reset micActive=true`)
+            console.log(`[voice] mic_start turnId=${meta.voiceTurnId} micActive=true`)
             break
           }
           case 'mic_stop': {
@@ -1974,9 +1987,15 @@ export function attachLessonWS(server: Server): void {
               }
               if (shouldProcessTranscript(pending)) {
                 meta.stt?.clearBuffer()
-                console.log(`[paid-lesson] student_turn_finalized chars=${pending.length} trigger=mic_stop_flush`)
-                send(ws, { type: 'student_message', text: pending })
-                await processInput(ws, meta, pending)
+                const tid = meta.voiceTurnId
+                if (tid && tid === meta.lastSubmittedVoiceTurnId) {
+                  console.log(`[voice] duplicate_turn_rejected turnId=${tid} trigger=mic_stop_flush`)
+                } else {
+                  meta.lastSubmittedVoiceTurnId = tid
+                  console.log(`[voice] student_turn_submit chars=${pending.length} turnId=${tid} trigger=mic_stop_flush`)
+                  send(ws, { type: 'student_message', text: pending })
+                  await processInput(ws, meta, pending)
+                }
               }
             } else {
               // Nothing accumulated yet — UtteranceEnd may still be in flight.
@@ -1993,12 +2012,23 @@ export function attachLessonWS(server: Server): void {
                 meta.pendingTranscript = ''
                 meta.stt?.clearBuffer()
                 if (delayed && shouldProcessTranscript(delayed)) {
-                  console.log(`[paid-lesson] student_turn_finalized chars=${delayed.length} trigger=mic_stop_timeout`)
-                  send(ws, { type: 'student_message', text: delayed })
-                  processInput(ws, meta, delayed).catch((err: unknown) =>
-                    console.error('[paid-lesson] processInput error (mic_stop_timeout):', err))
+                  const tid = meta.voiceTurnId
+                  if (tid && tid === meta.lastSubmittedVoiceTurnId) {
+                    console.log(`[voice] duplicate_turn_rejected turnId=${tid} trigger=mic_stop_timeout`)
+                  } else {
+                    meta.lastSubmittedVoiceTurnId = tid
+                    console.log(`[voice] student_turn_submit chars=${delayed.length} turnId=${tid} trigger=mic_stop_timeout`)
+                    send(ws, { type: 'student_message', text: delayed })
+                    processInput(ws, meta, delayed).catch((err: unknown) =>
+                      console.error('[paid-lesson] processInput error (mic_stop_timeout):', err))
+                  }
                 } else {
-                  console.log(`[paid-lesson] mic_stop_timeout_no_text`)
+                  console.log(`[voice] mic_stop_timeout_no_text`)
+                  // No transcript captured — speak safe fallback without calling AI.
+                  if (meta.sessionId && meta.lessonId) {
+                    ttsStream(ws, meta, "I didn't catch that. Try once more.").catch((err: unknown) =>
+                      console.error('[voice] silence_tts error:', err))
+                  }
                 }
               }, 800)  // 800ms — enough for Deepgram's 300ms endpointing + network RTT
             }

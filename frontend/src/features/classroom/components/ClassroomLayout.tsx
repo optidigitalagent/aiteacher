@@ -67,7 +67,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   } = useClassroomChat({ send })
 
   const {
-    isListening, isSpeaking, transcript, toggle, stopRecording,
+    isListening, isSpeaking, transcript, isPartialTranscript, toggle, stopRecording,
     onAudioChunk, onTranscript, setSpeaking, onTeacherTurnEnd,
   } = useVoiceSession({ send })
 
@@ -712,9 +712,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           {/* Left — teacher avatar + voice state */}
           <TeacherPanel
             voiceState={{
-              isListening: isDemoMode ? demoListening : isListening,
-              isSpeaking:  isDemoMode ? demo.isSpeaking : isSpeaking,
-              transcript:  isDemoMode ? '' : transcript,
+              isListening:         isDemoMode ? demoListening : isListening,
+              isSpeaking:          isDemoMode ? demo.isSpeaking : isSpeaking,
+              transcript:          isDemoMode ? '' : transcript,
+              voiceTurnState:      isDemoMode ? 'idle' : (isListening ? 'listening' : 'idle'),
+              isPartialTranscript: !isDemoMode && isPartialTranscript,
             }}
             onExplain={handleExplain}
             teacherName={sessionMeta?.teacherName}
@@ -952,6 +954,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           onToggleMic={isDemoMode ? toggleDemoMic : paidToggle}
           onExplain={handleExplain}
           showExplain={lessonStarted || isDemoMode}
+          isPartialTranscript={!isDemoMode && isPartialTranscript}
           inputDisabled={
             (isDemoMode && !demo.lessonStarted) ||
             (isDemoMode && demo.phase === 'complete') ||

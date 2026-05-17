@@ -33,10 +33,23 @@ export interface ChatMessage {
   messageType?: string  // voice-eligible: 'greeting' | 'main_prompt' | 'follow_up_question' | 'key_correction' | 'speaking_feedback' | 'writing_feedback' | 'final_result'
 }
 
+export type VoiceTurnState =
+  | 'idle'
+  | 'listening'
+  | 'partial_transcribing'
+  | 'finalizing_transcript'
+  | 'teacher_thinking'
+  | 'teacher_speaking'
+  | 'interrupted'
+  | 'recovering'
+  | 'error'
+
 export interface VoiceState {
-  isListening: boolean
-  isSpeaking:  boolean
-  transcript:  string
+  isListening:       boolean
+  isSpeaking:        boolean
+  transcript:        string
+  voiceTurnState:    VoiceTurnState
+  isPartialTranscript: boolean
 }
 
 export interface TeachingCardData {
