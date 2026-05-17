@@ -132,8 +132,8 @@ export class ExerciseEngine {
       isSkipped:    false,
     })
 
-    // Advance if correct (or revealed — force advance to prevent infinite retry)
-    const finalExState = (validation.correct || validation.shouldRevealAnswer)
+    // Advance only when ValidationService approved progression
+    const finalExState = validation.allowProgression
       ? advanceStep(updatedExState)
       : updatedExState
 

@@ -142,6 +142,9 @@ export interface EngineValidationResult {
   hintsRemaining: number
   shouldRevealAnswer: boolean  // true when maxRetries exceeded
   correctAnswer: string        // for reveal
+  allowProgression: boolean    // ValidationService decision — engine advances only when true
+  feedbackCode?: string        // 'CORRECT' | 'PARTIAL' | 'INCORRECT' | 'ACCEPTABLE_STT' | 'OPEN_ENDED_REVIEW_REQUIRED'
+  isPartiallyCorrect?: boolean
 }
 
 // ── Answer submission ─────────────────────────────────────────────────────────
