@@ -19,6 +19,19 @@ import type {
 import { exerciseEngine } from '../engine/exercise-engine.js'
 import { memoryService } from '../memory/index.js'
 
+// Inline readiness guard — mirrors normalizeIntentText + READINESS_INTENT_RE in lesson-ws.ts.
+// Kept local to avoid a circular import between lesson/ and ws/ layers.
+function isReadinessIntentGuard(text: string): boolean {
+  const normalized = text
+    .trim()
+    .toLowerCase()
+    .replace(/[''‚‛′]/g, "'")
+    .replace(/\s+/g, ' ')
+    .replace(/[.!?…]+$/, '')
+    .trim()
+  return /^(i'm\s+ready|i\s+am\s+ready|ready|let's\s+start|start|go|let's\s+go|ok(ay)?,?\s+(let's\s+(go|start)|go|start)|alright,?\s+(let's\s+(go|start)|go|start))$/i.test(normalized)
+}
+
 // ── Runtime Error Codes ───────────────────────────────────────────────────────
 
 export type RuntimeErrorCode =
@@ -398,6 +411,13 @@ export class MasterLessonOrchestrator {
         engineState.currentExerciseState.spec.meta.runtimeMode !== 'deterministic_sequential'
       ) {
         return null  // not a deterministic engine exercise — caller handles normally
+      }
+      // Readiness guard: "I'm ready." / "ready!" must never reach exerciseEngine.submitAnswer().
+      // Inline normalization mirrors normalizeIntentText() in lesson-ws.ts.
+      if (isReadinessIntentGuard(input.studentAnswer)) {
+        console.log(`[master-orch] readiness_intent_detected raw="${input.studentAnswer.slice(0, 80)}" lessonId=${lessonId}`)
+        console.log(`[master-orch] readiness_not_submitted_to_engine lessonId=${lessonId}`)
+        return null  // caller (lesson-ws) handles readiness presentation
       }
       console.log(`[master-orch] voice_answer_handled lessonId=${lessonId} answer="${input.studentAnswer.slice(0, 40)}"`)
       return this.handleStudentAnswer(input)

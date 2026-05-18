@@ -107,13 +107,27 @@ function looksLikeTransitionIntent(text: string): boolean {
   return TRANSITION_INTENT_RE.test(text.trim())
 }
 
+// Normalize student input for intent detection.
+// Handles smart apostrophes (U+2018–U+2019) that Deepgram emits in transcripts,
+// trailing punctuation that voice-to-text appends, and case/whitespace noise.
+function normalizeIntentText(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[‘’‚‛′]/g, "'")  // smart apostrophes → ASCII
+    .replace(/\s+/g, ' ')
+    .replace(/[.!?…]+$/, '')
+    .trim()
+}
+
 // Readiness intent: student signaling they are ready to begin exercises.
-// Conservative matching — pure readiness phrases only, no substantive answer content.
-// "go" alone matches, but "I go to school" does NOT (contains subject + verb phrase).
-const READINESS_INTENT_RE = /^\s*(i'?m\s+ready|i\s+am\s+ready|ready[.!?]?|let'?s\s+start[.!?]?|start[.!?]?|go[.!?]?|let'?s\s+go[.!?]?|ok(ay)?,?\s+(let'?s\s+(go|start)|go|start)|alright,?\s+(let'?s\s+(go|start)|go|start))\s*$/i
+// Conservative anchored matching on normalized text.
+// "go" alone matches; "I go to school" does NOT (too long after normalization).
+const READINESS_INTENT_RE = /^(i'm\s+ready|i\s+am\s+ready|ready|let's\s+start|start|go|let's\s+go|ok(ay)?,?\s+(let's\s+(go|start)|go|start)|alright,?\s+(let's\s+(go|start)|go|start))$/i
 
 function isReadinessIntent(text: string): boolean {
-  return READINESS_INTENT_RE.test(text.trim())
+  const normalized = normalizeIntentText(text)
+  return READINESS_INTENT_RE.test(normalized)
 }
 
 // Phase G: returns a [EXERCISE COMPLETE] signal when exercise is done and student wants to move on.
@@ -1018,6 +1032,17 @@ async function tryManifestValidateVoice(
       const spec    = exState.spec
       // Intercept deterministic_sequential exercises (exact/contains validation)
       if (spec.meta.runtimeMode === 'deterministic_sequential') {
+        // Readiness intent must never be treated as a deterministic exercise answer.
+        if (isReadinessIntent(studentText)) {
+          const normalized = normalizeIntentText(studentText)
+          console.log(
+            `[engine] readiness_intent_detected raw="${studentText.slice(0, 80)}" normalized="${normalized}"`,
+          )
+          console.log(
+            `[engine] readiness_not_submitted_to_engine exercise=#${spec.meta.exerciseNumber} lessonId=${lessonId}`,
+          )
+          return null
+        }
         const result = await exerciseEngine.submitAnswer({ lessonId, studentAnswer: studentText })
         console.log(
           `[engine] voice_validate action=${result.action} ` +
@@ -1049,9 +1074,15 @@ async function tryManifestValidateVoice(
         // Readiness intent must never be treated as an exercise answer.
         // "I'm ready" starts the exercise flow — it does not complete Exercise 1.
         if (isReadinessIntent(studentText)) {
+          const normalized = normalizeIntentText(studentText)
           console.log(
-            `[engine] soft_speaking_ignored_readiness exercise=#${spec.meta.exerciseNumber} ` +
-            `lessonId=${lessonId} student="${studentText.slice(0, 60)}"`,
+            `[engine] readiness_intent_detected raw="${studentText.slice(0, 80)}" normalized="${normalized}"`,
+          )
+          console.log(
+            `[engine] readiness_not_submitted_to_engine exercise=#${spec.meta.exerciseNumber} lessonId=${lessonId}`,
+          )
+          console.log(
+            `[engine] soft_speaking_ignored_readiness exercise=#${spec.meta.exerciseNumber} lessonId=${lessonId}`,
           )
           return null  // caller handles readiness presentation; do not submit to engine
         }
@@ -1272,16 +1303,15 @@ async function processInput(
           rdyState.currentExerciseState.status === 'active'
         ) {
           readinessHandled = true
-          console.log(`[ws] readiness_intent_detected lessonId=${meta.lessonId} student="${text.slice(0, 60)}"`)
+          const normalizedRdy = normalizeIntentText(text)
+          console.log(`[ws] readiness_intent_detected raw="${text.slice(0, 80)}" normalized="${normalizedRdy}" lessonId=${meta.lessonId}`)
           console.log(`[ws] readiness_not_submitted_to_engine lessonId=${meta.lessonId}`)
           await forcePhaseToExercises(meta.lessonId)
           const rdyCursor = await exerciseEngine.getCursor(meta.lessonId)
           if (rdyCursor) {
             send(ws, { type: 'exercise_cursor_updated', cursor: rdyCursor })
             console.log(
-              `[ws] teacher_context_cursor_sync action=readiness_intro ` +
-              `exercise=#${rdyCursor.exerciseNumber} item=${rdyCursor.itemIndex}/${rdyCursor.itemTotal} ` +
-              `lessonId=${meta.lessonId}`,
+              `[ws] readiness_cursor_emitted exercise=#${rdyCursor.exerciseNumber} item=${rdyCursor.itemIndex}/${rdyCursor.itemTotal} lessonId=${meta.lessonId}`,
             )
           }
           const rdySpec    = rdyState.currentExerciseState.spec
