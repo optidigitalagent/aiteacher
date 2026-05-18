@@ -10,6 +10,7 @@ export type RuntimeMode =
   | 'teacher_explanation'
   | 'warmup_activation'
   | 'grammar_explanation'
+  | 'reading_text'
   | 'skipped'
   | 'future_reading_mode'
   | 'future_listening_mode'

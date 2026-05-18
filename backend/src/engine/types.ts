@@ -22,6 +22,15 @@ export type ExerciseType =
   | 'pair_speaking'
   | 'listening_matching'
   | 'listening_gap'
+  | 'gapped_text'
+  | 'find_in_text'
+  | 'read_and_answer'
+  | 'read_and_write_names'
+  | 'phrase_classification'
+  | 'find_opposites'
+  | 'choose_from_box'
+  | 'vocabulary_fill_gap'
+  | 'collocations_fill'
   | 'unknown'
 
 export type ValidationMode =
@@ -71,7 +80,7 @@ export interface ExerciseMeta {
   unit: number
   difficulty: number           // 0.0–1.0
   skillFocus: string
-  runtimeMode: 'deterministic_sequential' | 'soft_speaking' | 'unsupported'
+  runtimeMode: 'deterministic_sequential' | 'soft_speaking' | 'text_reading_sequential' | 'unsupported'
   completionBehavior: 'single_response' | 'all_items' | 'skip'
   dependsOn?: number           // must not start until exercise N is completed
 }

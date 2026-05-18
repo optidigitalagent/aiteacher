@@ -121,10 +121,13 @@ function parseExercise(raw: unknown): ExerciseData | null {
   // Policy gate: block postponed/unsupported types before any further processing
   const allowed = isExerciseAllowedInCurrentRuntime(finalType)
   const policy  = getExercisePolicy(finalType)
+  console.log(`[exercise_policy_checked] type="${finalType}"`)
+  console.log(`[exercise_policy_allowed] type="${finalType}" allowed=${allowed} status="${policy.supportStatus}" reason="runtime_policy" downgrade="${policy.downgradeStrategy}"`)
   console.log(`[exercise:policy] type="${finalType}" allowed=${allowed} status="${policy.supportStatus}" downgrade="${policy.downgradeStrategy}"`)
 
   if (!allowed) {
-    console.log(`[exercise:downgrade] type="${finalType}" strategy="${policy.downgradeStrategy}" reason="type not allowed in current runtime"`)
+    console.log(`[reading_downgraded] type="${finalType}" reason="${policy.downgradeStrategy}_policy_blocked"`)
+    console.log(`[exercise:downgrade] type="${finalType}" strategy="${policy.downgradeStrategy}" reason="orchestrator defense-in-depth: type not allowed"`)
     return null
   }
 

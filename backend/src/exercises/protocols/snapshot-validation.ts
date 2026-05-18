@@ -63,6 +63,23 @@ function validateSpeakingSnapshot(type: string, snap: Snapshot): SnapshotValidat
   return { ok: true }
 }
 
+function validateReadingSnapshot(type: string, snap: Snapshot): SnapshotValidationResult {
+  if (!hasNonEmptyString(snap, 'instruction')) {
+    return { ok: false, reason: `${type}: must have instruction.` }
+  }
+  if (type === 'gapped_text' || type === 'phrase_classification') {
+    if (!hasNonEmptyArray(snap, 'options')) {
+      return { ok: false, reason: `${type}: must have options array (visible on screen).` }
+    }
+  }
+  if (type === 'phrase_classification' || type === 'read_and_write_names' || type === 'find_in_text') {
+    if (!hasNonEmptyString(snap, 'question', 'item', 'prompt')) {
+      return { ok: false, reason: `${type}: must have a question or item.` }
+    }
+  }
+  return { ok: true }
+}
+
 // ── Routing ───────────────────────────────────────────────────────────────────
 
 const MATCHING_TYPES = new Set(['matching', 'vocabulary_matching', 'collocations', 'find_opposites', 'multiple_choice'])
@@ -72,17 +89,24 @@ const DETERMINISTIC_TYPES = new Set([
   'write_sentences_from_prompts', 'reconstruction', 'write_questions',
   'error_correction', 'replace_substitute_words', 'tick_cross', 'true_false',
 ])
+const READING_TYPES = new Set([
+  'gapped_text', 'find_in_text', 'read_and_answer', 'read_and_write_names', 'phrase_classification',
+])
 const SPEAKING_TYPES = new Set([
   'speaking_prompt', 'discussion', 'roleplay', 'free_production',
   'show_interest_agree_disagree', 'brainstorm_60_second', 'show_what_you_know',
   'grammar_focus', 'remember_this',
 ])
 const POSTPONED_TYPES = new Set([
+  // Audio types — require unavailable audio track
   'listening', 'gap_fill_from_audio', 'listen_check_repeat', 'pronunciation_focus',
-  'reading_long_text', 'read_and_answer', 'gapped_text', 'find_in_text',
-  'read_and_write_names', 'writing_task', 'writing_focus_analyse_model',
-  'writing_order_paragraphs', 'writing_self_check', 'complete_table',
-  'complete_cartoon_captions', 'exam_focus_unsupported',
+  // Reading long text — requires full passage display mode not yet available
+  'reading_long_text',
+  // Writing types — require composition mode not yet available
+  'writing_task', 'writing_focus_analyse_model',
+  'writing_order_paragraphs', 'writing_self_check',
+  // Other unavailable types
+  'complete_table', 'complete_cartoon_captions', 'exam_focus_unsupported',
 ])
 
 export function validateSnapshotShape(
@@ -98,6 +122,7 @@ export function validateSnapshotShape(
   if (MATCHING_TYPES.has(type)) return validateMatchingSnapshot(type, snapshot)
   if (FILL_GAP_TYPES.has(type))  return validateFillGapSnapshot(type, snapshot)
   if (DETERMINISTIC_TYPES.has(type)) return validateDeterministicSnapshot(type, snapshot)
+  if (READING_TYPES.has(type))   return validateReadingSnapshot(type, snapshot)
   if (SPEAKING_TYPES.has(type))  return validateSpeakingSnapshot(type, snapshot)
 
   return { ok: false, reason: `${type}: unknown shape validation category.` }

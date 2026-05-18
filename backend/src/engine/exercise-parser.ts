@@ -38,6 +38,16 @@ const MANIFEST_TYPE_MAP: Record<string, ExerciseType> = {
   matching:             'matching',
   pronunciation_practice: 'pronunciation_practice',
   audio_based:          'audio_based',
+  // Text-based reading types
+  gapped_text:          'gapped_text',
+  find_in_text:         'find_in_text',
+  read_and_answer:      'read_and_answer',
+  read_and_write_names: 'read_and_write_names',
+  phrase_classification: 'phrase_classification',
+  find_opposites:       'find_opposites',
+  choose_from_box:      'choose_from_box',
+  vocabulary_fill_gap:  'vocabulary_fill_gap',
+  collocations_fill:    'collocations_fill',
 }
 
 function resolveExerciseType(raw: string): ExerciseType {
@@ -79,7 +89,6 @@ function buildValidationRule(entry: ExerciseManifestEntry, item: ManifestItem): 
       }
 
     case 'soft_speaking':
-      // Personal fills with no expected answer → any response
       if (!item.correctAnswer) {
         return { mode: 'any_response', maxRetries: 1 }
       }
@@ -87,6 +96,18 @@ function buildValidationRule(entry: ExerciseManifestEntry, item: ManifestItem): 
         mode:           'soft_ai',
         scoreThreshold: 0.4,
         maxRetries:     2,
+      }
+
+    case 'text_reading_sequential':
+      if (!item.correctAnswer) {
+        // No answer known — teacher confirms from textbook
+        return { mode: 'soft_ai', scoreThreshold: 0.3, maxRetries: 2 }
+      }
+      return {
+        mode:             'contains',
+        caseSensitive:    false,
+        stripPunctuation: true,
+        maxRetries:       3,
       }
 
     case 'unsupported':
@@ -102,7 +123,11 @@ function buildProgressionCondition(entry: ExerciseManifestEntry, item: ManifestI
   if (entry.completionBehavior === 'single_response') return 'after_single_response'
 
   if (entry.runtimeMode === 'soft_speaking') {
-    return item.correctAnswer ? 'after_any_response' : 'after_any_response'
+    return 'after_any_response'
+  }
+
+  if (entry.runtimeMode === 'text_reading_sequential') {
+    return item.correctAnswer ? 'after_correct_answer' : 'after_any_response'
   }
 
   return 'after_correct_answer'
@@ -129,6 +154,12 @@ function buildHints(entry: ExerciseManifestEntry, item: ManifestItem): string[] 
     hints.push('Use the sentence structure from the instruction as a guide.')
   }
 
+  if (entry.runtimeMode === 'text_reading_sequential' && item.correctAnswer) {
+    const answer = item.correctAnswer
+    hints.push(`Look carefully at the relevant part of the text or the visible options.`)
+    hints.push(`The answer is "${answer}". Try to find where it fits.`)
+  }
+
   return hints
 }
 
@@ -146,6 +177,7 @@ function buildExplanation(entry: ExerciseManifestEntry, item: ManifestItem): str
 function resolveStepDifficulty(entry: ExerciseManifestEntry): StepDifficulty {
   if (entry.runtimeMode === 'unsupported') return 'easy'
   if (entry.runtimeMode === 'soft_speaking') return 'medium'
+  if (entry.runtimeMode === 'text_reading_sequential') return 'medium'
   const answerLengths = entry.items?.map(i => i.correctAnswer.split(' ').length) ?? [1]
   const avg = answerLengths.reduce((a, b) => a + b, 0) / (answerLengths.length || 1)
   if (avg <= 1) return 'easy'
@@ -156,11 +188,17 @@ function resolveStepDifficulty(entry: ExerciseManifestEntry): StepDifficulty {
 // ── Meta builder ──────────────────────────────────────────────────────────────
 
 function buildMeta(entry: ExerciseManifestEntry, sectionId: string, unit: number): ExerciseMeta {
+  const difficultyByMode: Record<string, number> = {
+    deterministic_sequential:  0.5,
+    text_reading_sequential:   0.5,
+    soft_speaking:             0.3,
+    unsupported:               0.1,
+  }
   return {
     lessonSection:     sectionId,
     exerciseNumber:    entry.num,
     unit,
-    difficulty:        entry.runtimeMode === 'deterministic_sequential' ? 0.5 : 0.3,
+    difficulty:        difficultyByMode[entry.runtimeMode] ?? 0.4,
     skillFocus:        entry.type,
     runtimeMode:       entry.runtimeMode,
     completionBehavior: entry.completionBehavior,
@@ -210,7 +248,7 @@ export function parseManifestEntry(
       difficulty:          'easy',
     }]
   } else {
-    // Deterministic sequential or soft_speaking with items
+    // Deterministic sequential, text_reading_sequential, or soft_speaking with items
     const items = entry.items ?? []
     steps = items.map((item, i): StepSpec => ({
       stepId:              `${exerciseId}_step_${i}`,
@@ -230,7 +268,7 @@ export function parseManifestEntry(
     }
   }
 
-  return {
+  const spec: ExerciseSpec = {
     exerciseId,
     exerciseType: exType,
     instruction:  entry.instruction,
@@ -240,4 +278,21 @@ export function parseManifestEntry(
     steps,
     lessonReference: `Focus B1 Unit ${unit} Section ${sectionId} Ex ${entry.num}`,
   }
+
+  // Attach visible options (word box, sentence choices) to ExerciseSpec for frontend
+  const visibleOptions = entry.options ?? entry.wordBox
+  if (visibleOptions && visibleOptions.length > 0) {
+    spec.options = visibleOptions
+    console.log(
+      `[reading_payload_built] section="${sectionId}" exercise=${entry.num} type="${entry.type}" ` +
+      `items=${entry.items?.length ?? 0} options=${visibleOptions.length}`,
+    )
+  } else if (entry.runtimeMode === 'text_reading_sequential') {
+    console.log(
+      `[reading_payload_missing_content] section="${sectionId}" exercise=${entry.num} type="${entry.type}" ` +
+      `reason="no_options_in_manifest"`,
+    )
+  }
+
+  return spec
 }

@@ -18,6 +18,7 @@ const MANIFESTS_DIR = path.resolve(__dirname, '../../data/manifests')
 export type ManifestRuntimeMode =
   | 'soft_speaking'
   | 'deterministic_sequential'
+  | 'text_reading_sequential'
   | 'unsupported'
 
 export type CompletionBehavior = 'single_response' | 'all_items' | 'skip'
@@ -38,6 +39,8 @@ export interface ExerciseManifestEntry {
   instruction: string
   allowedPrompt?: string      // discussion: one prompt to ask student
   items?: ManifestItem[]      // deterministic: exact ordered items
+  options?: string[]          // visible word box or sentence options (gapped_text, phrase_classification)
+  wordBox?: string[]          // alias for options — phrase classification word bank
   dependsOn?: number          // must not start until exercise N is complete
   completionBehavior: CompletionBehavior
   // Items from adjacent exercises that must never appear in this exercise
@@ -224,10 +227,156 @@ const SECTION_6_1_MANIFEST: SectionExerciseManifest = {
   ],
 }
 
+// ── Section 1.4: Reading — Teenage stereotypes (gapped text) ─────────────────
+// Content sourced from focus_lessons.json section "1.4" OCR text.
+// Exercise 1: phrase classification (phrases in box → Parents say / Teenagers say)
+// Exercise 3: gapped text (choose sentences A-F for gaps 1-5)
+// Exercise 4: read and write names (who thinks what)
+// Exercise 5: matching (match question fragments 1-5 with a-e)
+// Exercise 6: find opposites in Sarah's comment
+// Exercise 7: complete sentences with adjectives
+// Exercise 8: discussion
+
+const SECTION_1_4_MANIFEST: SectionExerciseManifest = {
+  section: '1.4',
+  unit: 1,
+  exercises: [
+    {
+      num: 1,
+      type: 'phrase_classification',
+      executable: true,
+      runtimeMode: 'text_reading_sequential',
+      instruction: 'Look at the phrases in the box. Decide whether each phrase is something parents say about teenagers, or something teenagers say about themselves.',
+      options: ['Parents say', 'Teenagers say'],
+      items: [
+        { text: 'able to get up early',       correctAnswer: 'Teenagers say' },
+        { text: 'generous',                   correctAnswer: 'Teenagers say' },
+        { text: 'hard-working',               correctAnswer: 'Teenagers say' },
+        { text: 'interested in the world',    correctAnswer: 'Teenagers say' },
+        { text: 'loyal to their friends',     correctAnswer: 'Teenagers say' },
+        { text: 'obsessed with their phones', correctAnswer: 'Parents say' },
+        { text: 'passionate about music',     correctAnswer: 'Teenagers say' },
+        { text: 'uncommunicative',            correctAnswer: 'Parents say' },
+        { text: 'lazy',                       correctAnswer: 'Parents say' },
+        { text: 'selfish',                    correctAnswer: 'Parents say' },
+        { text: 'unhelpful',                  correctAnswer: 'Parents say' },
+      ],
+      completionBehavior: 'all_items',
+    },
+    {
+      num: 2,
+      type: 'discussion',
+      executable: true,
+      runtimeMode: 'soft_speaking',
+      instruction: 'Read the survey report and the comments from the teenagers. Compare your ideas from Exercise 1 with what you read.',
+      allowedPrompt: 'After reading — were your predictions correct? Which ideas matched what the teenagers said?',
+      dependsOn: 1,
+      completionBehavior: 'single_response',
+    },
+    {
+      num: 3,
+      type: 'gapped_text',
+      executable: true,
+      runtimeMode: 'text_reading_sequential',
+      instruction: 'Read the comments again. Choose from sentences A-F the one which fits each gap (1-5). There is one extra sentence.',
+      options: [
+        'A: Teenagers are definitely not lazy.',
+        'B: We don\'t have time to tidy our rooms.',
+        'C: Why are people so negative about teenagers?',
+        'D: I don\'t think I\'m selfish.',
+        'E: I hate stereotypes.',
+        'F: The most important thing in my life is not my phone.',
+      ],
+      items: [
+        { text: 'Gap 1 — first sentence of first comment', correctAnswer: '' },
+        { text: 'Gap 2 — first sentence of second comment', correctAnswer: '' },
+        { text: 'Gap 3 — first sentence of third comment', correctAnswer: '' },
+        { text: 'Gap 4 — first sentence of fourth comment', correctAnswer: '' },
+        { text: 'Gap 5 — first sentence of fifth comment', correctAnswer: '' },
+      ],
+      completionBehavior: 'all_items',
+    },
+    {
+      num: 4,
+      type: 'read_and_write_names',
+      executable: true,
+      runtimeMode: 'text_reading_sequential',
+      instruction: 'Read the comments again and say the name. Who thinks that...',
+      items: [
+        { text: 'teenagers work really hard?',                              correctAnswer: 'Andrew' },
+        { text: 'teenagers have lots of positive personal qualities?',      correctAnswer: 'Sarah' },
+        { text: 'teenagers are interested in other people and cultures?',   correctAnswer: '' },
+        { text: 'teenagers are all different people?',                      correctAnswer: 'Ryan' },
+        { text: 'friends are very important for teenagers?',                correctAnswer: 'Mel' },
+      ],
+      completionBehavior: 'all_items',
+    },
+    {
+      num: 5,
+      type: 'matching',
+      executable: true,
+      runtimeMode: 'deterministic_sequential',
+      instruction: 'Match 1-5 with a-e to make complete questions about the teenagers in the text.',
+      items: [
+        { text: '1: Who likes spending ___ / a: his homework in the evening? / b: football? / c: time with her grandparents? / d: a job in a developing country? / e: time to read much?', correctAnswer: 'c' },
+        { text: '2: Who wants to get ___', correctAnswer: 'd' },
+        { text: '3: Who doesn\'t have ___', correctAnswer: 'e' },
+        { text: '4: Who does ___', correctAnswer: 'a' },
+        { text: '5: Who thinks some teenagers play ___', correctAnswer: 'b' },
+      ],
+      completionBehavior: 'all_items',
+    },
+    {
+      num: 6,
+      type: 'find_opposites',
+      executable: true,
+      runtimeMode: 'deterministic_sequential',
+      instruction: 'Find the opposites of these adjectives in Sarah\'s comment in the text.',
+      items: [
+        { text: 'arrogant →',  correctAnswer: 'modest' },
+        { text: 'cowardly →',  correctAnswer: 'brave' },
+        { text: 'disloyal →',  correctAnswer: 'loyal' },
+        { text: 'dull →',      correctAnswer: 'interesting' },
+        { text: 'grumpy →',    correctAnswer: 'cheerful' },
+        { text: 'mean →',      correctAnswer: 'generous' },
+      ],
+      completionBehavior: 'all_items',
+    },
+    {
+      num: 7,
+      type: 'choose_from_box',
+      executable: true,
+      runtimeMode: 'deterministic_sequential',
+      instruction: 'Complete the sentences with adjectives from Exercise 6. Use the adjectives: arrogant, grumpy, loyal, mean, interesting, cowardly.',
+      options: ['arrogant', 'grumpy', 'loyal', 'mean', 'interesting', 'cowardly'],
+      items: [
+        { text: 'Teenagers are ___. They think they know everything.',                            correctAnswer: 'arrogant' },
+        { text: 'Teenagers are ___. They never get enough sleep and are always in a bad mood.',   correctAnswer: 'grumpy' },
+        { text: 'Teenagers are ___ to their friends. They are always there for their friends.',   correctAnswer: 'loyal' },
+        { text: 'Teenagers are ___. They never give money to charity and always buy cheap presents.', correctAnswer: 'mean' },
+        { text: 'Teenagers are ___. They have lots of things to talk about.',                     correctAnswer: 'interesting' },
+        { text: 'Teenagers are ___. They avoid dangerous situations and don\'t take risks.',      correctAnswer: 'cowardly' },
+      ],
+      completionBehavior: 'all_items',
+    },
+    {
+      num: 8,
+      type: 'discussion',
+      executable: true,
+      runtimeMode: 'soft_speaking',
+      instruction: 'Discuss the sentences from Exercise 7. Which ones do you agree or disagree with? Why?',
+      allowedPrompt: 'Which of those sentences about teenagers do you agree with? Which do you disagree with? Tell me why.',
+      dependsOn: 7,
+      completionBehavior: 'single_response',
+    },
+  ],
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 const HARDCODED_MANIFESTS: Record<string, SectionExerciseManifest> = {
   '1.2': SECTION_1_2_MANIFEST,
+  '1.4': SECTION_1_4_MANIFEST,
   '6.1': SECTION_6_1_MANIFEST,
 }
 
@@ -320,13 +469,36 @@ function formatExerciseEntry(ex: ExerciseManifestEntry): string {
         })
       }
     } else if (ex.runtimeMode === 'deterministic_sequential') {
+      if (ex.options && ex.options.length > 0) {
+        lines.push(`Visible word box / options (shown on student screen — do NOT read all aloud):`)
+        ex.options.forEach(opt => lines.push(`  • ${opt}`))
+      }
       lines.push(`Items (EXACT — use ONLY these, in this order, one per turn):`)
       if (ex.items) {
         ex.items.forEach((item, i) => {
-          const answerNote = item.correctAnswer ? ` → fill: "${item.correctAnswer}"` : ''
+          const answerNote = item.correctAnswer ? ` → answer: "${item.correctAnswer}"` : ''
           lines.push(`  ${i + 1}. "${item.text}"${answerNote}`)
         })
       }
+    } else if (ex.runtimeMode === 'text_reading_sequential') {
+      if (ex.options && ex.options.length > 0) {
+        lines.push(`VISIBLE OPTIONS (shown on student screen — DO NOT read all aloud, student sees them):`)
+        ex.options.forEach(opt => lines.push(`  • ${opt}`))
+        lines.push(`RULE: Reference only options visible on screen. NEVER invent additional options.`)
+      }
+      if (ex.dependsOn !== undefined) {
+        lines.push(`DEPENDENCY: Only run after Exercise ${ex.dependsOn} is completed.`)
+      }
+      lines.push(`Items (one per turn — student reads from their textbook for context):`)
+      if (ex.items) {
+        ex.items.forEach((item, i) => {
+          const answerNote = item.correctAnswer
+            ? ` → expected: "${item.correctAnswer}"`
+            : ' → teacher confirms answer from textbook'
+          lines.push(`  ${i + 1}. "${item.text}"${answerNote}`)
+        })
+      }
+      lines.push(`READING RULE: If student says they cannot see the text or options, say: "This reading exercise is not fully loaded on screen yet, so we cannot do this item safely." Do NOT improvise content.`)
     }
 
     if (ex.contaminationGuard && ex.contaminationGuard.length > 0) {

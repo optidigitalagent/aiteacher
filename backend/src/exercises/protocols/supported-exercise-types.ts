@@ -27,24 +27,30 @@ export const SUPPORTED_EXERCISE_TYPES = [
   'show_what_you_know',
   'grammar_focus',
   'remember_this',
+  // Text-based reading exercises (text visible in student textbook, options on screen)
+  'gapped_text',
+  'find_in_text',
+  'read_and_answer',
+  'read_and_write_names',
+  'phrase_classification',
 ] as const
 
 export type SupportedExerciseType = typeof SUPPORTED_EXERCISE_TYPES[number]
 
 export const POSTPONED_EXERCISE_TYPES = [
+  // Audio/listening: require audio track not available
   'listening',
   'gap_fill_from_audio',
   'listen_check_repeat',
   'pronunciation_focus',
+  // Reading: requires displaying a long text passage (paragraph mode not yet available)
   'reading_long_text',
-  'read_and_answer',
-  'gapped_text',
-  'find_in_text',
-  'read_and_write_names',
+  // Writing: require composition mode not yet available
   'writing_task',
   'writing_focus_analyse_model',
   'writing_order_paragraphs',
   'writing_self_check',
+  // Other unavailable types
   'complete_table',
   'complete_cartoon_captions',
   'exam_focus_unsupported',
@@ -108,10 +114,27 @@ export const EXERCISE_TYPE_ALIASES: Record<string, CanonicalExerciseType> = {
   // writing aliases
   writing:           'writing_task',
   write:             'writing_task',
-  // reading aliases
+  // reading aliases — generic 'reading' stays as reading_long_text (requires text display mode)
   reading:           'reading_long_text',
   read_text:         'reading_long_text',
   read_article:      'reading_long_text',
+  // phrase classification aliases
+  phrase_classification: 'phrase_classification',
+  categorize:        'phrase_classification',
+  sort_phrases:      'phrase_classification',
+  classify_phrases:  'phrase_classification',
+  // gapped text aliases
+  gap_fill_text:     'gapped_text',
+  choose_sentence:   'gapped_text',
+  // find in text aliases
+  find_in_text:      'find_in_text',
+  underline_in_text: 'find_in_text',
+  // read and answer aliases
+  read_and_answer:   'read_and_answer',
+  answer_questions:  'read_and_answer',
+  // read and write names aliases
+  read_and_write_names: 'read_and_write_names',
+  who_said:          'read_and_write_names',
   // free_production (legacy validator type)
   free_production:   'speaking_prompt',
   // reading (legacy validator type)

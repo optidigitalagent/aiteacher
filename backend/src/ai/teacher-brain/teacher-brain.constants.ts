@@ -9,6 +9,14 @@ export const SUPPORTED_DETERMINISTIC_TYPES = [
   'reconstruction',
 ] as const
 
+export const SUPPORTED_READING_TYPES = [
+  'gapped_text',
+  'find_in_text',
+  'read_and_answer',
+  'read_and_write_names',
+  'phrase_classification',
+] as const
+
 export const SUPPORTED_MATCHING_TYPES = [
   'matching',
   'vocabulary_matching',
@@ -99,6 +107,11 @@ export const EXERCISE_RUNTIME_MODE_MAP: Record<string, ExerciseRuntimeMode> = {
   free_production:              'soft_speaking',
   grammar_focus:                'grammar_explanation',
   remember_this:                'grammar_explanation',
+  gapped_text:                  'reading_text',
+  find_in_text:                 'reading_text',
+  read_and_answer:              'reading_text',
+  read_and_write_names:         'reading_text',
+  phrase_classification:        'reading_text',
   listening:                    'unsupported',
   audio_reconstruction:         'unsupported',
   photo_task:                   'unsupported',

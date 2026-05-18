@@ -32,6 +32,7 @@ export type ExerciseRuntimeMode =
   | 'matching_sequential'
   | 'soft_speaking'
   | 'grammar_explanation'
+  | 'reading_text'
   | 'unsupported'
 
 export type SupportedExerciseType =
@@ -56,6 +57,11 @@ export type SupportedExerciseType =
   | 'free_production'
   | 'grammar_focus'
   | 'remember_this'
+  | 'gapped_text'
+  | 'find_in_text'
+  | 'read_and_answer'
+  | 'read_and_write_names'
+  | 'phrase_classification'
 
 export type UnsupportedExerciseType =
   | 'listening'
