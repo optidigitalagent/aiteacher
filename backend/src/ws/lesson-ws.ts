@@ -40,6 +40,13 @@ import { exerciseEngine } from '../engine/exercise-engine.js'
 import type { EngineResult, EngineValidationResult } from '../engine/types.js'
 import { memoryService } from '../memory/index.js'
 import { masterOrchestrator } from '../lesson/master-orchestrator.js'
+import {
+  validateSoftSpeakingAnswer,
+  getSoftAttempts,
+  incrementSoftAttempts,
+  resetSoftAttempts,
+  type SoftSpeakingValidationResult,
+} from '../validation/soft-speaking-validator.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
@@ -1001,14 +1008,15 @@ function validateManifestAnswer(studentText: string, item: ManifestItem): boolea
 }
 
 interface ManifestVoiceResult {
-  correct:         boolean
-  cursor:          ExerciseCursor | null    // set when correct
-  correctionTurn:  CorrectionTurn | null   // set when incorrect
-  exerciseNum:     number
-  itemIndex:       number
-  item:            ManifestItem
-  engineResult?:   EngineResult            // Engine Authority Migration: set when routed through engine
-  isSoftSpeaking?: boolean                 // Phase A: true for discussion/personal_fill/pair_speaking
+  correct:              boolean
+  cursor:               ExerciseCursor | null    // set when correct
+  correctionTurn:       CorrectionTurn | null   // set when incorrect
+  exerciseNum:          number
+  itemIndex:            number
+  item:                 ManifestItem
+  engineResult?:        EngineResult            // Engine Authority Migration: set when routed through engine
+  isSoftSpeaking?:      boolean                 // Phase A: true for discussion/personal_fill/pair_speaking
+  softSpeakingRetry?:   SoftSpeakingValidationResult  // set when validator blocks progression
 }
 
 // Attempts manifest-authoritative validation for the current voice input.
@@ -1069,10 +1077,10 @@ async function tryManifestValidateVoice(
         }
       }
 
-      // Phase A: intercept soft_speaking exercises (any_response — advance engine for every student turn)
+      // Soft-speaking exercises: deterministic quality gate before engine submission.
+      // Backend decides allowProgression — AI never makes this call.
       if (spec.meta.runtimeMode === 'soft_speaking') {
         // Readiness intent must never be treated as an exercise answer.
-        // "I'm ready" starts the exercise flow — it does not complete Exercise 1.
         if (isReadinessIntent(studentText)) {
           const normalized = normalizeIntentText(studentText)
           console.log(
@@ -1086,25 +1094,77 @@ async function tryManifestValidateVoice(
           )
           return null  // caller handles readiness presentation; do not submit to engine
         }
+
+        const attemptCount = await getSoftAttempts(lessonId, spec.exerciseId)
+        const ssResult = validateSoftSpeakingAnswer({
+          exerciseId:        spec.exerciseId,
+          exerciseNumber:    spec.meta.exerciseNumber,
+          exerciseType:      spec.exerciseType,
+          instruction:       spec.instruction,
+          itemText:          exState.spec.steps[exState.currentStepIndex]?.question ?? spec.instruction,
+          studentTranscript: studentText,
+          attemptCount,
+        })
+
+        console.log(
+          `[soft-speaking] evaluated exercise=#${spec.meta.exerciseNumber} ` +
+          `issue=${ssResult.issueType} allowProgression=${ssResult.allowProgression} ` +
+          `attempt=${attemptCount + 1} lessonId=${lessonId}`,
+        )
+
+        const dummyItem: ManifestItem = {
+          text:          exState.spec.steps[exState.currentStepIndex]?.question ?? '',
+          correctAnswer: '',
+        }
+
+        if (!ssResult.allowProgression) {
+          // Rejected — increment attempt count but do NOT submit to engine
+          await incrementSoftAttempts(lessonId, spec.exerciseId)
+          console.log(
+            `[soft-speaking] retry_required exercise=#${spec.meta.exerciseNumber} ` +
+            `issue=${ssResult.issueType} student="${studentText.slice(0, 60)}" lessonId=${lessonId}`,
+          )
+          return {
+            correct:            false,
+            cursor:             null,
+            correctionTurn:     null,
+            exerciseNum:        spec.meta.exerciseNumber,
+            itemIndex:          exState.currentStepIndex,
+            item:               dummyItem,
+            isSoftSpeaking:     true,
+            softSpeakingRetry:  ssResult,
+          }
+        }
+
+        // Accepted — submit to engine and reset attempt counter
+        if (ssResult.issueType === 'pronunciation_or_stt') {
+          console.log(
+            `[soft-speaking] pronunciation_or_stt interpreted="${ssResult.interpretedMeaning ?? ''}" lessonId=${lessonId}`,
+          )
+        }
+        const accepted = ssResult.issueType === 'acceptable_with_repair' ? 'acceptable_with_repair' : 'accepted'
+        console.log(
+          `[soft-speaking] ${accepted} exercise=#${spec.meta.exerciseNumber} ` +
+          `interpreted="${ssResult.interpretedMeaning ?? studentText.slice(0, 60)}" lessonId=${lessonId}`,
+        )
+        await resetSoftAttempts(lessonId, spec.exerciseId)
+
         const result = await exerciseEngine.submitAnswer({ lessonId, studentAnswer: studentText })
         console.log(
           `[engine] soft_speaking_advance action=${result.action} ` +
           `exercise=#${spec.meta.exerciseNumber} lessonId=${lessonId} ` +
           `student="${studentText.slice(0, 60)}"`,
         )
-        const dummyItem: ManifestItem = {
-          text:          exState.spec.steps[exState.currentStepIndex]?.question ?? '',
-          correctAnswer: '',
-        }
         return {
-          correct:         true,
-          cursor:          result.exerciseCursor,
-          correctionTurn:  null,
-          exerciseNum:     spec.meta.exerciseNumber,
-          itemIndex:       exState.currentStepIndex,
-          item:            dummyItem,
-          engineResult:    result,
-          isSoftSpeaking:  true,
+          correct:            true,
+          cursor:             result.exerciseCursor,
+          correctionTurn:     null,
+          exerciseNum:        spec.meta.exerciseNumber,
+          itemIndex:          exState.currentStepIndex,
+          item:               dummyItem,
+          engineResult:       result,
+          isSoftSpeaking:     true,
+          softSpeakingRetry:  ssResult,  // pass along for repair hint if acceptable_with_repair
         }
       }
     }
@@ -1196,10 +1256,47 @@ function buildSoftSpeakingContext(result: EngineResult, studentText: string): st
   return stateBlock ? stateBlock + '\n\n' + answerBlock : answerBlock
 }
 
+// Builds a deterministic repair/retry prompt for the Teacher Brain when soft-speaking
+// validation rejects the student's answer. Teacher phrases naturally but must not progress.
+function buildSoftSpeakingRetryContext(mv: ManifestVoiceResult, studentText: string): string {
+  const r = mv.softSpeakingRetry!
+  const repair = r.repairPrompt ?? r.teacherHint ?? 'Try again with a complete sentence.'
+  return [
+    `[SPEAKING RETRY — EXERCISE ${mv.exerciseNum}]`,
+    `Student said: "${studentText}"`,
+    `Issue: ${r.issueType}${r.interpretedMeaning ? ` (interpreted: "${r.interpretedMeaning}")` : ''}`,
+    `MANDATORY: Do NOT mark this exercise complete. Do NOT advance. Keep Exercise ${mv.exerciseNum} active.`,
+    `Your response MUST say (phrase naturally, keep short):`,
+    repair,
+    `Do NOT say "Wrong." Do NOT say "Exercise complete." End with a clear retry instruction.`,
+  ].join('\n')
+}
+
+// Builds a repair hint context when soft-speaking answer is accepted but imperfect.
+function buildSoftSpeakingAcceptedContext(mv: ManifestVoiceResult, studentText: string): string {
+  const r = mv.softSpeakingRetry!
+  const hint = r.teacherHint ?? ''
+  const engineCtx = mv.engineResult ? buildSoftSpeakingContext(mv.engineResult, studentText) : ''
+  if (!hint) return engineCtx
+  // Prepend repair hint then let normal progression context follow
+  const hintBlock = `[SPEAKING REPAIR HINT] After your acknowledgment, add: "${hint}"\n`
+  return hintBlock + engineCtx
+}
+
 // Builds the [EXERCISE RESULT] context block injected as AI input after manifest validation.
 // Engine Authority Migration: when engineResult is present, delegates to buildEngineAnswerContext
 // so the AI receives the full engine state block alongside the correction/confirmation.
 function buildManifestVoiceContext(mv: ManifestVoiceResult, studentText: string): string {
+  // Soft-speaking retry: validator blocked progression — build repair context
+  if (mv.isSoftSpeaking && !mv.correct && mv.softSpeakingRetry) {
+    return buildSoftSpeakingRetryContext(mv, studentText)
+  }
+
+  // Soft-speaking accepted with repair hint
+  if (mv.isSoftSpeaking && mv.correct && mv.softSpeakingRetry?.issueType === 'acceptable_with_repair' && mv.engineResult) {
+    return buildSoftSpeakingAcceptedContext(mv, studentText)
+  }
+
   // Engine path: use richer engine context when available
   if (mv.engineResult) {
     if (mv.isSoftSpeaking) return buildSoftSpeakingContext(mv.engineResult, studentText)
@@ -1387,9 +1484,12 @@ async function processInput(
             if (manifestValidation) {
               inputText = buildManifestVoiceContext(manifestValidation, text)
 
+              const isSoftRetry = manifestValidation.isSoftSpeaking && !manifestValidation.correct && !!manifestValidation.softSpeakingRetry
               const engineResult = manifestValidation.engineResult
+
+              // Cursor: only emit when progression was allowed (no cursor on retry)
               const cursorToSend = engineResult?.exerciseCursor ?? manifestValidation.cursor
-              if (cursorToSend) {
+              if (cursorToSend && !isSoftRetry) {
                 send(ws, { type: 'exercise_cursor_updated', cursor: cursorToSend })
                 console.log(
                   `[engine] voice_cursor_emitted exercise=#${cursorToSend.exerciseNumber} ` +
@@ -1398,20 +1498,23 @@ async function processInput(
                 )
               }
 
-              if (engineResult?.validation) {
-                send(ws, {
-                  type:        'feedback',
-                  correct:     engineResult.validation.correct,
-                  explanation: engineResult.validation.feedback,
-                  score:       engineResult.validation.score,
-                })
-              } else {
-                send(ws, {
-                  type:        'feedback',
-                  correct:      manifestValidation.correct,
-                  explanation: '',
-                  score:       manifestValidation.correct ? 1.0 : 0,
-                })
+              // Feedback: skip event for soft-speaking retry — teacher voice conveys the repair
+              if (!isSoftRetry) {
+                if (engineResult?.validation) {
+                  send(ws, {
+                    type:        'feedback',
+                    correct:     engineResult.validation.correct,
+                    explanation: engineResult.validation.feedback,
+                    score:       engineResult.validation.score,
+                  })
+                } else {
+                  send(ws, {
+                    type:        'feedback',
+                    correct:      manifestValidation.correct,
+                    explanation: '',
+                    score:       manifestValidation.correct ? 1.0 : 0,
+                  })
+                }
               }
             }
           }
