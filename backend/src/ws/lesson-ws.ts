@@ -48,6 +48,15 @@ import {
   type SoftSpeakingValidationResult,
 } from '../validation/soft-speaking-validator.js'
 import { interpretSpokenAnswer } from '../interpretation/index.js'
+import {
+  startLessonTrace,
+  endLessonTrace,
+  traceSttResult,
+  traceValidation,
+  traceTeacherGeneration,
+  traceRuntimeError,
+} from '../observability/index.js'
+import { hashUserId } from '../observability/langfuse-client.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
@@ -685,6 +694,16 @@ async function handleLessonStart(
   // Phase 11: billing period starts when this connection starts a new lesson
   meta.billingStartedAt = Date.now()
 
+  startLessonTrace(lessonId, {
+    lessonId,
+    sessionId:   meta.sessionId,
+    userIdHash:  hashUserId(effectiveStudentId),
+    sectionId:   null,
+    unitId:      config.textbookUnit ?? null,
+    startedAt:   new Date().toISOString(),
+    environment: process.env.NODE_ENV ?? 'development',
+  })
+
   // Enforce 50-minute hard cap per paid session
   meta.maxDurationRef = setTimeout(() => {
     // Guard: lesson may have already ended naturally before timeout fires
@@ -834,6 +853,16 @@ async function handleFocusLessonStart(
   meta.lessonStartedAt = Date.now()
   // Phase 11: billing period starts when this connection starts a new lesson
   meta.billingStartedAt = Date.now()
+
+  startLessonTrace(lessonId, {
+    lessonId,
+    sessionId:   meta.sessionId,
+    userIdHash:  hashUserId(effectiveStudentId),
+    sectionId:   config.section ?? null,
+    unitId:      String(effectiveUnit),
+    startedAt:   new Date().toISOString(),
+    environment: process.env.NODE_ENV ?? 'development',
+  })
 
   // Enforce 50-minute hard cap per paid session
   meta.maxDurationRef = setTimeout(() => {
@@ -1405,6 +1434,16 @@ async function processInput(
   }
   meta.aiProcessing = true
 
+  // Trace student input (voice or text) — skip system-generated context strings
+  if (!skipOffTopicGuard && !text.trimStart().startsWith('[')) {
+    traceSttResult(meta.lessonId, {
+      transcriptLength:  text.trim().length,
+      transcriptPreview: text.slice(0, 120),
+      inputMode:         meta.voiceTurnId ? 'voice' : 'text',
+      turnId:            meta.voiceTurnId,
+    })
+  }
+
   // Phase 4: compute remaining lesson time for time-aware AI prompting
   const elapsedMs   = meta.lessonStartedAt ? Date.now() - meta.lessonStartedAt : 0
   const remainingMs = Math.max(0, MAX_LESSON_MS - elapsedMs)
@@ -1516,6 +1555,18 @@ async function processInput(
             // Legacy path: manifest validation for non-engine or older snapshots
             manifestValidation = await tryManifestValidateVoice(meta.lessonId, text)
             if (manifestValidation) {
+              traceValidation(meta.lessonId, {
+                exerciseId:       manifestValidation.engineResult?.exerciseCursor?.exerciseId ?? `ex_${manifestValidation.exerciseNum}`,
+                itemIndex:        manifestValidation.itemIndex,
+                correct:          manifestValidation.correct,
+                allowProgression: manifestValidation.softSpeakingRetry
+                  ? manifestValidation.softSpeakingRetry.allowProgression
+                  : manifestValidation.correct,
+                retryRequired:    manifestValidation.softSpeakingRetry
+                  ? !manifestValidation.softSpeakingRetry.allowProgression
+                  : !manifestValidation.correct,
+                issueType:        manifestValidation.softSpeakingRetry?.issueType ?? null,
+              })
               inputText = buildManifestVoiceContext(manifestValidation, text)
 
               const isSoftRetry = manifestValidation.isSoftSpeaking && !manifestValidation.correct && !!manifestValidation.softSpeakingRetry
@@ -1595,6 +1646,11 @@ async function processInput(
   if (!result) return
   meta.aiCallCount++
 
+  traceTeacherGeneration(meta.lessonId ?? '', {
+    phase:          result.phase,
+    responseLength: result.text?.length ?? 0,
+  })
+
   send(ws, { type: 'ai_text', phase: result.phase, text: result.text, displayText: result.displayText })
 
   // When handling confusion, send the AI's display_text as a teaching card
@@ -1646,6 +1702,14 @@ async function processInput(
         vocabularyCount: result.vocabularyCount,  // Phase 6: real value from state.vocabularyTaught.length
         durationMin,
       },
+    })
+
+    endLessonTrace(meta.lessonId ?? '', {
+      durationMin,
+      exerciseScore:   result.exerciseScore,
+      vocabularyCount: result.vocabularyCount,
+      phasesReached:   getPhasesUpTo(result.previousPhase),
+      endReason:       'natural',
     })
 
     // Mark lesson_sessions completed so resume no longer triggers
@@ -2436,6 +2500,13 @@ export function attachLessonWS(server: Server): void {
             break
         }
       } catch (err) {
+        traceRuntimeError(meta.lessonId ?? 'unknown', {
+          errorName:    err instanceof Error ? err.name    : 'Error',
+          errorMessage: err instanceof Error ? err.message : String(err),
+          stackPreview: err instanceof Error ? (err.stack?.slice(0, 300) ?? null) : null,
+          lessonId:     meta.lessonId,
+          sessionId:    meta.sessionId,
+        })
         console.error('[ws] handler error:', err)
         send(ws, { type: 'error', code: 'SERVER_ERROR', message: 'Internal error.' })
       }
@@ -2455,6 +2526,14 @@ export function attachLessonWS(server: Server): void {
         `[ws] client disconnected code=${code} reason="${reason.toString() || '(none)'}" ` +
         `session=${meta.sessionId ?? 'none'} lessonId=${meta.lessonId ?? 'none'} total=${clients.size}`,
       )
+
+      // Observability: end lesson trace for lessons that ended via disconnect
+      if (meta.lessonId) {
+        const discDurationMin = meta.lessonStartedAt
+          ? Math.round((Date.now() - meta.lessonStartedAt) / 60_000)
+          : 0
+        endLessonTrace(meta.lessonId, { durationMin: discDurationMin, endReason: 'disconnected' })
+      }
 
       // Phase 6: persist snapshot to PostgreSQL before billing finalize.
       // This allows resume beyond the 4-hour Redis TTL.

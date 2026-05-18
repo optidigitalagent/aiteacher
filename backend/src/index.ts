@@ -25,6 +25,7 @@ import { checkConnection as checkPostgres, initTables } from './db/postgres.js'
 import { checkConnection as checkRedis } from './db/redis.js'
 import { attachLessonWS, closeAllActiveClients } from './ws/lesson-ws.js'
 import { setupOpenAI } from './ai/openai-handler.js'
+import { initObservability, flushObservability } from './observability/index.js'
 import apiRoutes     from './api/routes.js'
 import authRoutes    from './api/auth-routes.js'
 import demoRoutes    from './api/demo-routes.js'
@@ -60,6 +61,8 @@ const PORT         = Number(process.env.PORT ?? 4000)
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000'
 
 async function main(): Promise<void> {
+  initObservability()
+
   const app = express()
 
   // ── CORS ───────────────────────────────────────────────────────────────────
@@ -128,8 +131,10 @@ process.on('SIGTERM', () => {
   console.log('[server] SIGTERM received — starting graceful shutdown')
   const count = closeAllActiveClients()
   console.log(`[server] terminated ${count} active WS client(s) — waiting 5s for billing finalization`)
-  setTimeout(() => {
-    console.log('[server] graceful shutdown complete')
-    process.exit(0)
-  }, 5_000)
+  flushObservability().catch(() => { /* non-fatal */ }).finally(() => {
+    setTimeout(() => {
+      console.log('[server] graceful shutdown complete')
+      process.exit(0)
+    }, 5_000)
+  })
 })
