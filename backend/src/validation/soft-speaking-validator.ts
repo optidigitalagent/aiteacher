@@ -190,6 +190,24 @@ function extractCorrectedPart(normalized: string): string {
   return normalized
 }
 
+// Detects "Anita inspired me. She never gave up." — two-sentence form where the
+// second sentence (starting with a 3rd-person pronoun) provides an explanation.
+// Uses the raw (non-normalized) transcript to preserve sentence boundaries.
+function hasSecondExplanatoryClause(rawTranscript: string): boolean {
+  const sentences = rawTranscript
+    .split(/[.!?]+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 2)
+  if (sentences.length < 2) return false
+  for (let i = 1; i < sentences.length; i++) {
+    const norm  = normalizeText(sentences[i]!)
+    const words = getWords(norm)
+    // Second clause must begin with a 3rd-person pronoun and have ≥2 semantic words
+    if (/^(he|she|they|it)\b/.test(norm) && semanticWordCount(words) >= 2) return true
+  }
+  return false
+}
+
 // ── Broken grammar detection ──────────────────────────────────────────────────
 // Catches SOV inversion, object-first patterns, and missing subject-verb agreement.
 
@@ -269,18 +287,22 @@ export function inferSoftSpeakingTask(instruction: string): SoftSpeakingTaskSpec
 // ── Slot presence markers ─────────────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Strict causal connectors only — explicit "why" words.
+// "that's why" normalized becomes "that s why" (apostrophe → space).
+// NOT included: 'always', 'never', 'he is', 'makes me', 'helped me', qualities like
+// 'is kind', etc. — those describe a person but are NOT causal connectors and produce
+// false positives via substring matching (e.g. 'as' inside "class" / "has" / "passionate").
 const REASON_MARKERS = [
-  'because', 'since', 'as', 'due to', 'the reason',
-  'he is', 'she is', 'they are', "he's", "she's", "they're",
-  'is very', 'are very',
-  'he was', 'she was', 'they were',
-  'always', 'never',
-  'makes me', 'make me', 'helped me', 'helps me', 'showed me', 'shows me',
-  'is responsible', 'is kind', 'is smart', 'is strong', 'is talented',
-  'is brave', 'is creative', 'is dedicated', 'is passionate', 'is generous',
-  'is caring', 'is honest', 'is wise', 'is hardworking', 'is hard working',
-  'works hard', 'tries hard',
+  'because', 'since', 'due to', 'that s why', 'that is why',
 ]
+
+// 'so' is causal only when followed by a subject pronoun ("so I", "so he", …),
+// not as an intensifier ("so kind", "so inspired").
+const CAUSAL_SO_RE = /\bso\b\s+(i|he|she|they|it|we|you)\b/
+
+// 'as' is causal only when used as a conjunction before a pronoun+clause
+// ("as he is kind") — word-boundary guard prevents matching 'as' inside "class"/"has".
+const CAUSAL_AS_RE = /\bas\b\s+(he|she|they|it|i|we|you)\b/
 
 const PREFERENCE_MARKERS = [
   'like', 'likes', 'love', 'loves', 'enjoy', 'enjoys', 'prefer', 'prefers',
@@ -309,7 +331,7 @@ const QUESTION_STARTERS = new Set([
 // Deterministic only — no LLM.
 // ══════════════════════════════════════════════════════════════════════════════
 
-function detectSlotPresence(slot: AnswerSlot, normalized: string, words: string[]): boolean {
+function detectSlotPresence(slot: AnswerSlot, normalized: string, words: string[], rawTranscript?: string): boolean {
   switch (slot) {
     case 'subject':
       // Person/entity present — non-stopword, non-filler, non-grammar word
@@ -317,8 +339,17 @@ function detectSlotPresence(slot: AnswerSlot, normalized: string, words: string[
         w => w.length > 1 && !STOPWORDS.has(w) && !FILLER_PHRASES.has(w) && !NON_NAME_WORDS.has(w),
       )
 
-    case 'reason':
-      return REASON_MARKERS.some(r => normalized.includes(r))
+    case 'reason': {
+      // Explicit causal connector (word-boundary safe)
+      if (REASON_MARKERS.some(m => normalized.includes(m))) return true
+      // Causal 'so': "so I work hard" — not intensifier "so kind"
+      if (CAUSAL_SO_RE.test(normalized)) return true
+      // Causal 'as': "as he is kind" — word-boundary guard prevents "class"/"has" matches
+      if (CAUSAL_AS_RE.test(normalized)) return true
+      // Two-sentence form: "Anita inspired me. She never gave up."
+      if (rawTranscript !== undefined && hasSecondExplanatoryClause(rawTranscript)) return true
+      return false
+    }
 
     case 'preference':
       return PREFERENCE_MARKERS.some(p => normalized.includes(p))
@@ -352,6 +383,7 @@ function detectSlotPresence(slot: AnswerSlot, normalized: string, words: string[
 export function detectAnswerSlots(
   transcript: string,
   requiredSlots: AnswerSlot[],
+  rawTranscript?: string,
 ): SlotDetectionResult {
   const normalized = normalizeText(transcript)
   const words      = getWords(normalized)
@@ -360,7 +392,7 @@ export function detectAnswerSlots(
   const missingSlots: AnswerSlot[] = []
 
   for (const slot of requiredSlots) {
-    if (detectSlotPresence(slot, normalized, words)) {
+    if (detectSlotPresence(slot, normalized, words, rawTranscript)) {
       presentSlots.push(slot)
     } else {
       missingSlots.push(slot)
@@ -448,6 +480,7 @@ function validateWithSlots(
   instruction: string,
   taskSpec: SoftSpeakingTaskSpec,
   attemptCount: number,
+  rawTranscript?: string,
 ): SoftSpeakingValidationResult {
   // Off-task: no substantive content at all
   if (!hasSubstantiveContent(words)) {
@@ -505,7 +538,7 @@ function validateWithSlots(
   // Slot detection runs FIRST — required slots are a hard gate before any other check.
   // acceptable_with_repair, broken_grammar, and max_attempts can only allow progression
   // when ALL required slots are present.
-  const slotResult = detectAnswerSlots(correctedText, taskSpec.requiredSlots)
+  const slotResult = detectAnswerSlots(correctedText, taskSpec.requiredSlots, rawTranscript)
 
   // ── Required-slots gate: missingSlots always block progression ──────────────
   // This runs before max_attempts and before broken_grammar/repair paths.
@@ -675,11 +708,11 @@ export function validateSoftSpeakingAnswer(input: SoftSpeakingInput): SoftSpeaki
   // Infer task structure from instruction — fully generic, no exercise/section hardcoding
   const taskSpec = inferSoftSpeakingTask(input.instruction)
 
-  const result = validateWithSlots(normalized, words, input.instruction, taskSpec, input.attemptCount)
+  const result = validateWithSlots(normalized, words, input.instruction, taskSpec, input.attemptCount, input.studentTranscript)
 
   if (taskSpec.requiredSlots.length > 0) {
     if (!result.allowProgression) {
-      const slotCheck = detectAnswerSlots(normalizeText(input.studentTranscript), taskSpec.requiredSlots)
+      const slotCheck = detectAnswerSlots(normalizeText(input.studentTranscript), taskSpec.requiredSlots, input.studentTranscript)
       if (slotCheck.missingSlots.length > 0) {
         console.log(
           `[soft-speaking] required_slots_missing exercise=${input.exerciseNumber} ` +
