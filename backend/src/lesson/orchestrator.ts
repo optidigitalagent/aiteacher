@@ -18,6 +18,8 @@ import {
 } from '../exercises/protocols/index.js'
 import { selectProtocol } from '../exercises/runtime/index.js'
 import { getManifestForSection } from './section-manifest.js'
+import { loadEngineState } from '../engine/exercise-sync.js'
+import { isExerciseComplete } from '../engine/step-progression-manager.js'
 
 // ── Stub responses per phase (replaced by Claude in Phase 3) ─────────────────
 
@@ -99,6 +101,38 @@ export class LessonOrchestrator {
     // Update exchange counters
     state.exchangeCount++
     if (state.phase === 'DEEP_THINKING') state.deepThinkingExchanges++
+
+    // Engine cursor sync: when the Exercise Engine is authoritative, the orchestrator's
+    // item-level state (itemIndex, currentItem, completedItems, correctionTurn) drifts because
+    // the engine handles answer validation without calling recordCorrectAnswer/recordWrongAnswer.
+    // Patch state in-memory (not persisted) so the Teacher Brain system prompt reflects the
+    // real engine position before the AI call. Without this, the AI sees item 0 as current
+    // even when the student is on item 7, causing the "Number 1" regression bug.
+    const engineIsAuthoritative = !!(callCtx?.enginePromptContext?.includes('(backend-authoritative)'))
+    if (engineIsAuthoritative) {
+      try {
+        const engState = await loadEngineState(lessonId)
+        const exState  = engState?.currentExerciseState
+        if (exState && !isExerciseComplete(exState)) {
+          const step = exState.spec.steps[exState.currentStepIndex]
+          state.itemIndex      = exState.currentStepIndex
+          state.currentItem    = step?.question ?? state.currentItem
+          state.completedItems = [...exState.completedSteps]
+          state.failedItems    = [...exState.failedSteps]
+          if (exState.retryCount > 0 && !state.correctionTurn) {
+            state.correctionTurn = retryToTurn(exState.retryCount)
+          }
+          console.log(
+            `[orch] engine_state_synced item=${exState.currentStepIndex} ` +
+            `retries=${exState.retryCount} correctionTurn=${state.correctionTurn ?? 'none'} ` +
+            `lessonId=${lessonId}`,
+          )
+        }
+      } catch (syncErr) {
+        // Non-fatal — stale orchestrator state is the fallback; AI has engine context in inputText
+        console.warn('[orch] engine_state_sync_failed (non-fatal):', syncErr instanceof Error ? syncErr.message : syncErr)
+      }
+    }
 
     // Get AI response (stub or Claude) — forward remaining-time context for time-aware prompting
     const aiResp = await aiHandler(state, inputText, callCtx)
