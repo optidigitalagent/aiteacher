@@ -107,6 +107,15 @@ function looksLikeTransitionIntent(text: string): boolean {
   return TRANSITION_INTENT_RE.test(text.trim())
 }
 
+// Readiness intent: student signaling they are ready to begin exercises.
+// Conservative matching — pure readiness phrases only, no substantive answer content.
+// "go" alone matches, but "I go to school" does NOT (contains subject + verb phrase).
+const READINESS_INTENT_RE = /^\s*(i'?m\s+ready|i\s+am\s+ready|ready[.!?]?|let'?s\s+start[.!?]?|start[.!?]?|go[.!?]?|let'?s\s+go[.!?]?|ok(ay)?,?\s+(let'?s\s+(go|start)|go|start)|alright,?\s+(let'?s\s+(go|start)|go|start))\s*$/i
+
+function isReadinessIntent(text: string): boolean {
+  return READINESS_INTENT_RE.test(text.trim())
+}
+
 // Phase G: returns a [EXERCISE COMPLETE] signal when exercise is done and student wants to move on.
 // Injected into the AI input to prevent "I'm thinking..." and stale re-anchor after completion.
 async function buildExerciseCompletionSignal(lessonId: string, text: string): Promise<string> {
@@ -134,6 +143,23 @@ async function buildExerciseCompletionSignal(lessonId: string, text: string): Pr
       `If Exercise ${nextNum} needs audio or photo, skip it and go to Exercise ${nextNum + 1}.`
   } catch {
     return ''
+  }
+}
+
+// Forces the Redis LessonState phase to EXERCISES when the engine is already serving exercises
+// but the orchestrator phase has not yet caught up (e.g. still DIAGNOSTIC after greeting).
+async function forcePhaseToExercises(lessonId: string): Promise<void> {
+  try {
+    const stateRaw = await redis.get(lessonStateKey(lessonId))
+    if (!stateRaw) return
+    const state = JSON.parse(stateRaw) as LessonState
+    if (state.phase === 'EXERCISES') return
+    const prev = state.phase
+    state.phase = 'EXERCISES'
+    await redis.set(lessonStateKey(lessonId), JSON.stringify(state), 'EX', LESSON_TTL)
+    console.log(`[ws] phase_forced_to_exercises from=${prev} lessonId=${lessonId}`)
+  } catch (err) {
+    console.error('[ws] forcePhaseToExercises error (non-fatal):', err instanceof Error ? err.message : err)
   }
 }
 
@@ -1020,6 +1046,15 @@ async function tryManifestValidateVoice(
 
       // Phase A: intercept soft_speaking exercises (any_response — advance engine for every student turn)
       if (spec.meta.runtimeMode === 'soft_speaking') {
+        // Readiness intent must never be treated as an exercise answer.
+        // "I'm ready" starts the exercise flow — it does not complete Exercise 1.
+        if (isReadinessIntent(studentText)) {
+          console.log(
+            `[engine] soft_speaking_ignored_readiness exercise=#${spec.meta.exerciseNumber} ` +
+            `lessonId=${lessonId} student="${studentText.slice(0, 60)}"`,
+          )
+          return null  // caller handles readiness presentation; do not submit to engine
+        }
         const result = await exerciseEngine.submitAnswer({ lessonId, studentAnswer: studentText })
         console.log(
           `[engine] soft_speaking_advance action=${result.action} ` +
@@ -1098,8 +1133,13 @@ function buildSoftSpeakingContext(result: EngineResult, studentText: string): st
   if (result.action === 'step_correct') {
     const cursor   = result.exerciseCursor
     const nextItem = cursor?.currentItem
+    const itemIdx  = cursor?.itemIndex ?? 0
+    console.log(
+      `[ws] teacher_context_cursor_sync action=step_correct ` +
+      `exercise=#${cursor?.exerciseNumber} item=${itemIdx}/${cursor?.itemTotal}`,
+    )
     const contract = nextItem
-      ? `\nNEXT STEP: After your acknowledgment, present the next item: "${nextItem}". Do not ask additional questions first.`
+      ? `\nNEXT STEP: After your acknowledgment, present item ${itemIdx + 1}: "${nextItem}". Do not ask additional questions first.\nANTI-STALE: Do NOT reference or repeat the item the student just answered. Move forward only.`
       : ''
     answerBlock = `[SPEAKING RESULT] Student answered: "${studentText}".\n` +
       `Acknowledge naturally in 1 sentence (not "Exactly." — use "Nice." / "Good." / "Interesting."). ` +
@@ -1108,6 +1148,10 @@ function buildSoftSpeakingContext(result: EngineResult, studentText: string): st
     const cursor   = result.exerciseCursor
     const nextExNum = cursor?.exerciseNumber
     const nextItem  = cursor?.currentItem
+    console.log(
+      `[ws] teacher_context_cursor_sync action=exercise_complete ` +
+      `next_exercise=#${nextExNum} item=0/${cursor?.itemTotal}`,
+    )
     const contract  = nextItem
       ? `\nEXERCISE COMPLETE: Move immediately to Exercise ${nextExNum}. Present its first item: "${nextItem}".`
       : `\nEXERCISE COMPLETE: Move immediately to Exercise ${nextExNum ?? 'next'}.`
@@ -1216,87 +1260,129 @@ async function processInput(
         inputText = text + guard
       }
     } else {
-      // Phase G: detect exercise-complete + transition intent to prevent stale re-anchor
-      // and the "I'm thinking..." forbidden response after exercise completion.
-      const completionSignal = await buildExerciseCompletionSignal(meta.lessonId, text)
-      if (completionSignal) {
-        inputText = completionSignal
-      } else {
-        // Master Orchestrator handles deterministic engine exercises (text/voice parity).
-        // Returns null when no active deterministic exercise — fall back to legacy path.
-        const orchVoiceResult = await masterOrchestrator.handleVoiceAnswer({
-          lessonId:        meta.lessonId,
-          userId:          meta.userId,
-          sessionId:       meta.sessionId,
-          studentAnswer:   text,
-          lessonStartedAt: meta.lessonStartedAt,
-        })
-
-        if (orchVoiceResult && !orchVoiceResult.error) {
-          // Orchestrator handled this — emit pre-events and use teacher context
-          masterOrchestrator.emitFrontendSnapshot(orchVoiceResult, (event) => send(ws, event as Parameters<typeof send>[1]), meta.lessonId)
-
-          if (orchVoiceResult.lessonComplete && orchVoiceResult.lessonSummary) {
-            const durationMin = meta.lessonStartedAt
-              ? Math.round((Date.now() - meta.lessonStartedAt) / 60_000)
-              : 0
-            send(ws, {
-              type: 'lesson_end',
-              summary: {
-                lessonId: meta.lessonId,
-                phasesReached:   ['DIAGNOSTIC', 'EXERCISES', 'WRAP_UP'],
-                exerciseScore:   orchVoiceResult.lessonSummary.exerciseScore,
-                vocabularyCount: 0,
-                durationMin,
-              },
-            })
-            meta.lessonId = null
-            meta.stt?.close()
-            meta.stt = null
-            meta.aiProcessing = false
-            if (meta.queuedInput) {
-              const queued    = meta.queuedInput
-              meta.queuedInput = null
-              processInput(ws, meta, queued).catch((err: unknown) =>
-                console.error('[paid-lesson] processInput error (queued-voice-complete):', err))
-            }
-            return
+      // Readiness intent — intercept before any engine or manifest validation.
+      // "I'm ready" / "ready" / "let's go" starts exercises but must NOT answer Exercise 1.
+      let readinessHandled = false
+      if (isReadinessIntent(text)) {
+        const rdyState = await exerciseEngine.getState(meta.lessonId)
+        if (
+          rdyState &&
+          rdyState.sectionId !== 'free' &&
+          rdyState.currentExerciseState &&
+          rdyState.currentExerciseState.status === 'active'
+        ) {
+          readinessHandled = true
+          console.log(`[ws] readiness_intent_detected lessonId=${meta.lessonId} student="${text.slice(0, 60)}"`)
+          console.log(`[ws] readiness_not_submitted_to_engine lessonId=${meta.lessonId}`)
+          await forcePhaseToExercises(meta.lessonId)
+          const rdyCursor = await exerciseEngine.getCursor(meta.lessonId)
+          if (rdyCursor) {
+            send(ws, { type: 'exercise_cursor_updated', cursor: rdyCursor })
+            console.log(
+              `[ws] teacher_context_cursor_sync action=readiness_intro ` +
+              `exercise=#${rdyCursor.exerciseNumber} item=${rdyCursor.itemIndex}/${rdyCursor.itemTotal} ` +
+              `lessonId=${meta.lessonId}`,
+            )
           }
+          const rdySpec    = rdyState.currentExerciseState.spec
+          const rdyExState = rdyState.currentExerciseState
+          const rdyStep    = rdySpec.steps[rdyExState.currentStepIndex]
+          inputText = [
+            `[LESSON START — EXERCISES PHASE]`,
+            `Student said they are ready to start. Do NOT treat this as an exercise answer.`,
+            `MANDATORY: Introduce Exercise ${rdySpec.meta.exerciseNumber} now.`,
+            rdySpec.instruction ? `Instruction: "${rdySpec.instruction}"` : ``,
+            rdyStep?.question
+              ? `Present item 1: "${rdyStep.question}". Wait for the student's answer.`
+              : `Present the exercise and wait for the student's answer.`,
+            `Do NOT say "I'm thinking". Do NOT skip any items. Start from item 1.`,
+          ].filter(Boolean).join('\n')
+        }
+      }
 
-          if (orchVoiceResult.teacherInput) {
-            inputText = orchVoiceResult.teacherInput
-          }
+      if (!readinessHandled) {
+        // Phase G: detect exercise-complete + transition intent to prevent stale re-anchor
+        // and the "I'm thinking..." forbidden response after exercise completion.
+        const completionSignal = await buildExerciseCompletionSignal(meta.lessonId, text)
+        if (completionSignal) {
+          inputText = completionSignal
         } else {
-          // Legacy path: manifest validation for non-engine or older snapshots
-          manifestValidation = await tryManifestValidateVoice(meta.lessonId, text)
-          if (manifestValidation) {
-            inputText = buildManifestVoiceContext(manifestValidation, text)
+          // Master Orchestrator handles deterministic engine exercises (text/voice parity).
+          // Returns null when no active deterministic exercise — fall back to legacy path.
+          const orchVoiceResult = await masterOrchestrator.handleVoiceAnswer({
+            lessonId:        meta.lessonId,
+            userId:          meta.userId,
+            sessionId:       meta.sessionId,
+            studentAnswer:   text,
+            lessonStartedAt: meta.lessonStartedAt,
+          })
 
-            const engineResult = manifestValidation.engineResult
-            const cursorToSend = engineResult?.exerciseCursor ?? manifestValidation.cursor
-            if (cursorToSend) {
-              send(ws, { type: 'exercise_cursor_updated', cursor: cursorToSend })
-              console.log(
-                `[engine] voice_cursor_emitted exercise=#${cursorToSend.exerciseNumber} ` +
-                `item=${cursorToSend.itemIndex}/${cursorToSend.itemTotal} ` +
-                `via=${engineResult ? 'engine' : 'manifest'}`,
-              )
+          if (orchVoiceResult && !orchVoiceResult.error) {
+            // Orchestrator handled this — emit pre-events and use teacher context
+            masterOrchestrator.emitFrontendSnapshot(orchVoiceResult, (event) => send(ws, event as Parameters<typeof send>[1]), meta.lessonId)
+
+            if (orchVoiceResult.lessonComplete && orchVoiceResult.lessonSummary) {
+              const durationMin = meta.lessonStartedAt
+                ? Math.round((Date.now() - meta.lessonStartedAt) / 60_000)
+                : 0
+              send(ws, {
+                type: 'lesson_end',
+                summary: {
+                  lessonId: meta.lessonId,
+                  phasesReached:   ['DIAGNOSTIC', 'EXERCISES', 'WRAP_UP'],
+                  exerciseScore:   orchVoiceResult.lessonSummary.exerciseScore,
+                  vocabularyCount: 0,
+                  durationMin,
+                },
+              })
+              meta.lessonId = null
+              meta.stt?.close()
+              meta.stt = null
+              meta.aiProcessing = false
+              if (meta.queuedInput) {
+                const queued    = meta.queuedInput
+                meta.queuedInput = null
+                processInput(ws, meta, queued).catch((err: unknown) =>
+                  console.error('[paid-lesson] processInput error (queued-voice-complete):', err))
+              }
+              return
             }
 
-            if (engineResult?.validation) {
-              send(ws, {
-                type:        'feedback',
-                correct:     engineResult.validation.correct,
-                explanation: engineResult.validation.feedback,
-                score:       engineResult.validation.score,
-              })
-            } else {
-              send(ws, {
-                type:        'feedback',
-                correct:      manifestValidation.correct,
-                explanation: '',
-                score:       manifestValidation.correct ? 1.0 : 0,
-              })
+            if (orchVoiceResult.teacherInput) {
+              inputText = orchVoiceResult.teacherInput
+            }
+          } else {
+            // Legacy path: manifest validation for non-engine or older snapshots
+            manifestValidation = await tryManifestValidateVoice(meta.lessonId, text)
+            if (manifestValidation) {
+              inputText = buildManifestVoiceContext(manifestValidation, text)
+
+              const engineResult = manifestValidation.engineResult
+              const cursorToSend = engineResult?.exerciseCursor ?? manifestValidation.cursor
+              if (cursorToSend) {
+                send(ws, { type: 'exercise_cursor_updated', cursor: cursorToSend })
+                console.log(
+                  `[engine] voice_cursor_emitted exercise=#${cursorToSend.exerciseNumber} ` +
+                  `item=${cursorToSend.itemIndex}/${cursorToSend.itemTotal} ` +
+                  `via=${engineResult ? 'engine' : 'manifest'}`,
+                )
+              }
+
+              if (engineResult?.validation) {
+                send(ws, {
+                  type:        'feedback',
+                  correct:     engineResult.validation.correct,
+                  explanation: engineResult.validation.feedback,
+                  score:       engineResult.validation.score,
+                })
+              } else {
+                send(ws, {
+                  type:        'feedback',
+                  correct:      manifestValidation.correct,
+                  explanation: '',
+                  score:       manifestValidation.correct ? 1.0 : 0,
+                })
+              }
             }
           }
         }
