@@ -1,185 +1,226 @@
-Use skills from .claude/skills for UI/UX, frontend, and product design tasks.
+# AI Teacher — Current Architecture Constitution
 
-Always use the ui-ux-pro-max skill for:
-- UI
-- UX
-- product design
+Read this before coding.
 
-Always think as a senior product designer.
+This project is now a backend-authoritative AI tutoring runtime.
 
-Use 21st/magic MCP and ui-ux-pro-max skill.
+The platform is NOT a chatbot.
+The platform is NOT GPT-controlled.
+The platform is a deterministic educational runtime with an AI Teacher verbal layer.
 
-Find or generate a premium React/Tailwind component for the AI Teacher Learning page.
-Do not redesign the whole product.
-Keep the existing flow: Learning → Setup → Classroom.
+## Core Architecture
 
-## FRONTEND MODE (TEMPORARY OVERRIDE)
+- Textbook Parser creates structured lesson/exercise manifests.
+- Exercise Engine owns exercise cursor, item progression, skip logic, and completion.
+- Validation System owns correctness and `allowProgression`.
+- Master Lesson Orchestrator coordinates runtime events.
+- Teacher Brain is verbal-only and read-only.
+- Frontend renders backend cursor/state only.
+- Voice is an input layer only.
+- Memory stores persistent learning context only.
+- PostgreSQL is persistent source of truth.
+- Redis may be used for short-lived runtime/session state.
 
-You are currently working on FRONTEND SYSTEM INTEGRATION.
+## Critical Authority Rules
 
-Ignore backend complexity unless explicitly required.
+1. AI/LLM never controls lesson progression.
+2. AI/LLM never decides correctness.
+3. AI/LLM never chooses next exercise or next item.
+4. AI/LLM never marks exercises complete.
+5. AI/LLM never generates frontend state.
+6. Frontend never infers exercise state from AI text.
+7. Backend cursor is the source of truth.
+8. Student answers must go through Exercise Engine.
+9. Correctness must go through Validation System.
+10. Teacher Brain may explain, repair, encourage, and request retry only.
+11. Voice transcripts are just input; only final transcript may submit an answer.
+12. No AI/STT/TTS may initialize before auth/session/runtime validation.
 
-Your ONLY focus right now:
+## Current Runtime Stack
 
-- unify frontend pages
-- build layout system
-- fix routing
-- connect UI to lesson entry flow
-- ensure navigation works
-- ensure CTA logic works
+Current deployed runtime includes:
 
-DO NOT:
-- modify lesson FSM
-- modify AI prompts
-- modify backend architecture
-- modify Redis/PostgreSQL logic
-- touch voice system (STT/TTS)
+- Textbook Parser
+- Exercise Engine
+- Answer Validation System
+- Runtime Authority Integration
+- Teacher Brain Isolation
+- Backend Cursor Rendering
+- Realtime Voice Runtime Stabilization
+- Persistent Memory System
+- Master Lesson Orchestrator
 
-You are operating in:
+Do not replace these systems.
+Do not bypass these systems.
 
-FRONTEND INTEGRATION MODE
-
-This takes priority over all other instructions in this file.
-
-Goal:
-
-Transform standalone frontend pages into a single cohesive React application
-connected to existing backend endpoints.
-
-Classroom already exists.
-Do NOT redesign it.
-
-Focus on:
-
-- Header
-- Footer
-- Layout
-- Routing
-- Learning → Lesson → Classroom flow
-
-This override is ACTIVE for current session.
-# AI English Teacher — Project Constitution
-> This file is loaded at the start of EVERY Claude Code session.
-> Read it completely before writing a single line of code.
-
-## WHY THIS PROJECT EXISTS
-
-This is a **voice-first AI English teacher** for students aged 12–17.
-The AI replaces a live teacher entirely — it speaks, listens, teaches grammar,
-generates exercises, corrects mistakes, and develops critical thinking.
-
-**This is NOT a language app like Duolingo.**
-This is a cognitive development system where English is the instrument,
-and deeper thinking is the goal. A single lesson should feel like a
-session with a $500/hour Oxford-trained tutor — structured, rigorous,
-personalised, and intellectually stimulating.
-
-The student works from a real textbook (e.g. **Focus B1**).
-The AI knows the textbook, teaches from it, and generates its own
-exercises on top of it — always tied to a real-world theme
-(Everest, NASA, historical events, philosophy).
-
-## WHAT TO READ BEFORE TOUCHING CODE
-
-Before implementing any feature, read the relevant doc:
-
-- Architecture overview → @docs/architecture.md
-- Lesson logic (FSM) → @docs/lesson-fsm.md
-- AI teacher prompt → @docs/master-prompt.md
-- Real dialogue examples → @docs/dialogue-examples.md  ← READ THIS FIRST
-- Student data model → @docs/student-model.md
-- Exercise generator → @docs/exercise-engine.md
-- Pedagogy sources → @docs/pedagogy-sources.md
-- Focus textbook structure + RAG → @docs/focus-textbook.md
-- Business context + monetization → @docs/business-context.md
-- Current progress → @docs/roadmap.md
-
-## HOW TO WORK ON THIS PROJECT
-
-1. **Start every session** by reading @docs/roadmap.md — check which phase is active
-2. **Before coding a feature** — read its relevant doc file first
-3. **After completing a task** — update the checkbox in @docs/roadmap.md
-4. **Never guess about pedagogy** — all teaching logic is in @docs/master-prompt.md
-5. **Never invent a DB schema** — it's defined in @docs/student-model.md
-
-## TECH STACK (do not change without updating architecture.md)
-
-```
-Backend:      Node.js + TypeScript + Express + WebSocket (ws)
-Database:     PostgreSQL (persistent) + Redis (lesson state)
-Vector DB:    Pinecone (RAG for textbook content)
-STT:          Deepgram Nova-2 (streaming, low latency)
-TTS:          ElevenLabs (streaming, turbo model)
-AI Brain:     Anthropic Claude claude-sonnet-4-6 via API
-Frontend:     React + TypeScript + TailwindCSS
-Auth:         JWT (simple, students + teachers)
-```
-
-## CRITICAL RULES
-
-- **Lesson state lives in Redis**, never in memory
-- **Student profile lives in PostgreSQL**, never in Redis
-- **AI never sees raw textbook pages** — only chunked embeddings via RAG
-- **Every AI response must include** lesson phase + confidence score
-- **WebSocket handles all real-time** lesson communication
-- **REST API handles** auth, progress, admin only
-- **TTS must stream** — never wait for full text before speaking
-- **STT must be streaming** — process audio chunks as they arrive
-
-## FILE STRUCTURE
-
-```
-/
-├── CLAUDE.md                  ← You are here (load every session)
-├── .claude/
-│   └── rules/
-│       ├── backend.md         ← Backend coding rules
-│       ├── ai-prompts.md      ← Rules for editing AI prompts
-│       └── testing.md         ← Testing requirements
-├── docs/                      ← Read before coding (not loaded automatically)
-│   ├── roadmap.md             ← Current progress + next tasks
-│   ├── architecture.md        ← Full system diagram
-│   ├── lesson-fsm.md          ← 7-phase lesson state machine
-│   ├── master-prompt.md       ← The AI teacher system prompt
-│   ├── student-model.md       ← Database schema + student profile
-│   ├── exercise-engine.md     ← Exercise generation logic
-│   └── pedagogy-sources.md    ← Research, textbooks, links
-├── backend/
-│   ├── src/
-│   │   ├── api/               ← REST endpoints
-│   │   ├── lesson/            ← FSM, orchestrator, phases
-│   │   ├── ai/                ← Claude API, RAG, prompt builder
-│   │   ├── voice/             ← STT (Deepgram) + TTS (ElevenLabs)
-│   │   ├── db/                ← PostgreSQL models + Redis client
-│   │   └── exercises/         ← Exercise generator
-│   └── tests/
-├── frontend/
-│   └── src/
-│       ├── components/
-│       │   ├── LessonRoom/    ← Main lesson interface
-│       │   ├── VoiceInput/    ← Mic + VAD component
-│       │   └── ExerciseCard/  ← Renders exercise types
-│       └── hooks/
-└── vector-db/
-    └── scripts/               ← Textbook ingestion scripts
-```
-## CURRENT TASK (ACTIVE)
+## Current Active Work
 
 Current focus:
 
-Frontend integration of existing pages:
-- Home
-- Learning
-- Profile
-- About
+Runtime + Pedagogical QA stabilization for paid textbook lessons.
 
-Goal:
+Immediate priority:
 
-Create unified React system with:
-- shared layout
-- working navigation
-- working lesson entry
+Fix section 1.2 runtime bugs:
 
-Do NOT expand scope.
+- readiness intent must not complete Exercise 1
+- "I'm ready" must start exercise flow, not submit an exercise answer
+- soft-speaking exercises must require substantive student answers
+- engine phase and orchestrator phase must stay synchronized
+- Teacher Brain must use updated cursor after `submitAnswer`
+- frontend cursor and teacher speech must match
+- incorrect answers must trigger correction + retry
+- no stale item repetition after cursor advances
 
-Finish integration FIRST before moving to backend.
+## Required Mental Model
+
+Correct flow:
+
+Student input
+→ Master Lesson Orchestrator
+→ Exercise Engine
+→ Validation System
+→ updated cursor/result
+→ frontend cursor update
+→ Teacher Brain verbal response using same updated cursor
+→ memory update fail-soft
+
+Incorrect flow:
+
+Student input
+→ AI decides correctness/progression
+→ frontend guesses state
+→ backend reconciles later
+
+Never implement the incorrect flow.
+
+## Before Editing Runtime Code
+
+Inspect relevant files first:
+
+- `backend/src/ws/lesson-ws.ts`
+- `backend/src/lesson/master-orchestrator.ts`
+- `backend/src/lesson/orchestrator.ts`
+- `backend/src/engine/exercise-engine.ts`
+- `backend/src/engine/validation-hooks.ts`
+- `backend/src/validation/`
+- `backend/src/ai/teacher-brain/`
+- `backend/src/ai/claude-handler.ts`
+- `backend/src/ai/openai-handler.ts`
+- frontend cursor handlers only if UI sync is involved
+
+## Do Not
+
+- Do not redesign Classroom globally.
+- Do not rewrite the whole runtime.
+- Do not create multi-agent architecture.
+- Do not add CrewAI/AutoGPT-style agents.
+- Do not bypass Exercise Engine.
+- Do not bypass Validation System.
+- Do not reintroduce GPT-controlled progression.
+- Do not make frontend-only fixes for backend state bugs.
+- Do not expose teacher-only answers to frontend.
+- Do not store raw audio.
+- Do not commit `.env`, audio files, random docs, or QA logs.
+
+## Teacher Brain Rules
+
+Teacher Brain may:
+
+- explain current item
+- give short correction
+- ask the student to retry
+- encourage
+- summarize backend-approved completion
+- introduce backend-approved next exercise
+
+Teacher Brain must not:
+
+- invent exercise numbers
+- invent item numbers
+- contradict validation result
+- advance lesson
+- reveal answers too early
+- complete exercises
+- talk about an old cursor after backend advanced
+- reference frontend UI as authority
+
+## Frontend Rules
+
+Frontend must:
+
+- render backend cursor
+- render active exercise/item from backend state
+- show validation feedback from backend result
+- disable input during recovery/completion states
+- treat teacher messages as speech only
+
+Frontend must not:
+
+- parse teacher text for state
+- infer correctness
+- infer next exercise
+- auto-complete exercise
+- hide cursor desync bugs with UI-only patches
+
+## Voice Rules
+
+Voice runtime must:
+
+- treat partial transcripts as UI preview only
+- submit only final transcripts
+- attach cursor identifiers
+- reject stale/duplicate turns
+- avoid AI calls for empty/no-text input
+- remain synchronized with backend cursor
+
+Voice runtime must not:
+
+- bypass validation
+- advance lesson directly
+- replay old transcript after reconnect
+- use partial transcript as answer
+
+## Memory Rules
+
+Memory is read-only context for Teacher Brain.
+
+Memory may influence:
+
+- explanation style
+- pacing
+- correction intensity
+- encouragement style
+
+Memory must not control:
+
+- progression
+- correctness
+- exercise selection
+- validation
+- billing
+
+Memory writes must be fail-soft.
+
+## Deployment Discipline
+
+Always:
+
+```bash
+git status
+git add <exact files only>
+git status
+git commit -m "<precise message>"
+git push production main
+Never use:
+
+git add .
+
+Never commit:
+
+audio/
+.env
+.env.backup
+random docs
+QA transcripts
+local debug artifacts
