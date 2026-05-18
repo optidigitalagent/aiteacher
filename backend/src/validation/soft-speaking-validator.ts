@@ -20,26 +20,57 @@ export type SoftSpeakingIssueType =
   | 'acceptable_with_repair'
   | 'accepted'
 
+export type SoftSpeakingTaskKind =
+  | 'reason_required'
+  | 'personal_answer'
+  | 'preference'
+  | 'description'
+  | 'question_answer_pair'
+  | 'generic_discussion'
+
+export type AnswerSlot =
+  | 'subject'
+  | 'reason'
+  | 'preference'
+  | 'object'
+  | 'time'
+  | 'place'
+  | 'question'
+  | 'answer'
+
+export interface SoftSpeakingTaskSpec {
+  taskKind:       SoftSpeakingTaskKind
+  requiredSlots:  AnswerSlot[]
+  grammarTarget?: string
+}
+
+export interface SlotDetectionResult {
+  presentSlots:       AnswerSlot[]
+  missingSlots:       AnswerSlot[]
+  interpretedMeaning?: string
+  confidence:         number
+}
+
 export interface SoftSpeakingInput {
-  exerciseId:    string
-  exerciseNumber: number
-  exerciseType:  string
-  instruction:   string
-  itemText:      string
+  exerciseId:        string
+  exerciseNumber:    number
+  exerciseType:      string
+  instruction:       string
+  itemText:          string
   studentTranscript: string
-  attemptCount:  number
-  minWords?:     number
+  attemptCount:      number
+  minWords?:         number
 }
 
 export interface SoftSpeakingValidationResult {
-  allowProgression:     boolean
-  needsRetry:           boolean
+  allowProgression:      boolean
+  needsRetry:            boolean
   isPartiallyAcceptable: boolean
-  issueType:            SoftSpeakingIssueType
-  interpretedMeaning?:  string
-  repairPrompt?:        string
-  teacherHint?:         string
-  confidence:           number
+  issueType:             SoftSpeakingIssueType
+  interpretedMeaning?:   string
+  repairPrompt?:         string
+  teacherHint?:          string
+  confidence:            number
 }
 
 // ── Attempt counter in Redis ──────────────────────────────────────────────────
@@ -59,7 +90,7 @@ export async function getSoftAttempts(lessonId: string, exerciseId: string): Pro
 
 export async function incrementSoftAttempts(lessonId: string, exerciseId: string): Promise<number> {
   try {
-    const key = softAttemptsKey(lessonId, exerciseId)
+    const key  = softAttemptsKey(lessonId, exerciseId)
     const next = await redis.incr(key)
     await redis.expire(key, LESSON_TTL)
     return next
@@ -76,7 +107,7 @@ export async function resetSoftAttempts(lessonId: string, exerciseId: string): P
 
 // ── Text normalization ────────────────────────────────────────────────────────
 
-function normalize(text: string): string {
+function normalizeText(text: string): string {
   return text
     .toLowerCase()
     .replace(/[.,!?;:'"()\-]/g, ' ')
@@ -88,18 +119,8 @@ function getWords(normalized: string): string[] {
   return normalized.split(' ').filter(w => w.length > 0)
 }
 
-// ── Filler / off-task patterns ────────────────────────────────────────────────
+// ── Semantic stopwords ────────────────────────────────────────────────────────
 
-const PURE_FILLER = /^(ok|okay|yes|yeah|sure|let's|lets|continue|next|i don't know|idk|no|hmm|uh|um|right|fine|good|great|alright)\.?$/i
-const READINESS_PATTERNS = /^(i('m| am) ready|ready|let's go|lets go|let's start|lets start|start|begin|go ahead|yes i'm ready|yes i am ready)\.?$/i
-
-const FILLER_PHRASES = new Set([
-  'ok', 'okay', 'yes', 'yeah', 'sure', 'continue', 'next', 'i don\'t know', 'idk',
-  'no', 'hmm', 'uh', 'um', 'right', 'fine', 'good', 'great', 'alright', 'let\'s',
-  'lets', 'let', 'go', 'start', 'begin', 'again', 'now', 'please', 'well', 'just',
-])
-
-// Semantic stopwords — don't count these toward meaningful content
 const STOPWORDS = new Set([
   'i', 'me', 'my', 'he', 'she', 'they', 'it', 'we', 'you', 'his', 'her', 'their',
   'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'am',
@@ -108,49 +129,7 @@ const STOPWORDS = new Set([
   'not', 'no', 'may', 'can', 'will', 'would', 'could', 'should',
 ])
 
-function semanticWordCount(words: string[]): number {
-  return words.filter(w => w.length > 1 && !STOPWORDS.has(w)).length
-}
-
-// ── STT self-correction detection ────────────────────────────────────────────
-// "Not X", "I mean X", "I meant X" → student is correcting themselves
-// Patterns: "not may", "not weave" → extract intended meaning
-
-function hasSelfCorrection(normalized: string): boolean {
-  return /\bnot\s+\w+\b/.test(normalized) ||
-    /\bi mean\b/.test(normalized) ||
-    /\bi meant\b/.test(normalized)
-}
-
-// Extract what comes AFTER the last correction marker
-function extractCorrectedPart(normalized: string): string {
-  const notMatch = [...normalized.matchAll(/not\s+(\w+)/g)]
-  const iMeanMatch = normalized.match(/i mean\s+(.+)$/)
-  if (iMeanMatch) return iMeanMatch[1].trim()
-  // For "not X" patterns, what was said after the correction typically
-  // contains the actual intended answer — return the full string
-  return normalized
-}
-
-// ── Subject/person detection ──────────────────────────────────────────────────
-// Detects a proper noun or role model reference
-
-const ROLE_INDICATORS = [
-  'inspires', 'inspire', 'inspiring', 'admire', 'admires', 'look up to',
-  'role model', 'hero', 'idol', 'mentor', 'teaches me', 'taught me',
-  'responsible', 'successful', 'kind', 'smart', 'talented', 'brave',
-  'strong', 'creative', 'hard-working', 'hardworking', 'dedicated',
-  'passionate', 'driven', 'generous', 'caring', 'honest', 'wise',
-]
-
-const REASON_MARKERS = [
-  'because', 'since', 'as', 'due to', 'the reason', 'he is', 'she is',
-  'they are', 'he\'s', 'she\'s', 'they\'re', 'is very', 'are very',
-  'he was', 'she was', 'they were', 'always', 'never', 'makes me',
-  'make me', 'helped me', 'helps me', 'showed me', 'shows me',
-]
-
-// Common grammar/modal/auxiliary words that are unlikely to be person names
+// Grammar / modal words that should not be treated as subject names
 const NON_NAME_WORDS = new Set([
   'may', 'can', 'will', 'would', 'could', 'should', 'shall', 'must', 'might',
   'inspire', 'inspires', 'inspired', 'inspiring', 'admire', 'admires', 'admired',
@@ -160,64 +139,309 @@ const NON_NAME_WORDS = new Set([
   'has', 'had', 'have', 'having', 'been', 'being', 'thing', 'things',
 ])
 
-// Find the most likely person/subject word — prefer longer, proper-noun-like tokens
-function findSubjectGuess(words: string[], fallback: string): string {
-  // First pass: look for words that look like names (>3 chars, not known grammar words)
-  const nameCandidate = words.find(
-    w => w.length > 3 && !STOPWORDS.has(w) && !FILLER_PHRASES.has(w) && !NON_NAME_WORDS.has(w),
-  )
-  if (nameCandidate) return nameCandidate
+const FILLER_PHRASES = new Set([
+  'ok', 'okay', 'yes', 'yeah', 'sure', 'continue', 'next', "i don't know", 'idk',
+  'no', 'hmm', 'uh', 'um', 'right', 'fine', 'good', 'great', 'alright', "let's",
+  'lets', 'let', 'go', 'start', 'begin', 'again', 'now', 'please', 'well', 'just',
+])
 
-  // Second pass: any non-stopword, non-filler, non-grammar word
-  const anyCandidate = words.find(
-    w => w.length > 1 && !STOPWORDS.has(w) && !FILLER_PHRASES.has(w) && !NON_NAME_WORDS.has(w),
-  )
-  if (anyCandidate) return anyCandidate
+// ── Filler / readiness patterns ───────────────────────────────────────────────
 
-  return fallback
+const PURE_FILLER = /^(ok|okay|yes|yeah|sure|let's|lets|continue|next|i don't know|idk|no|hmm|uh|um|right|fine|good|great|alright)\.?$/i
+const READINESS_PATTERNS = /^(i('m| am) ready|ready|let's go|lets go|let's start|lets start|start|begin|go ahead|yes i'm ready|yes i am ready)\.?$/i
+
+// ── Semantic helpers ──────────────────────────────────────────────────────────
+
+function semanticWordCount(words: string[]): number {
+  return words.filter(w => w.length > 1 && !STOPWORDS.has(w)).length
 }
 
-function hasPersonSubject(words: string[]): boolean {
-  const meaningfulWords = words.filter(
-    w => w.length > 1 && !STOPWORDS.has(w) && !FILLER_PHRASES.has(w) && !NON_NAME_WORDS.has(w),
-  )
-  return meaningfulWords.length > 0
-}
-
-// Returns false when the entire utterance is composed only of fillers + stopwords.
-// Used to catch "Okay. Let's continue." before semantic slot checks.
 function hasSubstantiveContent(words: string[]): boolean {
   return words.some(w => w.length > 1 && !STOPWORDS.has(w) && !FILLER_PHRASES.has(w) && !NON_NAME_WORDS.has(w))
 }
 
-function hasInspireVerb(normalized: string): boolean {
-  return ROLE_INDICATORS.some(r => normalized.includes(r))
+function findSubjectGuess(words: string[], fallback: string): string {
+  const nameCandidate = words.find(
+    w => w.length > 3 && !STOPWORDS.has(w) && !FILLER_PHRASES.has(w) && !NON_NAME_WORDS.has(w),
+  )
+  if (nameCandidate) return nameCandidate
+  const anyCandidate = words.find(
+    w => w.length > 1 && !STOPWORDS.has(w) && !FILLER_PHRASES.has(w) && !NON_NAME_WORDS.has(w),
+  )
+  return anyCandidate ?? fallback
 }
 
-function hasReasonMarker(normalized: string): boolean {
-  return REASON_MARKERS.some(r => normalized.includes(r))
+// ── STT self-correction detection ────────────────────────────────────────────
+
+function hasSelfCorrection(normalized: string): boolean {
+  return /\bnot\s+\w+\b/.test(normalized) ||
+    /\bi mean\b/.test(normalized) ||
+    /\bi meant\b/.test(normalized)
+}
+
+function extractCorrectedPart(normalized: string): string {
+  const iMeanMatch = normalized.match(/i mean\s+(.+)$/)
+  if (iMeanMatch) return iMeanMatch[1].trim()
+  // For "not X" patterns the full string still contains the intended content
+  return normalized
 }
 
 // ── Broken grammar detection ──────────────────────────────────────────────────
-// Patterns typical for STT with non-native speakers:
-// "Me inspire Oscar", "May inspire Oscar" (me→may via STT)
-// Subject-verb inversion in wrong order
+// Catches SOV inversion, object-first patterns, and missing subject-verb agreement.
 
-function detectBrokenGrammar(normalized: string, words: string[]): boolean {
-  // Subject-object-verb inversion: sentence starts with object pronoun + verb
+function detectBrokenGrammar(normalized: string): boolean {
   if (/^me (inspire|inspires|admire|admires)\b/.test(normalized)) return true
-  // "May inspire X" — "may" ≠ modal here; likely STT for "me"
+  // "may inspire" — "may" is likely STT for "me" (non-native speaker)
   if (/^may (inspire|inspires|admire|admires)\b/.test(normalized)) return true
-  // "He inspire" (missing -s)
+  // Missing -s: "he inspire" instead of "he inspires"
   if (/\b(he|she) inspire\b/.test(normalized) && !/\b(he|she) inspires\b/.test(normalized)) return true
+  // SOV: "Jordan inspire me" (missing -s on third-person singular)
+  if (/\b\w{3,} inspire me\b/.test(normalized) && !/\b\w{3,} inspires me\b/.test(normalized)) return true
   return false
 }
 
-// ── "Who inspires you and why" semantic gate ──────────────────────────────────
-// This is the primary gate for Exercise 1 of section 1.2.
+// ══════════════════════════════════════════════════════════════════════════════
+// ── inferSoftSpeakingTask ─────────────────────────────────────────────────────
+// Parses the exercise instruction to determine what kind of speaking task it is
+// and which semantic slots the student must fill.
+// No exercise numbers, no section IDs — instruction text only.
+// ══════════════════════════════════════════════════════════════════════════════
 
-function validateWhoInspiresYou(normalized: string, words: string[], attemptCount: number): SoftSpeakingValidationResult {
-  // Off-task: all words are fillers/stopwords — no substantive content
+export function inferSoftSpeakingTask(instruction: string): SoftSpeakingTaskSpec {
+  const norm = normalizeText(instruction)
+
+  // "ask and answer" / "form a question" → question_answer_pair
+  if (
+    /ask and answer/.test(norm) ||
+    /form (a|the) question/.test(norm) ||
+    /make (a|the) question/.test(norm)
+  ) {
+    return { taskKind: 'question_answer_pair', requiredSlots: ['question', 'answer'] }
+  }
+
+  const slots: AnswerSlot[] = []
+  let taskKind: SoftSpeakingTaskKind = 'generic_discussion'
+
+  const hasWho   = /\bwho\b/.test(norm)
+  const hasWhy   = /\bwhy\b/.test(norm)
+  const hasWhat  = /\bwhat\b/.test(norm)
+  const hasWhere = /\bwhere\b/.test(norm)
+  const hasWhen  = /\bwhen\b/.test(norm)
+
+  // "who ... and why" → reason_required with subject + reason
+  if (hasWho && hasWhy) {
+    taskKind = 'reason_required'
+    slots.push('subject', 'reason')
+  } else if (hasWho) {
+    taskKind = 'personal_answer'
+    slots.push('subject')
+  } else if (hasWhy) {
+    // "why" without "who" — reason still required
+    taskKind = 'reason_required'
+    slots.push('reason')
+  }
+
+  // "what you like/enjoy/prefer/favourite" → preference (possibly + reason for "and why")
+  if (hasWhat && /\b(like|enjoy|prefer|favourite|favorite|love|hate|interest)\b/.test(norm)) {
+    taskKind = 'preference'
+    if (!slots.includes('preference')) slots.push('preference')
+    if (hasWhy && !slots.includes('reason')) slots.push('reason')
+  } else if (hasWhat) {
+    // "what you are reading" / "what you are doing" → object/description
+    if (slots.length === 0) taskKind = 'description'
+    if (!slots.includes('object')) slots.push('object')
+  }
+
+  // "where" → place slot
+  if (hasWhere && !slots.includes('place')) slots.push('place')
+
+  // "when" → time slot
+  if (hasWhen && !slots.includes('time')) slots.push('time')
+
+  return { taskKind, requiredSlots: slots }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Slot presence markers ─────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+const REASON_MARKERS = [
+  'because', 'since', 'as', 'due to', 'the reason',
+  'he is', 'she is', 'they are', "he's", "she's", "they're",
+  'is very', 'are very',
+  'he was', 'she was', 'they were',
+  'always', 'never',
+  'makes me', 'make me', 'helped me', 'helps me', 'showed me', 'shows me',
+  'is responsible', 'is kind', 'is smart', 'is strong', 'is talented',
+  'is brave', 'is creative', 'is dedicated', 'is passionate', 'is generous',
+  'is caring', 'is honest', 'is wise', 'is hardworking', 'is hard working',
+  'works hard', 'tries hard',
+]
+
+const PREFERENCE_MARKERS = [
+  'like', 'likes', 'love', 'loves', 'enjoy', 'enjoys', 'prefer', 'prefers',
+  'favourite', 'favorite', 'really into', 'passionate about',
+  "don't like", "doesn't like", 'hate', 'hates', 'dislike', 'dislikes',
+  'interested in', 'keen on',
+]
+
+const TIME_MARKERS = [
+  'now', 'at the moment', 'currently', 'right now', 'these days',
+  'today', 'yesterday', 'last week', 'last month', 'this week',
+  'at present', 'for now', 'lately', 'recently',
+]
+
+const PLACE_PREPOSITIONS = ['at', 'in', 'near', 'next to', 'outside', 'inside', 'by', 'around']
+
+const QUESTION_STARTERS = new Set([
+  'what', 'who', 'where', 'when', 'why', 'how',
+  'do', 'does', 'did', 'can', 'could', 'would', 'will',
+  'is', 'are', 'have', 'has',
+])
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── detectAnswerSlots ─────────────────────────────────────────────────────────
+// Checks which required semantic slots are present in the student transcript.
+// Deterministic only — no LLM.
+// ══════════════════════════════════════════════════════════════════════════════
+
+function detectSlotPresence(slot: AnswerSlot, normalized: string, words: string[]): boolean {
+  switch (slot) {
+    case 'subject':
+      // Person/entity present — non-stopword, non-filler, non-grammar word
+      return words.some(
+        w => w.length > 1 && !STOPWORDS.has(w) && !FILLER_PHRASES.has(w) && !NON_NAME_WORDS.has(w),
+      )
+
+    case 'reason':
+      return REASON_MARKERS.some(r => normalized.includes(r))
+
+    case 'preference':
+      return PREFERENCE_MARKERS.some(p => normalized.includes(p))
+
+    case 'object':
+      // Student is describing something — at least 2 semantic words present
+      return semanticWordCount(words) >= 2
+
+    case 'time':
+      return TIME_MARKERS.some(t => normalized.includes(t))
+
+    case 'place': {
+      const placeRegex = new RegExp(`\\b(${PLACE_PREPOSITIONS.join('|')})\\s+\\w{2,}`)
+      return placeRegex.test(normalized)
+    }
+
+    case 'question':
+      // Question word at start, or contains "?"
+      if (normalized.includes('?')) return true
+      return QUESTION_STARTERS.has(words[0] ?? '')
+
+    case 'answer':
+      // Any substantive response with enough content
+      return semanticWordCount(words) >= 2
+
+    default:
+      return false
+  }
+}
+
+export function detectAnswerSlots(
+  transcript: string,
+  requiredSlots: AnswerSlot[],
+): SlotDetectionResult {
+  const normalized = normalizeText(transcript)
+  const words      = getWords(normalized)
+
+  const presentSlots: AnswerSlot[] = []
+  const missingSlots: AnswerSlot[] = []
+
+  for (const slot of requiredSlots) {
+    if (detectSlotPresence(slot, normalized, words)) {
+      presentSlots.push(slot)
+    } else {
+      missingSlots.push(slot)
+    }
+  }
+
+  const confidence = missingSlots.length === 0
+    ? 0.9
+    : presentSlots.length === 0
+      ? 0.95
+      : 0.7
+
+  const subjectGuess = findSubjectGuess(words, '')
+  const interpretedMeaning = presentSlots.includes('subject') && subjectGuess
+    ? subjectGuess
+    : undefined
+
+  return { presentSlots, missingSlots, interpretedMeaning, confidence }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── buildPedagogicalRetry ─────────────────────────────────────────────────────
+// Builds a short, human-sounding teacher repair prompt.
+// Targets only the FIRST missing slot — repair one thing at a time.
+// Instruction-context-aware so the hint fits the exercise.
+// ══════════════════════════════════════════════════════════════════════════════
+
+export function buildPedagogicalRetry(
+  instruction: string,
+  missingSlots: AnswerSlot[],
+  subjectGuess = 'someone',
+): string {
+  if (missingSlots.length === 0) return ''
+
+  const firstMissing = missingSlots[0]!
+  const norm = normalizeText(instruction)
+
+  switch (firstMissing) {
+    case 'reason': {
+      if (/inspir/.test(norm)) {
+        const sub = subjectGuess !== 'someone' ? subjectGuess : 'they'
+        return `Good. Now add why: "${sub} inspires me because ..."`
+      }
+      if (/like|enjoy|prefer|favourite|favorite/.test(norm)) {
+        return `Good. Now say why you like it.`
+      }
+      return `Good. Now add why.`
+    }
+    case 'subject':
+      return `Good start. Who are you talking about?`
+    case 'preference':
+      return `What do you like or enjoy? Tell me your preference.`
+    case 'object':
+      return `What specifically? Give me a name or example.`
+    case 'time':
+      return `When? For example: "at the moment" or "right now".`
+    case 'place':
+      return `Where exactly? Try: "at school" or "in London".`
+    case 'question':
+      return `Try to form a question. For example: "What do you enjoy doing?"`
+    case 'answer':
+      return `Now give your answer in a full sentence.`
+    default:
+      return `Please give a fuller answer.`
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── validateWithSlots ─────────────────────────────────────────────────────────
+// Core slot-based validation. Generic — works for any instruction-inferred task.
+// Replaces all hardcoded exercise-specific validators.
+//
+// Order matters: slot detection runs BEFORE broken-grammar branch so that
+// "Jordan inspire me because he responsible" (all slots present, broken grammar)
+// results in accept-with-repair rather than a false rejection.
+// ══════════════════════════════════════════════════════════════════════════════
+
+function validateWithSlots(
+  normalized: string,
+  words: string[],
+  instruction: string,
+  taskSpec: SoftSpeakingTaskSpec,
+  attemptCount: number,
+): SoftSpeakingValidationResult {
+  // Off-task: no substantive content at all
   if (!hasSubstantiveContent(words)) {
     if (attemptCount >= 3) {
       return {
@@ -233,216 +457,168 @@ function validateWhoInspiresYou(normalized: string, words: string[], attemptCoun
       needsRetry:            true,
       isPartiallyAcceptable: false,
       issueType:             'off_task',
-      repairPrompt:          'First answer this one: who inspires you, and why?',
+      repairPrompt:          `First answer this one: ${instruction}`,
       confidence:            0.95,
     }
   }
 
-  const hasSelfCorrect = hasSelfCorrection(normalized)
-  const correctedText = hasSelfCorrect ? extractCorrectedPart(normalized) : normalized
-  const correctedWords = getWords(correctedText)
+  // Generic discussion — no specific slots required, just need some content
+  if (taskSpec.requiredSlots.length === 0) {
+    const semWords = semanticWordCount(words)
+    if (semWords < 3 && attemptCount < 3) {
+      return {
+        allowProgression:      false,
+        needsRetry:            true,
+        isPartiallyAcceptable: false,
+        issueType:             'too_short',
+        repairPrompt:          `Try to give a fuller answer. ${instruction}`,
+        confidence:            0.8,
+      }
+    }
+    return {
+      allowProgression:      true,
+      needsRetry:            false,
+      isPartiallyAcceptable: false,
+      issueType:             'accepted',
+      confidence:            0.8,
+    }
+  }
 
-  const semWords = semanticWordCount(correctedWords)
-  const hasPerson = hasPersonSubject(correctedWords.filter(w => !STOPWORDS.has(w)))
-  const hasInspire = hasInspireVerb(correctedText)
-  const hasReason = hasReasonMarker(correctedText)
-  const brokenGrammar = detectBrokenGrammar(normalized, words)
-
-  // Attempt 3+: if meaning is detectable, soft-accept to avoid infinite loop
+  // Max attempts soft-accept: prevents infinite retry loops after 3 genuine tries
+  const semWords = semanticWordCount(words)
   if (attemptCount >= 3 && semWords >= 2) {
-    console.log(`[soft-speaking] max_attempts_soft_accept exercise semantic_words=${semWords}`)
+    console.log(`[soft-speaking] max_attempts_soft_accept task=${taskSpec.taskKind} semantic_words=${semWords}`)
     return {
       allowProgression:      true,
       needsRetry:            false,
       isPartiallyAcceptable: true,
       issueType:             'acceptable_with_repair',
       confidence:            0.5,
-      teacherHint: "Well done for trying. Let's keep going.",
+      teacherHint:           "Well done for trying. Let's keep going.",
     }
   }
 
-  // Broken grammar (and possibly self-correction in progress)
+  // STT self-correction: extract intended content from corrected portion
+  const hasSelfCorrect = hasSelfCorrection(normalized)
+  const correctedText  = hasSelfCorrect ? extractCorrectedPart(normalized) : normalized
+  const correctedWords = getWords(correctedText)
+
+  const brokenGrammar  = detectBrokenGrammar(normalized)
+  const subjectGuess   = findSubjectGuess(correctedWords, 'someone')
+
+  // Slot detection runs on corrected transcript so self-corrections count
+  const slotResult = detectAnswerSlots(correctedText, taskSpec.requiredSlots)
+
+  // ── All required slots present ──────────────────────────────────────────────
+  if (slotResult.missingSlots.length === 0) {
+    if (brokenGrammar) {
+      // Meaning complete, grammar broken → accept with grammar repair hint
+      const hint = subjectGuess !== 'someone'
+        ? `Good. Better: "${subjectGuess} inspires me because ..."`
+        : `Good. Try to use a complete sentence.`
+      return {
+        allowProgression:      true,
+        needsRetry:            false,
+        isPartiallyAcceptable: true,
+        issueType:             'acceptable_with_repair',
+        interpretedMeaning:    subjectGuess !== 'someone' ? subjectGuess : undefined,
+        teacherHint:           hint,
+        confidence:            0.75,
+      }
+    }
+    return {
+      allowProgression:      true,
+      needsRetry:            false,
+      isPartiallyAcceptable: false,
+      issueType:             'accepted',
+      confidence:            slotResult.confidence,
+    }
+  }
+
+  // ── Some slots present, some missing ───────────────────────────────────────
+
+  // Broken grammar AND slots missing — guide toward full correct form
   if (brokenGrammar && semWords >= 1) {
-    const subjectGuess = findSubjectGuess(correctedWords, 'someone')
-    const interpreted = `${subjectGuess} inspires me`
     return {
       allowProgression:      false,
       needsRetry:            true,
       isPartiallyAcceptable: false,
       issueType:             'broken_grammar',
-      interpretedMeaning:    interpreted,
-      repairPrompt: `Good idea — ${subjectGuess}. Say it like this: "${subjectGuess} inspires me because ..." Now you try.`,
+      interpretedMeaning:    subjectGuess !== 'someone' ? subjectGuess : undefined,
+      repairPrompt:          subjectGuess !== 'someone'
+        ? `Good idea — ${subjectGuess}. Say it like this: "${subjectGuess} inspires me because ..." Now you try.`
+        : `Good idea. Try: "... inspires me because ..." Now you try.`,
       confidence:            0.75,
     }
   }
 
-  // Self-correction in progress — likely STT issue — give benefit of doubt after detecting intent
+  // STT/self-correction in progress
   if (hasSelfCorrect && semWords >= 2) {
-    const subjectGuess = findSubjectGuess(correctedWords, 'someone')
-    if (!hasReason) {
-      return {
-        allowProgression:      false,
-        needsRetry:            true,
-        isPartiallyAcceptable: true,
-        issueType:             'pronunciation_or_stt',
-        interpretedMeaning:    `${subjectGuess} inspires me`,
-        repairPrompt: `I understand — you mean ${subjectGuess}. Try again: "${subjectGuess} inspires me because ..."`,
-        confidence:            0.65,
-      }
-    }
-    // Has reason too — accept with repair
+    const repairMsg = buildPedagogicalRetry(instruction, slotResult.missingSlots, subjectGuess)
+    const interpretedPrefix = subjectGuess !== 'someone' ? `I understand — you mean ${subjectGuess}. ` : ''
     return {
-      allowProgression:      true,
-      needsRetry:            false,
+      allowProgression:      false,
+      needsRetry:            true,
       isPartiallyAcceptable: true,
-      issueType:             'acceptable_with_repair',
-      interpretedMeaning:    `${subjectGuess} inspires me`,
-      teacherHint: `Good. Better: "${subjectGuess} inspires me because ..."`,
-      confidence:            0.7,
+      issueType:             'pronunciation_or_stt',
+      interpretedMeaning:    subjectGuess !== 'someone' ? `I understand — you mean ${subjectGuess}` : undefined,
+      repairPrompt:          `${interpretedPrefix}${repairMsg}`,
+      confidence:            0.65,
     }
   }
 
-  // Too short — no semantic content
+  // Not enough content
   if (semWords < 2) {
     return {
       allowProgression:      false,
       needsRetry:            true,
       isPartiallyAcceptable: false,
       issueType:             'too_short',
-      repairPrompt: `Tell me who inspires you and why. For example: "My teacher inspires me because she is dedicated."`,
+      repairPrompt:          instruction
+        ? `Tell me more. ${instruction}`
+        : 'Please answer with a complete sentence.',
       confidence:            0.9,
     }
   }
 
-  // Has person but missing inspire verb and reason — unclear subject or missing content
-  if (hasPerson && !hasInspire && !hasReason) {
-    const subjectGuess = findSubjectGuess(correctedWords, 'this person')
-    return {
-      allowProgression:      false,
-      needsRetry:            true,
-      isPartiallyAcceptable: false,
-      issueType:             'unclear_subject',
-      repairPrompt: `Good. Now say: "${subjectGuess} inspires me because ..." — tell me why.`,
-      confidence:            0.7,
-    }
-  }
-
-  // Has person + inspire verb but missing reason
-  if (hasPerson && hasInspire && !hasReason) {
-    const subjectGuess = findSubjectGuess(correctedWords, 'them')
+  // Some slots present but first slot missing — targeted repair
+  if (slotResult.presentSlots.length > 0) {
+    const repairMsg    = buildPedagogicalRetry(instruction, slotResult.missingSlots, subjectGuess)
+    const firstMissing = slotResult.missingSlots[0]!
+    const issueType: SoftSpeakingIssueType =
+      firstMissing === 'reason'  ? 'missing_reason'  :
+      firstMissing === 'subject' ? 'unclear_subject'  :
+      'too_short'
     return {
       allowProgression:      false,
       needsRetry:            true,
       isPartiallyAcceptable: true,
-      issueType:             'missing_reason',
-      repairPrompt: `Good. Now add why: "${subjectGuess} inspires me because ..."`,
-      confidence:            0.8,
+      issueType,
+      repairPrompt:          repairMsg,
+      confidence:            slotResult.confidence,
     }
   }
 
-  // Has all three: person + inspire + reason → accept
-  if (hasPerson && (hasInspire || hasReason)) {
-    return {
-      allowProgression:      true,
-      needsRetry:            false,
-      isPartiallyAcceptable: false,
-      issueType:             'accepted',
-      confidence:            0.9,
-    }
-  }
-
-  // Fallback — enough content, allow with partial
-  if (semWords >= 4) {
-    return {
-      allowProgression:      true,
-      needsRetry:            false,
-      isPartiallyAcceptable: true,
-      issueType:             'acceptable_with_repair',
-      confidence:            0.6,
-    }
-  }
-
-  // Default retry
+  // No slots detected at all but has some semantic content
   return {
     allowProgression:      false,
     needsRetry:            true,
     isPartiallyAcceptable: false,
-    issueType:             'too_short',
-    repairPrompt: `Tell me who inspires you and why. For example: "Oscar inspires me because he is responsible."`,
+    issueType:             'unclear_subject',
+    repairPrompt:          instruction
+      ? `Good start. Now answer properly: ${instruction}`
+      : 'Please give a complete answer.',
     confidence:            0.7,
-  }
-}
-
-// ── Generic soft-speaking gate (non-"who inspires" exercises) ─────────────────
-
-function validateGenericSoftSpeaking(
-  normalized: string,
-  words: string[],
-  instruction: string,
-  attemptCount: number,
-  minWords: number,
-): SoftSpeakingValidationResult {
-  const semWords = semanticWordCount(words)
-
-  // Too short
-  if (semWords < minWords) {
-    if (attemptCount >= 3) {
-      return {
-        allowProgression:      true,
-        needsRetry:            false,
-        isPartiallyAcceptable: true,
-        issueType:             'acceptable_with_repair',
-        confidence:            0.5,
-        teacherHint:           "Good effort. Let's continue.",
-      }
-    }
-    return {
-      allowProgression:      false,
-      needsRetry:            true,
-      isPartiallyAcceptable: false,
-      issueType:             'too_short',
-      repairPrompt:          `Try to give a fuller answer. ${instruction ? `Remember: ${instruction}` : 'Use a complete sentence.'}`,
-      confidence:            0.85,
-    }
-  }
-
-  // Off-task filler only
-  if (PURE_FILLER.test(normalized)) {
-    if (attemptCount >= 3) {
-      return {
-        allowProgression:      true,
-        needsRetry:            false,
-        isPartiallyAcceptable: true,
-        issueType:             'acceptable_with_repair',
-        confidence:            0.4,
-      }
-    }
-    return {
-      allowProgression:      false,
-      needsRetry:            true,
-      isPartiallyAcceptable: false,
-      issueType:             'off_task',
-      repairPrompt:          instruction ? `First answer this: ${instruction}` : 'Please answer the question with a full sentence.',
-      confidence:            0.9,
-    }
-  }
-
-  return {
-    allowProgression:      true,
-    needsRetry:            false,
-    isPartiallyAcceptable: false,
-    issueType:             'accepted',
-    confidence:            0.8,
   }
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function validateSoftSpeakingAnswer(input: SoftSpeakingInput): SoftSpeakingValidationResult {
-  const normalized = normalize(input.studentTranscript)
+  const normalized = normalizeText(input.studentTranscript)
   const words      = getWords(normalized)
 
-  // Readiness intent — should be intercepted before this validator, but guard here too
+  // Readiness intent — intercepted by lesson-ws before this, but guard here too
   if (READINESS_PATTERNS.test(normalized)) {
     return {
       allowProgression:      false,
@@ -479,17 +655,8 @@ export function validateSoftSpeakingAnswer(input: SoftSpeakingInput): SoftSpeaki
     }
   }
 
-  // Route to exercise-specific semantic gate
-  const instr = normalize(input.instruction)
-  const isWhoInspiresYou =
-    (instr.includes('inspir') && (instr.includes('who') || instr.includes('why'))) ||
-    (instr.includes('inspir') && instr.includes('and why'))
+  // Infer task structure from instruction — fully generic, no exercise/section hardcoding
+  const taskSpec = inferSoftSpeakingTask(input.instruction)
 
-  if (isWhoInspiresYou) {
-    return validateWhoInspiresYou(normalized, words, input.attemptCount)
-  }
-
-  // Generic gate for other soft-speaking types
-  const minWords = input.minWords ?? 3
-  return validateGenericSoftSpeaking(normalized, words, input.instruction, input.attemptCount, minWords)
+  return validateWithSlots(normalized, words, input.instruction, taskSpec, input.attemptCount)
 }
