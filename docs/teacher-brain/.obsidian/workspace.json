@@ -1,0 +1,219 @@
+{
+  "main": {
+    "id": "b9fa62e333805e79",
+    "type": "split",
+    "children": [
+      {
+        "id": "4b8b86c2732057e1",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "3ab54b73230826df",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Граф"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "d4a03bec7265574e",
+    "type": "split",
+    "children": [
+      {
+        "id": "0299b40b2b823f9f",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "e38219706b06e310",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Файловий менеджер"
+            }
+          },
+          {
+            "id": "89297f3fb64f3aa9",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Пошук"
+            }
+          },
+          {
+            "id": "c6c3b9d218124c47",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Закладки"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 230.50052642822266
+  },
+  "right": {
+    "id": "487855dcc0dff9db",
+    "type": "split",
+    "children": [
+      {
+        "id": "28904e3bf8ff5852",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "105dfae141b1ed57",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Зворотні посилання"
+            }
+          },
+          {
+            "id": "37d401068a85697d",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Вихідні посилання"
+            }
+          },
+          {
+            "id": "1481f1a1956dd9db",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Мітки"
+            }
+          },
+          {
+            "id": "000f5a478688750c",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Всі властивості"
+            }
+          },
+          {
+            "id": "d87d1134a4d2d858",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Вміст"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Відкрити провідник файлів": false,
+      "graph:Граф": false,
+      "canvas:Створити нове полотно": false,
+      "daily-notes:Сьогоднішня нотатка": false,
+      "templates:Вставити шаблон": false,
+      "command-palette:Відкрити меню команд": false,
+      "bases:Створити нову базу": false
+    }
+  },
+  "active": "3ab54b73230826df",
+  "lastOpenFiles": [
+    "TEACHER_BRAIN_INDEX.md.tmp.17020.59be39b44fba",
+    "16-golden-lesson-walkthrough/LESSON_WALKTHROUGH_FRONTEND_SYNC.md",
+    "16-golden-lesson-walkthrough/LESSON_WALKTHROUGH_FRONTEND_SYNC.md.tmp.17020.6954a8f64b39",
+    "16-golden-lesson-walkthrough/LESSON_WALKTHROUGH_FAST_STUDENT.md",
+    "16-golden-lesson-walkthrough/LESSON_WALKTHROUGH_FAST_STUDENT.md.tmp.17020.ffac350699f2",
+    "16-golden-lesson-walkthrough/LESSON_WALKTHROUGH_PRONUNCIATION_STRUGGLE.md",
+    "16-golden-lesson-walkthrough/LESSON_WALKTHROUGH_PRONUNCIATION_STRUGGLE.md.tmp.17020.5e41fe64de9f",
+    "16-golden-lesson-walkthrough/LESSON_WALKTHROUGH_MID_CONFUSION.md",
+    "16-golden-lesson-walkthrough/LESSON_WALKTHROUGH_MID_CONFUSION.md.tmp.17020.5eb30cc43511",
+    "16-golden-lesson-walkthrough/LESSON_WALKTHROUGH_BEGINNER.md",
+    "16-golden-lesson-walkthrough/LESSON_WALKTHROUGH_BEGINNER.md.tmp.17020.2c6dbdb7e849",
+    "16-golden-lesson-walkthrough",
+    "10-future-architecture/FUTURE_SYSTEMS_ANALYSIS.md",
+    "10-future-architecture/FUTURE_SYSTEMS_ANALYSIS.md.tmp.17020.81ba575b17a3",
+    "PROJECT_CLEANUP_RECOMMENDATIONS.md",
+    "PROJECT_CLEANUP_RECOMMENDATIONS.md.tmp.17020.0109537b332b",
+    "15-loop-and-transition-control/TRANSITION_PACING_POLICY.md",
+    "15-loop-and-transition-control/TRANSITION_PACING_POLICY.md.tmp.17020.28d25d7fd886",
+    "15-loop-and-transition-control/RETRY_ESCALATION_POLICY.md",
+    "15-loop-and-transition-control/RETRY_ESCALATION_POLICY.md.tmp.17020.1f8059533f04",
+    "15-loop-and-transition-control/LOOP_PREVENTION_DOCTRINE.md",
+    "14-frontend-sync/TEACHER_CURSOR_SYNC.md",
+    "14-frontend-sync/EXERCISE_RENDER_CONTRACT.md",
+    "14-frontend-sync/FRONTEND_SYNC_DOCTRINE.md",
+    "13-student-state-system/LOW_CONFIDENCE_STATE.md",
+    "13-student-state-system/HIGH_CONFIDENCE_STATE.md",
+    "13-student-state-system/FRUSTRATION_STATE.md",
+    "13-student-state-system/PRONUNCIATION_STRUGGLE_STATE.md",
+    "13-student-state-system/SELF_CORRECTION_STATE.md",
+    "13-student-state-system/IMPATIENT_STATE.md",
+    "13-student-state-system/CONFUSION_STATE.md",
+    "13-student-state-system/STUDENT_STATE_OVERVIEW.md",
+    "12-exercise-protocol-registry/DEMONSTRATION_PROTOCOL.md",
+    "12-exercise-protocol-registry/DIALOGUE_PROTOCOL.md",
+    "12-exercise-protocol-registry/READING_PROTOCOL.md",
+    "12-exercise-protocol-registry/MATCHING_PROTOCOL.md",
+    "Без назви.canvas"
+  ]
+}
