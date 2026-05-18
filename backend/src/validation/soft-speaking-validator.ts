@@ -14,6 +14,10 @@ export type SoftSpeakingIssueType =
   | 'readiness_intent'
   | 'unclear_subject'
   | 'missing_reason'
+  | 'missing_subject'
+  | 'missing_object'
+  | 'missing_answer'
+  | 'missing_required_slot'
   | 'broken_grammar'
   | 'pronunciation_or_stt'
   | 'off_task'
@@ -398,12 +402,15 @@ export function buildPedagogicalRetry(
     case 'reason': {
       if (/inspir/.test(norm)) {
         const sub = subjectGuess !== 'someone' ? subjectGuess : 'they'
-        return `Good. Now add why: "${sub} inspires me because ..."`
+        const prefix = subjectGuess !== 'someone'
+          ? `Good start. ${subjectGuess} inspires you. `
+          : 'Good start. '
+        return `${prefix}Now add why: "${sub} inspires me because ..."`
       }
       if (/like|enjoy|prefer|favourite|favorite/.test(norm)) {
-        return `Good. Now say why you like it.`
+        return `Good start. Now say why you like it.`
       }
-      return `Good. Now add why.`
+      return `Good start. Now add why.`
     }
     case 'subject':
       return `Good start. Who are you talking about?`
@@ -427,11 +434,12 @@ export function buildPedagogicalRetry(
 // ══════════════════════════════════════════════════════════════════════════════
 // ── validateWithSlots ─────────────────────────────────────────────────────────
 // Core slot-based validation. Generic — works for any instruction-inferred task.
-// Replaces all hardcoded exercise-specific validators.
 //
-// Order matters: slot detection runs BEFORE broken-grammar branch so that
-// "Jordan inspire me because he responsible" (all slots present, broken grammar)
-// results in accept-with-repair rather than a false rejection.
+// Ordering invariant:
+//   1. detectAnswerSlots runs FIRST.
+//   2. missingSlots.length > 0 ALWAYS blocks progression — no override.
+//   3. acceptable_with_repair and max_attempts_soft_accept only fire when
+//      ALL required slots are present (missingSlots.length === 0).
 // ══════════════════════════════════════════════════════════════════════════════
 
 function validateWithSlots(
@@ -484,8 +492,106 @@ function validateWithSlots(
     }
   }
 
-  // Max attempts soft-accept: prevents infinite retry loops after 3 genuine tries
   const semWords = semanticWordCount(words)
+
+  // STT self-correction: extract intended content from corrected portion
+  const hasSelfCorrect = hasSelfCorrection(normalized)
+  const correctedText  = hasSelfCorrect ? extractCorrectedPart(normalized) : normalized
+  const correctedWords = getWords(correctedText)
+
+  const brokenGrammar  = detectBrokenGrammar(normalized)
+  const subjectGuess   = findSubjectGuess(correctedWords, 'someone')
+
+  // Slot detection runs FIRST — required slots are a hard gate before any other check.
+  // acceptable_with_repair, broken_grammar, and max_attempts can only allow progression
+  // when ALL required slots are present.
+  const slotResult = detectAnswerSlots(correctedText, taskSpec.requiredSlots)
+
+  // ── Required-slots gate: missingSlots always block progression ──────────────
+  // This runs before max_attempts and before broken_grammar/repair paths.
+  if (slotResult.missingSlots.length > 0) {
+    // Broken grammar AND slots missing — guide toward full correct form
+    if (brokenGrammar && semWords >= 1) {
+      return {
+        allowProgression:      false,
+        needsRetry:            true,
+        isPartiallyAcceptable: false,
+        issueType:             'broken_grammar',
+        interpretedMeaning:    subjectGuess !== 'someone' ? subjectGuess : undefined,
+        repairPrompt:          subjectGuess !== 'someone'
+          ? `Good idea — ${subjectGuess}. Say it like this: "${subjectGuess} inspires me because ..." Now you try.`
+          : `Good idea. Try: "... inspires me because ..." Now you try.`,
+        confidence:            0.75,
+      }
+    }
+
+    // STT/self-correction in progress
+    if (hasSelfCorrect && semWords >= 2) {
+      const repairMsg = buildPedagogicalRetry(instruction, slotResult.missingSlots, subjectGuess)
+      const interpretedPrefix = subjectGuess !== 'someone' ? `I understand — you mean ${subjectGuess}. ` : ''
+      return {
+        allowProgression:      false,
+        needsRetry:            true,
+        isPartiallyAcceptable: true,
+        issueType:             'pronunciation_or_stt',
+        interpretedMeaning:    subjectGuess !== 'someone' ? `I understand — you mean ${subjectGuess}` : undefined,
+        repairPrompt:          `${interpretedPrefix}${repairMsg}`,
+        confidence:            0.65,
+      }
+    }
+
+    // Not enough content
+    if (semWords < 2) {
+      return {
+        allowProgression:      false,
+        needsRetry:            true,
+        isPartiallyAcceptable: false,
+        issueType:             'too_short',
+        repairPrompt:          instruction
+          ? `Tell me more. ${instruction}`
+          : 'Please answer with a complete sentence.',
+        confidence:            0.9,
+      }
+    }
+
+    // Some slots present but first required slot missing — targeted repair
+    if (slotResult.presentSlots.length > 0) {
+      const repairMsg    = buildPedagogicalRetry(instruction, slotResult.missingSlots, subjectGuess)
+      const firstMissing = slotResult.missingSlots[0]!
+      const issueType: SoftSpeakingIssueType =
+        firstMissing === 'reason'     ? 'missing_reason'       :
+        firstMissing === 'subject'    ? 'missing_subject'       :
+        firstMissing === 'object'     ? 'missing_object'        :
+        firstMissing === 'answer'     ? 'missing_answer'        :
+        'missing_required_slot'
+      return {
+        allowProgression:      false,
+        needsRetry:            true,
+        isPartiallyAcceptable: true,
+        issueType,
+        repairPrompt:          repairMsg,
+        confidence:            slotResult.confidence,
+      }
+    }
+
+    // No required slots detected at all but has some semantic content
+    return {
+      allowProgression:      false,
+      needsRetry:            true,
+      isPartiallyAcceptable: false,
+      issueType:             'unclear_subject',
+      repairPrompt:          instruction
+        ? `Good start. Now answer properly: ${instruction}`
+        : 'Please give a complete answer.',
+      confidence:            0.7,
+    }
+  }
+
+  // ── All required slots present ──────────────────────────────────────────────
+  // Only reach here when missingSlots.length === 0.
+
+  // Max attempts soft-accept: prevents infinite retry loops after 3 genuine tries.
+  // Runs ONLY after required slots are confirmed present.
   if (attemptCount >= 3 && semWords >= 2) {
     console.log(`[soft-speaking] max_attempts_soft_accept task=${taskSpec.taskKind} semantic_words=${semWords}`)
     return {
@@ -498,117 +604,28 @@ function validateWithSlots(
     }
   }
 
-  // STT self-correction: extract intended content from corrected portion
-  const hasSelfCorrect = hasSelfCorrection(normalized)
-  const correctedText  = hasSelfCorrect ? extractCorrectedPart(normalized) : normalized
-  const correctedWords = getWords(correctedText)
-
-  const brokenGrammar  = detectBrokenGrammar(normalized)
-  const subjectGuess   = findSubjectGuess(correctedWords, 'someone')
-
-  // Slot detection runs on corrected transcript so self-corrections count
-  const slotResult = detectAnswerSlots(correctedText, taskSpec.requiredSlots)
-
-  // ── All required slots present ──────────────────────────────────────────────
-  if (slotResult.missingSlots.length === 0) {
-    if (brokenGrammar) {
-      // Meaning complete, grammar broken → accept with grammar repair hint
-      const hint = subjectGuess !== 'someone'
-        ? `Good. Better: "${subjectGuess} inspires me because ..."`
-        : `Good. Try to use a complete sentence.`
-      return {
-        allowProgression:      true,
-        needsRetry:            false,
-        isPartiallyAcceptable: true,
-        issueType:             'acceptable_with_repair',
-        interpretedMeaning:    subjectGuess !== 'someone' ? subjectGuess : undefined,
-        teacherHint:           hint,
-        confidence:            0.75,
-      }
-    }
+  if (brokenGrammar) {
+    // All slots present, grammar broken → accept with grammar repair hint
+    const hint = subjectGuess !== 'someone'
+      ? `Good. Better: "${subjectGuess} inspires me because ..."`
+      : `Good. Try to use a complete sentence.`
     return {
       allowProgression:      true,
       needsRetry:            false,
-      isPartiallyAcceptable: false,
-      issueType:             'accepted',
-      confidence:            slotResult.confidence,
-    }
-  }
-
-  // ── Some slots present, some missing ───────────────────────────────────────
-
-  // Broken grammar AND slots missing — guide toward full correct form
-  if (brokenGrammar && semWords >= 1) {
-    return {
-      allowProgression:      false,
-      needsRetry:            true,
-      isPartiallyAcceptable: false,
-      issueType:             'broken_grammar',
+      isPartiallyAcceptable: true,
+      issueType:             'acceptable_with_repair',
       interpretedMeaning:    subjectGuess !== 'someone' ? subjectGuess : undefined,
-      repairPrompt:          subjectGuess !== 'someone'
-        ? `Good idea — ${subjectGuess}. Say it like this: "${subjectGuess} inspires me because ..." Now you try.`
-        : `Good idea. Try: "... inspires me because ..." Now you try.`,
+      teacherHint:           hint,
       confidence:            0.75,
     }
   }
 
-  // STT/self-correction in progress
-  if (hasSelfCorrect && semWords >= 2) {
-    const repairMsg = buildPedagogicalRetry(instruction, slotResult.missingSlots, subjectGuess)
-    const interpretedPrefix = subjectGuess !== 'someone' ? `I understand — you mean ${subjectGuess}. ` : ''
-    return {
-      allowProgression:      false,
-      needsRetry:            true,
-      isPartiallyAcceptable: true,
-      issueType:             'pronunciation_or_stt',
-      interpretedMeaning:    subjectGuess !== 'someone' ? `I understand — you mean ${subjectGuess}` : undefined,
-      repairPrompt:          `${interpretedPrefix}${repairMsg}`,
-      confidence:            0.65,
-    }
-  }
-
-  // Not enough content
-  if (semWords < 2) {
-    return {
-      allowProgression:      false,
-      needsRetry:            true,
-      isPartiallyAcceptable: false,
-      issueType:             'too_short',
-      repairPrompt:          instruction
-        ? `Tell me more. ${instruction}`
-        : 'Please answer with a complete sentence.',
-      confidence:            0.9,
-    }
-  }
-
-  // Some slots present but first slot missing — targeted repair
-  if (slotResult.presentSlots.length > 0) {
-    const repairMsg    = buildPedagogicalRetry(instruction, slotResult.missingSlots, subjectGuess)
-    const firstMissing = slotResult.missingSlots[0]!
-    const issueType: SoftSpeakingIssueType =
-      firstMissing === 'reason'  ? 'missing_reason'  :
-      firstMissing === 'subject' ? 'unclear_subject'  :
-      'too_short'
-    return {
-      allowProgression:      false,
-      needsRetry:            true,
-      isPartiallyAcceptable: true,
-      issueType,
-      repairPrompt:          repairMsg,
-      confidence:            slotResult.confidence,
-    }
-  }
-
-  // No slots detected at all but has some semantic content
   return {
-    allowProgression:      false,
-    needsRetry:            true,
+    allowProgression:      true,
+    needsRetry:            false,
     isPartiallyAcceptable: false,
-    issueType:             'unclear_subject',
-    repairPrompt:          instruction
-      ? `Good start. Now answer properly: ${instruction}`
-      : 'Please give a complete answer.',
-    confidence:            0.7,
+    issueType:             'accepted',
+    confidence:            slotResult.confidence,
   }
 }
 
@@ -658,5 +675,23 @@ export function validateSoftSpeakingAnswer(input: SoftSpeakingInput): SoftSpeaki
   // Infer task structure from instruction — fully generic, no exercise/section hardcoding
   const taskSpec = inferSoftSpeakingTask(input.instruction)
 
-  return validateWithSlots(normalized, words, input.instruction, taskSpec, input.attemptCount)
+  const result = validateWithSlots(normalized, words, input.instruction, taskSpec, input.attemptCount)
+
+  if (taskSpec.requiredSlots.length > 0) {
+    if (!result.allowProgression) {
+      const slotCheck = detectAnswerSlots(normalizeText(input.studentTranscript), taskSpec.requiredSlots)
+      if (slotCheck.missingSlots.length > 0) {
+        console.log(
+          `[soft-speaking] required_slots_missing exercise=${input.exerciseNumber} ` +
+          `slots=${slotCheck.missingSlots.join(',')} allowProgression=false`,
+        )
+      }
+    } else {
+      console.log(
+        `[soft-speaking] accepted_all_slots exercise=${input.exerciseNumber} allowProgression=true`,
+      )
+    }
+  }
+
+  return result
 }
