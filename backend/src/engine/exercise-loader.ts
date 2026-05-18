@@ -18,12 +18,17 @@ export interface LoadResult {
 // ── Primary loader ────────────────────────────────────────────────────────────
 
 export function loadExercisesForSection(sectionId: string): LoadResult {
+  console.log(`[engine:loader] manifest_lookup_started section="${sectionId}"`)
+
   const manifest = getManifestForSection(sectionId)
 
   if (!manifest) {
-    console.warn(`[engine:loader] no manifest found for section="${sectionId}" — returning empty queue`)
+    console.warn(`[engine:loader] manifest_lookup_missing section="${sectionId}" — no hardcoded or JSON manifest found`)
+    console.warn(`[engine:loader] fallback_used=true section="${sectionId}" — engine queue will be empty; AI must NOT improvise exercises`)
     return { exercises: [], sectionId, unit: 0, totalExecutable: 0, totalSkipped: 0 }
   }
+
+  console.log(`[engine:loader] manifest_lookup_resolved section="${sectionId}" source=hardcoded exercises=${manifest.exercises.length}`)
 
   const exercises: ExerciseSpec[] = manifest.exercises.map(entry =>
     parseManifestEntry(entry, manifest.section, manifest.unit),
@@ -33,8 +38,8 @@ export function loadExercisesForSection(sectionId: string): LoadResult {
   const totalSkipped    = exercises.filter(e => e.meta.runtimeMode === 'unsupported').length
 
   console.log(
-    `[engine:loader] section="${sectionId}" loaded=${exercises.length} ` +
-    `executable=${totalExecutable} skipped=${totalSkipped}`,
+    `[engine:loader] manifest_exercises_loaded section="${sectionId}" ` +
+    `count=${exercises.length} executable=${totalExecutable} unsupported_exercises_skipped=${totalSkipped}`,
   )
 
   return {

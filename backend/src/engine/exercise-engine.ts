@@ -155,7 +155,10 @@ export class ExerciseEngine {
       })
 
       if (!nextSpec) {
-        console.log(`[engine] lesson_complete lessonId=${lessonId}`)
+        console.log(
+          `[engine] lesson_complete lessonId=${lessonId} ` +
+          `exercise_queue_completed=true completed=${finalState.completedExerciseIds.length}/${finalState.exerciseQueue.length}`,
+        )
         return {
           action:          'lesson_complete',
           validation,

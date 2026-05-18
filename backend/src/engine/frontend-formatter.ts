@@ -53,10 +53,24 @@ export function buildPromptContext(
     const remaining      = totalCount - completedCount - lessonState.skippedExerciseIds.length
 
     if (remaining <= 0) {
+      // Distinguish between "no manifest loaded" and "all exercises genuinely complete"
+      if (totalCount === 0) {
+        return [
+          `=== EXERCISE ENGINE STATE ===`,
+          `STATUS: No manifest loaded for section "${lessonState.sectionId}". Engine queue is empty.`,
+          `RULE: Do NOT invent or improvise exercises — no structured content is loaded.`,
+          `RULE: Do NOT claim the section is complete or finished.`,
+          `RULE: Say "We've finished the available exercise for this session. More structured exercises are not loaded yet."`,
+          `exercise_queue_completed=false fallback_used=true`,
+          `=== END ENGINE STATE ===`,
+        ].join('\n')
+      }
+
       return [
         `=== EXERCISE ENGINE STATE ===`,
         `STATUS: All exercises complete. Move to WRAP_UP phase.`,
         `Completed: ${completedCount}/${totalCount}`,
+        `exercise_queue_completed=true`,
         `=== END ENGINE STATE ===`,
       ].join('\n')
     }

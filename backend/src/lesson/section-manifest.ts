@@ -172,26 +172,96 @@ const SECTION_1_2_MANIFEST: SectionExerciseManifest = {
   ],
 }
 
+// ── Section 6.1: Vocabulary — Future Plans ────────────────────────────────────
+// Content sourced from focus-content.ts Unit 6 keyVocabulary, collocations, phrasalVerbs.
+// Words: prediction, ambition, career, opportunity, generation, artificial intelligence, decade.
+
+const SECTION_6_1_MANIFEST: SectionExerciseManifest = {
+  section: '6.1',
+  unit: 6,
+  exercises: [
+    {
+      num: 1,
+      type: 'vocabulary_fill_gap',
+      executable: true,
+      runtimeMode: 'deterministic_sequential',
+      instruction: 'Complete the sentences with the correct word from the unit vocabulary.',
+      items: [
+        { text: 'His ___ about electric cars came true.', correctAnswer: 'prediction' },
+        { text: 'Her ___ is to become a doctor.', correctAnswer: 'ambition' },
+        { text: 'He wants a ___ in technology.', correctAnswer: 'career' },
+        { text: 'Study hard and ___ will come.', correctAnswer: 'opportunities' },
+        { text: 'Our ___ grew up with smartphones.', correctAnswer: 'generation' },
+        { text: '___ is changing medicine.', correctAnswer: 'Artificial intelligence' },
+        { text: 'Technology changed dramatically in the last ___.', correctAnswer: 'decade' },
+      ],
+      completionBehavior: 'all_items',
+    },
+    {
+      num: 2,
+      type: 'collocations_fill',
+      executable: true,
+      runtimeMode: 'deterministic_sequential',
+      instruction: 'Complete the sentences with the correct verb or word to form a collocation.',
+      items: [
+        { text: 'Experts ___ a prediction that robots will replace many jobs.', correctAnswer: 'make' },
+        { text: 'She has ___ to study at a top university.', correctAnswer: 'ambitions' },
+        { text: 'He decided to ___ a career in artificial intelligence.', correctAnswer: 'pursue' },
+        { text: "Don't hesitate — ___ this opportunity now.", correctAnswer: 'seize' },
+        { text: 'The ___ generation will grow up with AI everywhere.', correctAnswer: 'next' },
+      ],
+      completionBehavior: 'all_items',
+    },
+    {
+      num: 3,
+      type: 'speaking_prompt',
+      executable: true,
+      runtimeMode: 'soft_speaking',
+      instruction: 'Talk about your future plans, career and ambitions using the vocabulary from this section.',
+      allowedPrompt: 'Tell me about your future plans or career ambitions. Try to use words like prediction, ambition, career, opportunity, generation.',
+      completionBehavior: 'single_response',
+    },
+  ],
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 const HARDCODED_MANIFESTS: Record<string, SectionExerciseManifest> = {
   '1.2': SECTION_1_2_MANIFEST,
+  '6.1': SECTION_6_1_MANIFEST,
 }
 
 // JSON overlay: try data/manifests/{sectionId}.json first, fall back to hardcoded.
 // Lazy import to avoid circular dep — textbook/ imports section-manifest types only.
 export function getManifestForSection(sectionId: string): SectionExerciseManifest | null {
-  const jsonManifest = tryLoadJsonManifest(sectionId)
+  const normalized   = normalizeSectionId(sectionId)
+  const jsonManifest = tryLoadJsonManifest(normalized)
   if (jsonManifest) return jsonManifest
-  return HARDCODED_MANIFESTS[sectionId] ?? null
+  return HARDCODED_MANIFESTS[normalized] ?? null
+}
+
+// Normalize section IDs to the canonical "X.Y" dot format before lookup.
+// Supports: "6.1", "unit-6-section-1", "unit6-section1", "6_1", "unit6_section1"
+function normalizeSectionId(sectionId: string): string {
+  // Already canonical "X.Y"
+  if (/^\d+\.\d+$/.test(sectionId)) return sectionId
+  // "unit-6-section-1" or "unit6-section1"
+  const m1 = sectionId.match(/unit[-_]?(\d+)[-_]section[-_]?(\d+)/i)
+  if (m1) return `${m1[1]}.${m1[2]}`
+  // "6_1" → "6.1"
+  const m2 = sectionId.match(/^(\d+)_(\d+)$/)
+  if (m2) return `${m2[1]}.${m2[2]}`
+  return sectionId
 }
 
 function tryLoadJsonManifest(sectionId: string): SectionExerciseManifest | null {
   try {
-    const filename = sectionId.replace(/\./g, '_') + '.json'
-    const filepath = path.join(MANIFESTS_DIR, filename)
+    const normalized = normalizeSectionId(sectionId)
+    const filename   = normalized.replace(/\./g, '_') + '.json'
+    const filepath   = path.join(MANIFESTS_DIR, filename)
     if (!fs.existsSync(filepath)) return null
     const raw = fs.readFileSync(filepath, 'utf-8')
+    console.log(`[engine:loader] manifest_lookup_resolved section="${sectionId}" source=json path=${filepath}`)
     return JSON.parse(raw) as SectionExerciseManifest
   } catch {
     return null
