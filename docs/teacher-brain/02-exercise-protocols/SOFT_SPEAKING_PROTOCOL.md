@@ -4,7 +4,7 @@
 
 Applies to: `discussion`, `personal_fill`, `pair_speaking`, `guided_speaking`, `any_response`
 
-See also: [[AI_TEACHER_DOCTRINE]] · [[PEDAGOGICAL_RETRY_POLICY]] · [[STT_NOISE_PATTERNS]] · [[SELF_CORRECTION_PATTERNS]]
+See also: [[AI_TEACHER_DOCTRINE]] · [[PEDAGOGICAL_RETRY_POLICY]] · [[STT_NOISE_PATTERNS]] · [[SELF_CORRECTION_PATTERNS]] · [[FORMAL_SPOKEN_INTERPRETATION_RUNTIME]]
 
 ---
 

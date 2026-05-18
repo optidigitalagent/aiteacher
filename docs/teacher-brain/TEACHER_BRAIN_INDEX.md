@@ -74,11 +74,20 @@ This vault captures:
 
 ---
 
+## Future Architecture
+
+| Note | Topic |
+|------|-------|
+| [[FORMAL_SPOKEN_INTERPRETATION_RUNTIME]] | Phase B: raw transcript → formal interpretation pipeline before validation |
+
+---
+
 ## Reading Order for New Contributors
 
 1. [[AI_TEACHER_DOCTRINE]] — understand what Teacher Brain is
 2. [[RUNTIME_AUTHORITY_MAP]] — understand what Teacher Brain cannot touch
 3. [[SOFT_SPEAKING_PROTOCOL]] — the most complex exercise type
-4. [[PEDAGOGICAL_RETRY_POLICY]] — avoid building retry loops
-5. [[STT_NOISE_PATTERNS]] — voice input is not clean text
-6. [[KNOWN_RUNTIME_FAILURES]] — do not repeat past failures
+4. [[FORMAL_SPOKEN_INTERPRETATION_RUNTIME]] — how voice answers are interpreted before validation
+5. [[PEDAGOGICAL_RETRY_POLICY]] — avoid building retry loops
+6. [[STT_NOISE_PATTERNS]] — voice input is not clean text
+7. [[KNOWN_RUNTIME_FAILURES]] — do not repeat past failures

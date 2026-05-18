@@ -4,8 +4,14 @@
 //
 // Backend decides allowProgression — AI never makes this call.
 // No LLM calls. Cheap deterministic checks only.
+//
+// Slot detection is now delegated to the interpretation pipeline (interpretSpokenAnswer).
+// This validator owns the pedagogical policy layer: retry strategy, acceptable_with_repair,
+// max-attempt soft-accept, and repair prompt selection.
 
 import redis, { LESSON_TTL } from '../db/redis.js'
+import { interpretSpokenAnswer } from '../interpretation/index.js'
+import type { AnswerSlot as InterpAnswerSlot } from '../interpretation/index.js'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -481,6 +487,7 @@ function validateWithSlots(
   taskSpec: SoftSpeakingTaskSpec,
   attemptCount: number,
   rawTranscript?: string,
+  preComputedSlotResult?: SlotDetectionResult,
 ): SoftSpeakingValidationResult {
   // Off-task: no substantive content at all
   if (!hasSubstantiveContent(words)) {
@@ -538,7 +545,8 @@ function validateWithSlots(
   // Slot detection runs FIRST — required slots are a hard gate before any other check.
   // acceptable_with_repair, broken_grammar, and max_attempts can only allow progression
   // when ALL required slots are present.
-  const slotResult = detectAnswerSlots(correctedText, taskSpec.requiredSlots, rawTranscript)
+  // When a pre-computed interpretation result is available, use it — avoids duplicate work.
+  const slotResult = preComputedSlotResult ?? detectAnswerSlots(correctedText, taskSpec.requiredSlots, rawTranscript)
 
   // ── Required-slots gate: missingSlots always block progression ──────────────
   // This runs before max_attempts and before broken_grammar/repair paths.
@@ -708,22 +716,54 @@ export function validateSoftSpeakingAnswer(input: SoftSpeakingInput): SoftSpeaki
   // Infer task structure from instruction — fully generic, no exercise/section hardcoding
   const taskSpec = inferSoftSpeakingTask(input.instruction)
 
-  const result = validateWithSlots(normalized, words, input.instruction, taskSpec, input.attemptCount, input.studentTranscript)
-
+  // ── Run formal interpretation pipeline ───────────────────────────────────────
+  // interpretSpokenAnswer performs:
+  //   1. Normalization  2. Segmentation  3. Self-correction resolution
+  //   4. Clause extraction  5. Formal slot extraction
+  // Its missingSlots result is the authoritative gate for progression.
+  let preComputedSlotResult: SlotDetectionResult | undefined
   if (taskSpec.requiredSlots.length > 0) {
-    if (!result.allowProgression) {
-      const slotCheck = detectAnswerSlots(normalizeText(input.studentTranscript), taskSpec.requiredSlots, input.studentTranscript)
-      if (slotCheck.missingSlots.length > 0) {
-        console.log(
-          `[soft-speaking] required_slots_missing exercise=${input.exerciseNumber} ` +
-          `slots=${slotCheck.missingSlots.join(',')} allowProgression=false`,
-        )
-      }
+    const interpretation = interpretSpokenAnswer({
+      rawTranscript:  input.studentTranscript,
+      exerciseType:   input.exerciseType,
+      instruction:    input.instruction,
+      itemText:       input.itemText,
+      requiredSlots:  taskSpec.requiredSlots as InterpAnswerSlot[],
+      attemptCount:   input.attemptCount,
+      inputMode:      'voice',
+    })
+
+    // Map interpretation result to the SlotDetectionResult shape used by validateWithSlots
+    const subjectSlot = interpretation.slots.find(s => s.slot === 'subject')
+    preComputedSlotResult = {
+      presentSlots:       interpretation.slots.map(s => s.slot as AnswerSlot),
+      missingSlots:       interpretation.missingSlots as AnswerSlot[],
+      interpretedMeaning: subjectSlot?.value,
+      confidence:         interpretation.confidence,
+    }
+
+    // Log the authoritative interpretation result
+    if (interpretation.missingSlots.length > 0) {
+      console.log(
+        `[soft-speaking] interpretation_result exercise=${input.exerciseNumber} ` +
+        `missing=${interpretation.missingSlots.join(',')} issue=${interpretation.issueType} ` +
+        `allowProgression=false`,
+      )
     } else {
       console.log(
-        `[soft-speaking] accepted_all_slots exercise=${input.exerciseNumber} allowProgression=true`,
+        `[soft-speaking] interpretation_result exercise=${input.exerciseNumber} ` +
+        `all_slots_present issue=${interpretation.issueType} allowProgression=pending_policy`,
       )
     }
+  }
+
+  const result = validateWithSlots(
+    normalized, words, input.instruction, taskSpec, input.attemptCount,
+    input.studentTranscript, preComputedSlotResult,
+  )
+
+  if (result.allowProgression) {
+    console.log(`[soft-speaking] accepted_all_slots exercise=${input.exerciseNumber} allowProgression=true`)
   }
 
   return result

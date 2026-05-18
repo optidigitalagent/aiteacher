@@ -47,6 +47,7 @@ import {
   resetSoftAttempts,
   type SoftSpeakingValidationResult,
 } from '../validation/soft-speaking-validator.js'
+import { interpretSpokenAnswer } from '../interpretation/index.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
@@ -1051,11 +1052,34 @@ async function tryManifestValidateVoice(
           )
           return null
         }
-        const result = await exerciseEngine.submitAnswer({ lessonId, studentAnswer: studentText })
+        // Grammar-fill voice path: run interpretation to extract canonical answer.
+        // Resolves self-corrections ("ease. not ease. is." → "is") and sentence-embedded
+        // auxiliaries ("What are he doing?" → "are") before submitting to the engine.
+        const currentStep     = exState.spec.steps[exState.currentStepIndex]
+        const isGrammarFill   = /grammar_fill|grammar_focus_fill|fill_in/i.test(spec.exerciseType)
+        let submittedAnswer   = studentText
+        if (isGrammarFill && currentStep?.expectedAnswer) {
+          const interp = interpretSpokenAnswer({
+            rawTranscript:  studentText,
+            exerciseType:   spec.exerciseType,
+            expectedAnswer: currentStep.expectedAnswer,
+            acceptedAnswers: currentStep.validationRule.allowedVariants ?? [],
+            inputMode:      'voice',
+          })
+          if (interp.canonicalAnswer) {
+            console.log(
+              `[interpretation] grammar_fill_canonical="${interp.canonicalAnswer}" ` +
+              `raw="${studentText.slice(0, 40)}" exercise=#${spec.meta.exerciseNumber} lessonId=${lessonId}`,
+            )
+            submittedAnswer = interp.canonicalAnswer
+          }
+        }
+
+        const result = await exerciseEngine.submitAnswer({ lessonId, studentAnswer: submittedAnswer })
         console.log(
           `[engine] voice_validate action=${result.action} ` +
           `exercise=#${spec.meta.exerciseNumber} lessonId=${lessonId} ` +
-          `student="${studentText.slice(0, 60)}"`,
+          `student="${submittedAnswer.slice(0, 60)}"`,
         )
         const correct = result.action === 'step_correct' || result.action === 'exercise_complete' ||
           result.action === 'soft_pass' || result.action === 'step_revealed'
@@ -1258,18 +1282,28 @@ function buildSoftSpeakingContext(result: EngineResult, studentText: string): st
 
 // Builds a deterministic repair/retry prompt for the Teacher Brain when soft-speaking
 // validation rejects the student's answer. Teacher phrases naturally but must not progress.
+// Includes interpretation result so Teacher Brain responds to interpreted meaning, not raw STT.
 function buildSoftSpeakingRetryContext(mv: ManifestVoiceResult, studentText: string): string {
-  const r = mv.softSpeakingRetry!
+  const r      = mv.softSpeakingRetry!
   const repair = r.repairPrompt ?? r.teacherHint ?? 'Try again with a complete sentence.'
-  return [
+
+  const interpretationLine = r.interpretedMeaning
+    ? `Interpreted student intent: "${r.interpretedMeaning}" (do NOT respond to raw STT noise).`
+    : ''
+
+  const lines = [
     `[SPEAKING RETRY — EXERCISE ${mv.exerciseNum}]`,
     `Student said: "${studentText}"`,
-    `Issue: ${r.issueType}${r.interpretedMeaning ? ` (interpreted: "${r.interpretedMeaning}")` : ''}`,
+    `Validation issue: ${r.issueType}`,
+    interpretationLine,
     `MANDATORY: Do NOT mark this exercise complete. Do NOT advance. Keep Exercise ${mv.exerciseNum} active.`,
-    `Your response MUST say (phrase naturally, keep short):`,
+    `MANDATORY: Do NOT say "Exercise complete." Do NOT introduce Exercise ${mv.exerciseNum + 1} or any other exercise.`,
+    `Your response MUST deliver this repair prompt (phrase naturally, keep short — one or two sentences):`,
     repair,
-    `Do NOT say "Wrong." Do NOT say "Exercise complete." End with a clear retry instruction.`,
-  ].join('\n')
+    `End with a clear retry instruction.`,
+  ].filter(Boolean)
+
+  return lines.join('\n')
 }
 
 // Builds a repair hint context when soft-speaking answer is accepted but imperfect.
