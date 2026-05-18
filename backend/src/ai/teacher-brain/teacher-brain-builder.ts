@@ -24,6 +24,7 @@ import {
   buildSpeechRuntimeConsistencyRule,
   EXERCISE_INTRO_RULES,
 } from './teacher-brain-executability.js'
+import { buildExerciseTeachingContext } from '../../behavior-runtime/exercise-teaching/index.js'
 
 export interface TeacherBrainGuidanceInput {
   state: LessonState
@@ -31,6 +32,7 @@ export interface TeacherBrainGuidanceInput {
   studentLevel: string
   teacherName?: string
   remainingSeconds?: number
+  demonstratedExerciseTypes?: Set<string>  // optional: types already demonstrated in this session
 }
 
 // Returns the teacher brain guidance block for injection into the main system prompt.
@@ -105,6 +107,7 @@ export function buildPaidLessonTeacherBrainContext(input: TeacherBrainGuidanceIn
     buildExecutabilitySection(ctx, state),
     buildSpeechRuntimeSyncSection(ctx),    // Phase E.1: speech/runtime consistency rule
     buildBehaviorContractSection(ctx),
+    buildExerciseTeachingBrainSection(ctx, input),  // Exercise Teaching Brain
     buildHumanTutorSection(ctx, state),    // Phase H: human tutor behavior
     buildForbiddenSection(ctx),
     buildExamplesSection(ctx),
@@ -304,6 +307,51 @@ function buildForbiddenSection(ctx: TeacherBrainContext): string {
     '✓ Only run exercises with explicit non-audio types present in the section content above'
 
   return `── FORBIDDEN BEHAVIORS (override all above) ──\n${coreRules}${skipAddendum}${listeningOverride}`
+}
+
+// Exercise Teaching Brain — deterministic per-type teaching behavior, demonstration policy,
+// task boundary guard, frontend sync guard, and retry escalation.
+// Injected in EXERCISES phase only when there is an active exercise.
+function buildExerciseTeachingBrainSection(
+  ctx: TeacherBrainContext,
+  input: TeacherBrainGuidanceInput,
+): string {
+  const { state } = input
+  if (ctx.phase !== 'EXERCISES') return ''
+  if (!ctx.exercise.exerciseType || ctx.exercise.exerciseType === 'unknown') return ''
+
+  // Derive isFirstEncounter: first exercise and no items completed yet
+  const demonstratedTypes = input.demonstratedExerciseTypes
+  const isFirstEncounter = demonstratedTypes
+    ? !demonstratedTypes.has(ctx.exercise.exerciseType)
+    : (state.completedExercises.length === 0 && ctx.exercise.completedItems.length === 0 && ctx.exercise.itemIndex === 0)
+
+  try {
+    const result = buildExerciseTeachingContext({
+      lessonId:           state.lessonId,
+      exerciseType:       ctx.exercise.exerciseType,
+      exerciseNumber:     ctx.exercise.exerciseNum,
+      itemIndex:          ctx.exercise.itemIndex,
+      itemTotal:          state.exerciseItems?.length ?? 1,
+      currentItem:        ctx.exercise.currentItem,
+      correctionTurn:     ctx.exercise.correctionTurn,
+      completedItems:     ctx.exercise.completedItems,
+      items:              state.exerciseItems,
+      options:            state.exerciseOptions,
+      completionState:    undefined,
+      pendingTransition:  false,
+      correctAnswer:      state.currentCorrectAnswer ?? '',
+      studentAnswer:      undefined,
+      isFirstEncounter,
+      runtimeMode:        ctx.exercise.runtimeMode,
+      isUnsupported:      ctx.exercise.isUnsupported,
+    })
+    return result.contextBlock
+  } catch (err) {
+    // Never throw into lesson runtime
+    console.error('[teacher-brain] buildExerciseTeachingBrainSection failed (non-fatal):', err instanceof Error ? err.message : err)
+    return ''
+  }
 }
 
 // Phase H: Human tutor behavior — UI-aware teaching, STT tolerance, transition handling.

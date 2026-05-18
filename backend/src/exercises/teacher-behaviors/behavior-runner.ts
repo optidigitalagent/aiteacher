@@ -9,6 +9,7 @@ import { selectPraise, selectCorrectionPraise } from './praise-library.js'
 import { buildHintGuide } from './hint-library.js'
 import { buildOffTopicPhrase } from './off-topic-recovery.js'
 import type { CorrectionTurn } from '../../lesson/types.js'
+import { getTeacherInstructionPolicy, getExpectedAnswerPolicy, getFrontendRenderPolicy } from '../../behavior-runtime/exercise-teaching/index.js'
 
 export function selectBehaviorProfile(exerciseType: string): BehaviorProfile {
   const policy = getExercisePolicy(exerciseType)
@@ -62,16 +63,37 @@ export function buildBehaviorContext(
   const profile = selectBehaviorProfile(exerciseType)
   const spec = getBehaviorSpec(profile)
   const hintGuide = buildHintGuide(profile, correctionTurn)
-  const result = formatBehaviorBlock(
+
+  // Enrich with type-specific instruction and answer format from the new registry
+  const instrPolicy   = getTeacherInstructionPolicy(exerciseType)
+  const answerPolicy  = getExpectedAnswerPolicy(exerciseType)
+  const renderPolicy  = getFrontendRenderPolicy(exerciseType)
+
+  const enrichedLines: string[] = []
+  if (instrPolicy.answerFormatSpec) {
+    enrichedLines.push(`ANSWER FORMAT: ${instrPolicy.answerFormatSpec}`)
+  }
+  if (answerPolicy.partialAnswerRule) {
+    enrichedLines.push(`PARTIAL ANSWER: ${answerPolicy.partialAnswerRule}`)
+  }
+  if (renderPolicy.screenAwarenessNote) {
+    enrichedLines.push(`SCREEN: ${renderPolicy.screenAwarenessNote}`)
+  }
+
+  const base = formatBehaviorBlock(
     exerciseType, spec,
     selectPraise(itemIndex),
     selectCorrectionPraise(itemIndex),
     hintGuide,
     buildOffTopicPhrase(profile, currentItem, itemIndex),
   )
+
   console.log(`[teacher] type=${exerciseType} behavior=${profile}`)
   if (hintGuide && correctionTurn) {
     console.log(`[hint] type=${exerciseType} turn=${correctionTurn}`)
   }
-  return result
+
+  return enrichedLines.length > 0
+    ? base + '\n' + enrichedLines.join('\n')
+    : base
 }
