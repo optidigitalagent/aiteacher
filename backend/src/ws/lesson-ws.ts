@@ -41,6 +41,7 @@ import { exerciseEngine } from '../engine/exercise-engine.js'
 import type { EngineResult, EngineValidationResult } from '../engine/types.js'
 import { memoryService } from '../memory/index.js'
 import { masterOrchestrator } from '../lesson/master-orchestrator.js'
+import { guardTeacherResponse, buildFallbackGuardContext } from '../engine/stale-item-guard.js'
 import {
   validateSoftSpeakingAnswer,
   getSoftAttempts,
@@ -1942,6 +1943,18 @@ async function processInput(
     enginePromptContext = await exerciseEngine.getPromptContext(meta.lessonId)
   } catch { /* non-fatal — AI proceeds without engine context */ }
 
+  // Unsafe-fallback guard: if queue is empty (no manifest), inject explicit block
+  // to prevent AI from improvising exercises.
+  if (enginePromptContext.includes('fallback_used=true') || enginePromptContext.includes('No manifest loaded')) {
+    try {
+      const engState = await exerciseEngine.getState(meta.lessonId)
+      const sectionId = engState?.sectionId ?? 'unknown'
+      const fallbackBlock = buildFallbackGuardContext(sectionId)
+      enginePromptContext = fallbackBlock + '\n\n' + enginePromptContext
+      console.log(`[teacher_guard] fallback_block_injected sectionId=${sectionId} lessonId=${meta.lessonId}`)
+    } catch { /* non-fatal */ }
+  }
+
   // Memory System: load compact student memory summary for Teacher Brain (read-only).
   // Loaded once per AI turn. Failure is non-fatal — lesson continues without memory context.
   let memoryBlock = ''
@@ -1978,14 +1991,33 @@ async function processInput(
     responseLength: result.text?.length ?? 0,
   })
 
-  send(ws, { type: 'ai_text', phase: result.phase, text: result.text, displayText: result.displayText })
+  // ── Stale Item Guard ──────────────────────────────────────────────────────
+  // In EXERCISES phase, validate teacher text against canonical cursor before send.
+  // If AI referenced a stale item number (e.g. "Number 1" when on item 3), rewrite.
+  let guardedText = result.text
+  if (result.phase === 'EXERCISES' && meta.lessonId) {
+    try {
+      const canonicalCursor = await exerciseEngine.getCursor(meta.lessonId)
+      const guardResult = guardTeacherResponse(result.text, canonicalCursor, result.phase)
+      if (!guardResult.safe) {
+        console.log(
+          `[teacher_guard] stale_item_blocked lessonId=${meta.lessonId}` +
+          ` old="${guardResult.blockedPhrase?.slice(0, 60)}"` +
+          ` current=item${(canonicalCursor?.itemIndex ?? 0) + 1}:exercise#${canonicalCursor?.exerciseNumber ?? '?'}`,
+        )
+        guardedText = guardResult.text
+      }
+    } catch { /* non-fatal — send original text */ }
+  }
+
+  send(ws, { type: 'ai_text', phase: result.phase, text: guardedText, displayText: result.displayText })
   if (meta.lessonId && meta.userId) {
     recordTeacherMessage({
       lessonId:       meta.lessonId,
       sessionId:      meta.sessionId,
       userId:         meta.userId,
       studentId:      meta.studentId,
-      text:           result.text,
+      text:           guardedText,  // record guarded text (not raw AI output)
       phase:          result.phase,
       exerciseNumber: result.exercise?.exerciseNumber ?? result.exerciseCursor?.exerciseNumber ?? null,
       exerciseType:   result.exercise?.type          ?? result.exerciseCursor?.exerciseType   ?? null,

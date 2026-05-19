@@ -43,6 +43,10 @@ export function useLessonSession({ send, sessionId }: Options) {
   const [exercise,       setExercise]       = useState<Exercise | null>(null)
   const [exerciseCursor, setExerciseCursor] = useState<ExerciseCursor | null>(null)
   const exerciseIndexRef                    = useRef(0)
+  // Canonical cursor version: only accept cursors with version >= this value.
+  // Prevents stale cursor updates (e.g. delayed WS packets from a previous turn) from
+  // reverting the frontend to an older item after the engine has already advanced.
+  const cursorVersionRef                    = useRef<number>(-1)
   const [pendingId,      setPendingId]      = useState<string | null>(null)
   const [steps,          setSteps]          = useState<LessonStep[]>(PHASE_STEPS)
   const [currentPhase,   setCurrentPhase]   = useState<string>('DIAGNOSTIC')
@@ -62,7 +66,29 @@ export function useLessonSession({ send, sessionId }: Options) {
   // Called when WS 'exercise_cursor_updated' arrives.
   // exerciseCursor is the primary source of truth for paid lessons.
   // pendingId follows cursor.exerciseId so submitAnswer always targets the live exercise.
+  // Stale cursor updates (version < current known) are silently ignored.
   const onCursorUpdated = useCallback((cursor: ExerciseCursor) => {
+    const incomingVersion = cursor.cursorVersion ?? 0
+    const knownVersion    = cursorVersionRef.current
+
+    // If incoming version is behind the current known version, ignore to prevent rollback.
+    if (incomingVersion > 0 && knownVersion > 0 && incomingVersion < knownVersion) {
+      if (import.meta.env.DEV) {
+        console.log('[cursor] stale_cursor_ignored', {
+          incoming: incomingVersion,
+          current:  knownVersion,
+          exercise: cursor.exerciseNumber,
+          item:     cursor.itemIndex,
+        })
+      }
+      return
+    }
+
+    // Accept cursor — update version tracker
+    if (incomingVersion > 0) {
+      cursorVersionRef.current = incomingVersion
+    }
+
     setExerciseCursor(cursor)
     if (cursor.exerciseId != null) {
       setPendingId(cursor.exerciseId)
@@ -71,24 +97,30 @@ export function useLessonSession({ send, sessionId }: Options) {
     }
     if (import.meta.env.DEV) {
       console.log('[cursor] updated', {
-        exerciseId: cursor.exerciseId,
-        exerciseNumber: cursor.exerciseNumber,
-        itemIndex: cursor.itemIndex,
-        completionState: cursor.completionState,
-        expectedInputMode: cursor.expectedInputMode,
+        exerciseId:        cursor.exerciseId,
+        exerciseNumber:    cursor.exerciseNumber,
+        itemIndex:         cursor.itemIndex,
+        cursorVersion:     incomingVersion,
       })
     }
   }, [])
 
   // Called when WS 'lesson_state_snapshot' arrives on reconnect.
   // Replaces any stale cursor/phase state — backend is authoritative.
+  // Resets the version tracker to the canonical snapshot version.
   const onStateSnapshot = useCallback((cursor: ExerciseCursor, phase: string) => {
+    const snapshotVersion = cursor.cursorVersion ?? 0
+    if (snapshotVersion > 0) cursorVersionRef.current = snapshotVersion
     setExerciseCursor(cursor)
     if (cursor.exerciseId != null) setPendingId(cursor.exerciseId)
     setCurrentPhase(phase)
     setIsRecovering(false)
     if (import.meta.env.DEV) {
-      console.log('[cursor] reconnect snapshot received', { exerciseId: cursor.exerciseId, phase })
+      console.log('[cursor] reconnect snapshot received', {
+        exerciseId: cursor.exerciseId,
+        phase,
+        cursorVersion: snapshotVersion,
+      })
     }
   }, [])
 
@@ -103,6 +135,9 @@ export function useLessonSession({ send, sessionId }: Options) {
   }) => {
     if (payload.phase) setCurrentPhase(payload.phase)
     if (payload.visiblePayload) {
+      // Resync always wins — reset cursor version to authoritative backend value
+      const resyncVersion = payload.visiblePayload.cursorVersion ?? 0
+      if (resyncVersion > 0) cursorVersionRef.current = resyncVersion
       setExerciseCursor(payload.visiblePayload)
       if (payload.visiblePayload.exerciseId != null) {
         setPendingId(payload.visiblePayload.exerciseId)
@@ -111,9 +146,10 @@ export function useLessonSession({ send, sessionId }: Options) {
     setIsRecovering(false)
     if (import.meta.env.DEV) {
       console.log('[ws:reconnect] ui_restored', {
-        exercise: payload.exerciseNumber,
-        item:     payload.currentItemIndex,
-        phase:    payload.phase,
+        exercise:      payload.exerciseNumber,
+        item:          payload.currentItemIndex,
+        phase:         payload.phase,
+        cursorVersion: payload.visiblePayload?.cursorVersion,
       })
     }
   }, [])

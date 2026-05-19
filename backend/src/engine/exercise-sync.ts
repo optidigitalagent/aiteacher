@@ -21,6 +21,7 @@ export async function loadEngineState(lessonId: string): Promise<EngineLessonSta
     state.skippedExerciseIds  ??= []
     state.completedExerciseIds ??= []
     state.engineVersion        ??= 1
+    state.cursorVersion        ??= 0
     return state
   } catch (err) {
     console.error(`[engine:sync] failed to load state lessonId=${lessonId}`, err)

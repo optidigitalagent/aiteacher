@@ -156,6 +156,10 @@ export interface ExerciseCursor {
   promptCards?:   PromptCard[]    // discussion/speaking task cards
   statements?:    Statement[]     // agree/disagree or opinion statements
   visibleContext?: VisibleContext  // summary of what is visible (used by Teacher Brain guard)
+
+  // Canonical cursor authority — version incremented on every item/exercise transition.
+  // Frontend must ignore cursor updates with version < current known version.
+  cursorVersion?: number
 }
 
 export interface ErrorRecord {

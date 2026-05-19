@@ -41,6 +41,7 @@ export function formatCursor(
     section:        spec.meta.lessonSection,
     wordBoxState:   null,
     visibleContext,
+    cursorVersion:  lessonState.cursorVersion ?? 0,
   }
 
   // Attach visible payload fields — only if present (keep wire payload minimal)

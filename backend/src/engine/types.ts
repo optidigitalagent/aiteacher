@@ -146,6 +146,7 @@ export interface EngineLessonState {
   sessionStartedAt: string
   lastActivityAt: string
   engineVersion: number               // bump when schema changes; 1 = this version
+  cursorVersion?: number              // incremented on every item/exercise transition (canonical cursor authority)
 }
 
 // ── Validation ────────────────────────────────────────────────────────────────

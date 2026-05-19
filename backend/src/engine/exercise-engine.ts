@@ -20,6 +20,11 @@ import type {
   AnswerSubmission,
 } from './types.js'
 import { loadExercisesForSection } from './exercise-loader.js'
+import {
+  buildCanonicalCursor,
+  saveCanonicalCursor,
+  logCanonicalCursor,
+} from './canonical-cursor.js'
 import { validateStep } from './validation-hooks.js'
 import {
   initExerciseState,
@@ -89,9 +94,10 @@ export class ExerciseEngine {
       sessionStartedAt:     new Date().toISOString(),
       lastActivityAt:       new Date().toISOString(),
       engineVersion:        1,
+      cursorVersion:        1,
     }
 
-    await saveEngineState(lessonId, state)
+    await this.saveWithCanonicalCursor(lessonId, state, 'engine_init')
     console.log(
       `[engine] init lessonId=${lessonId} section=${sectionId} ` +
       `exercises=${exercises.length}`,
@@ -140,10 +146,16 @@ export class ExerciseEngine {
     // Check if exercise is now complete
     const exerciseNowComplete = isExerciseComplete(finalExState)
 
-    let finalState: EngineLessonState = { ...state, currentExerciseState: finalExState }
+    // Bump cursor version on every item progression (correct answer or reveal)
+    const versionBumped = validation.allowProgression || validation.shouldRevealAnswer
+    let finalState: EngineLessonState = {
+      ...state,
+      currentExerciseState: finalExState,
+      cursorVersion: versionBumped ? (state.cursorVersion ?? 0) + 1 : (state.cursorVersion ?? 0),
+    }
 
     if (exerciseNowComplete) {
-      finalState = this.closeCurrentExercise(finalState, finalExState)
+      finalState = this.closeCurrentExercise(this.bumpVersion(finalState), finalExState)
       await saveEngineState(lessonId, finalState)
 
       const completedNumbers = resolveCompletedExerciseNumbers(finalState)
@@ -173,7 +185,7 @@ export class ExerciseEngine {
         : initExerciseState(nextSpec)
       let currentNextSpec = nextSpec
 
-      finalState = this.mountNextExercise(finalState, nextExState, currentNextSpec)
+      finalState = this.mountNextExercise(this.bumpVersion(finalState), nextExState, currentNextSpec)
 
       while (nextExState.status === 'skipped') {
         finalState = this.closeCurrentExercise(finalState, nextExState)
@@ -198,10 +210,10 @@ export class ExerciseEngine {
           ? skipExercise(initExerciseState(afterSkip))
           : initExerciseState(afterSkip)
         currentNextSpec = afterSkip
-        finalState = this.mountNextExercise(finalState, nextExState, afterSkip)
+        finalState = this.mountNextExercise(this.bumpVersion(finalState), nextExState, afterSkip)
       }
 
-      await saveEngineState(lessonId, finalState)
+      await this.saveWithCanonicalCursor(lessonId, finalState, 'exercise_complete')
 
       console.log(
         `[engine] exercise_complete → next #${currentNextSpec.meta.exerciseNumber} ` +
@@ -217,12 +229,16 @@ export class ExerciseEngine {
       }
     }
 
-    // Exercise still active — persist and return
-    await saveEngineState(lessonId, finalState)
+    // Exercise still active — persist and save canonical cursor if item advanced
+    await this.saveWithCanonicalCursor(
+      lessonId,
+      finalState,
+      versionBumped ? 'item_advanced' : 'retry',
+    )
 
     console.log(
-      `[engine] step_result action=${action} step=${finalExState.currentStepIndex - (validation.correct ? 0 : 0)} ` +
-      `correct=${validation.correct} lessonId=${lessonId}`,
+      `[engine] step_result action=${action} step=${finalExState.currentStepIndex} ` +
+      `correct=${validation.correct} version=${finalState.cursorVersion} lessonId=${lessonId}`,
     )
 
     return {
@@ -241,7 +257,10 @@ export class ExerciseEngine {
     if (!exState) return this.noChangeResult(state)
 
     const skipped = skipExercise(exState)
-    let finalState = this.closeCurrentExercise({ ...state, currentExerciseState: skipped }, skipped)
+    let finalState = this.closeCurrentExercise(
+      this.bumpVersion({ ...state, currentExerciseState: skipped }),
+      skipped,
+    )
 
     const completedNumbers = resolveCompletedExerciseNumbers(finalState)
     const nextSpec = findNextExercise({
@@ -265,8 +284,8 @@ export class ExerciseEngine {
       ? skipExercise(initExerciseState(nextSpec))
       : initExerciseState(nextSpec)
 
-    finalState = this.mountNextExercise(finalState, nextExState, nextSpec)
-    await saveEngineState(lessonId, finalState)
+    finalState = this.mountNextExercise(this.bumpVersion(finalState), nextExState, nextSpec)
+    await this.saveWithCanonicalCursor(lessonId, finalState, 'exercise_skipped')
 
     console.log(`[engine] skip → next #${nextSpec.meta.exerciseNumber} lessonId=${lessonId}`)
 
@@ -308,13 +327,30 @@ export class ExerciseEngine {
       return this.init(lessonId, sectionId)
     }
 
-    // Refresh TTL on successful recovery
-    await saveEngineState(lessonId, state)
-    console.log(`[engine:recover] ok lessonId=${lessonId} exercise=${state.currentExerciseIndex}`)
+    // Refresh TTL on successful recovery and rebuild canonical cursor
+    await this.saveWithCanonicalCursor(lessonId, state, 'session_recovered')
+    console.log(`[engine:recover] ok lessonId=${lessonId} exercise=${state.currentExerciseIndex} version=${state.cursorVersion ?? 0}`)
     return state
   }
 
   // ── Internal helpers ────────────────────────────────────────────────────────
+
+  private bumpVersion(state: EngineLessonState): EngineLessonState {
+    return { ...state, cursorVersion: (state.cursorVersion ?? 0) + 1 }
+  }
+
+  private async saveWithCanonicalCursor(
+    lessonId: string,
+    state: EngineLessonState,
+    reason: string,
+  ): Promise<void> {
+    await saveEngineState(lessonId, state)
+    if (state.currentExerciseState && state.currentExerciseState.status === 'active') {
+      const canonical = buildCanonicalCursor(state.currentExerciseState, state)
+      logCanonicalCursor(canonical, reason)
+      saveCanonicalCursor(lessonId, canonical).catch(() => { /* fail-soft */ })
+    }
+  }
 
   private async requireState(lessonId: string): Promise<EngineLessonState> {
     const state = await loadEngineState(lessonId)
@@ -388,8 +424,8 @@ export class ExerciseEngine {
       ? skipExercise(initExerciseState(nextSpec))
       : initExerciseState(nextSpec)
 
-    finalState = this.mountNextExercise(finalState, nextExState, nextSpec)
-    await saveEngineState(state.lessonId, finalState)
+    finalState = this.mountNextExercise(this.bumpVersion(finalState), nextExState, nextSpec)
+    await this.saveWithCanonicalCursor(state.lessonId, finalState, 'auto_skip')
 
     return {
       action:           'exercise_skipped',

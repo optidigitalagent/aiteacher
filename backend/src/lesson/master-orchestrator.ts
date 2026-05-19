@@ -21,6 +21,12 @@ import type {
 } from '../engine/types.js'
 import { exerciseEngine } from '../engine/exercise-engine.js'
 import { memoryService } from '../memory/index.js'
+import {
+  recordNodeAttempt,
+  recordNodeCompleted,
+  recordNodeSkipped,
+  recordMisconception,
+} from './pedagogical-progress-graph.js'
 
 // Inline readiness guard — mirrors normalizeIntentText + READINESS_INTENT_RE in lesson-ws.ts.
 // Kept local to avoid a circular import between lesson/ and ws/ layers.
@@ -499,6 +505,40 @@ export class MasterLessonOrchestrator {
       }).catch(() => { /* fail-soft */ })
     }
 
+    // Pedagogical graph: record item attempt — fail-soft, never blocks lesson flow
+    const pgSectionId  = engineState.sectionId
+    const pgExerciseId = preSubmitExercise.exerciseId
+    const pgStep       = preSubmitSpec.steps[preSubmitExercise.currentStepIndex]
+    const pgItemNodeId = pgStep ? `${pgExerciseId}_item_${pgStep.stepId}` : null
+
+    if (pgItemNodeId && pgStep && result.validation) {
+      const isCorrect = result.validation.correct
+      const pgLabel   = pgStep.question.slice(0, 100)
+      recordNodeAttempt(lessonId, pgSectionId, pgItemNodeId, 'item', pgLabel, studentAnswer, isCorrect)
+        .catch(() => { /* fail-soft */ })
+      if (!isCorrect) {
+        recordMisconception(lessonId, pgSectionId, pgItemNodeId, 'item', pgLabel, studentAnswer)
+          .catch(() => { /* fail-soft */ })
+        console.log(`[pedagogy_graph] misconception_recorded nodeId=${pgItemNodeId} lessonId=${lessonId}`)
+      }
+    }
+
+    // Pedagogical graph: record exercise completion — fail-soft
+    if (result.action === 'exercise_complete' || result.action === 'lesson_complete') {
+      const pgExNodeId = `exercise_${pgExerciseId}`
+      const pgExLabel  = `Exercise ${preSubmitSpec.meta.exerciseNumber}: ${preSubmitSpec.exerciseType}`
+      recordNodeCompleted(lessonId, pgSectionId, pgExNodeId, 'exercise', pgExLabel)
+        .catch(() => { /* fail-soft */ })
+    }
+
+    // Pedagogical graph: record exercise skip — fail-soft
+    if (result.action === 'exercise_skipped') {
+      const pgExNodeId = `exercise_${pgExerciseId}`
+      const pgExLabel  = `Exercise ${preSubmitSpec.meta.exerciseNumber}: ${preSubmitSpec.exerciseType}`
+      recordNodeSkipped(lessonId, pgSectionId, pgExNodeId, 'exercise', pgExLabel)
+        .catch(() => { /* fail-soft */ })
+    }
+
     // Build feedback event for immediate frontend update
     const feedbackEvent: FeedbackEvent | null = result.validation
       ? {
@@ -546,6 +586,15 @@ export class MasterLessonOrchestrator {
     // Build Teacher Brain context — AI verbalizes engine decision only
     const teacherInput = buildTeacherContextFromResult(result, studentAnswer, engineTurnResult)
     console.log(`[master-orch] teacher_response_requested lessonId=${lessonId} action=${result.action}`)
+
+    // Log canonical cursor version going into teacher context
+    const cursorVersion = result.exerciseCursor?.cursorVersion ?? engineState.cursorVersion ?? 0
+    console.log(
+      `[cursor] teacher_context_cursor lessonId=${lessonId}` +
+      ` exercise=#${engineTurnResult.exerciseNumber}` +
+      ` item=${engineTurnResult.itemIndex + 1}/${engineTurnResult.itemTotal}` +
+      ` version=${cursorVersion}`,
+    )
 
     return {
       cursorUpdate:   result.exerciseCursor,
