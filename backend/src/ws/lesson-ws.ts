@@ -59,6 +59,7 @@ import {
 } from '../observability/index.js'
 import { hashUserId } from '../observability/langfuse-client.js'
 import { recordStudentMessage, recordTeacherMessage, recordSystemEvent } from '../lesson/transcript-recorder.js'
+import { classifyVoiceTranscript } from '../voice/voice-turn-stabilizer.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
@@ -421,6 +422,10 @@ interface ClientMeta {
   // voice turn from being submitted twice (e.g. UtteranceEnd + mic_stop race).
   voiceTurnId:              string | null
   lastSubmittedVoiceTurnId: string | null
+  // Stabilization window: 450ms timer started on mic_stop.
+  // Keeps micActive=true while waiting for late Deepgram is_final segments.
+  // Replaced the legacy pendingMicStop+800ms-timeout path.
+  stabilizationRef:         ReturnType<typeof setTimeout> | null
   // Phase 11: tracks when THIS connection's billing period started.
   // Separate from lessonStartedAt (which is the original lesson wall-clock start
   // used for timeout/remaining-time calculations). Using lessonStartedAt for
@@ -2709,6 +2714,7 @@ export function attachLessonWS(server: Server): void {
         pendingMicStop:           false,
         pendingMicStopTimeoutRef: null,
         micActive:                false,
+        stabilizationRef:         null,
         lastSeen:                 Date.now(),
       }
     } else {
@@ -2742,6 +2748,7 @@ export function attachLessonWS(server: Server): void {
         micActive:         false,
         voiceTurnId:              null,
         lastSubmittedVoiceTurnId: null,
+        stabilizationRef:         null,
         billingStartedAt: null,
       }
     }
@@ -2868,78 +2875,98 @@ export function attachLessonWS(server: Server): void {
             break
           }
           case 'mic_stop': {
-            // Flush Deepgram's internal is_final buffer (segments that arrived since
-            // the last UtteranceEnd) into pendingTranscript so we can submit immediately
-            // without waiting up to 1500ms for UtteranceEnd to fire.
-            const buffered = meta.stt?.flushBuffer() ?? ''
-            if (buffered) {
-              meta.pendingTranscript = meta.pendingTranscript
-                ? meta.pendingTranscript + ' ' + buffered
-                : buffered
+            // Stabilization window: keep micActive=true for 450ms after mic_stop so
+            // late Deepgram is_final and UtteranceEnd events are still accepted.
+            // This prevents "last words cut off" when audio is still in Deepgram pipeline.
+            if (meta.pendingMicStopTimeoutRef) {
+              clearTimeout(meta.pendingMicStopTimeoutRef)
+              meta.pendingMicStopTimeoutRef = null
             }
-            const pending = meta.pendingTranscript.trim()
-            if (pending) {
-              // Text is ready — submit immediately, no UtteranceEnd wait needed.
-              meta.pendingTranscript = ''
-              meta.pendingMicStop    = false
-              meta.micActive         = false  // turn finalized — discard further STT events
-              if (meta.pendingMicStopTimeoutRef) {
-                clearTimeout(meta.pendingMicStopTimeoutRef)
-                meta.pendingMicStopTimeoutRef = null
-              }
-              if (shouldProcessTranscript(pending)) {
-                meta.stt?.clearBuffer()
-                const tid = meta.voiceTurnId
-                if (tid && tid === meta.lastSubmittedVoiceTurnId) {
-                  console.log(`[voice] duplicate_turn_rejected turnId=${tid} trigger=mic_stop_flush`)
-                } else {
-                  meta.lastSubmittedVoiceTurnId = tid
-                  console.log(`[voice] student_turn_submit chars=${pending.length} turnId=${tid} trigger=mic_stop_flush`)
-                  send(ws, { type: 'student_message', text: pending })
-                  if (meta.lessonId && meta.userId) {
-                    recordStudentMessage({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, text: pending, source: 'stt' })
-                  }
-                  await processInput(ws, meta, pending)
+            if (meta.stabilizationRef) {
+              clearTimeout(meta.stabilizationRef)
+            }
+            meta.pendingMicStop = false  // onTranscript: accumulate path, not immediate-submit
+
+            const STABILIZATION_MS = 450
+            const captureTurnId = meta.voiceTurnId
+            console.log(`[voice:turn] mic_stop turnId=${captureTurnId} stabilizing=${STABILIZATION_MS}ms`)
+
+            meta.stabilizationRef = setTimeout(() => {
+              void (async () => {
+                meta.stabilizationRef = null
+                meta.micActive        = false  // turn finalized — discard any further events
+
+                // Merge Deepgram buffer (is_final segments not yet in pendingTranscript)
+                const buffered = meta.stt?.flushBuffer() ?? ''
+                if (buffered) {
+                  meta.pendingTranscript = meta.pendingTranscript
+                    ? meta.pendingTranscript + ' ' + buffered
+                    : buffered
                 }
-              }
-            } else {
-              // Nothing accumulated yet — UtteranceEnd may still be in flight.
-              // Wait briefly; the onTranscript callback will process when it arrives.
-              meta.pendingMicStop = true
-              console.log(`[paid-lesson] mic_stop_waiting_utterance_end`)
-              if (meta.pendingMicStopTimeoutRef) clearTimeout(meta.pendingMicStopTimeoutRef)
-              meta.pendingMicStopTimeoutRef = setTimeout(() => {
-                if (!meta.pendingMicStop) return  // already handled by UtteranceEnd
-                meta.pendingMicStop           = false
-                meta.pendingMicStopTimeoutRef = null
-                meta.micActive                = false  // turn finalized
-                const delayed = meta.pendingTranscript.trim()
+                const raw = meta.pendingTranscript.trim()
                 meta.pendingTranscript = ''
                 meta.stt?.clearBuffer()
-                if (delayed && shouldProcessTranscript(delayed)) {
-                  const tid = meta.voiceTurnId
-                  if (tid && tid === meta.lastSubmittedVoiceTurnId) {
-                    console.log(`[voice] duplicate_turn_rejected turnId=${tid} trigger=mic_stop_timeout`)
-                  } else {
-                    meta.lastSubmittedVoiceTurnId = tid
-                    console.log(`[voice] student_turn_submit chars=${delayed.length} turnId=${tid} trigger=mic_stop_timeout`)
-                    send(ws, { type: 'student_message', text: delayed })
-                    if (meta.lessonId && meta.userId) {
-                      recordStudentMessage({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, text: delayed, source: 'stt' })
-                    }
-                    processInput(ws, meta, delayed).catch((err: unknown) =>
-                      console.error('[paid-lesson] processInput error (mic_stop_timeout):', err))
-                  }
-                } else {
-                  console.log(`[voice] mic_stop_timeout_no_text`)
-                  // No transcript captured — speak safe fallback without calling AI.
+
+                if (!raw || !shouldProcessTranscript(raw)) {
+                  console.log(`[voice:turn] no_transcript turnId=${captureTurnId}`)
                   if (meta.sessionId && meta.lessonId) {
                     ttsStream(ws, meta, "I didn't catch that. Try once more.").catch((err: unknown) =>
-                      console.error('[voice] silence_tts error:', err))
+                      console.error('[voice] no_transcript_tts error:', err))
                   }
+                  return
                 }
-              }, 800)  // 800ms — enough for Deepgram's 300ms endpointing + network RTT
-            }
+
+                // Exercise-aware quality classification
+                let exerciseType: string | undefined
+                if (meta.lessonId) {
+                  try {
+                    const cursor = await exerciseEngine.getCursor(meta.lessonId)
+                    exerciseType = cursor?.exerciseType
+                  } catch { /* non-fatal — classifier falls back to permissive mode */ }
+                }
+
+                const classification = classifyVoiceTranscript(raw, exerciseType)
+                if (!classification.usable) {
+                  console.log(
+                    `[voice:turn] rejected kind=${classification.kind} reason=${classification.reason} ` +
+                    `preview="${raw.slice(0, 40)}" turnId=${captureTurnId}`,
+                  )
+                  if (meta.sessionId && meta.lessonId) {
+                    ttsStream(ws, meta, "I didn't quite catch that. Could you say that again?").catch((err: unknown) =>
+                      console.error('[voice] noise_reject_tts error:', err))
+                  }
+                  return
+                }
+
+                const finalText = classification.normalizedText
+                if (classification.kind === 'repeat') {
+                  console.log(`[voice:turn] deduped preview="${finalText.slice(0, 40)}" turnId=${captureTurnId}`)
+                }
+
+                // Dedup: prevent same turn from submitting twice (e.g., UtteranceEnd race)
+                const tid = meta.voiceTurnId
+                if (tid && tid === meta.lastSubmittedVoiceTurnId) {
+                  console.log(`[voice:turn] duplicate_rejected turnId=${tid}`)
+                  return
+                }
+                meta.lastSubmittedVoiceTurnId = tid
+
+                console.log(
+                  `[voice:turn] submitted chars=${finalText.length} ` +
+                  `kind=${classification.kind} exerciseType=${exerciseType ?? 'unknown'} turnId=${tid}`,
+                )
+                send(ws, { type: 'student_message', text: finalText })
+                if (meta.lessonId && meta.userId) {
+                  recordStudentMessage({
+                    lessonId: meta.lessonId, sessionId: meta.sessionId,
+                    userId: meta.userId, studentId: meta.studentId,
+                    text: finalText, source: 'stt',
+                  })
+                }
+                processInput(ws, meta, finalText).catch((err: unknown) =>
+                  console.error('[paid-lesson] processInput error (stabilized-mic-stop):', err))
+              })()
+            }, STABILIZATION_MS)
             break
           }
           case 'audio_chunk':
@@ -2996,6 +3023,7 @@ export function attachLessonWS(server: Server): void {
       if (meta.warningRef)               clearTimeout(meta.warningRef)
       if (meta.timerUpdateRef)           clearInterval(meta.timerUpdateRef)
       if (meta.pendingMicStopTimeoutRef) clearTimeout(meta.pendingMicStopTimeoutRef)
+      if (meta.stabilizationRef)        clearTimeout(meta.stabilizationRef)
       meta.ttsController?.abort()
       meta.stt?.close()
       meta.stt = null

@@ -20,6 +20,8 @@ export class DeepgramSTT {
 
   // Accumulate final transcript segments until utterance truly ends
   private transcriptBuffer = ''
+  // Tracks the last appended is_final segment (normalized) to skip Deepgram duplicates.
+  private lastFinalSegmentNorm = ''
 
   constructor(
     private onTranscript: (text: string) => void,
@@ -69,6 +71,16 @@ export class DeepgramSTT {
       const text    = (alts?.[0]?.['transcript'] as string) ?? ''
       if (!text) return
       if (data['is_final']) {
+        // Skip segment if it is identical to the most recently appended segment.
+        // Deepgram can emit the same is_final text multiple times for poor audio,
+        // which causes "View. View. View." accumulation artifacts.
+        const segNorm = text.toLowerCase().replace(/[^a-z\s]/g, '').trim()
+        if (segNorm && segNorm === this.lastFinalSegmentNorm) {
+          // Duplicate is_final — skip but still emit interim so UI stays updated
+          this.onInterim?.(this.transcriptBuffer)
+          return
+        }
+        if (segNorm) this.lastFinalSegmentNorm = segNorm
         this.transcriptBuffer += (this.transcriptBuffer ? ' ' : '') + text
         // Emit confirmed accumulated text so frontend input stays updated
         this.onInterim?.(this.transcriptBuffer)
@@ -124,14 +136,16 @@ export class DeepgramSTT {
   }
 
   clearBuffer(): void {
-    this.transcriptBuffer = ''
+    this.transcriptBuffer        = ''
+    this.lastFinalSegmentNorm    = ''
   }
 
   // Returns and clears the accumulated is_final buffer so mic_stop can submit
   // immediately without waiting for UtteranceEnd.
   flushBuffer(): string {
-    const text = this.transcriptBuffer.trim()
-    this.transcriptBuffer = ''
+    const text                   = this.transcriptBuffer.trim()
+    this.transcriptBuffer        = ''
+    this.lastFinalSegmentNorm    = ''
     return text
   }
 
@@ -143,7 +157,8 @@ export class DeepgramSTT {
       clearInterval(this.keepAliveRef)
       this.keepAliveRef = null
     }
-    this.transcriptBuffer = ''
+    this.transcriptBuffer     = ''
+    this.lastFinalSegmentNorm = ''
     try { c.finish() } catch (err) {
       console.error('[stt] close error (ignored):', err)
     }
