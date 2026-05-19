@@ -324,8 +324,11 @@ const handler: AIHandlerFn = async (state: LessonState, inputText: string, callC
   // an active (non-free, non-transition) exercise exists — see engine/frontend-formatter.ts.
   const engineOwnsExercise = !!(callCtx?.enginePromptContext?.includes('(backend-authoritative)'))
   if (engineOwnsExercise && aiResp.exercise) {
+    // Correct behaviour: AI generated exercise JSON despite engine authority.
+    // Strip it here; orchestrator.ts strips a second time as defence-in-depth.
     console.log(
-      `[teacher_brain:isolation] engine_active_exercise_stripped` +
+      `[teacher_brain:isolation] engine_authority_applied` +
+      ` action=ai_exercise_json_stripped` +
       ` type="${aiResp.exercise.type}"` +
       ` exerciseNum=${aiResp.exercise.exerciseNumber ?? 'n/a'}` +
       ` lessonId=${state.lessonId}`,

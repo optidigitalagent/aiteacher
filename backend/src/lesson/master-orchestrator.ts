@@ -15,6 +15,9 @@ import type {
   EngineResult,
   EngineValidationResult,
   EngineLessonState,
+  EngineTurnResult,
+  EngineTurnKind,
+  TeacherAction,
 } from '../engine/types.js'
 import { exerciseEngine } from '../engine/exercise-engine.js'
 import { memoryService } from '../memory/index.js'
@@ -145,19 +148,163 @@ function buildCorrectionBlock(
   )
 }
 
-// ── Internal: build Teacher Brain context from engine result ─────────────────
+// ── Internal: build formal EngineTurnResult from EngineResult ────────────────
+// This is the deterministic contract that tells the Teacher Brain exactly what
+// happened and what it must do.  AI never mutates this object.
 
-function buildTeacherContextFromResult(result: EngineResult, studentAnswer: string): string {
+function buildEngineTurnResult(
+  result: EngineResult,
+  studentAnswer: string,
+  preSubmitExState: import('../engine/types.js').EngineExerciseState,
+): EngineTurnResult {
+  const cursor     = result.exerciseCursor
+  const validation = result.validation
+  const spec       = preSubmitExState.spec
+
+  // Map EngineAction → EngineTurnKind
+  let kind: EngineTurnKind = 'unsupported'
+  let teacherAction: TeacherAction = 'hint_same_item'
+  let shouldAdvance   = false
+  let shouldStayOnItem = true
+  let correctionTurn: 'A' | 'B' | 'C' | 'D' | null = null
+
+  switch (result.action) {
+    case 'step_correct':
+    case 'soft_pass':
+      kind           = cursor?.currentItem ? 'item_advanced' : 'exercise_completed'
+      teacherAction  = cursor?.currentItem ? 'praise_and_advance' : 'announce_exercise_complete'
+      shouldAdvance  = true
+      shouldStayOnItem = false
+      break
+    case 'exercise_complete':
+      kind           = cursor?.currentItem ? 'next_exercise_ready' : 'exercise_completed'
+      teacherAction  = 'transition_next_exercise'
+      shouldAdvance  = true
+      shouldStayOnItem = false
+      break
+    case 'step_wrong':
+      kind           = 'answer_incorrect'
+      correctionTurn = engineValidationToTurn(validation!)
+      teacherAction  = correctionTurn === 'D' ? 'reveal_then_advance' : 'hint_same_item'
+      shouldStayOnItem = true
+      break
+    case 'step_revealed':
+      kind           = 'answer_incorrect'
+      correctionTurn = 'D'
+      teacherAction  = 'reveal_then_advance'
+      shouldStayOnItem = true
+      break
+    case 'exercise_skipped':
+      kind           = 'exercise_skipped'
+      teacherAction  = 'transition_next_exercise'
+      shouldAdvance  = true
+      shouldStayOnItem = false
+      break
+    case 'lesson_complete':
+      kind          = 'lesson_complete'
+      teacherAction = 'wrap_up'
+      shouldAdvance = true
+      shouldStayOnItem = false
+      break
+    default:
+      kind          = 'unsupported'
+      teacherAction = 'hint_same_item'
+  }
+
+  // Authoritative current item — after correct answer engine has already advanced cursor,
+  // so cursor.currentItem is the NEXT item (or empty when exercise is done).
+  // For incorrect: current item stays at the pre-submit step question.
+  const currentItem = shouldAdvance
+    ? (cursor?.currentItem ?? '')
+    : (spec.steps[preSubmitExState.currentStepIndex]?.question ?? '')
+
+  const forbiddenActions: string[] = [
+    'decide_correctness_independently',
+    'reference_completed_items_from_history',
+    'advance_without_engine_signal',
+    'generate_exercise_json',
+  ]
+  if (shouldStayOnItem) {
+    forbiddenActions.push('advance_to_next_item', 'complete_exercise')
+  }
+  if (shouldAdvance) {
+    forbiddenActions.push('stay_on_completed_item', 'repeat_old_item')
+  }
+
+  return {
+    handledByEngine: true,
+    kind,
+    exerciseNumber:  spec.meta.exerciseNumber,
+    exerciseType:    spec.exerciseType,
+    itemIndex:       shouldAdvance ? (cursor?.itemIndex ?? 0) : preSubmitExState.currentStepIndex,
+    itemTotal:       spec.steps.length,
+    currentItem,
+    expectedAnswer:  correctionTurn === 'D' ? (validation?.correctAnswer ?? '') : '',
+    studentAnswer,
+    retryCount:      shouldStayOnItem ? preSubmitExState.retryCount + 1 : 0,
+    correctionTurn,
+    shouldAdvance,
+    shouldStayOnItem,
+    teacherAction,
+    forbiddenActions,
+  }
+}
+
+// ── Internal: build Teacher Brain context from engine result ─────────────────
+// etr is the deterministic EngineTurnResult built immediately after engine.submitAnswer().
+// It tells the Teacher Brain exactly what happened and what to do — the AI reads this and
+// verbalizes the result. It must never override or contradict what etr says.
+
+function buildTeacherContextFromResult(
+  result: EngineResult,
+  studentAnswer: string,
+  etr: EngineTurnResult,
+): string {
   const stateBlock = result.promptContext
+
+  // HISTORY BLACKOUT + ITEM LOCK header — prepended to every teacher context so that
+  // the AI cannot reference completed items from conversation history or decide
+  // correctness independently.
+  const itemNum = etr.itemIndex + 1
+  const itemLockLine = etr.shouldAdvance
+    ? etr.currentItem
+      ? `ITEM LOCK: Engine advanced cursor. Next item is #${etr.itemIndex + 1}: "${etr.currentItem}". ` +
+        `Do NOT reference any previous item.`
+      : `ITEM LOCK: Engine completed exercise. Do NOT re-anchor to any previous item or exercise.`
+    : `ITEM LOCK: Engine stays on item #${itemNum}: "${etr.currentItem}". ` +
+      `Do NOT advance or reference any other item.`
+
+  const historyBlackout =
+    `=== ENGINE AUTHORITY CONTEXT (this turn only — read-only) ===\n` +
+    `Kind: ${etr.kind} | Action required: ${etr.teacherAction}\n` +
+    `Exercise: #${etr.exerciseNumber} (${etr.exerciseType}) | ` +
+    `Item: ${etr.itemIndex + 1}/${etr.itemTotal} | ` +
+    `Retry: ${etr.retryCount}${etr.correctionTurn ? ` | Turn: ${etr.correctionTurn}` : ''}\n` +
+    `${itemLockLine}\n` +
+    `HISTORY BLACKOUT: Items from conversation history are DONE. Never say "let's continue with [old item]".\n` +
+    `Forbidden: ${etr.forbiddenActions.join(', ')}\n` +
+    `=== END ENGINE AUTHORITY CONTEXT ===`
 
   let answerBlock: string
 
   if (result.action === 'step_correct' || result.action === 'soft_pass') {
     const cursor           = result.exerciseCursor
     const exerciseDone     = !cursor?.currentItem
+    const isOpenEnded      = result.validation?.feedbackCode === 'OPEN_ENDED_REVIEW_REQUIRED'
+    const wordCount        = studentAnswer.trim().split(/\s+/).filter(Boolean).length
+
+    // Discussion / open-ended: if answer is very short, ask one follow-up before announcing done
+    const openEndedFollowUp =
+      isOpenEnded && wordCount < 4 && exerciseDone
+        ? `\nDISCUSSION FOLLOW-UP REQUIRED: The student's answer is brief (${wordCount} word(s)). ` +
+          `Before announcing exercise complete, ask ONE specific follow-up question to draw out more detail ` +
+          `(e.g. "Why does [topic] inspire you — hard work, talent, or discipline?"). ` +
+          `Wait for the follow-up answer, THEN announce exercise complete and introduce the next exercise.`
+        : ``
+
     const continuationContract = exerciseDone
       ? `\nEXERCISE TURN COMPLETION CONTRACT: After step 2, announce exercise complete. ` +
-        `Then introduce the next exercise immediately in the same response.`
+        `Then introduce the next exercise immediately in the same response.${openEndedFollowUp}`
       : cursor?.currentItem
       ? `\nEXERCISE TURN COMPLETION CONTRACT: After step 2, present item ` +
         `${(cursor.itemIndex ?? 0) + 1}: "${cursor.currentItem}" in the same response. ` +
@@ -181,7 +328,7 @@ function buildTeacherContextFromResult(result: EngineResult, studentAnswer: stri
       `2. WHY in one sentence.${continuationContract}`
   } else if (result.action === 'step_wrong' && result.validation) {
     const turn        = engineValidationToTurn(result.validation)
-    const currentItem = result.exerciseCursor?.currentItem ?? ''
+    const currentItem = etr.currentItem || (result.exerciseCursor?.currentItem ?? '')
     answerBlock = buildCorrectionBlock(studentAnswer, result.validation.correctAnswer, turn, currentItem)
   } else if (result.action === 'step_revealed' && result.validation) {
     answerBlock =
@@ -204,7 +351,8 @@ function buildTeacherContextFromResult(result: EngineResult, studentAnswer: stri
     answerBlock = `[ENGINE] No active exercise step. Continue the lesson naturally.`
   }
 
-  return stateBlock ? stateBlock + '\n\n' + answerBlock : answerBlock
+  const body = stateBlock ? stateBlock + '\n\n' + answerBlock : answerBlock
+  return historyBlackout + '\n\n' + body
 }
 
 // ── MasterLessonOrchestrator ──────────────────────────────────────────────────
@@ -300,6 +448,17 @@ export class MasterLessonOrchestrator {
       ` correct=${result.validation?.correct ?? 'n/a'} lessonId=${lessonId}`,
     )
 
+    // Build formal engine turn result — deterministic contract for Teacher Brain
+    const engineTurnResult = buildEngineTurnResult(result, studentAnswer, preSubmitExercise)
+    console.log(
+      `[master-orch] engine_turn_result kind=${engineTurnResult.kind}` +
+      ` teacherAction=${engineTurnResult.teacherAction}` +
+      ` item=${engineTurnResult.itemIndex}/${engineTurnResult.itemTotal}` +
+      ` advance=${engineTurnResult.shouldAdvance}` +
+      ` correctionTurn=${engineTurnResult.correctionTurn ?? 'n/a'}` +
+      ` lessonId=${lessonId}`,
+    )
+
     // Memory: record validation event — fail-soft, never blocks lesson flow
     if (userId && result.validation && preSubmitSpec) {
       memoryService.recordValidationEvent({
@@ -378,7 +537,7 @@ export class MasterLessonOrchestrator {
     }
 
     // Build Teacher Brain context — AI verbalizes engine decision only
-    const teacherInput = buildTeacherContextFromResult(result, studentAnswer)
+    const teacherInput = buildTeacherContextFromResult(result, studentAnswer, engineTurnResult)
     console.log(`[master-orch] teacher_response_requested lessonId=${lessonId} action=${result.action}`)
 
     return {

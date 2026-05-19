@@ -140,7 +140,7 @@ export function buildPromptContext(
 
   if (step) {
     lines.push(``)
-    lines.push(`CURRENT STEP (ask this ONLY):`)
+    lines.push(`CURRENT STEP (ask this ONLY — ignore all other items from conversation history):`)
     lines.push(`  Question: "${step.question}"`)
     if (step.expectedAnswer && exState.retryCount >= 2) {
       lines.push(`  Hint available: "${step.hints[exState.retryCount - 1] ?? step.hints.at(-1)}"`)
@@ -195,6 +195,25 @@ export function buildPromptContext(
     lines.push(`  NOTE: Discussion task card not visible — rely on spoken instruction only.`)
   }
   lines.push(`=== END VISIBLE PAYLOAD ===`)
+
+  // Engine authority constraints — injected every turn so the AI never overrides engine state
+  lines.push(``)
+  lines.push(`=== ENGINE AUTHORITY RULES (mandatory, no exceptions) ===`)
+  lines.push(`1. OUTPUT: Set "exercise": null always. NEVER generate exercise JSON. Engine owns all exercise state.`)
+  if (step) {
+    lines.push(`2. ITEM LOCK: The ONLY valid item this turn is: "${step.question}"`)
+    lines.push(`   Do NOT ask about, repeat, or reference any item from conversation history. History items are DONE.`)
+  } else {
+    lines.push(`2. ITEM LOCK: No active step. Do NOT invent or reference any item.`)
+  }
+  lines.push(`3. HISTORY BLACKOUT: Completed items DO NOT EXIST for this turn. Never say "let's continue with [old item]".`)
+  lines.push(`4. NO SELF-VALIDATION: The [EXERCISE RESULT] block tells you correct/incorrect. NEVER decide this yourself.`)
+  lines.push(`   FORBIDDEN: saying "Correct" or "Not quite" without [EXERCISE RESULT] present in your input.`)
+  lines.push(`5. NO SELF-PROGRESSION: NEVER advance item or exercise yourself. Engine advances on correct answer only.`)
+  lines.push(`6. STUDENT QUESTION: If student asks what/how/why/explain → answer in ONE sentence → return to CURRENT STEP.`)
+  lines.push(`   Do NOT advance retry count. Do NOT change the current item.`)
+  lines.push(`7. STT NOISE: If student input is unclear/fragmented → ask to try again. NEVER treat noise as an answer.`)
+  lines.push(`=== END ENGINE AUTHORITY RULES ===`)
 
   lines.push(`=== END ENGINE STATE ===`)
 

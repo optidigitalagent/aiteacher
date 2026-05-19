@@ -112,10 +112,30 @@ const OFF_TOPIC_REQUEST_PATTERNS = [
   /^\s*(how|what|why|huh)\s*[?!.]*\s*$/i,
   // "what do you mean" — common rephrasing not caught by the what+verb pattern above
   /\bwhat\s+do\s+you\s+mean\b/i,
+  // Imperative meta-requests: student asking teacher to do something rather than answering
+  /\bshow\s+me\b/i,
+  /\btell\s+me\b/i,
+  /\bgive\s+me\b/i,
+  /\bpoint\s+(me|to)\b/i,
+  /\bI\s+don'?t\s+know\b/i,
+  /\bI\s+need\s+(help|a\s+hint|more\s+time)\b/i,
+  /\bI'?m\s+not\s+sure\b/i,
+  /\bcan\s+we\s+(go\s+over|review|see|look\s+at)\b/i,
 ]
 
 function looksLikeOffTopicRequest(text: string): boolean {
   return OFF_TOPIC_REQUEST_PATTERNS.some(p => p.test(text.trim()))
+}
+
+// STT noise detector: very short or non-alphabetic transcripts should never be
+// submitted to the engine as answers. The engine only receives clean voice text.
+// "Noise" means < 2 chars, no letter characters, or < 30% letter ratio (gibberish).
+function isSttNoise(text: string): boolean {
+  const t = text.trim()
+  if (t.length < 2) return true
+  const letters = (t.match(/[a-zA-Zа-яА-ЯёЁ]/g) ?? []).length
+  if (letters === 0) return true
+  return letters / t.length < 0.30
 }
 
 // Phase G: detect student intent to move to the next exercise after exercise completion.
@@ -1640,15 +1660,57 @@ function buildManifestVoiceContext(mv: ManifestVoiceResult, studentText: string)
 
 // Appended to student input when an exercise is active so the AI knows to
 // answer briefly and return to the current item.
+// Prefers the engine cursor (always current) over Redis LessonState (may lag one turn
+// behind on correction turns where the engine advanced but Redis wasn't re-synced yet).
 async function buildOffTopicGuard(lessonId: string): Promise<string> {
   try {
-    const stateRaw = await redis.get(lessonStateKey(lessonId))
-    if (!stateRaw) return ''
-    const state = JSON.parse(stateRaw) as LessonState
-    if (!state.currentExerciseNum || !state.currentItem) return ''
-    const type = state.activeExerciseType ?? 'unknown'
-    const recovery = buildProtocolOffTopicRecovery(type, state.currentItem, state.itemIndex ?? 0)
-    return recovery
+    let currentItem  = ''
+    let itemIndex    = 0
+    let exerciseNum  = 0
+    let exerciseType = 'unknown'
+
+    // 1. Try engine cursor first — authoritative, never stale
+    try {
+      const engineCursor = await exerciseEngine.getCursor(lessonId)
+      if (engineCursor?.currentItem) {
+        currentItem  = engineCursor.currentItem
+        itemIndex    = engineCursor.itemIndex ?? 0
+        exerciseNum  = engineCursor.exerciseNumber ?? 0
+        exerciseType = engineCursor.exerciseType ?? 'unknown'
+        console.log(
+          `[off-topic-guard] item_from_engine exercise=#${exerciseNum} item=${itemIndex} lessonId=${lessonId}`,
+        )
+      }
+    } catch { /* non-fatal — fall through to Redis */ }
+
+    // 2. Fall back to Redis LessonState when engine cursor is unavailable
+    if (!currentItem) {
+      const stateRaw = await redis.get(lessonStateKey(lessonId))
+      if (!stateRaw) return ''
+      const state = JSON.parse(stateRaw) as LessonState
+      if (!state.currentExerciseNum || !state.currentItem) return ''
+      currentItem  = state.currentItem
+      itemIndex    = state.itemIndex ?? 0
+      exerciseNum  = state.currentExerciseNum
+      exerciseType = state.activeExerciseType ?? 'unknown'
+      console.log(
+        `[off-topic-guard] item_from_redis_state exercise=#${exerciseNum} item=${itemIndex} lessonId=${lessonId}`,
+      )
+    }
+
+    const recovery = buildProtocolOffTopicRecovery(exerciseType, currentItem, itemIndex)
+
+    // Explicit current-item lock so the AI always returns to the engine-authoritative position,
+    // not to any item it infers from conversation history.
+    const itemNum  = itemIndex + 1
+    const itemLock =
+      `\n\nCURRENT ITEM LOCK (backend-authoritative from engine): ` +
+      `After answering the student's question, return EXACTLY to ` +
+      `Exercise ${exerciseNum}, Number ${itemNum}: "${currentItem}". ` +
+      `Do NOT reference any other item from conversation history. ` +
+      `Do NOT advance the exercise. Do NOT increment the retry count.`
+
+    return recovery + itemLock
   } catch {
     return ''
   }
@@ -1742,6 +1804,24 @@ async function processInput(
       }
 
       if (!readinessHandled) {
+        // STT noise guard: reject garbage transcripts before they reach the engine.
+        // Noise (< 30% letter ratio, < 2 chars) must never count as an exercise answer.
+        if (isSttNoise(text)) {
+          console.log(`[ws] stt_noise_detected raw="${text.slice(0, 60)}" lessonId=${meta.lessonId}`)
+          const engineCursorForNoise = await exerciseEngine.getCursor(meta.lessonId).catch(() => null)
+          if (engineCursorForNoise?.currentItem) {
+            inputText =
+              `[STT NOISE] The voice transcript was unclear or too short to process.\n` +
+              `Do NOT treat this as an exercise answer. Do NOT advance the exercise.\n` +
+              `Tell the student you did not catch that and ask them to try again.\n` +
+              `Then re-present the CURRENT item: Exercise ${engineCursorForNoise.exerciseNumber}, ` +
+              `Number ${(engineCursorForNoise.itemIndex ?? 0) + 1}: "${engineCursorForNoise.currentItem}"`
+            console.log(`[ws] stt_noise_returning_to_item exercise=#${engineCursorForNoise.exerciseNumber} item=${engineCursorForNoise.itemIndex} lessonId=${meta.lessonId}`)
+          } else {
+            inputText =
+              `[STT NOISE] The voice transcript was unclear. Ask the student to repeat what they said.`
+          }
+        } else {
         // Phase G: detect exercise-complete + transition intent to prevent stale re-anchor
         // and the "I'm thinking..." forbidden response after exercise completion.
         const completionSignal = await buildExerciseCompletionSignal(meta.lessonId, text)
@@ -1845,6 +1925,7 @@ async function processInput(
             }
           }
         }
+        } // close noise-guard else
       }
     }
   }

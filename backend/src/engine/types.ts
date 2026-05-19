@@ -189,6 +189,58 @@ export interface EngineResult {
   nextExerciseSpec?: ExerciseSpec        // set when action = exercise_complete
 }
 
+// ── EngineTurnResult — deterministic contract for AI teacher response ──────────
+// Produced from EngineResult by buildEngineTurnResult() in master-orchestrator.
+// This becomes the single source of truth that tells the Teacher Brain:
+//   - what happened (kind)
+//   - what item to stay on (currentItem, itemIndex)
+//   - what action to take (teacherAction)
+//   - what is forbidden (forbiddenActions)
+//
+// AI/GPT never mutates this — it is read-only context.
+
+export type EngineTurnKind =
+  | 'answer_correct'
+  | 'answer_incorrect'
+  | 'item_advanced'
+  | 'exercise_completed'
+  | 'next_exercise_ready'
+  | 'answer_revealed'
+  | 'exercise_skipped'
+  | 'lesson_complete'
+  | 'student_question'
+  | 'repeat_instruction'
+  | 'stt_noise'
+  | 'unsupported'
+
+export type TeacherAction =
+  | 'praise_and_advance'         // correct — confirm + present next item
+  | 'hint_same_item'             // incorrect — give A/B/C ladder hint, stay on item
+  | 'reveal_then_advance'        // TURN D — reveal answer, ask repeat, then advance
+  | 'announce_exercise_complete' // last item correct — announce done + next exercise
+  | 'answer_student_question_then_return' // side question — answer briefly + return to item
+  | 'ask_to_repeat'              // STT noise — ask student to try again
+  | 'transition_next_exercise'   // exercise done — introduce next
+  | 'wrap_up'                    // all exercises done
+
+export interface EngineTurnResult {
+  handledByEngine:  boolean
+  kind:             EngineTurnKind
+  exerciseNumber:   number
+  exerciseType:     string
+  itemIndex:        number
+  itemTotal:        number
+  currentItem:      string          // authoritative item text — teacher MUST use this
+  expectedAnswer:   string          // revealed only on TURN D
+  studentAnswer:    string
+  retryCount:       number
+  correctionTurn:   'A' | 'B' | 'C' | 'D' | null
+  shouldAdvance:    boolean          // engine decided to advance item/exercise
+  shouldStayOnItem: boolean          // engine decided to keep current item
+  teacherAction:    TeacherAction
+  forbiddenActions: string[]         // explicit list of what the teacher must NOT do
+}
+
 // ── Transition rules ──────────────────────────────────────────────────────────
 
 export interface TransitionContext {

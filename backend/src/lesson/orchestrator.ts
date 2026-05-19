@@ -186,8 +186,11 @@ export class LessonOrchestrator {
     const engineOwnsExercise = !!(callCtx?.enginePromptContext?.includes('(backend-authoritative)'))
     let incomingExercise = aiResp.exercise
     if (engineOwnsExercise && incomingExercise) {
+      // Correct behaviour: engine owns the exercise cursor; AI-returned exercise JSON is stripped.
+      // Renamed from engine_active_exercise_ignored to avoid false alarm impression.
       console.log(
-        `[orch] engine_active_exercise_ignored` +
+        `[orch] engine_authority_applied` +
+        ` action=ai_exercise_json_stripped` +
         ` type="${incomingExercise.type}"` +
         ` exerciseNum=${incomingExercise.exerciseNumber ?? 'n/a'}` +
         ` lessonId=${lessonId}`,
