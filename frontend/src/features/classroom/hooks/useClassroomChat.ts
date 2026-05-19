@@ -37,5 +37,22 @@ export function useClassroomChat(_opts?: { send?: (p: object) => void }) {
     ])
   }, [])
 
-  return { messages, pushUser, pushAI, setTyping, clearTyping }
+  // Restore chat history from transcript events on reconnect/resync.
+  // Only restores if current chat is empty (avoids duplicates on partial reconnects).
+  // Does not replay audio. Does not trigger AI generation.
+  const restoreMessages = useCallback(
+    (entries: Array<{ speaker: 'teacher' | 'student'; text: string }>) => {
+      setMessages((prev) => {
+        if (prev.length > 0) return prev   // already have messages — don't duplicate
+        return entries.map((e, i) => ({
+          id:     `restored_${i}`,
+          sender: e.speaker === 'teacher' ? ('ai' as const) : ('user' as const),
+          text:   e.text,
+        }))
+      })
+    },
+    [],
+  )
+
+  return { messages, pushUser, pushAI, setTyping, clearTyping, restoreMessages }
 }

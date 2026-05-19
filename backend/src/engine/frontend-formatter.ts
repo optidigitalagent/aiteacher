@@ -184,8 +184,12 @@ export function buildPromptContext(
     lines.push(`  FORBIDDEN: "look at the box", "choose from the box", "the options are..." (no box visible)`)
   }
   if (!vc.hasReadingText && !vc.hasTextBlocks) {
-    lines.push(`  FORBIDDEN: "look at the text", "read the passage", "find it in the article" (no reading text visible)`)
-    lines.push(`  If student cannot see reading text: say "This reading exercise is not fully loaded on screen yet, so we'll skip this item safely."`)
+    lines.push(`  FORBIDDEN: "look at the text", "read the passage", "find it in the article", "recall from the reading", "where did the text say..." (no reading text visible)`)
+    lines.push(`  If student cannot see reading text: say "This reading passage is not visible on screen, so we'll skip this item safely."`)
+    console.log(
+      `[teacher_guard] blocked_invisible_reading section="${lessonState.sectionId ?? 'unknown'}" ` +
+      `exercise=${spec.meta.exerciseNumber} type="${spec.exerciseType}"`,
+    )
   }
   if (!vc.hasPromptCards && !vc.hasStatements && (spec.exerciseType === 'discussion' || spec.exerciseType === 'pair_speaking')) {
     lines.push(`  NOTE: Discussion task card not visible — rely on spoken instruction only.`)

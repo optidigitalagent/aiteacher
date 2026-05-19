@@ -67,7 +67,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   } = useLessonSession({ send, sessionId: paidSessionId ?? undefined })
 
   const {
-    messages, pushUser, pushAI, setTyping, clearTyping,
+    messages, pushUser, pushAI, setTyping, clearTyping, restoreMessages,
   } = useClassroomChat({ send })
 
   const {
@@ -344,12 +344,16 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
             exerciseNumber:   msg.exerciseNumber,
             currentItemIndex: msg.currentItemIndex,
           })
+          if (msg.recentTranscript && msg.recentTranscript.length > 0) {
+            restoreMessages(msg.recentTranscript)
+          }
           console.log('[ws:reconnect] resync_received', {
-            lessonId:   msg.lessonId,
-            exercise:   msg.exerciseNumber,
-            item:       msg.currentItemIndex,
-            phase:      msg.phase,
-            micAllowed: msg.studentTurnAllowed,
+            lessonId:         msg.lessonId,
+            exercise:         msg.exerciseNumber,
+            item:             msg.currentItemIndex,
+            phase:            msg.phase,
+            micAllowed:       msg.studentTurnAllowed,
+            transcriptCount:  msg.recentTranscript?.length ?? 0,
           })
         }
         break

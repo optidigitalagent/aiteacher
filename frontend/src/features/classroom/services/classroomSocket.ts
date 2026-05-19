@@ -132,6 +132,7 @@ export type BackendMessage =
       teacherTurnActive:   boolean
       studentTurnAllowed:  boolean
       remainingMs:         number
+      recentTranscript:    Array<{ speaker: 'teacher' | 'student'; text: string }> | null
     }
 
 export interface TipRecord {

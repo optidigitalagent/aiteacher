@@ -237,6 +237,11 @@ export interface OutboundLessonTimerUpdate {
  * Frontend must restore exercise cursor, phase, and mic state from this packet.
  * No AI call. No teacher greeting. No new lesson creation.
  */
+export interface ResyncTranscriptEntry {
+  speaker: 'teacher' | 'student'
+  text:    string
+}
+
 export interface OutboundLessonResync {
   type:                'lesson_resync'
   lessonId:            string
@@ -253,6 +258,7 @@ export interface OutboundLessonResync {
   teacherTurnActive:   boolean
   studentTurnAllowed:  boolean
   remainingMs:         number
+  recentTranscript:    ResyncTranscriptEntry[] | null  // last N visible chat messages for UI restore
 }
 
 export type OutboundMessage =

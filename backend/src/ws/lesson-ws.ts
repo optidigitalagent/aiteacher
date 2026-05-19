@@ -16,6 +16,7 @@ import {
   type OutboundMessage,
   type LessonConfig,
   type FocusLessonConfig,
+  type ResyncTranscriptEntry,
 } from './message-types.js'
 import type { LessonPhase, LessonState, ErrorRecord, ExerciseCursor, CorrectionTurn } from '../lesson/types.js'
 import { getFocusUnit } from '../lesson/focus-content.js'
@@ -446,6 +447,34 @@ async function sendLessonResync(ws: WebSocket, meta: ClientMeta): Promise<void> 
       : (meta.lessonStartedAt ?? Date.now())
     const remainingMs = Math.max(0, MAX_LESSON_MS - (Date.now() - originalStart))
 
+    // Fetch last 10 visible transcript events for chat restore — authenticated, current lesson only.
+    // Excludes system events. Fail-soft: missing transcript does not block resync.
+    let recentTranscript: ResyncTranscriptEntry[] | null = null
+    try {
+      const tRows = await query<{ speaker: string; message: string }>(
+        `SELECT speaker, message FROM lesson_transcript_events
+         WHERE lesson_id = $1 AND speaker IN ('teacher', 'student')
+         ORDER BY created_at DESC LIMIT 10`,
+        [meta.lessonId],
+      )
+      if (tRows.rows.length > 0) {
+        recentTranscript = tRows.rows
+          .reverse()
+          .map(r => ({ speaker: r.speaker as 'teacher' | 'student', text: r.message }))
+        console.log(`[resync] transcript_restored lessonId=${meta.lessonId} count=${recentTranscript.length}`)
+      }
+    } catch {
+      // non-fatal — resync proceeds without transcript
+    }
+
+    const hasVisiblePayload = !!(cursor?.readingText || cursor?.textBlocks?.length || cursor?.options?.length)
+    if (cursor) {
+      console.log(
+        `[visible_payload] resync section=${state?.focusLesson ?? 'unknown'} ` +
+        `exercise=${cursor.exerciseNumber} fields=${hasVisiblePayload ? 'readingText/textBlocks/options' : 'none'}`,
+      )
+    }
+
     send(ws, {
       type:                'lesson_resync',
       lessonId:            meta.lessonId,
@@ -462,10 +491,12 @@ async function sendLessonResync(ws: WebSocket, meta: ClientMeta): Promise<void> 
       teacherTurnActive:   meta.ttsActive,
       studentTurnAllowed:  !meta.ttsActive && !meta.aiProcessing,
       remainingMs,
+      recentTranscript,
     })
     console.log(
       `[ws:reconnect] resync_sent lessonId=${meta.lessonId} ` +
-      `exercise=${cursor?.exerciseNumber ?? 0} item=${cursor?.itemIndex ?? 0}`,
+      `exercise=${cursor?.exerciseNumber ?? 0} item=${cursor?.itemIndex ?? 0} ` +
+      `visible_payload=${hasVisiblePayload} transcript_count=${recentTranscript?.length ?? 0}`,
     )
   } catch (err) {
     console.error('[ws:reconnect] sendLessonResync error:', err instanceof Error ? err.message : err)

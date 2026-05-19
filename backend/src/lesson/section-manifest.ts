@@ -458,11 +458,76 @@ const SECTION_1_4_MANIFEST: SectionExerciseManifest = {
   ],
 }
 
+// ── Section 2.3: Reading — Biography of Marie Curie ──────────────────────────
+// Passage sourced from focus-content.ts unit 2 readingPassage (authoritative text).
+// Section labeled "Listening" in teachers-book but no audio available — runtime provides
+// reading version using the existing passage. All exercises require visible readingText.
+// Teacher guard: if readingText is missing, skip item safely (never verbally provide text).
+
+const SECTION_2_3_READING_TEXT =
+  'Marie Curie was born in Warsaw in 1867. She studied science in secret because women ' +
+  "couldn't attend university in Poland at that time. Later she moved to Paris and became " +
+  'the first woman to receive a university degree in physics. She discovered two new ' +
+  'chemical elements — polonium and radium. In 1903, she won the Nobel Prize in Physics, ' +
+  'and in 1911 she won a second Nobel Prize in Chemistry. She worked hard her entire life ' +
+  'and never stopped researching. Marie Curie didn\'t just change science — she changed ' +
+  'what people believed women could achieve.'
+
+const SECTION_2_3_MANIFEST: SectionExerciseManifest = {
+  section: '2.3',
+  unit: 2,
+  exercises: [
+    {
+      num: 1,
+      type: 'read_and_answer',
+      executable: true,
+      runtimeMode: 'text_reading_sequential',
+      instruction: 'Read the biography of Marie Curie. Then answer the questions.',
+      readingText: SECTION_2_3_READING_TEXT,
+      items: [
+        { text: 'What city was Marie Curie born in?',                           correctAnswer: 'Warsaw' },
+        { text: 'Why did she study science in secret?',                         correctAnswer: "Because women couldn't attend university in Poland" },
+        { text: 'What was she the first woman to do in Paris?',                 correctAnswer: 'Receive a university degree in physics' },
+        { text: 'What two chemical elements did she discover?',                 correctAnswer: 'polonium and radium' },
+        { text: 'How many Nobel Prizes did she win, and in which subjects?',    correctAnswer: 'Two: Physics (1903) and Chemistry (1911)' },
+      ],
+      completionBehavior: 'all_items',
+    },
+    {
+      num: 2,
+      type: 'grammar_focus_fill',
+      executable: true,
+      runtimeMode: 'deterministic_sequential',
+      instruction: 'Complete the sentences with the correct Past Simple form of the verb in brackets.',
+      readingText: SECTION_2_3_READING_TEXT,
+      items: [
+        { text: 'In 1867, Marie Curie ___ (be) born in Warsaw.',             correctAnswer: 'was' },
+        { text: 'She ___ (move) to Paris to study.',                          correctAnswer: 'moved' },
+        { text: 'She ___ (discover) polonium and radium.',                    correctAnswer: 'discovered' },
+        { text: 'In 1903, she ___ (win) the Nobel Prize in Physics.',         correctAnswer: 'won' },
+        { text: 'She ___ (work) hard her entire life.',                       correctAnswer: 'worked' },
+      ],
+      completionBehavior: 'all_items',
+    },
+    {
+      num: 3,
+      type: 'discussion',
+      executable: true,
+      runtimeMode: 'soft_speaking',
+      instruction: 'Think about Marie Curie\'s life. What do you think is more important for success — talent or hard work? Give your opinion.',
+      allowedPrompt: 'Marie Curie overcame many obstacles to achieve great things. Do you think her success was mainly due to talent or hard work? Give me your opinion.',
+      dependsOn: 1,
+      completionBehavior: 'single_response',
+    },
+  ],
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 const HARDCODED_MANIFESTS: Record<string, SectionExerciseManifest> = {
   '1.2': SECTION_1_2_MANIFEST,
   '1.4': SECTION_1_4_MANIFEST,
+  '2.3': SECTION_2_3_MANIFEST,
   '6.1': SECTION_6_1_MANIFEST,
 }
 
