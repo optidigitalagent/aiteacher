@@ -410,6 +410,67 @@ interface ClientMeta {
 
 const clients = new Map<WebSocket, ClientMeta>()
 
+// ── Reconnect grace window ────────────────────────────────────────────────────
+// On abnormal disconnect (code 1006), keeps session state alive for 60 s so the
+// same user/session can reattach without a full lesson resume or teacher greeting.
+// Normal/intentional disconnects (1000, 4xxx) skip the grace window and finalize
+// billing immediately as before.
+
+const RECONNECT_GRACE_MS = 60_000
+
+interface GraceEntry {
+  meta:      ClientMeta
+  lessonId:  string
+  sessionId: string
+  userId:    string
+  timerRef:  ReturnType<typeof setTimeout>
+}
+const gracePeriod = new Map<string, GraceEntry>()
+
+// Build and send a lesson_resync packet using engine + Redis state.
+// Called when the same user reattaches within the grace window.
+// Does NOT call AI and does NOT send any teacher greeting.
+async function sendLessonResync(ws: WebSocket, meta: ClientMeta): Promise<void> {
+  if (!meta.lessonId || !meta.sessionId) return
+  try {
+    let cursor = null
+    try { cursor = await exerciseEngine.getCursor(meta.lessonId) } catch { /* non-fatal */ }
+
+    const stateRaw = await redis.get(lessonStateKey(meta.lessonId))
+    let state: LessonState | null = null
+    if (stateRaw) state = JSON.parse(stateRaw) as LessonState
+
+    const originalStart = state
+      ? new Date(state.startedAt).getTime()
+      : (meta.lessonStartedAt ?? Date.now())
+    const remainingMs = Math.max(0, MAX_LESSON_MS - (Date.now() - originalStart))
+
+    send(ws, {
+      type:                'lesson_resync',
+      lessonId:            meta.lessonId,
+      sessionId:           meta.sessionId,
+      phase:               (state?.phase ?? 'EXERCISES') as import('./message-types.js').OutboundLessonResync['phase'],
+      exerciseNumber:      cursor?.exerciseNumber ?? state?.currentExerciseNum ?? 0,
+      totalExercises:      cursor?.itemTotal ?? 0,
+      currentExerciseType: cursor?.exerciseType ?? state?.activeExerciseType ?? 'unknown',
+      currentItemIndex:    cursor?.itemIndex ?? state?.itemIndex ?? 0,
+      itemTotal:           cursor?.itemTotal ?? state?.exerciseItems?.length ?? 0,
+      visiblePayload:      cursor ?? null,
+      correctionTurn:      state?.correctionTurn ?? null,
+      retryCount:          state?.itemRetryCount ?? 0,
+      teacherTurnActive:   meta.ttsActive,
+      studentTurnAllowed:  !meta.ttsActive && !meta.aiProcessing,
+      remainingMs,
+    })
+    console.log(
+      `[ws:reconnect] resync_sent lessonId=${meta.lessonId} ` +
+      `exercise=${cursor?.exerciseNumber ?? 0} item=${cursor?.itemIndex ?? 0}`,
+    )
+  } catch (err) {
+    console.error('[ws:reconnect] sendLessonResync error:', err instanceof Error ? err.message : err)
+  }
+}
+
 // Phase 11: returns the existing WS connection that already owns a given lessonId,
 // or null if no other connection is active for it. Used to enforce single-ownership.
 function findActiveLessonOwner(lessonId: string, exclude: WebSocket): WebSocket | null {
@@ -2351,6 +2412,19 @@ export function attachLessonWS(server: Server): void {
     }
     // ──────────────────────────────────────────────────────────────────────
 
+    // ── Reconnect grace check ─────────────────────────────────────────────
+    // If the same user/session is reconnecting within the 60-second grace
+    // window after an abnormal disconnect, reattach to the existing lesson
+    // state instead of starting fresh. No greeting, no lesson restart, no
+    // AI call — just a state resync packet.
+    const graceEntry   = wsSessionId ? gracePeriod.get(wsSessionId) : null
+    const isReattach   = !!(graceEntry && graceEntry.userId === jwtUserId)
+    if (isReattach) {
+      clearTimeout(graceEntry!.timerRef)
+      gracePeriod.delete(wsSessionId!)
+      console.log(`[ws:reconnect] reattached lessonId=${graceEntry!.lessonId} session=${wsSessionId}`)
+    }
+
     const heartbeatRef = setInterval(() => {
       try {
         if (ws.readyState === WebSocket.OPEN) ws.ping()
@@ -2359,44 +2433,107 @@ export function attachLessonWS(server: Server): void {
       }
     }, HEARTBEAT_INTERVAL_MS)
 
-    const meta: ClientMeta = {
-      lessonId:        null,
-      studentId:       jwtStudentId,
-      userId:          jwtUserId,
-      sessionId:       wsSessionId,
-      usageId:         null,
-      lessonStartedAt: null,
-      voiceId:         null,
-      teacherId:       null,
-      lastSeen:        Date.now(),
-      heartbeatRef,
-      timeoutRef:      setTimeout(() => ws.terminate(), INACTIVITY_TIMEOUT_MS),
-      maxDurationRef:  null,
-      warningRef:      null,  // Phase 6
-      timerUpdateRef:  null,  // Phase 2 recovery
-      stt:             null,
-      ttsController:    null,
-      ttsActive:        false,
-      aiCallCount:      0,
-      ttsCharCount:     0,
-      aiProcessing:     false,
-      queuedInput:      null,
-      interruptPending: false,
-      pendingTranscript: '',
-      pendingMicStop:    false,
-      pendingMicStopTimeoutRef: null,
-      micActive:         false,
-      voiceTurnId:              null,
-      lastSubmittedVoiceTurnId: null,
-      billingStartedAt: null,
+    let meta: ClientMeta
+    if (isReattach) {
+      // Restore old meta with fresh connection-specific fields
+      const old = graceEntry!.meta
+      meta = {
+        ...old,
+        heartbeatRef,
+        timeoutRef:               setTimeout(() => ws.terminate(), INACTIVITY_TIMEOUT_MS),
+        maxDurationRef:           null,   // re-armed below
+        warningRef:               null,
+        timerUpdateRef:           null,   // re-armed below
+        stt:                      null,   // re-created below
+        ttsController:            null,
+        ttsActive:                false,
+        aiProcessing:             false,
+        queuedInput:              null,
+        interruptPending:         false,
+        pendingTranscript:        '',
+        pendingMicStop:           false,
+        pendingMicStopTimeoutRef: null,
+        micActive:                false,
+        lastSeen:                 Date.now(),
+      }
+    } else {
+      meta = {
+        lessonId:        null,
+        studentId:       jwtStudentId,
+        userId:          jwtUserId,
+        sessionId:       wsSessionId,
+        usageId:         null,
+        lessonStartedAt: null,
+        voiceId:         null,
+        teacherId:       null,
+        lastSeen:        Date.now(),
+        heartbeatRef,
+        timeoutRef:      setTimeout(() => ws.terminate(), INACTIVITY_TIMEOUT_MS),
+        maxDurationRef:  null,
+        warningRef:      null,
+        timerUpdateRef:  null,
+        stt:             null,
+        ttsController:    null,
+        ttsActive:        false,
+        aiCallCount:      0,
+        ttsCharCount:     0,
+        aiProcessing:     false,
+        queuedInput:      null,
+        interruptPending: false,
+        pendingTranscript: '',
+        pendingMicStop:    false,
+        pendingMicStopTimeoutRef: null,
+        micActive:         false,
+        voiceTurnId:              null,
+        lastSubmittedVoiceTurnId: null,
+        billingStartedAt: null,
+      }
     }
 
     clients.set(ws, meta)
-    console.log(`[ws] client connected (user=${jwtUserId} session=${wsSessionId}), total=${clients.size}`)
+    console.log(`[ws] client connected (user=${jwtUserId} session=${wsSessionId} reattach=${isReattach}), total=${clients.size}`)
 
-    // Signal frontend that the connection is authenticated and the session is
-    // validated. The "Begin Lesson" button should only appear after this event.
-    send(ws, { type: 'lesson_ready', sessionId: wsSessionId })
+    if (!isReattach) {
+      // Signal frontend that the connection is authenticated and the session is
+      // validated. The "Begin Lesson" button should only appear after this event.
+      send(ws, { type: 'lesson_ready', sessionId: wsSessionId })
+    } else if (meta.lessonId) {
+      // ── Reattach path ─────────────────────────────────────────────────
+      // Re-create STT for the new TCP connection
+      meta.stt = createSTT(ws, meta)
+
+      // Re-arm max-duration timeout with the remaining lesson time
+      if (meta.lessonStartedAt) {
+        const elapsedMs   = Date.now() - meta.lessonStartedAt
+        const remainingMs = Math.max(0, MAX_LESSON_MS - elapsedMs)
+        if (remainingMs > 60_000) {
+          meta.maxDurationRef = setTimeout(() => {
+            if (!meta.lessonId) return
+            console.log(`[paid-lesson] lesson_timeout session=${meta.sessionId} lessonId=${meta.lessonId}`)
+            send(ws, { type: 'error', code: 'SESSION_TIME_LIMIT', message: 'Maximum lesson duration reached.' })
+            ws.close(4408, 'Time limit reached')
+          }, remainingMs)
+        }
+      }
+
+      // Re-start periodic timer broadcast
+      startTimerBroadcast(ws, meta)
+
+      // Record reconnect in transcript (one system event, no teacher message)
+      if (meta.userId) {
+        recordSystemEvent({
+          lessonId:  meta.lessonId,
+          sessionId: meta.sessionId,
+          userId:    meta.userId,
+          studentId: meta.studentId,
+          message:   'websocket_resumed',
+        })
+      }
+
+      // Send resync packet — no greeting, no AI call, no lesson restart
+      sendLessonResync(ws, meta).catch((err: unknown) =>
+        console.error('[ws:reconnect] sendLessonResync error:', err))
+    }
 
     ws.on('message', async (raw: Buffer) => {
       resetInactivityTimer(ws, meta)
@@ -2580,6 +2717,7 @@ export function attachLessonWS(server: Server): void {
       if (meta.pendingMicStopTimeoutRef) clearTimeout(meta.pendingMicStopTimeoutRef)
       meta.ttsController?.abort()
       meta.stt?.close()
+      meta.stt = null
       clients.delete(ws)
       console.log(
         `[ws] client disconnected code=${code} reason="${reason.toString() || '(none)'}" ` +
@@ -2593,8 +2731,9 @@ export function attachLessonWS(server: Server): void {
           : 0
         endLessonTrace(meta.lessonId, { durationMin: discDurationMin, endReason: 'disconnected' })
         if (meta.userId) {
-          recordSystemEvent({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, message: `client_disconnected code=${code}`, metadata: { wsCode: code, reason: reason.toString().slice(0, 100) || null } })
+          recordSystemEvent({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, message: `websocket_disconnected code=${code}`, metadata: { wsCode: code, reason: reason.toString().slice(0, 100) || null } })
         }
+        console.log(`[ws:reconnect] disconnected session=${meta.sessionId ?? 'none'} code=${code}`)
       }
 
       // Phase 6: persist snapshot to PostgreSQL before billing finalize.
@@ -2603,31 +2742,67 @@ export function attachLessonWS(server: Server): void {
         void saveLessonSnapshot(meta.lessonId, meta.sessionId, meta.studentId)
       }
 
-      // Cost instrumentation + finalize paid lesson usage
-      // Phase 11: billingStartedAt tracks when THIS session's billing period began,
-      // not when the original lesson started. This prevents double-billing on reconnect.
-      if (meta.usageId && meta.userId && meta.billingStartedAt) {
-        const elapsedMs       = Date.now() - meta.billingStartedAt
-        const elapsedMin      = Math.round(elapsedMs / 60_000)
-        const ttsProvider     = process.env.ELEVENLABS_API_KEY ? 'elevenlabs' : 'openai'
-        const aiModel         = 'claude-sonnet-4-6'
-        const sttProvider     = 'deepgram'
-        const aiCostUsd       = meta.aiCallCount * 0.003                                         // ~$0.003 per exchange (cached prompt)
-        const ttsCostUsd      = ttsProvider === 'openai'
-          ? (meta.ttsCharCount / 1000) * 0.015                                                   // OpenAI TTS: $15/1M chars
-          : (meta.ttsCharCount / 1000) * 0.15                                                    // ElevenLabs: conservative estimate
-        const sttCostUsd      = elapsedMin * 0.006                                               // Deepgram Nova-2: ~$0.36/hr
-        const estimatedCostUsd = aiCostUsd + ttsCostUsd + sttCostUsd
-        console.log(
-          `[paid-lesson-cost] session=${meta.sessionId ?? 'unknown'} ` +
-          `aiCalls=${meta.aiCallCount} ttsChars=${meta.ttsCharCount} ` +
-          `elapsedMinutes=${elapsedMin} estimatedCostUsd=${estimatedCostUsd.toFixed(4)} ` +
-          `ttsProvider=${ttsProvider} aiModel=${aiModel} sttProvider=${sttProvider}`,
-        )
+      // ── Grace window: hold billing for 60 s on abnormal disconnect ───────────
+      // Code 1006 = abnormal closure (network drop, proxy timeout, browser killed).
+      // Code 0 = occurs on some platforms when TCP resets before WS handshake.
+      // We keep meta alive in gracePeriod so the same user/session can reattach
+      // cleanly without a teacher greeting or lesson restart.
+      // Normal/intentional closes (1000, 4xxx) finalize billing immediately.
 
-        finalizeUsage(meta.usageId, meta.userId, meta.billingStartedAt).catch((err: unknown) => {
-          console.error('[ws] finalizeUsage error:', err)
+      const isAbnormalWithLesson = (code === 1006 || code === 0) &&
+        !!meta.lessonId && !!meta.sessionId && !!meta.userId &&
+        !!meta.usageId && !!meta.billingStartedAt
+
+      if (isAbnormalWithLesson) {
+        const graceKey = meta.sessionId!
+        // Evict any stale grace entry for this session before replacing
+        const stale = gracePeriod.get(graceKey)
+        if (stale) {
+          clearTimeout(stale.timerRef)
+          gracePeriod.delete(graceKey)
+        }
+        console.log(`[ws:reconnect] grace_started lessonId=${meta.lessonId} ttlMs=${RECONNECT_GRACE_MS}`)
+        const timerRef = setTimeout(() => {
+          gracePeriod.delete(graceKey)
+          console.log(`[ws:reconnect] grace_expired lessonId=${meta.lessonId ?? 'none'} session=${graceKey}`)
+          // Grace expired without reconnect — finalize billing now
+          if (meta.usageId && meta.userId && meta.billingStartedAt) {
+            finalizeUsage(meta.usageId, meta.userId, meta.billingStartedAt).catch((err: unknown) => {
+              console.error('[ws] finalizeUsage error (grace expiry):', err)
+            })
+          }
+        }, RECONNECT_GRACE_MS)
+        gracePeriod.set(graceKey, {
+          meta,
+          lessonId:  meta.lessonId!,
+          sessionId: meta.sessionId!,
+          userId:    meta.userId!,
+          timerRef,
         })
+      } else {
+        // Cost instrumentation + finalize paid lesson usage immediately
+        if (meta.usageId && meta.userId && meta.billingStartedAt) {
+          const elapsedMs       = Date.now() - meta.billingStartedAt
+          const elapsedMin      = Math.round(elapsedMs / 60_000)
+          const ttsProvider     = process.env.ELEVENLABS_API_KEY ? 'elevenlabs' : 'openai'
+          const aiModel         = 'claude-sonnet-4-6'
+          const sttProvider     = 'deepgram'
+          const aiCostUsd       = meta.aiCallCount * 0.003
+          const ttsCostUsd      = ttsProvider === 'openai'
+            ? (meta.ttsCharCount / 1000) * 0.015
+            : (meta.ttsCharCount / 1000) * 0.15
+          const sttCostUsd      = elapsedMin * 0.006
+          const estimatedCostUsd = aiCostUsd + ttsCostUsd + sttCostUsd
+          console.log(
+            `[paid-lesson-cost] session=${meta.sessionId ?? 'unknown'} ` +
+            `aiCalls=${meta.aiCallCount} ttsChars=${meta.ttsCharCount} ` +
+            `elapsedMinutes=${elapsedMin} estimatedCostUsd=${estimatedCostUsd.toFixed(4)} ` +
+            `ttsProvider=${ttsProvider} aiModel=${aiModel} sttProvider=${sttProvider}`,
+          )
+          finalizeUsage(meta.usageId, meta.userId, meta.billingStartedAt).catch((err: unknown) => {
+            console.error('[ws] finalizeUsage error:', err)
+          })
+        }
       }
     })
 

@@ -230,6 +230,31 @@ export interface OutboundLessonTimerUpdate {
   remainingMs: number
 }
 
+/**
+ * Reconnect resync: sent when the same user/session reattaches within the 60-second
+ * grace window after an abnormal disconnect (code 1006).
+ * Contains authoritative engine cursor + lesson state — replaces any stale local state.
+ * Frontend must restore exercise cursor, phase, and mic state from this packet.
+ * No AI call. No teacher greeting. No new lesson creation.
+ */
+export interface OutboundLessonResync {
+  type:                'lesson_resync'
+  lessonId:            string
+  sessionId:           string
+  phase:               LessonPhase
+  exerciseNumber:      number
+  totalExercises:      number
+  currentExerciseType: string
+  currentItemIndex:    number
+  itemTotal:           number
+  visiblePayload:      ExerciseCursor | null  // full cursor for restoring exercise UI
+  correctionTurn:      string | null
+  retryCount:          number
+  teacherTurnActive:   boolean
+  studentTurnAllowed:  boolean
+  remainingMs:         number
+}
+
 export type OutboundMessage =
   | OutboundAiText
   | OutboundAudioChunk
@@ -250,3 +275,4 @@ export type OutboundMessage =
   | OutboundTipList
   | OutboundLessonTimeWarning
   | OutboundLessonTimerUpdate
+  | OutboundLessonResync

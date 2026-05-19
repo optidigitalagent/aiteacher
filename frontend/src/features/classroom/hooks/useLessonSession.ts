@@ -92,6 +92,32 @@ export function useLessonSession({ send, sessionId }: Options) {
     }
   }, [])
 
+  // Called when WS 'lesson_resync' arrives after grace-window reattach.
+  // Restores cursor, phase, and recovery state without sending any message or
+  // calling AI. visiblePayload is the full ExerciseCursor from the engine.
+  const onLessonResync = useCallback((payload: {
+    phase:          string
+    visiblePayload: ExerciseCursor | null
+    exerciseNumber: number
+    currentItemIndex: number
+  }) => {
+    if (payload.phase) setCurrentPhase(payload.phase)
+    if (payload.visiblePayload) {
+      setExerciseCursor(payload.visiblePayload)
+      if (payload.visiblePayload.exerciseId != null) {
+        setPendingId(payload.visiblePayload.exerciseId)
+      }
+    }
+    setIsRecovering(false)
+    if (import.meta.env.DEV) {
+      console.log('[ws:reconnect] ui_restored', {
+        exercise: payload.exerciseNumber,
+        item:     payload.currentItemIndex,
+        phase:    payload.phase,
+      })
+    }
+  }, [])
+
   // Called by ClassroomLayout when WS 'phase_change' event arrives
   const onPhaseChange = useCallback((from: string, to: string) => {
     setCurrentPhase(to)
@@ -157,6 +183,6 @@ export function useLessonSession({ send, sessionId }: Options) {
     question: exercise, exerciseCursor, progress, steps,
     submitAnswer, onExercise, onPhaseChange, onCursorUpdated,
     currentPhase, setPhase,
-    isRecovering, setIsRecovering, onStateSnapshot,
+    isRecovering, setIsRecovering, onStateSnapshot, onLessonResync,
   }
 }

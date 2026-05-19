@@ -114,6 +114,25 @@ export type BackendMessage =
   | { type: 'lesson_time_warning'; remainingMs: number }
   // Phase 2 recovery: periodic remaining-time broadcast (every 60 seconds)
   | { type: 'lesson_timer_update'; remainingMs: number }
+  // Reconnect grace-window resync: replaces any stale local state after reattach.
+  // No teacher greeting. No AI call. No lesson restart.
+  | {
+      type:                'lesson_resync'
+      lessonId:            string
+      sessionId:           string
+      phase:               string
+      exerciseNumber:      number
+      totalExercises:      number
+      currentExerciseType: string
+      currentItemIndex:    number
+      itemTotal:           number
+      visiblePayload:      ExerciseCursor | null
+      correctionTurn:      string | null
+      retryCount:          number
+      teacherTurnActive:   boolean
+      studentTurnAllowed:  boolean
+      remainingMs:         number
+    }
 
 export interface TipRecord {
   id:          string
@@ -135,7 +154,7 @@ export type SendFn = (payload: object) => void
 export function createClassroomSocket(
   onMessage:  (msg: BackendMessage) => void,
   onOpen?:    () => void,
-  onClose?:   () => void,
+  onClose?:   (code: number) => void,
   token?:     string,
   sessionId?: string,
 ): WebSocket {
@@ -144,12 +163,12 @@ export function createClassroomSocket(
   const ws = new WebSocket(url)
 
   ws.onopen = () => {
-    console.log('[Classroom WS] connected to', url)
+    console.log('[Classroom WS] connected')
     onOpen?.()
   }
   ws.onclose = (ev) => {
     console.log('[Classroom WS] disconnected — code:', ev.code, 'reason:', ev.reason || '(none)')
-    onClose?.()
+    onClose?.(ev.code)
   }
   ws.onerror = (e) => {
     console.error('[Classroom WS] error', e)

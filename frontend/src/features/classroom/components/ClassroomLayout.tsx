@@ -59,7 +59,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     question, exerciseCursor, progress, steps,
     submitAnswer, onExercise, onPhaseChange, onCursorUpdated,
     currentPhase, setPhase,
-    isRecovering, setIsRecovering, onStateSnapshot,
+    isRecovering, setIsRecovering, onStateSnapshot, onLessonResync,
   } = useLessonSession({ send, sessionId: paidSessionId ?? undefined })
 
   const {
@@ -309,8 +309,37 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           setPaidLessonReady(true)
           setWsConnectError(null)   // clear any stale error from a previous connect attempt
           setWsDisconnected(false)
+          // Grace period expired — allow Begin Lesson button to fire again
+          if (lessonStartedRef.current) {
+            beginSentRef.current = false
+          }
         }
         break
+      case 'lesson_resync': {
+        // Grace-window reattach: backend-authoritative state resync.
+        // No teacher greeting. No AI call. No lesson restart.
+        // Restore exercise cursor and phase; unblock mic if student's turn is allowed.
+        if (!isDemoMode) {
+          setWsDisconnected(false)
+          if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
+          onLessonResync({
+            phase:            msg.phase,
+            visiblePayload:   msg.visiblePayload,
+            exerciseNumber:   msg.exerciseNumber,
+            currentItemIndex: msg.currentItemIndex,
+          })
+          if (import.meta.env.DEV) {
+            console.log('[ws:reconnect] resync_received', {
+              lessonId:  msg.lessonId,
+              exercise:  msg.exerciseNumber,
+              item:      msg.currentItemIndex,
+              phase:     msg.phase,
+              micAllowed: msg.studentTurnAllowed,
+            })
+          }
+        }
+        break
+      }
       case 'lesson_resumed':
         if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
         setPhase(msg.phase)  // restore phase awareness on resume
@@ -419,31 +448,68 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     }
     if (isDemoMode) return  // demo uses REST API via useDemoSession
 
-    const token = getStoredToken()
-    const ws = createClassroomSocket(
-      (msg) => onMessageRef.current(msg),
-      () => {
-        // WS open: connection established — wait for lesson_ready or state snapshot from backend
-        setWsDisconnected(false)
-        console.log('[paid-lesson] ws_open session=' + paidSessionId)
-        // If lesson had started before disconnect, enter recovering state until
-        // backend sends lesson_state_snapshot or lesson_resumed with authoritative cursor
-        if (lessonStartedRef.current) {
-          setIsRecovering(true)
-          if (import.meta.env.DEV) console.log('[cursor] reconnecting — waiting for backend state snapshot')
-        }
-      },
-      () => {
-        setWsDisconnected(true)
-        if (!lessonStartedRef.current) {
-          setWsConnectError('Could not connect to your teacher. Please check your connection and try again.')
-        }
-      },
-      token ?? undefined,
-      paidSessionId ?? undefined,
-    )
-    wsRef.current = ws
-    return () => { ws.close() }
+    let activeWs: WebSocket | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let attemptCount = 0
+    const MAX_RECONNECT_ATTEMPTS = 5
+
+    const connect = () => {
+      const token = getStoredToken()
+      const ws = createClassroomSocket(
+        (msg) => onMessageRef.current(msg),
+        () => {
+          // WS open: reset attempt counter on successful connection
+          attemptCount = 0
+          setWsDisconnected(false)
+          console.log('[paid-lesson] ws_open session=' + paidSessionId + ' attempt=' + attemptCount)
+          // If lesson had started before disconnect, enter recovering state until
+          // backend sends lesson_resync, lesson_state_snapshot, or lesson_resumed
+          if (lessonStartedRef.current) {
+            setIsRecovering(true)
+            if (import.meta.env.DEV) console.log('[cursor] reconnecting — waiting for backend resync')
+          }
+        },
+        (code) => {
+          // Always stop mic on disconnect to avoid stuck recording state
+          stopRecording()
+
+          setWsDisconnected(true)
+          console.log(`[ws:reconnect] disconnected code=${code}`)
+
+          if (!lessonStartedRef.current) {
+            // Lesson had not started — show connection error, do not reconnect
+            setWsConnectError('Could not connect to your teacher. Please check your connection and try again.')
+            return
+          }
+
+          // Abnormal close (1006 = network drop) with an active lesson:
+          // attempt auto-reconnect within the backend grace window (60 s)
+          const isAbnormal = code === 1006 || code === 1001 || code === 0
+          if (isAbnormal && attemptCount < MAX_RECONNECT_ATTEMPTS) {
+            attemptCount++
+            // Exponential back-off: 1s, 1.5s, 2.25s, 3.4s, 5s — all within 60s grace window
+            const delay = Math.min(1000 * Math.pow(1.5, attemptCount - 1), 10_000)
+            console.log(`[ws:reconnect] reconnecting attempt=${attemptCount} delayMs=${Math.round(delay)}`)
+            reconnectTimer = setTimeout(connect, delay)
+          } else if (attemptCount >= MAX_RECONNECT_ATTEMPTS) {
+            console.log('[ws:reconnect] max_attempts_reached — manual reload required')
+          }
+          // Intentional/auth closes (1000, 4xxx) — do not reconnect
+        },
+        token ?? undefined,
+        paidSessionId ?? undefined,
+      )
+      activeWs = ws
+      wsRef.current = ws
+    }
+
+    connect()
+
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      activeWs?.close()
+      wsRef.current = null
+    }
   }, [isAuthLoading, isAuthenticated, isDemoMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Side effects ──────────────────────────────────────────────────────────
