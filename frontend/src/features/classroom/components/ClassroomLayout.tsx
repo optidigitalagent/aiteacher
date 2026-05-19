@@ -53,6 +53,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const [lessonTakenOver, setLessonTakenOver] = useState(false)
   const [readyClicked,    setReadyClicked]    = useState(false)
   const lessonStartedRef = useRef(false)
+  // Synchronous reconnect flag — readable inside WS message callbacks without stale closure.
+  // Set true on WS open after a lesson was active; cleared on lesson_resync / lesson_resumed.
+  const reconnectingRef      = useRef(false)
+  const recoveryTimeoutRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Production hooks (always called — rules of hooks) ────────────────────
   const {
@@ -304,8 +308,14 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         if (!isDemoMode) onTeacherTurnEnd()
         break
       case 'lesson_ready':
-        // Backend confirmed auth + session validation — safe to show Begin Lesson
+        // Backend confirmed auth + session validation — safe to show Begin Lesson.
+        // GUARD: ignore during reconnect recovery — backend should send lesson_resync instead.
+        // Stale lesson_ready can arrive when grace period is missed; we must not clear UI.
         if (!isDemoMode) {
+          if (reconnectingRef.current) {
+            console.log('[ws:reconnect] lesson_ready_ignored_during_recovery')
+            break
+          }
           setPaidLessonReady(true)
           setWsConnectError(null)   // clear any stale error from a previous connect attempt
           setWsDisconnected(false)
@@ -316,10 +326,16 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         }
         break
       case 'lesson_resync': {
-        // Grace-window reattach: backend-authoritative state resync.
-        // No teacher greeting. No AI call. No lesson restart.
+        // Grace-window reattach or late-recovery resync:
+        // backend-authoritative state. No greeting, no AI call, no lesson restart.
         // Restore exercise cursor and phase; unblock mic if student's turn is allowed.
         if (!isDemoMode) {
+          // Clear reconnect flag synchronously so subsequent lesson_ready (if any) is processed
+          reconnectingRef.current = false
+          if (recoveryTimeoutRef.current) {
+            clearTimeout(recoveryTimeoutRef.current)
+            recoveryTimeoutRef.current = null
+          }
           setWsDisconnected(false)
           if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
           onLessonResync({
@@ -328,19 +344,22 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
             exerciseNumber:   msg.exerciseNumber,
             currentItemIndex: msg.currentItemIndex,
           })
-          if (import.meta.env.DEV) {
-            console.log('[ws:reconnect] resync_received', {
-              lessonId:  msg.lessonId,
-              exercise:  msg.exerciseNumber,
-              item:      msg.currentItemIndex,
-              phase:     msg.phase,
-              micAllowed: msg.studentTurnAllowed,
-            })
-          }
+          console.log('[ws:reconnect] resync_received', {
+            lessonId:   msg.lessonId,
+            exercise:   msg.exerciseNumber,
+            item:       msg.currentItemIndex,
+            phase:      msg.phase,
+            micAllowed: msg.studentTurnAllowed,
+          })
         }
         break
       }
       case 'lesson_resumed':
+        reconnectingRef.current = false  // clear sync reconnect flag
+        if (recoveryTimeoutRef.current) {
+          clearTimeout(recoveryTimeoutRef.current)
+          recoveryTimeoutRef.current = null
+        }
         if (!lessonStarted) { setLessonStarted(true); lessonStartedRef.current = true }
         setPhase(msg.phase)  // restore phase awareness on resume
         setIsRecovering(false)  // resume confirms backend state is live
@@ -463,10 +482,23 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           setWsDisconnected(false)
           console.log('[paid-lesson] ws_open session=' + paidSessionId + ' attempt=' + attemptCount)
           // If lesson had started before disconnect, enter recovering state until
-          // backend sends lesson_resync, lesson_state_snapshot, or lesson_resumed
+          // backend sends lesson_resync, lesson_state_snapshot, or lesson_resumed.
+          // reconnectingRef is a sync ref so the lesson_ready guard reads the correct value
+          // even before the React state update (setIsRecovering) is flushed.
           if (lessonStartedRef.current) {
+            reconnectingRef.current = true
             setIsRecovering(true)
-            if (import.meta.env.DEV) console.log('[cursor] reconnecting — waiting for backend resync')
+            console.log('[cursor] reconnecting — waiting for backend resync')
+            // Safety timeout: force-clear recovery state if no resync arrives within 10s
+            if (recoveryTimeoutRef.current) clearTimeout(recoveryTimeoutRef.current)
+            recoveryTimeoutRef.current = setTimeout(() => {
+              recoveryTimeoutRef.current = null
+              if (reconnectingRef.current) {
+                reconnectingRef.current = false
+                setIsRecovering(false)
+                console.log('[ws:reconnect] recovery_timeout_cleared — no resync received')
+              }
+            }, 10_000)
           }
         },
         (code) => {
@@ -507,6 +539,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
 
     return () => {
       if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (recoveryTimeoutRef.current) {
+        clearTimeout(recoveryTimeoutRef.current)
+        recoveryTimeoutRef.current = null
+      }
+      reconnectingRef.current = false
       activeWs?.close()
       wsRef.current = null
     }

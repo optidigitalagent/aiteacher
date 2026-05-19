@@ -357,6 +357,7 @@ const orchestrator = new LessonOrchestrator()
 const MAX_LESSON_MS = Number(process.env.PAID_PLAN_LESSON_MINUTES ?? 50) * 60_000
 
 interface ClientMeta {
+  connectionId:    string           // unique per WS connection — used for ownership logging
   lessonId:        string | null
   studentId:       string | null
   userId:          string | null
@@ -478,6 +479,147 @@ function findActiveLessonOwner(lessonId: string, exclude: WebSocket): WebSocket 
     if (ws !== exclude && m.lessonId === lessonId) return ws
   }
   return null
+}
+
+// Late-reconnect recovery: called when isReattach=false but a recoverable lesson
+// may still exist in the DB (e.g. grace period expired, or code 1001 disconnect).
+// Sets up the full lesson context and sends lesson_resync instead of lesson_ready.
+// Returns true if recovery succeeded (caller must NOT send lesson_ready).
+async function tryLateRecover(
+  ws:        WebSocket,
+  meta:      ClientMeta,
+  sessionId: string,
+  userId:    string,
+): Promise<boolean> {
+  // Step 1: find active lesson_session in DB
+  let lessonId: string | null = null
+  try {
+    const row = await query<{ lesson_id: string | null }>(
+      `SELECT lesson_id FROM lesson_sessions WHERE session_id = $1 AND user_id = $2 AND status = 'active'`,
+      [sessionId, userId],
+    )
+    lessonId = row.rows[0]?.lesson_id ?? null
+  } catch (err) {
+    console.error('[ws:reconnect] tryLateRecover DB error:', err instanceof Error ? err.message : err)
+    return false
+  }
+  if (!lessonId) return false
+
+  // Step 2: load Redis lesson state (restore from snapshot if expired)
+  let stateRaw: string | null = null
+  try {
+    stateRaw = await redis.get(lessonStateKey(lessonId))
+  } catch { /* non-fatal */ }
+  if (!stateRaw) {
+    stateRaw = await restoreSnapshotToRedis(lessonId)
+    if (!stateRaw) {
+      console.log(`[ws:reconnect] late_recover_no_state lessonId=${lessonId}`)
+      return false
+    }
+  }
+
+  let state: LessonState
+  try {
+    state = JSON.parse(stateRaw) as LessonState
+  } catch {
+    return false
+  }
+
+  // Block recovery for ended lessons
+  if (state.phase === 'END') {
+    console.log(`[ws:reconnect] late_recover_blocked phase=END lessonId=${lessonId}`)
+    return false
+  }
+
+  // Block if nearly out of time
+  const originalStart = new Date(state.startedAt).getTime()
+  const remainingMs   = Math.max(0, MAX_LESSON_MS - (Date.now() - originalStart))
+  if (remainingMs <= 60_000) {
+    console.log(`[ws:reconnect] late_recover_blocked time_expired lessonId=${lessonId}`)
+    return false
+  }
+
+  // Evict any existing active owner for this lesson
+  const staleOwner = findActiveLessonOwner(lessonId, ws)
+  if (staleOwner) {
+    console.log(`[ws:ownership] owner_replaced session=${sessionId} old=stale new=${meta.connectionId}`)
+    send(staleOwner, { type: 'error', code: 'LESSON_TAKEN_OVER', message: 'This lesson was resumed in another tab.' })
+    staleOwner.terminate()
+  }
+
+  // Restore meta
+  meta.lessonId         = lessonId
+  meta.studentId        = state.studentId ?? meta.studentId
+  meta.voiceId          = state.voiceId   ?? null
+  meta.teacherId        = state.teacherId ?? null
+  meta.lessonStartedAt  = originalStart
+  meta.billingStartedAt = Date.now()
+
+  // Link or create usage record for this reconnect session
+  try {
+    const usageRow = await query<{ id: string }>(
+      `SELECT id FROM paid_lesson_usage WHERE session_id = $1 AND user_id = $2 AND status = 'active'
+       ORDER BY started_at DESC LIMIT 1`,
+      [sessionId, userId],
+    )
+    if (usageRow.rows[0]) {
+      meta.usageId = usageRow.rows[0].id
+    } else {
+      const r = await query<{ id: string }>(
+        `INSERT INTO paid_lesson_usage (user_id, session_id, lesson_id, started_at, status)
+         VALUES ($1, $2, $3, NOW(), 'active') RETURNING id`,
+        [userId, sessionId, lessonId],
+      )
+      meta.usageId = r.rows[0]?.id ?? null
+    }
+  } catch (err) {
+    console.error('[ws:reconnect] late_recover_usage_error:', err instanceof Error ? err.message : err)
+    // non-fatal — continue without billing record
+  }
+
+  // Re-arm max-duration timeout with remaining lesson time
+  meta.maxDurationRef = setTimeout(() => {
+    if (!meta.lessonId) return
+    console.log(`[paid-lesson] lesson_timeout session=${meta.sessionId} lessonId=${meta.lessonId}`)
+    send(ws, { type: 'error', code: 'SESSION_TIME_LIMIT', message: 'Maximum lesson duration reached.' })
+    ws.close(4408, 'Time limit reached')
+  }, remainingMs)
+
+  // 5-min warning
+  if (remainingMs > 5 * 60_000) {
+    meta.warningRef = setTimeout(() => {
+      send(ws, { type: 'lesson_time_warning', remainingMs: 5 * 60_000 })
+      console.log(`[paid-lesson] time_warning_sent remainingMs=300000 session=${sessionId}`)
+    }, remainingMs - 5 * 60_000)
+  }
+
+  // Start periodic timer broadcast
+  startTimerBroadcast(ws, meta)
+
+  // Create fresh STT for this connection
+  meta.stt?.close()
+  meta.stt               = null
+  meta.pendingTranscript = ''
+  meta.pendingMicStop    = false
+  meta.micActive         = false
+  meta.stt = createSTT(ws, meta)
+
+  // Record reconnect event in transcript
+  recordSystemEvent({
+    lessonId,
+    sessionId,
+    userId,
+    studentId: meta.studentId,
+    message:   'websocket_late_reconnect',
+  })
+
+  console.log(`[ws:reconnect] recoverable_found session=${sessionId} lessonId=${lessonId}`)
+  console.log(`[ws:reconnect] lesson_ready_suppressed session=${sessionId}`)
+  console.log(`[ws:ownership] owner_set session=${sessionId} connectionId=${meta.connectionId}`)
+
+  // Send resync — no greeting, no AI call, no lesson restart
+  await sendLessonResync(ws, meta)
+  return true
 }
 
 function send(ws: WebSocket, msg: OutboundMessage): void {
@@ -2439,6 +2581,7 @@ export function attachLessonWS(server: Server): void {
       const old = graceEntry!.meta
       meta = {
         ...old,
+        connectionId:             uuid(),  // new connection ID on each new TCP socket
         heartbeatRef,
         timeoutRef:               setTimeout(() => ws.terminate(), INACTIVITY_TIMEOUT_MS),
         maxDurationRef:           null,   // re-armed below
@@ -2458,6 +2601,7 @@ export function attachLessonWS(server: Server): void {
       }
     } else {
       meta = {
+        connectionId:    uuid(),
         lessonId:        null,
         studentId:       jwtStudentId,
         userId:          jwtUserId,
@@ -2494,11 +2638,26 @@ export function attachLessonWS(server: Server): void {
     console.log(`[ws] client connected (user=${jwtUserId} session=${wsSessionId} reattach=${isReattach}), total=${clients.size}`)
 
     if (!isReattach) {
-      // Signal frontend that the connection is authenticated and the session is
-      // validated. The "Begin Lesson" button should only appear after this event.
-      send(ws, { type: 'lesson_ready', sessionId: wsSessionId })
+      // Before showing "Begin Lesson", check if this session has a recoverable
+      // active lesson (handles grace-expired reconnects and code-1001 disconnects).
+      // If a lesson is found, send lesson_resync instead of lesson_ready.
+      let laterRecovered = false
+      if (wsSessionId && jwtUserId) {
+        try {
+          laterRecovered = await tryLateRecover(ws, meta, wsSessionId, jwtUserId)
+        } catch (err) {
+          console.error('[ws:reconnect] tryLateRecover threw:', err instanceof Error ? err.message : err)
+        }
+      }
+      if (!laterRecovered) {
+        // No recoverable lesson — signal frontend to show "Begin Lesson"
+        console.log(`[ws:ownership] owner_set session=${wsSessionId ?? 'none'} connectionId=${meta.connectionId}`)
+        send(ws, { type: 'lesson_ready', sessionId: wsSessionId })
+      }
     } else if (meta.lessonId) {
-      // ── Reattach path ─────────────────────────────────────────────────
+      // ── Grace-window reattach path ────────────────────────────────────
+      console.log(`[ws:ownership] owner_set session=${wsSessionId} connectionId=${meta.connectionId}`)
+
       // Re-create STT for the new TCP connection
       meta.stt = createSTT(ws, meta)
 
@@ -2575,6 +2734,12 @@ export function attachLessonWS(server: Server): void {
             await processInput(ws, meta, msg.text)
             break
           case 'mic_start': {
+            // Duplicate mic_start while mic is already active — ignore to prevent
+            // stale pipeline from opening a second STT stream.
+            if (meta.micActive) {
+              console.log('[ws:audio] duplicate_mic_start_ignored')
+              break
+            }
             // New recording starting — hard-reset all STT state from previous recording.
             // This prevents stale pendingMicStop, stale transcript, and Deepgram buffer
             // from contaminating the new turn.
@@ -2667,7 +2832,11 @@ export function attachLessonWS(server: Server): void {
           }
           case 'audio_chunk':
             if (!meta.stt) {
-              console.log(`[paid-lesson] ignored_audio_chunk reason=before_begin ws_state=${ws.readyState}`)
+              console.log('[paid-lesson] ignored_audio_chunk reason=before_begin')
+              return
+            }
+            if (!meta.micActive) {
+              console.log('[ws:audio] stale_chunk_ignored')
               return
             }
             if (ws.readyState !== WebSocket.OPEN) {
@@ -2749,7 +2918,9 @@ export function attachLessonWS(server: Server): void {
       // cleanly without a teacher greeting or lesson restart.
       // Normal/intentional closes (1000, 4xxx) finalize billing immediately.
 
-      const isAbnormalWithLesson = (code === 1006 || code === 0) &&
+      // code 1001 = "going away" (browser navigating / tab close) — treated as
+      // abnormal for reconnect purposes since mobile browsers emit this on network drops.
+      const isAbnormalWithLesson = (code === 1006 || code === 1001 || code === 0) &&
         !!meta.lessonId && !!meta.sessionId && !!meta.userId &&
         !!meta.usageId && !!meta.billingStartedAt
 

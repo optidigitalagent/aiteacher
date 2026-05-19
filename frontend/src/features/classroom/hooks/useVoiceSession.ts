@@ -39,11 +39,12 @@ export function useVoiceSession({ send }: Options): VoiceState & {
     }, delayMs)
   }, [])
 
-  // Stop mic without sending interrupt (called when teacher starts speaking)
+  // Stop mic without sending interrupt (called when teacher starts speaking or WS disconnects)
   const stopRecording = useCallback(() => {
     if (!streamRef.current) return
-    console.log('[paid-lesson] mic_enabled=false reason=teacher_speaking')
-    stopPCMCapture(streamRef.current)
+    const reason = 'teacher_speaking'
+    console.log('[paid-lesson] mic_enabled=false reason=' + reason)
+    stopPCMCapture(streamRef.current, reason)
     streamRef.current = null
     setIsListening(false)
     setVoiceTurnState('finalizing_transcript')
@@ -55,7 +56,7 @@ export function useVoiceSession({ send }: Options): VoiceState & {
   // to set interruptPending=true, which then skips TTS for the student's response.
   const toggle = useCallback(async () => {
     if (isListening) {
-      if (streamRef.current) stopPCMCapture(streamRef.current)
+      if (streamRef.current) stopPCMCapture(streamRef.current, 'mic_stop_toggle')
       streamRef.current = null
       setIsListening(false)
       setVoiceTurnState('finalizing_transcript')
@@ -65,6 +66,11 @@ export function useVoiceSession({ send }: Options): VoiceState & {
     // Stop current TTS playback first (kills in-flight audio nodes cleanly).
     // THEN warm a fresh AudioContext in the same user-gesture frame so future
     // TTS chunks can resume() without hitting autoplay policy.
+    // Also ensure any stale PCM pipeline is destroyed before starting a new one.
+    if (streamRef.current) {
+      stopPCMCapture(streamRef.current, 'mic_restart')
+      streamRef.current = null
+    }
     stopAudioPlayback()
     warmAudioContext()
     isSpeakingRef.current = false

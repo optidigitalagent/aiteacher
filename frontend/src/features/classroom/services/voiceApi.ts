@@ -18,6 +18,9 @@ export async function requestMicPermission(): Promise<MediaStream> {
 let captureCtx:      AudioContext | null = null
 let captureSource:   MediaStreamAudioSourceNode | null = null
 let captureProc:     ScriptProcessorNode | null = null
+// Hard-gate: set false before disconnecting so in-flight onaudioprocess callbacks
+// never send chunks from the destroyed pipeline to the new WebSocket.
+let captureActive = false
 
 function float32ToBase64PCM(float32: Float32Array): string {
   const int16 = new Int16Array(float32.length)
@@ -32,11 +35,17 @@ function float32ToBase64PCM(float32: Float32Array): string {
 }
 
 export function startPCMCapture(stream: MediaStream, onChunk: (base64: string) => void): void {
+  captureActive = true  // mark pipeline live before any events fire
   captureCtx    = new AudioContext({ sampleRate: 16000 })
   captureSource = captureCtx.createMediaStreamSource(stream)
   captureProc   = captureCtx.createScriptProcessor(4096, 1, 1)
 
   captureProc.onaudioprocess = (ev) => {
+    if (!captureActive) {
+      // Pipeline was destroyed — block this event from reaching the (possibly new) socket.
+      console.log('[audio:pipeline] stale_chunk_blocked')
+      return
+    }
     const pcm = ev.inputBuffer.getChannelData(0)
     onChunk(float32ToBase64PCM(pcm))
   }
@@ -47,9 +56,13 @@ export function startPCMCapture(stream: MediaStream, onChunk: (base64: string) =
   captureSource.connect(captureProc)
   captureProc.connect(silence)
   silence.connect(captureCtx.destination)
+  console.log('[audio:pipeline] created')
 }
 
-export function stopPCMCapture(stream: MediaStream): void {
+export function stopPCMCapture(stream: MediaStream, reason = 'stop'): void {
+  // Block in-flight onaudioprocess callbacks BEFORE disconnecting nodes.
+  // AudioContext.close() is async; without this flag, events fire after we return.
+  captureActive = false
   captureProc?.disconnect()
   captureSource?.disconnect()
   captureCtx?.close()
@@ -57,6 +70,7 @@ export function stopPCMCapture(stream: MediaStream): void {
   captureSource = null
   captureCtx    = null
   stream.getTracks().forEach((t) => t.stop())
+  console.log(`[audio:pipeline] destroyed reason=${reason}`)
 }
 
 // ── TTS playback ──────────────────────────────────────────────────────────────
