@@ -33,3 +33,6 @@ export type { FrontendSyncInput, FrontendSyncResult } from './frontend-sync-guar
 
 export { buildRetryEscalation, buildOpeningInstruction } from './retry-escalation.js'
 export type { RetryEscalationInput, RetryEscalationResult } from './retry-escalation.js'
+
+export { getExerciseTeachingProtocol, buildProtocolTeacherGuidance } from './exercise-teaching-protocols.js'
+export type { ExerciseTeachingProtocol, AnswerMode, ProtocolGuidanceInput } from './exercise-teaching-protocols.js'

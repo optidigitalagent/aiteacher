@@ -26,6 +26,10 @@ import {
   getExpectedAnswerPolicy,
 } from './exercise-format-registry.js'
 import {
+  getExerciseTeachingProtocol,
+  buildProtocolTeacherGuidance,
+} from './exercise-teaching-protocols.js'
+import {
   traceExerciseTypeSelected,
   traceTeachingModeChanged,
   traceDemonstrationPolicySelected,
@@ -208,6 +212,25 @@ export function buildExerciseTeachingContext(
 
   if (renderPolicy.screenAwarenessNote) {
     sections.push(`\n── SCREEN STATE ──\n${renderPolicy.screenAwarenessNote}`)
+  }
+
+  // ── Step 10: Canonical protocol guidance (answerMode, shortAnswerPolicy, etc.) ──
+
+  try {
+    const protocol = getExerciseTeachingProtocol(exerciseType)
+    const isDiscussionComplete =
+      (completionState === 'complete') &&
+      (runtimeMode === 'soft_speaking' || exerciseType === 'discussion' || exerciseType === 'speaking_prompt')
+    const protocolBlock = buildProtocolTeacherGuidance(protocol, {
+      exerciseType,
+      correctionTurn,
+      studentAnswer,
+      runtimeMode,
+      isDiscussionComplete,
+    })
+    sections.push('\n' + protocolBlock)
+  } catch (err) {
+    console.error('[teaching-protocol] guidance_build_error (non-fatal):', err instanceof Error ? err.message : err)
   }
 
   sections.push('\n╚═══════════════════════════╝')

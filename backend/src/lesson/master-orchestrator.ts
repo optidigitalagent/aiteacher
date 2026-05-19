@@ -293,13 +293,20 @@ function buildTeacherContextFromResult(
     const isOpenEnded      = result.validation?.feedbackCode === 'OPEN_ENDED_REVIEW_REQUIRED'
     const wordCount        = studentAnswer.trim().split(/\s+/).filter(Boolean).length
 
-    // Discussion / open-ended: if answer is very short, ask one follow-up before announcing done
+    // Discussion / open-ended: if answer is too short, require one follow-up before completing.
+    // Trigger on exercise type (not feedbackCode) because any_response validation never sets OPEN_ENDED_REVIEW_REQUIRED.
+    const SOFT_SPEAKING_TYPES = new Set(['discussion', 'speaking_prompt', 'pair_speaking', 'roleplay', 'show_interest_agree_disagree', 'soft_speaking'])
+    const isDiscussionLike = SOFT_SPEAKING_TYPES.has(etr.exerciseType) || isOpenEnded
+    if (isDiscussionLike && wordCount < 8 && exerciseDone) {
+      console.log(`[teaching-protocol] discussion_followup_required type=${etr.exerciseType} words=${wordCount}`)
+    }
     const openEndedFollowUp =
-      isOpenEnded && wordCount < 4 && exerciseDone
-        ? `\nDISCUSSION FOLLOW-UP REQUIRED: The student's answer is brief (${wordCount} word(s)). ` +
+      isDiscussionLike && wordCount < 8 && exerciseDone
+        ? `\nDISCUSSION FOLLOW-UP REQUIRED: The student's answer is too brief (${wordCount} word(s)). ` +
           `Before announcing exercise complete, ask ONE specific follow-up question to draw out more detail ` +
-          `(e.g. "Why does [topic] inspire you — hard work, talent, or discipline?"). ` +
-          `Wait for the follow-up answer, THEN announce exercise complete and introduce the next exercise.`
+          `(e.g. "Why exactly? Can you give one example?" or "What specifically about [topic]?"). ` +
+          `Wait for the follow-up answer, THEN announce exercise complete and introduce the next exercise. ` +
+          `FORBIDDEN: Do NOT say "Correct. Exercise done." after a ${wordCount}-word answer.`
         : ``
 
     const continuationContract = exerciseDone
