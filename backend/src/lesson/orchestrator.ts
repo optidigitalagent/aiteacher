@@ -115,16 +115,22 @@ export class LessonOrchestrator {
         const exState  = engState?.currentExerciseState
         if (exState && !isExerciseComplete(exState)) {
           const step = exState.spec.steps[exState.currentStepIndex]
-          state.itemIndex      = exState.currentStepIndex
-          state.currentItem    = step?.question ?? state.currentItem
-          state.completedItems = [...exState.completedSteps]
-          state.failedItems    = [...exState.failedSteps]
+          state.itemIndex           = exState.currentStepIndex
+          state.currentItem         = step?.question ?? state.currentItem
+          state.completedItems      = [...exState.completedSteps]
+          state.failedItems         = [...exState.failedSteps]
+          // Sync exercise-level identity so Teacher Brain sees the correct exercise number.
+          // Without this, buildPaidLessonTeacherBrainContext shows "Exercise: 0" even when
+          // the engine is already serving Exercise 1, causing the AI to narrate other exercises.
+          state.currentExerciseNum  = exState.spec.meta.exerciseNumber
+          state.activeExerciseType  = exState.spec.exerciseType
           if (exState.retryCount > 0 && !state.correctionTurn) {
             state.correctionTurn = retryToTurn(exState.retryCount)
           }
           console.log(
-            `[orch] engine_state_synced item=${exState.currentStepIndex} ` +
-            `retries=${exState.retryCount} correctionTurn=${state.correctionTurn ?? 'none'} ` +
+            `[orch] engine_state_synced exercise=#${exState.spec.meta.exerciseNumber}` +
+            ` item=${exState.currentStepIndex}` +
+            ` retries=${exState.retryCount} correctionTurn=${state.correctionTurn ?? 'none'} ` +
             `lessonId=${lessonId}`,
           )
         }

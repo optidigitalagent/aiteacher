@@ -125,14 +125,20 @@ export function buildPromptContext(
     total: spec.steps.length,
   }
 
+  const exerciseNum = spec.meta.exerciseNumber
+
   const lines: string[] = [
     `=== EXERCISE ENGINE STATE (backend-authoritative) ===`,
     `RULE: You are the teacher voice. The engine controls all progression.`,
     `RULE: Do NOT invent items, steps, or exercise numbers.`,
     `RULE: Do NOT advance to a new exercise — the engine will do that.`,
     ``,
+    `EXERCISE NUMBER LOCK: Active exercise is #${exerciseNum} (${spec.exerciseType.replace(/_/g, ' ')}).`,
+    `FORBIDDEN: Do NOT say, imply, announce, or reference "Exercise ${exerciseNum + 1}" or any higher number.`,
+    `FORBIDDEN: Only ONE exercise is active. Other exercises do not exist for you this turn.`,
+    ``,
     `Section: ${spec.meta.lessonSection} | Unit: ${spec.meta.unit}`,
-    `Exercise: ${spec.meta.exerciseNumber} — ${spec.exerciseType.replace(/_/g, ' ')}`,
+    `Exercise: ${exerciseNum} — ${spec.exerciseType.replace(/_/g, ' ')}`,
     `Instruction: "${spec.instruction}"`,
     `Progress: step ${stats.done + 1} of ${stats.total}`,
     `Status: ${exState.status}`,

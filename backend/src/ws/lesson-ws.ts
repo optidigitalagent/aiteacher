@@ -43,6 +43,11 @@ import { memoryService } from '../memory/index.js'
 import { masterOrchestrator } from '../lesson/master-orchestrator.js'
 import { guardTeacherResponse, buildFallbackGuardContext } from '../engine/stale-item-guard.js'
 import {
+  buildExerciseExecutionState,
+  buildExecutionStatePromptBlock,
+  guardExecutionOutput,
+} from '../engine/execution-output-guard.js'
+import {
   validateSoftSpeakingAnswer,
   getSoftAttempts,
   incrementSoftAttempts,
@@ -172,26 +177,34 @@ function isReadinessIntent(text: string): boolean {
 }
 
 // Phase G: returns a [EXERCISE COMPLETE] signal when exercise is done and student wants to move on.
-// Injected into the AI input to prevent "I'm thinking..." and stale re-anchor after completion.
+// Reads from engine state (not legacy LessonState) to avoid false-positive completion signals.
+// Only fires when engine reports the current exercise is no longer active (completed/skipped).
 async function buildExerciseCompletionSignal(lessonId: string, text: string): Promise<string> {
   try {
     if (!looksLikeTransitionIntent(text)) return ''
-    const stateRaw = await redis.get(lessonStateKey(lessonId))
-    if (!stateRaw) return ''
-    const state = JSON.parse(stateRaw) as LessonState
-    if (state.phase !== 'EXERCISES' || !state.currentExerciseNum) return ''
 
-    const exerciseHardClosed = state.completedExercises.includes(state.currentExerciseNum)
-    const exerciseItemsDone  = state.exerciseItems?.length
-      ? (state.itemIndex ?? 0) >= state.exerciseItems.length
-      : false
+    const engState = await exerciseEngine.getState(lessonId)
+    if (!engState || engState.sectionId === 'free') return ''
 
-    if (!exerciseHardClosed && !exerciseItemsDone) return ''
+    const exState = engState.currentExerciseState
+    // Engine exercise is still active — do NOT inject false completion signal
+    if (exState && exState.status === 'active') return ''
 
-    const nextNum = state.currentExerciseNum + 1
-    console.log(`[ws] exercise_completion_signal injected exercise=#${state.currentExerciseNum} student="${text.trim()}"`)
-    return `[EXERCISE ${state.currentExerciseNum} COMPLETE — TRANSITION REQUIRED] ` +
-      `Exercise ${state.currentExerciseNum} is fully done. ` +
+    // No active exercise state means either completed/skipped or between exercises
+    const completedCount = engState.completedExerciseIds.length
+    if (completedCount === 0 && !exState) return ''
+
+    // Find the last completed exercise number to compute "next"
+    const lastCompletedId = exState?.exerciseId ?? engState.completedExerciseIds.at(-1)
+    const lastSpec = engState.exerciseQueue.find(e => e.exerciseId === lastCompletedId)
+    if (!lastSpec) return ''
+
+    const doneNum = lastSpec.meta.exerciseNumber
+    const nextNum = doneNum + 1
+
+    console.log(`[ws] exercise_completion_signal injected exercise=#${doneNum} student="${text.slice(0, 60)}"`)
+    return `[EXERCISE ${doneNum} COMPLETE — TRANSITION REQUIRED] ` +
+      `Exercise ${doneNum} is fully done. ` +
       `Student says: "${text.trim()}" — they want to move forward. ` +
       `MANDATORY: Do NOT say "I'm thinking" or "could you repeat that". ` +
       `Announce Exercise ${nextNum} immediately. ` +
@@ -1955,6 +1968,24 @@ async function processInput(
     } catch { /* non-fatal */ }
   }
 
+  // Strict Execution State: inject EXERCISE NUMBER LOCK as the first block of engine context.
+  // This prevents the AI from announcing inactive exercises or skipping ahead.
+  // Loaded only when engine has an active exercise (non-fallback path).
+  if (enginePromptContext.includes('(backend-authoritative)')) {
+    try {
+      const execState = await buildExerciseExecutionState(meta.lessonId)
+      if (execState) {
+        const execBlock = buildExecutionStatePromptBlock(execState)
+        enginePromptContext = execBlock + '\n\n' + enginePromptContext
+        console.log(
+          `[execution_guard] state_injected exercise=#${execState.activeExerciseNumber}` +
+          ` item=${execState.activeItemIndex + 1}/${execState.itemTotal}` +
+          ` lessonId=${meta.lessonId}`,
+        )
+      }
+    } catch { /* non-fatal */ }
+  }
+
   // Memory System: load compact student memory summary for Teacher Brain (read-only).
   // Loaded once per AI turn. Failure is non-fatal — lesson continues without memory context.
   let memoryBlock = ''
@@ -2008,6 +2039,23 @@ async function processInput(
         guardedText = guardResult.text
       }
     } catch { /* non-fatal — send original text */ }
+
+    // ── Execution Output Guard ──────────────────────────────────────────────
+    // Extends stale-item guard: catches EXERCISE-level violations (inactive exercise
+    // announcements, missing-content claims, premature completion).
+    try {
+      const execState     = await buildExerciseExecutionState(meta.lessonId)
+      const execGuard     = guardExecutionOutput(guardedText, execState, result.phase)
+      if (!execGuard.safe) {
+        console.log(
+          `[execution_guard] violation type=${execGuard.violationType}` +
+          ` active=#${execState?.activeExerciseNumber ?? '?'}` +
+          ` blocked="${execGuard.violation?.slice(0, 60)}"` +
+          ` lessonId=${meta.lessonId}`,
+        )
+        guardedText = execGuard.text
+      }
+    } catch { /* non-fatal — send guarded text from stale-item guard */ }
   }
 
   send(ws, { type: 'ai_text', phase: result.phase, text: guardedText, displayText: result.displayText })
