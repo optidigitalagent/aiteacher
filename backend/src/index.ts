@@ -19,7 +19,8 @@ process.on('unhandledRejection', (reason: unknown) => {
   console.error('[server] unhandledRejection:', reason)
 })
 
-import express, { type Request, type Response, type NextFunction } from 'express'
+import cors from 'cors'
+import express from 'express'
 import { createServer } from 'http'
 import { checkConnection as checkPostgres, initTables } from './db/postgres.js'
 import { checkConnection as checkRedis } from './db/redis.js'
@@ -66,14 +67,18 @@ async function main(): Promise<void> {
   const app = express()
 
   // ── CORS ───────────────────────────────────────────────────────────────────
-  app.use((_req: Request, res: Response, next: NextFunction): void => {
-    res.setHeader('Access-Control-Allow-Origin', FRONTEND_URL)
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    res.setHeader('Access-Control-Allow-Credentials', 'true')
-    next()
-  })
-  app.options('*', (_req: Request, res: Response): void => { res.sendStatus(204) })
+  // cors() automatically adds Vary: Origin, handles OPTIONS preflight with
+  // res.end() (no body), and only sets Access-Control-Allow-Origin when the
+  // incoming Origin matches FRONTEND_URL — no wildcard, credentials allowed.
+  const corsOptions: cors.CorsOptions = {
+    origin: FRONTEND_URL,
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    optionsSuccessStatus: 204,
+  }
+  app.use(cors(corsOptions))
+  app.options('*', cors(corsOptions))
 
   // LiqPay callback is sent as application/x-www-form-urlencoded — must be before json()
   app.use(express.urlencoded({ extended: false }))
