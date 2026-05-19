@@ -4,6 +4,8 @@ import { requireAuth } from '../auth/middleware.js'
 import { query } from '../db/postgres.js'
 import redis from '../db/redis.js'
 import { getSubscription } from '../billing/subscription-service.js'
+import { listSectionRuntimeStatuses, canStartPaidLesson, normalizeSectionId, getSectionRuntimeStatus } from '../lesson/section-registry.js'
+import { getGoldenEntry, getGoldenMatrix, getGoldenSummary } from '../lesson/golden-matrix.js'
 import OpenAI from 'openai'
 
 const router = Router()
@@ -23,6 +25,55 @@ function getOpenAI(): OpenAI {
   if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   return _openai
 }
+
+// GET /lesson/sections/status — public curriculum availability map.
+// Returns per-section runtime status so the frontend can show availability badges.
+router.get('/lesson/sections/status', async (_req: Request, res: Response) => {
+  try {
+    const allStatuses = listSectionRuntimeStatuses()
+
+    // Merge in golden matrix tier for each section
+    const withGolden = allStatuses.map(s => {
+      const golden = getGoldenEntry(s.sectionId)
+      return {
+        ...s,
+        goldenStatus:      golden?.goldenStatus      ?? null,
+        goldenRecommended: golden?.recommendedForMVP ?? false,
+      }
+    })
+
+    // Group by unit
+    const byUnit = new Map<number, typeof withGolden>()
+    for (const s of withGolden) {
+      const arr = byUnit.get(s.unit) ?? []
+      arr.push(s)
+      byUnit.set(s.unit, arr)
+    }
+
+    const units = Array.from(byUnit.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([unit, sections]) => ({ unit, sections }))
+
+    console.log(`[section-status] returned count=${allStatuses.length}`)
+    res.json({ units })
+  } catch (err) {
+    console.error('[section-status] error:', err instanceof Error ? err.message : err)
+    res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to fetch section statuses' })
+  }
+})
+
+// GET /lesson/sections/golden-matrix — admin/QA endpoint
+// Returns the full golden matrix: GOLD/SILVER/BLOCKED classification per section.
+router.get('/lesson/sections/golden-matrix', async (_req: Request, res: Response) => {
+  try {
+    const all     = Array.from(getGoldenMatrix().values())
+    const summary = getGoldenSummary()
+    res.json({ summary, sections: all })
+  } catch (err) {
+    console.error('[golden-matrix] error:', err instanceof Error ? err.message : err)
+    res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to build golden matrix' })
+  }
+})
 
 // POST /lesson/start — subscription required; creates lesson session + usage record
 router.post('/lesson/start', requireAuth, async (req: Request, res: Response) => {
@@ -65,6 +116,27 @@ router.post('/lesson/start', requireAuth, async (req: Request, res: Response) =>
 
     if (!mode || !bookId || !sectionId || !teacherId || !voiceId) {
       res.status(400).json({ code: 'INVALID_REQUEST', message: 'Missing required fields' })
+      return
+    }
+
+    // Section safety gate — block paid lessons for sections without safe executable manifest
+    const canonicalSection = normalizeSectionId(String(sectionId))
+    if (mode !== 'free' && !canStartPaidLesson(canonicalSection)) {
+      const sectionStatus = getSectionRuntimeStatus(canonicalSection)
+      console.log(
+        `[lesson:start] blocked_unready_section section="${canonicalSection}" ` +
+        `status=${sectionStatus.status} user=${userId}`,
+      )
+      res.status(422).json({
+        code:   'SECTION_NOT_READY',
+        status: sectionStatus.status,
+        reason: sectionStatus.reason,
+        message: sectionStatus.status === 'UNSUPPORTED'
+          ? 'This section requires audio which is not yet supported. Please choose a different section.'
+          : sectionStatus.status === 'MISSING'
+          ? 'This section is not available yet. Please choose a ready section.'
+          : 'This section is not yet structured for interactive exercises. Please choose a ready section.',
+      })
       return
     }
 

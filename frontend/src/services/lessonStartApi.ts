@@ -59,6 +59,52 @@ export async function getContinuationStatus(): Promise<ContinuationStatus | null
   }
 }
 
+// ── Section status ─────────────────────────────────────────────────────────────
+
+export type SectionRuntimeStatus = 'READY' | 'PARTIAL' | 'CONTENT_ONLY' | 'UNSUPPORTED' | 'MISSING'
+export type GoldenTier = 'GOLD' | 'SILVER' | 'BLOCKED'
+
+export interface SectionStatusData {
+  sectionId:                string
+  unit:                     number
+  title:                    string
+  status:                   SectionRuntimeStatus
+  supportedExerciseCount:   number
+  unsupportedExerciseCount: number
+  canStartPaidLesson:       boolean
+  reason:                   string
+  goldenStatus:             GoldenTier | null
+  goldenRecommended:        boolean
+}
+
+export interface SectionStatusUnit {
+  unit:     number
+  sections: SectionStatusData[]
+}
+
+export interface SectionStatusResponse {
+  units: SectionStatusUnit[]
+}
+
+export async function fetchSectionStatuses(): Promise<Map<string, SectionStatusData>> {
+  try {
+    const res = await fetch(`${API_BASE}/lesson/sections/status`)
+    if (!res.ok) return new Map()
+    const data = await res.json() as SectionStatusResponse
+    const map = new Map<string, SectionStatusData>()
+    for (const unit of data.units) {
+      for (const section of unit.sections) {
+        // Index by both canonical ("6.3") and frontend-prefixed ("focus2-6.3") forms
+        map.set(section.sectionId, section)
+        map.set(`focus2-${section.sectionId}`, section)
+      }
+    }
+    return map
+  } catch {
+    return new Map()
+  }
+}
+
 export async function startLesson(payload: LessonStartPayload): Promise<LessonStartResponse> {
   const token = getStoredToken()
   const res = await fetch(`${API_BASE}/lesson/start`, {
@@ -81,6 +127,11 @@ export async function startLesson(payload: LessonStartPayload): Promise<LessonSt
     const data = await res.json() as { code?: string; message?: string; remainingMinutes?: number }
     const code = (data.code ?? 'PAYMENT_REQUIRED') as BillingErrorCode
     throw new BillingError(code, data.message ?? 'Payment required', data.remainingMinutes)
+  }
+
+  if (res.status === 422) {
+    const data = await res.json() as { code?: string; message?: string; status?: string; reason?: string }
+    throw new Error(data.message ?? 'This section is not ready for a paid lesson.')
   }
 
   if (!res.ok) throw new Error(`Server error: ${res.status}`)

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { startLesson, getContinuationStatus, BillingError } from '../services/lessonStartApi'
-import type { LessonStartPayload, ContinuationStatus } from '../services/lessonStartApi'
+import { startLesson, getContinuationStatus, fetchSectionStatuses, BillingError } from '../services/lessonStartApi'
+import type { LessonStartPayload, ContinuationStatus, SectionStatusData } from '../services/lessonStartApi'
 import type { LessonSessionMetadata } from '../types/lessonTypes'
 import { useAuth } from '../context/AuthContext'
 import AuthGate, { type LessonSetupState } from '../components/shared/AuthGate'
@@ -422,6 +422,23 @@ const CSS = `
   .fl-quality-dot.ocr { background: #22C55E; }
   .fl-quality-dot.structured { background: #A18BFF; }
 
+  /* ── Section availability badges ── */
+  .fl-section-status {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase;
+    padding: 1px 5px; border-radius: 4px; white-space: nowrap; flex-shrink: 0;
+  }
+  .fl-section-status.ready    { background: rgba(34,197,94,0.12);  color: #15803d; }
+  .fl-section-status.partial  { background: rgba(234,179,8,0.12);  color: #a16207; }
+  .fl-section-status.unavail  { background: rgba(148,163,184,0.15); color: #64748b; }
+  .fl-section-card.unavail    { opacity: 0.55; pointer-events: none; cursor: default; }
+
+  /* ── Golden tier badges ── */
+  .fl-section-status.gold     { background: rgba(234,179,8,0.15);  color: #92400e; border: 1px solid rgba(234,179,8,0.3); }
+  .fl-section-status.silver   { background: rgba(148,163,184,0.12); color: #475569; border: 1px solid rgba(148,163,184,0.25); }
+  .fl-section-status.blocked  { background: rgba(148,163,184,0.1); color: #94a3b8; }
+  .fl-section-card.gold-ready:not(.selected):hover { background: #FFFEF0; }
+  .fl-section-card.gold-ready .fl-section-num { background: rgba(234,179,8,0.15); color: #92400e; }
+
   /* ── STEP 3: TEACHER CARDS ── */
   .fl-teacher-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .fl-teacher-card {
@@ -604,6 +621,12 @@ export default function LearningPage() {
   const [error, setError]                     = useState<string | null>(null)
   const [showAuthGate, setShowAuthGate]       = useState(false)
   const [continuationStatus, setContinuationStatus] = useState<ContinuationStatus | null>(null)
+  const [sectionStatuses, setSectionStatuses] = useState<Map<string, SectionStatusData>>(new Map())
+
+  // Fetch section availability on mount (no auth required)
+  useEffect(() => {
+    fetchSectionStatuses().then(m => setSectionStatuses(m)).catch(() => {})
+  }, [])
 
   // Fetch continuation status so we can highlight resumable sections
   useEffect(() => {
@@ -661,6 +684,8 @@ export default function LearningPage() {
 
   function selectSection(sec: SectionData) {
     if (sec.disabled) return
+    const st = sectionStatuses.get(sec.sectionId)
+    if (st && !st.canStartPaidLesson) return
     setSelectedSection(sec)
     setStep(3)
   }
@@ -799,12 +824,29 @@ export default function LearningPage() {
                 </div>
                 <div className="fl-section-grid">
                   {group.sections.map(sec => {
-                    const isResume = resumeSectionId === sec.sectionId
+                    const isResume   = resumeSectionId === sec.sectionId
+                    const st         = sectionStatuses.get(sec.sectionId)
+                    const canStart   = st ? st.canStartPaidLesson : !sec.disabled
+                    const isUnavail  = sec.disabled || (st ? !st.canStartPaidLesson : false)
+                    const golden     = st?.goldenStatus ?? null
+                    const isGold     = golden === 'GOLD'
+                    // Use golden tier as primary badge when available
+                    const statusBadge = golden ? (
+                      golden === 'GOLD'    ? { label: '★ Gold',    cls: 'gold'    } :
+                      golden === 'SILVER'  ? { label: 'Available', cls: 'silver'  } :
+                                            { label: 'Coming soon', cls: 'blocked unavail' }
+                    ) : st ? (
+                      st.status === 'READY'       ? { label: 'Ready',     cls: 'ready'   } :
+                      st.status === 'PARTIAL'     ? { label: 'Available', cls: 'partial' } :
+                      st.status === 'UNSUPPORTED' ? { label: 'Audio only', cls: 'unavail' } :
+                      { label: 'Coming soon', cls: 'unavail' }
+                    ) : null
                     return (
                       <div
                         key={sec.sectionId}
-                        className={`fl-section-card${selectedSection?.sectionId === sec.sectionId ? ' selected' : ''}${sec.disabled ? ' disabled' : ''}`}
-                        onClick={() => !sec.disabled && selectSection(sec)}
+                        className={`fl-section-card${selectedSection?.sectionId === sec.sectionId ? ' selected' : ''}${isUnavail ? ' disabled unavail' : ''}${isGold && !isUnavail ? ' gold-ready' : ''}`}
+                        onClick={() => canStart && selectSection(sec)}
+                        title={st && !st.canStartPaidLesson ? st.reason : undefined}
                       >
                         {sec.dataQuality && (
                           <div
@@ -823,6 +865,9 @@ export default function LearningPage() {
                             <span className="fl-section-tag">⏱ {sec.estimatedDuration}min</span>
                             {sec.exerciseCount !== undefined && (
                               <span className="fl-section-tag">◎ {sec.exerciseCount} ex.</span>
+                            )}
+                            {statusBadge && (
+                              <span className={`fl-section-status ${statusBadge.cls}`}>{statusBadge.label}</span>
                             )}
                           </div>
                         </div>
