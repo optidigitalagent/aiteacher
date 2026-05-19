@@ -1,3 +1,32 @@
+// ── Visible Payload — exercise content rendered on student's screen ───────────
+
+export interface TextBlock {
+  id: string
+  title?: string
+  speaker?: string
+  text: string
+}
+
+export interface PromptCard {
+  id: string
+  prompt: string
+  helperText?: string
+}
+
+export interface Statement {
+  id: string
+  text: string
+}
+
+export interface VisibleContext {
+  hasReadingText: boolean
+  hasTextBlocks: boolean
+  hasOptions: boolean
+  hasWordBox: boolean
+  hasPromptCards: boolean
+  hasStatements: boolean
+}
+
 // ── Slide / Teaching Cards ────────────────────────────────────────────────────
 
 export interface SlideBlock {
@@ -120,6 +149,13 @@ export interface ExerciseCursor {
   options?:       string[]   // answer word bank (matching/vocabulary) — visible to student
   // Phase 2.6: authoritative server-assigned exercise ID — frontend pendingId must follow this
   exerciseId?:    string | null
+
+  // Visible payload — content that must be displayed on the student's screen
+  readingText?:   string          // full reading passage (for reading comprehension exercises)
+  textBlocks?:    TextBlock[]     // structured article/comment blocks
+  promptCards?:   PromptCard[]    // discussion/speaking task cards
+  statements?:    Statement[]     // agree/disagree or opinion statements
+  visibleContext?: VisibleContext  // summary of what is visible (used by Teacher Brain guard)
 }
 
 export interface ErrorRecord {

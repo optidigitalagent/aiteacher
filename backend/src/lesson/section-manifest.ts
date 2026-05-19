@@ -30,6 +30,24 @@ export interface ManifestItem {
   correctAnswer: string    // expected fill / full answer
 }
 
+export interface ManifestTextBlock {
+  id: string
+  title?: string
+  speaker?: string
+  text: string
+}
+
+export interface ManifestPromptCard {
+  id: string
+  prompt: string
+  helperText?: string
+}
+
+export interface ManifestStatement {
+  id: string
+  text: string
+}
+
 export interface ExerciseManifestEntry {
   num: number
   type: string
@@ -45,6 +63,11 @@ export interface ExerciseManifestEntry {
   completionBehavior: CompletionBehavior
   // Items from adjacent exercises that must never appear in this exercise
   contaminationGuard?: string[]
+  // Visible payload — content that must be shown on student screen
+  readingText?: string             // full reading passage
+  textBlocks?: ManifestTextBlock[] // structured article/comment blocks
+  promptCards?: ManifestPromptCard[] // discussion/speaking task cards
+  statements?: ManifestStatement[] // agree/disagree or opinion statements
 }
 
 export interface SectionExerciseManifest {
@@ -237,6 +260,50 @@ const SECTION_6_1_MANIFEST: SectionExerciseManifest = {
 // Exercise 7: complete sentences with adjectives
 // Exercise 8: discussion
 
+// Shared reading text blocks — used by exercises 2, 3, 4, and 6
+const SECTION_1_4_TEXT_BLOCKS: ManifestTextBlock[] = [
+  {
+    id: 'survey_intro',
+    title: 'Survey Report: What are teenagers really like?',
+    text: 'A recent survey shows that there are reasons why teenagers behave badly. The study suggests that teenagers need to sleep more and that is why sixty-five percent of parents say their teenagers are bad-tempered, uncommunicative and lazy.\n\nThe report also shows that most teenagers are obsessed with their phones. They spend more time chatting online or playing computer games than doing homework. Most parents also say that their teenage children are selfish and unhelpful. Only a few of them help with housework at home.',
+  },
+  {
+    id: 'sarah_comment',
+    speaker: 'Sarah',
+    text: '[1] _____ Most of us are adorable, cheerful, very hard-working, interesting, brave, generous, loyal, helpful and very good cooks. Oh, and very modest!',
+  },
+  {
+    id: 'mel_comment',
+    speaker: 'Mel, 15',
+    text: "[2] _____ It's my friends. We love each other. We don't argue or fight. We go to the park after school and we sit under a tree, eat ice cream and talk about guys. We like cooking and camping, not just texting and computer games. I don't have time to read much, but I play the guitar and sing. I'm not a bad-tempered monster — I (usually) apologise when I'm wrong and I like spending time with my grandparents.",
+  },
+  {
+    id: 'andrew_comment',
+    speaker: 'Andrew, 17',
+    text: "[3] _____ I get up at 6.30 a.m. every school day and I work hard all day. I never make plans to meet friends in the evening — that's when I do my homework. I think I need about nine and a half hours sleep a night, but I usually get only seven hours. So I'm sometimes a bit grumpy like my parents!",
+  },
+  {
+    id: 'ryan_comment',
+    speaker: 'Ryan, 16',
+    text: "[4] _____ Not all teenagers are the same. Some of us are lazy, some of us aren't. Some of us like chatting online or playing computer games, but some of us prefer to play football or go for a run. OK, some of the things people say about teenagers are true. For example, music is really, really important to us, but we like different kinds of music. We are INDIVIDUALS!",
+  },
+  {
+    id: 'fifth_comment',
+    speaker: '(unnamed commenter)',
+    text: "[5] _____ I care about other people. I'm interested in the world. I want to travel and learn about other cultures. Then I want to get a job in a developing country. Most of my friends are like me! Where did you find your information? It's wrong!",
+  },
+]
+
+// Exercise 7 sentences reused as statements for Exercise 8 discussion
+const SECTION_1_4_EX7_STATEMENTS: ManifestStatement[] = [
+  { id: 's1', text: 'Teenagers are arrogant. They think they know everything.' },
+  { id: 's2', text: 'Teenagers are grumpy. They never get enough sleep and are always in a bad mood.' },
+  { id: 's3', text: 'Teenagers are loyal to their friends. They are always there for their friends.' },
+  { id: 's4', text: 'Teenagers are mean. They never give money to charity and always buy cheap presents.' },
+  { id: 's5', text: 'Teenagers are interesting. They have lots of things to talk about.' },
+  { id: 's6', text: 'Teenagers are cowardly. They avoid dangerous situations and don\'t take risks.' },
+]
+
 const SECTION_1_4_MANIFEST: SectionExerciseManifest = {
   section: '1.4',
   unit: 1,
@@ -272,6 +339,14 @@ const SECTION_1_4_MANIFEST: SectionExerciseManifest = {
       allowedPrompt: 'After reading — were your predictions correct? Which ideas matched what the teenagers said?',
       dependsOn: 1,
       completionBehavior: 'single_response',
+      textBlocks: SECTION_1_4_TEXT_BLOCKS,
+      promptCards: [
+        {
+          id: 'ex2_prompt',
+          prompt: 'After reading — were your predictions correct? Which ideas matched what the teenagers said?',
+          helperText: 'Think about the phrases from Exercise 1.',
+        },
+      ],
     },
     {
       num: 3,
@@ -281,20 +356,21 @@ const SECTION_1_4_MANIFEST: SectionExerciseManifest = {
       instruction: 'Read the comments again. Choose from sentences A-F the one which fits each gap (1-5). There is one extra sentence.',
       options: [
         'A: Teenagers are definitely not lazy.',
-        'B: We don\'t have time to tidy our rooms.',
+        "B: We don't have time to tidy our rooms.",
         'C: Why are people so negative about teenagers?',
-        'D: I don\'t think I\'m selfish.',
+        "D: I don't think I'm selfish.",
         'E: I hate stereotypes.',
         'F: The most important thing in my life is not my phone.',
       ],
       items: [
-        { text: 'Gap 1 — first sentence of first comment', correctAnswer: '' },
-        { text: 'Gap 2 — first sentence of second comment', correctAnswer: '' },
-        { text: 'Gap 3 — first sentence of third comment', correctAnswer: '' },
-        { text: 'Gap 4 — first sentence of fourth comment', correctAnswer: '' },
-        { text: 'Gap 5 — first sentence of fifth comment', correctAnswer: '' },
+        { text: 'Gap 1 — first sentence of Sarah\'s comment', correctAnswer: '' },
+        { text: 'Gap 2 — first sentence of Mel\'s comment', correctAnswer: '' },
+        { text: 'Gap 3 — first sentence of Andrew\'s comment', correctAnswer: '' },
+        { text: 'Gap 4 — first sentence of Ryan\'s comment', correctAnswer: '' },
+        { text: 'Gap 5 — first sentence of the fifth comment', correctAnswer: '' },
       ],
       completionBehavior: 'all_items',
+      textBlocks: SECTION_1_4_TEXT_BLOCKS,
     },
     {
       num: 4,
@@ -310,6 +386,7 @@ const SECTION_1_4_MANIFEST: SectionExerciseManifest = {
         { text: 'friends are very important for teenagers?',                correctAnswer: 'Mel' },
       ],
       completionBehavior: 'all_items',
+      textBlocks: SECTION_1_4_TEXT_BLOCKS,
     },
     {
       num: 5,
@@ -341,6 +418,7 @@ const SECTION_1_4_MANIFEST: SectionExerciseManifest = {
         { text: 'mean →',      correctAnswer: 'generous' },
       ],
       completionBehavior: 'all_items',
+      readingText: "Sarah's comment: Most of us are adorable, cheerful, very hard-working, interesting, brave, generous, loyal, helpful and very good cooks. Oh, and very modest!",
     },
     {
       num: 7,
@@ -368,6 +446,14 @@ const SECTION_1_4_MANIFEST: SectionExerciseManifest = {
       allowedPrompt: 'Which of those sentences about teenagers do you agree with? Which do you disagree with? Tell me why.',
       dependsOn: 7,
       completionBehavior: 'single_response',
+      statements: SECTION_1_4_EX7_STATEMENTS,
+      promptCards: [
+        {
+          id: 'ex8_prompt',
+          prompt: 'Which of these sentences do you agree with? Which do you disagree with? Why?',
+          helperText: 'You can use: "I agree that..." / "I don\'t think..." / "I think it depends..."',
+        },
+      ],
     },
   ],
 }

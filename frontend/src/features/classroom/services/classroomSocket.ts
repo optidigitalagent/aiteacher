@@ -6,6 +6,35 @@ function buildWsBase(): string {
 }
 const WS_BASE = buildWsBase()
 
+// ── Visible payload types — content shown on student screen ──────────────────
+
+export interface TextBlock {
+  id: string
+  title?: string
+  speaker?: string
+  text: string
+}
+
+export interface PromptCard {
+  id: string
+  prompt: string
+  helperText?: string
+}
+
+export interface Statement {
+  id: string
+  text: string
+}
+
+export interface VisibleContext {
+  hasReadingText: boolean
+  hasTextBlocks: boolean
+  hasOptions: boolean
+  hasWordBox: boolean
+  hasPromptCards: boolean
+  hasStatements: boolean
+}
+
 // ── Outbound (backend → frontend) ────────────────────────────────────────────
 
 export interface ExerciseCursor {
@@ -28,6 +57,12 @@ export interface ExerciseCursor {
   completionState?:   'active' | 'complete' | 'skipped'                   // exercise lifecycle state
   validationResult?:  { correct: boolean; explanation: string } | null     // last validation outcome
   pendingTransition?: string | null                                         // e.g. 'exercise_complete', 'section_complete'
+  // Visible payload — content that must be displayed on the student's screen
+  readingText?:       string          // full reading passage
+  textBlocks?:        TextBlock[]     // structured article/comment blocks
+  promptCards?:       PromptCard[]    // discussion/speaking task cards
+  statements?:        Statement[]     // agree/disagree or opinion statements
+  visibleContext?:    VisibleContext  // summary of what is visible
 }
 
 export interface BackendExercise {

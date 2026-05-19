@@ -3,7 +3,7 @@
 // The frontend never needs to know about internal engine types.
 // Shape must be compatible with the existing ExerciseCursor type in lesson/types.ts
 
-import type { ExerciseCursor } from '../lesson/types.js'
+import type { ExerciseCursor, VisibleContext } from '../lesson/types.js'
 import type { EngineExerciseState, EngineLessonState } from './types.js'
 import { getCurrentStep } from './step-progression-manager.js'
 
@@ -15,7 +15,17 @@ export function formatCursor(
   const step     = getCurrentStep(exState)
   const allItems = spec.steps.map(s => s.question)
 
-  return {
+  // Build visibleContext summary for Teacher Brain guard
+  const visibleContext: VisibleContext = {
+    hasReadingText:  !!(spec.readingText),
+    hasTextBlocks:   !!(spec.textBlocks && spec.textBlocks.length > 0),
+    hasOptions:      !!(spec.options && spec.options.length > 0),
+    hasWordBox:      !!(spec.options && spec.options.length > 0),
+    hasPromptCards:  !!(spec.promptCards && spec.promptCards.length > 0),
+    hasStatements:   !!(spec.statements && spec.statements.length > 0),
+  }
+
+  const cursor: ExerciseCursor = {
     exerciseId:     spec.exerciseId,
     exerciseNumber: spec.meta.exerciseNumber,
     exerciseType:   spec.exerciseType,
@@ -30,7 +40,31 @@ export function formatCursor(
     unit:           spec.meta.unit,
     section:        spec.meta.lessonSection,
     wordBoxState:   null,
+    visibleContext,
   }
+
+  // Attach visible payload fields — only if present (keep wire payload minimal)
+  if (spec.readingText)  cursor.readingText  = spec.readingText
+  if (spec.textBlocks && spec.textBlocks.length > 0)   cursor.textBlocks   = spec.textBlocks
+  if (spec.promptCards && spec.promptCards.length > 0)  cursor.promptCards  = spec.promptCards
+  if (spec.statements && spec.statements.length > 0)    cursor.statements   = spec.statements
+
+  console.log(
+    `[visible_payload] frontend_sent exercise=${spec.meta.exerciseNumber} type="${spec.exerciseType}" ` +
+    `fields=${buildPayloadSummary(cursor)}`,
+  )
+
+  return cursor
+}
+
+function buildPayloadSummary(cursor: ExerciseCursor): string {
+  const fields: string[] = ['instruction', `items=${cursor.itemTotal}`]
+  if (cursor.options?.length)     fields.push(`options=${cursor.options.length}`)
+  if (cursor.readingText)         fields.push('readingText')
+  if (cursor.textBlocks?.length)  fields.push(`textBlocks=${cursor.textBlocks.length}`)
+  if (cursor.promptCards?.length) fields.push(`promptCards=${cursor.promptCards.length}`)
+  if (cursor.statements?.length)  fields.push(`statements=${cursor.statements.length}`)
+  return fields.join(',')
 }
 
 // Null cursor — sent when no exercise is active
@@ -121,6 +155,42 @@ export function buildPromptContext(
   if (exState.failedSteps.length > 0) {
     lines.push(`Failed steps: [${exState.failedSteps.join(', ')}] — student struggled here`)
   }
+
+  // ── Teacher Visible-Content Guard ────────────────────────────────────────
+  // Tell Teacher Brain exactly what is visible on the student's screen.
+  // Teacher must only reference content that is marked as visible here.
+  lines.push(``)
+  lines.push(`=== VISIBLE FRONTEND PAYLOAD (teacher content guard) ===`)
+  lines.push(`What the student can currently SEE on their screen:`)
+  lines.push(`  instruction: YES`)
+  lines.push(`  items (${spec.steps.length} total): YES`)
+
+  const vc = {
+    hasOptions:     !!(spec.options && spec.options.length > 0),
+    hasReadingText: !!(spec.readingText),
+    hasTextBlocks:  !!(spec.textBlocks && spec.textBlocks.length > 0),
+    hasPromptCards: !!(spec.promptCards && spec.promptCards.length > 0),
+    hasStatements:  !!(spec.statements && spec.statements.length > 0),
+  }
+
+  lines.push(`  options/word box: ${vc.hasOptions ? `YES (${spec.options!.length} options)` : 'NO — do NOT say "look at the box"'}`)
+  lines.push(`  reading text/article: ${vc.hasReadingText ? 'YES' : vc.hasTextBlocks ? `YES (${spec.textBlocks!.length} text blocks)` : 'NO — do NOT say "look at the text" or "read the paragraph"'}`)
+  lines.push(`  prompt cards: ${vc.hasPromptCards ? 'YES' : 'NO'}`)
+  lines.push(`  statements: ${vc.hasStatements ? `YES (${spec.statements!.length} statements visible)` : 'NO'}`)
+
+  lines.push(``)
+  lines.push(`TEACHER RULES (visible content guard):`)
+  if (!vc.hasOptions) {
+    lines.push(`  FORBIDDEN: "look at the box", "choose from the box", "the options are..." (no box visible)`)
+  }
+  if (!vc.hasReadingText && !vc.hasTextBlocks) {
+    lines.push(`  FORBIDDEN: "look at the text", "read the passage", "find it in the article" (no reading text visible)`)
+    lines.push(`  If student cannot see reading text: say "This reading exercise is not fully loaded on screen yet, so we'll skip this item safely."`)
+  }
+  if (!vc.hasPromptCards && !vc.hasStatements && (spec.exerciseType === 'discussion' || spec.exerciseType === 'pair_speaking')) {
+    lines.push(`  NOTE: Discussion task card not visible — rely on spoken instruction only.`)
+  }
+  lines.push(`=== END VISIBLE PAYLOAD ===`)
 
   lines.push(`=== END ENGINE STATE ===`)
 

@@ -1,4 +1,4 @@
-import type { ExerciseCursor } from '../services/classroomSocket'
+import type { ExerciseCursor, TextBlock, PromptCard, Statement } from '../services/classroomSocket'
 import type { FeedbackState } from '../types'
 
 interface Props {
@@ -37,6 +37,7 @@ export default function PaidExerciseCard({ cursor, feedback, feedbackExplanation
     exerciseType, instruction, currentItem,
     itemIndex, itemTotal, completedItems, failedItems, wordBoxState, items, options,
     completionState, expectedInputMode, pendingTransition,
+    readingText, textBlocks, promptCards, statements,
   } = cursor
 
   const isComplete = completionState === 'complete' || completionState === 'skipped'
@@ -92,6 +93,102 @@ export default function PaidExerciseCard({ cursor, feedback, feedbackExplanation
             borderRadius: 12, padding: '12px 14px',
           }}>
             {instruction}
+          </div>
+        )}
+
+        {/* Reading text — full passage (e.g. find_opposites Sarah's comment) */}
+        {readingText && (
+          <div style={{
+            background: '#F8F9FA', borderRadius: 12, padding: '12px 14px', marginBottom: 14,
+            fontSize: 13, color: '#334155', lineHeight: 1.7,
+            border: '1px solid #E2E8F0',
+            maxHeight: 180, overflowY: 'auto',
+          }}>
+            <div style={{ fontSize: 10, color: '#94A3B8', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Reading text
+            </div>
+            {readingText}
+          </div>
+        )}
+
+        {/* Text blocks — structured article/comment blocks with optional speaker name */}
+        {textBlocks && textBlocks.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: '#94A3B8', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Read the text
+            </div>
+            <div style={{
+              maxHeight: 260, overflowY: 'auto',
+              display: 'flex', flexDirection: 'column', gap: 8,
+              paddingRight: 2,
+            }}>
+              {textBlocks.map((block: TextBlock) => (
+                <div key={block.id} style={{
+                  background: '#F8F9FA', borderRadius: 10, padding: '10px 12px',
+                  border: '1px solid #E2E8F0',
+                }}>
+                  {(block.title || block.speaker) && (
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, color: '#6E7CFB',
+                      marginBottom: 4, letterSpacing: '0.02em',
+                    }}>
+                      {block.speaker || block.title}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.65 }}>
+                    {block.text}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Prompt cards — for discussion and speaking exercises */}
+        {promptCards && promptCards.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: '#94A3B8', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Discussion task
+            </div>
+            {promptCards.map((card: PromptCard) => (
+              <div key={card.id} style={{
+                background: 'linear-gradient(135deg,#F0F4FF,#F8F0FF)',
+                borderRadius: 12, padding: '12px 14px', marginBottom: 8,
+                border: '1.5px solid rgba(110,124,251,0.2)',
+              }}>
+                <div style={{ fontSize: 14, color: '#3730a3', fontWeight: 600, lineHeight: 1.55 }}>
+                  {card.prompt}
+                </div>
+                {card.helperText && (
+                  <div style={{ fontSize: 12, color: '#6E7CFB', marginTop: 6, fontStyle: 'italic' }}>
+                    {card.helperText}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Statements — for agree/disagree exercises */}
+        {statements && statements.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: '#94A3B8', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Statements — agree or disagree?
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {statements.map((s: Statement, i: number) => (
+                <div key={s.id} style={{
+                  padding: '8px 12px', borderRadius: 9, fontSize: 13,
+                  background: 'rgba(110,124,251,0.05)',
+                  color: '#475569',
+                  border: '1px solid rgba(110,124,251,0.12)',
+                  display: 'flex', gap: 8, alignItems: 'flex-start',
+                }}>
+                  <span style={{ fontSize: 11, color: '#CBD5E1', fontWeight: 700, minWidth: 18, paddingTop: 1 }}>{i + 1}.</span>
+                  <span style={{ lineHeight: 1.5 }}>{s.text}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

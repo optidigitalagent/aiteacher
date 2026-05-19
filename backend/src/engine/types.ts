@@ -2,7 +2,7 @@
 // The engine is the single source of truth for exercise state.
 // GPT/Claude never controls progression — it only receives getPromptContext().
 
-import type { ExerciseCursor } from '../lesson/types.js'
+import type { ExerciseCursor, TextBlock, PromptCard, Statement } from '../lesson/types.js'
 
 export type ExerciseType =
   | 'sentence_transformation'
@@ -96,6 +96,12 @@ export interface ExerciseSpec {
   options?: string[]           // word bank for matching / multiple_choice
   audioRef?: string            // future: reference to audio file
   lessonReference: string      // e.g. "Focus B1 Unit 1.2 Ex 3"
+
+  // Visible payload — content that must be shown on the student's screen
+  readingText?: string         // full reading passage (reading comprehension)
+  textBlocks?: TextBlock[]     // structured article/comment blocks with optional speaker labels
+  promptCards?: PromptCard[]   // discussion/speaking task prompt cards
+  statements?: Statement[]     // agree/disagree or opinion statements
 }
 
 // ── Runtime state per exercise ────────────────────────────────────────────────

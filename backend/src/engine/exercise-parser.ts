@@ -18,6 +18,19 @@ import type {
   ManifestItem,
 } from '../lesson/section-manifest.js'
 
+// Exercise types that REQUIRE reading text to be executable
+const REQUIRES_READING_TEXT = new Set<ExerciseType>([
+  'gapped_text',
+  'read_and_write_names',
+  'find_in_text',
+  'read_and_answer',
+])
+
+// Exercise types that REQUIRE options/word box to be executable
+const REQUIRES_OPTIONS = new Set<ExerciseType>([
+  'choose_from_box',
+])
+
 // ── Type mapping ──────────────────────────────────────────────────────────────
 
 const MANIFEST_TYPE_MAP: Record<string, ExerciseType> = {
@@ -279,18 +292,83 @@ export function parseManifestEntry(
     lessonReference: `Focus B1 Unit ${unit} Section ${sectionId} Ex ${entry.num}`,
   }
 
-  // Attach visible options (word box, sentence choices) to ExerciseSpec for frontend
+  // ── Attach visible payload fields ─────────────────────────────────────────
+
+  // Options / word box
   const visibleOptions = entry.options ?? entry.wordBox
   if (visibleOptions && visibleOptions.length > 0) {
     spec.options = visibleOptions
+  }
+
+  // Reading text and structured text blocks
+  if (entry.readingText) spec.readingText = entry.readingText
+  if (entry.textBlocks && entry.textBlocks.length > 0) spec.textBlocks = entry.textBlocks
+  if (entry.promptCards && entry.promptCards.length > 0) spec.promptCards = entry.promptCards
+  if (entry.statements && entry.statements.length > 0) spec.statements = entry.statements
+
+  // ── Visible payload guard ─────────────────────────────────────────────────
+  // Downgrade exercises that require reading text but have none — never run invisible.
+  const hasReadingContent = !!(spec.readingText || (spec.textBlocks && spec.textBlocks.length > 0))
+  const hasOptions = !!(spec.options && spec.options.length > 0)
+
+  if (entry.executable && REQUIRES_READING_TEXT.has(exType) && !hasReadingContent) {
     console.log(
-      `[reading_payload_built] section="${sectionId}" exercise=${entry.num} type="${entry.type}" ` +
-      `items=${entry.items?.length ?? 0} options=${visibleOptions.length}`,
+      `[visible_payload] skipped_invisible_exercise exercise=${entry.num} type="${entry.type}" ` +
+      `section="${sectionId}" reason="no_reading_text_or_text_blocks_in_manifest"`,
+    )
+    // Override to unsupported so engine auto-skips without AI improvisation
+    spec.meta = { ...spec.meta, runtimeMode: 'unsupported' }
+    spec.steps = [{
+      stepId:              `${exerciseId}_step_0`,
+      stepIndex:           0,
+      question:            entry.instruction,
+      expectedAnswer:      '',
+      validationRule:      { mode: 'not_applicable' },
+      hints:               [],
+      explanation:         'This exercise requires reading text that is not loaded on screen. We will skip it safely.',
+      progressionCondition: 'auto_skip',
+      difficulty:          'easy',
+    }]
+    return spec
+  }
+
+  if (entry.executable && REQUIRES_OPTIONS.has(exType) && !hasOptions) {
+    console.log(
+      `[visible_payload] skipped_invisible_exercise exercise=${entry.num} type="${entry.type}" ` +
+      `section="${sectionId}" reason="no_options_or_word_box_in_manifest"`,
+    )
+    spec.meta = { ...spec.meta, runtimeMode: 'unsupported' }
+    spec.steps = [{
+      stepId:              `${exerciseId}_step_0`,
+      stepIndex:           0,
+      question:            entry.instruction,
+      expectedAnswer:      '',
+      validationRule:      { mode: 'not_applicable' },
+      hints:               [],
+      explanation:         'This exercise requires a word box that is not loaded on screen. We will skip it safely.',
+      progressionCondition: 'auto_skip',
+      difficulty:          'easy',
+    }]
+    return spec
+  }
+
+  // ── Logging ───────────────────────────────────────────────────────────────
+  const payloadFields: string[] = []
+  if (spec.options?.length)     payloadFields.push(`options=${spec.options.length}`)
+  if (spec.readingText)         payloadFields.push('readingText')
+  if (spec.textBlocks?.length)  payloadFields.push(`textBlocks=${spec.textBlocks.length}`)
+  if (spec.promptCards?.length) payloadFields.push(`promptCards=${spec.promptCards.length}`)
+  if (spec.statements?.length)  payloadFields.push(`statements=${spec.statements.length}`)
+
+  if (payloadFields.length > 0) {
+    console.log(
+      `[visible_payload] built exercise=${entry.num} type="${entry.type}" ` +
+      `section="${sectionId}" fields=${payloadFields.join(',')}`,
     )
   } else if (entry.runtimeMode === 'text_reading_sequential') {
     console.log(
-      `[reading_payload_missing_content] section="${sectionId}" exercise=${entry.num} type="${entry.type}" ` +
-      `reason="no_options_in_manifest"`,
+      `[visible_payload] missing exercise=${entry.num} type="${entry.type}" ` +
+      `section="${sectionId}" missing="no_visible_content_fields_in_manifest"`,
     )
   }
 
