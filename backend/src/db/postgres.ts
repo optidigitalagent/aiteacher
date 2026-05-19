@@ -71,6 +71,7 @@ const MIGRATIONS = [
   '012_lesson_snapshots.sql',
   '013_runtime_safety.sql',
   '014_student_memory.sql',
+  '015_lesson_transcripts.sql',
 ]
 
 export async function initTables(): Promise<void> {

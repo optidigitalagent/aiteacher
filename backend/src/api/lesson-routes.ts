@@ -248,4 +248,93 @@ router.post('/lesson/translate', requireAuth, async (req: Request, res: Response
   }
 })
 
+// GET /lessons/:lessonId/transcript — authenticated; user can only read their own lesson
+router.get('/lessons/:lessonId/transcript', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const userId   = req.user!.userId
+  const lessonId = req.params.lessonId as string
+
+  if (!lessonId || lessonId.length > 255) {
+    res.status(400).json({ code: 'INVALID_REQUEST', message: 'Invalid lessonId' })
+    return
+  }
+
+  try {
+    // Primary ownership check via lesson_sessions (covers paid/focus lessons)
+    const sessionRow = await query<{ session_id: string }>(
+      `SELECT session_id FROM lesson_sessions WHERE lesson_id = $1 AND user_id = $2 LIMIT 1`,
+      [lessonId, userId],
+    )
+
+    let sessionId: string | null = sessionRow.rows[0]?.session_id ?? null
+
+    // Fallback: check transcript events directly (covers all lesson types)
+    if (!sessionId) {
+      const transcriptOwner = await query<{ session_id: string | null }>(
+        `SELECT session_id FROM lesson_transcript_events WHERE lesson_id = $1 AND user_id = $2 LIMIT 1`,
+        [lessonId, userId],
+      )
+      if (!transcriptOwner.rows.length) {
+        res.status(404).json({ code: 'NOT_FOUND', message: 'Transcript not found or access denied' })
+        return
+      }
+      sessionId = transcriptOwner.rows[0]?.session_id ?? null
+    }
+
+    const format = typeof req.query['format'] === 'string' ? req.query['format'] : 'json'
+
+    const events = await query<{
+      id:               string
+      created_at:       string
+      speaker:          string
+      source:           string
+      message:          string
+      phase:            string | null
+      exercise_number:  number | null
+      exercise_type:    string | null
+      item_index:       number | null
+      item_total:       number | null
+      retry_count:      number | null
+      correction_turn:  string | null
+      frontend_snapshot: unknown
+      metadata:         unknown
+    }>(
+      `SELECT id, created_at, speaker, source, message, phase,
+              exercise_number, exercise_type, item_index, item_total,
+              retry_count, correction_turn, frontend_snapshot, metadata
+       FROM lesson_transcript_events
+       WHERE lesson_id = $1
+       ORDER BY created_at ASC`,
+      [lessonId],
+    )
+
+    console.log(`[transcript] export lessonId=${lessonId} events=${events.rows.length}`)
+
+    if (format === 'md') {
+      const lines: string[] = [`# Lesson Transcript\n\n**Lesson:** \`${lessonId}\`\n`]
+      for (const ev of events.rows) {
+        const ts    = new Date(ev.created_at).toISOString()
+        const label = ev.speaker === 'teacher' ? '**Teacher**' : ev.speaker === 'student' ? '_Student_' : '🔔 System'
+        const ctx   = [
+          ev.phase          ? `phase=${ev.phase}` : null,
+          ev.exercise_number ? `ex#${ev.exercise_number}` : null,
+          ev.exercise_type   ? `type=${ev.exercise_type}` : null,
+          ev.item_index != null ? `item=${ev.item_index}` : null,
+        ].filter(Boolean).join(' ')
+        lines.push(`### ${ts}  ${label}${ctx ? `  *(${ctx})*` : ''}\n\n${ev.message}\n`)
+      }
+      res.type('text/markdown').send(lines.join('\n---\n\n'))
+      return
+    }
+
+    res.json({
+      lessonId,
+      sessionId,
+      events: events.rows,
+    })
+  } catch (err) {
+    console.error('[lesson/transcript] error:', err instanceof Error ? err.message : err)
+    res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to fetch transcript' })
+  }
+})
+
 export default router

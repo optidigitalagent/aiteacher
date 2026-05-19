@@ -21,6 +21,8 @@ const MIGRATIONS = [
   '011_student_tips.sql',
   '012_lesson_snapshots.sql',
   '013_runtime_safety.sql',
+  '014_student_memory.sql',
+  '015_lesson_transcripts.sql',
 ]
 
 async function migrate(): Promise<void> {

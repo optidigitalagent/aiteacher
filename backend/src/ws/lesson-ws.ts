@@ -57,6 +57,7 @@ import {
   traceRuntimeError,
 } from '../observability/index.js'
 import { hashUserId } from '../observability/langfuse-client.js'
+import { recordStudentMessage, recordTeacherMessage, recordSystemEvent } from '../lesson/transcript-recorder.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
@@ -632,6 +633,8 @@ async function resumeLesson(
     exerciseNum: state.currentExerciseNum,
     message:     resumeMsg,
   })
+  recordSystemEvent({ lessonId: existingLessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, message: 'lesson_resumed', phase: state.phase })
+  recordTeacherMessage({ lessonId: existingLessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, text: resumeMsg, phase: state.phase, source: 'ai' })
 
   // Phase 3 / Engine Migration: restore exercise cursor state on resume if an exercise was active.
   // Prefer engine cursor (already sent above) — fall back to LessonState cursor for legacy snapshots.
@@ -785,7 +788,9 @@ async function handleLessonStart(
   const greeting = `Hello! I'm Alex, your English teacher. Today we'll work on "${config.grammarTarget}" — the topic is "${config.lessonTopic}". To begin: can you give me one example sentence using this grammar?`
 
   console.log(`[paid-lesson] lesson_start_new lessonId=${lessonId} session=${meta.sessionId} unit=${config.textbookUnit}`)
+  recordSystemEvent({ lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, message: 'lesson_start', phase: 'DIAGNOSTIC', metadata: { grammarTarget: config.grammarTarget, lessonTopic: config.lessonTopic, unit: config.textbookUnit } })
   send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: greeting })
+  recordTeacherMessage({ lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, text: greeting, phase: 'DIAGNOSTIC', source: 'ai' })
   await ttsStream(ws, meta, greeting)
 }
 
@@ -978,7 +983,9 @@ async function handleFocusLessonStart(
   // Personalise greeting with selected teacher name
   const greeting = buildFocusGreeting(effectiveUnit, config.section, unitData.grammarTarget, unitData.textbookUnit, meta.teacherId ?? undefined)
 
+  recordSystemEvent({ lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, message: 'lesson_start', phase: 'DIAGNOSTIC', metadata: { grammarTarget, lessonTopic, unit: effectiveUnit, section: config.section ?? null } })
   send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: greeting })
+  recordTeacherMessage({ lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, text: greeting, phase: 'DIAGNOSTIC', source: 'ai' })
 
   // For grammar sections, asynchronously generate/load the section overview card
   if (config.section) {
@@ -1652,6 +1659,23 @@ async function processInput(
   })
 
   send(ws, { type: 'ai_text', phase: result.phase, text: result.text, displayText: result.displayText })
+  if (meta.lessonId && meta.userId) {
+    recordTeacherMessage({
+      lessonId:       meta.lessonId,
+      sessionId:      meta.sessionId,
+      userId:         meta.userId,
+      studentId:      meta.studentId,
+      text:           result.text,
+      phase:          result.phase,
+      exerciseNumber: result.exercise?.exerciseNumber ?? result.exerciseCursor?.exerciseNumber ?? null,
+      exerciseType:   result.exercise?.type          ?? result.exerciseCursor?.exerciseType   ?? null,
+      itemIndex:      result.exerciseCursor?.itemIndex ?? null,
+      itemTotal:      result.exerciseCursor?.itemTotal ?? null,
+      correctionTurn: manifestValidation?.correctionTurn ?? null,
+      source:         'ai',
+      metadata:       { aiCallCount: meta.aiCallCount },
+    })
+  }
 
   // When handling confusion, send the AI's display_text as a teaching card
   if (sendCard && result.displayText && result.displayText !== result.text) {
@@ -1661,6 +1685,9 @@ async function processInput(
   if (result.phaseChanged) {
     send(ws, { type: 'phase_change', from: result.previousPhase, to: result.phase })
     console.log(`[ws] phase ${result.previousPhase} → ${result.phase}`)
+    if (meta.lessonId && meta.userId) {
+      recordSystemEvent({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, message: `phase_change from=${result.previousPhase} to=${result.phase}`, phase: result.phase })
+    }
   }
 
   if (result.exercise) {
@@ -1693,6 +1720,19 @@ async function processInput(
       ? Math.round((Date.now() - meta.lessonStartedAt) / 60_000)
       : 0
     console.log(`[paid-lesson] lesson_end_natural lessonId=${meta.lessonId} session=${meta.sessionId} durationMin=${durationMin} exercises=${result.exerciseScore}`)
+
+    // Supplementary analytics: engine-aware exercise count (fire-and-forget)
+    const _analyticsLessonId  = meta.lessonId
+    const _analyticsSessionId = meta.sessionId
+    const _analyticsScore     = result.exerciseScore
+    void exerciseEngine.getState(_analyticsLessonId!).then((engState) => {
+      const engCompleted = engState?.completedExerciseIds?.length ?? 0
+      const bestCount    = engCompleted > 0 ? engCompleted : _analyticsScore
+      if (bestCount !== _analyticsScore || engCompleted > 0) {
+        console.log(`[transcript] lesson_end_analytics lessonId=${_analyticsLessonId} session=${_analyticsSessionId} exercisesCompleted=${bestCount} engineCompleted=${engCompleted} legacyScore=${_analyticsScore}`)
+      }
+    }).catch(() => { /* non-fatal */ })
+
     send(ws, {
       type: 'lesson_end',
       summary: {
@@ -1703,6 +1743,9 @@ async function processInput(
         durationMin,
       },
     })
+    if (meta.lessonId && meta.userId) {
+      recordSystemEvent({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, message: 'lesson_end', phase: 'END', metadata: { durationMin, exerciseScore: result.exerciseScore, vocabularyCount: result.vocabularyCount } })
+    }
 
     endLessonTrace(meta.lessonId ?? '', {
       durationMin,
@@ -2044,6 +2087,10 @@ async function handleExerciseAnswer(
     return
   }
 
+  if (meta.userId) {
+    recordStudentMessage({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, text: answer, source: 'ws' })
+  }
+
   // Engine Authority Migration: route through engine when a manifest-backed lesson is active.
   // Legacy DB-validation path is kept for free-mode lessons and exercises not in the engine.
   try {
@@ -2238,6 +2285,9 @@ function createSTT(ws: WebSocket, meta: ClientMeta): DeepgramSTT {
             meta.lastSubmittedVoiceTurnId = tid
             console.log(`[voice] student_turn_submit chars=${fullText.length} turnId=${tid} trigger=mic_stop`)
             send(ws, { type: 'student_message', text: fullText })
+            if (meta.lessonId && meta.userId) {
+              recordStudentMessage({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, text: fullText, source: 'stt' })
+            }
             processInput(ws, meta, fullText).catch((err: unknown) =>
               console.error('[paid-lesson] processInput error (stt-micstop):', err))
           }
@@ -2382,6 +2432,9 @@ export function attachLessonWS(server: Server): void {
             // Typed submission clears any accumulated STT state
             meta.pendingTranscript = ''
             meta.pendingMicStop    = false
+            if (meta.lessonId && meta.userId) {
+              recordStudentMessage({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, text: msg.text, source: 'ws' })
+            }
             await processInput(ws, meta, msg.text)
             break
           case 'mic_start': {
@@ -2429,6 +2482,9 @@ export function attachLessonWS(server: Server): void {
                   meta.lastSubmittedVoiceTurnId = tid
                   console.log(`[voice] student_turn_submit chars=${pending.length} turnId=${tid} trigger=mic_stop_flush`)
                   send(ws, { type: 'student_message', text: pending })
+                  if (meta.lessonId && meta.userId) {
+                    recordStudentMessage({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, text: pending, source: 'stt' })
+                  }
                   await processInput(ws, meta, pending)
                 }
               }
@@ -2454,6 +2510,9 @@ export function attachLessonWS(server: Server): void {
                     meta.lastSubmittedVoiceTurnId = tid
                     console.log(`[voice] student_turn_submit chars=${delayed.length} turnId=${tid} trigger=mic_stop_timeout`)
                     send(ws, { type: 'student_message', text: delayed })
+                    if (meta.lessonId && meta.userId) {
+                      recordStudentMessage({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, text: delayed, source: 'stt' })
+                    }
                     processInput(ws, meta, delayed).catch((err: unknown) =>
                       console.error('[paid-lesson] processInput error (mic_stop_timeout):', err))
                   }
@@ -2533,6 +2592,9 @@ export function attachLessonWS(server: Server): void {
           ? Math.round((Date.now() - meta.lessonStartedAt) / 60_000)
           : 0
         endLessonTrace(meta.lessonId, { durationMin: discDurationMin, endReason: 'disconnected' })
+        if (meta.userId) {
+          recordSystemEvent({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, message: `client_disconnected code=${code}`, metadata: { wsCode: code, reason: reason.toString().slice(0, 100) || null } })
+        }
       }
 
       // Phase 6: persist snapshot to PostgreSQL before billing finalize.
