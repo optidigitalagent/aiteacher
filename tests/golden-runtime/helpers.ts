@@ -27,12 +27,12 @@ export interface SectionMeta {
 }
 
 export const SECTION_META: Record<GoldSection, SectionMeta> = {
-  '1.1': { unit: 1, sectionId: 'focus2-1.1', title: 'Vocabulary: Free-time activities',       type: 'vocabulary', hasExplicitManifest: false },
-  '1.2': { unit: 1, sectionId: 'focus2-1.2', title: 'Grammar: Present tenses question forms', type: 'grammar',    hasExplicitManifest: true  },
-  '1.4': { unit: 1, sectionId: 'focus2-1.4', title: 'Reading: Teenage stereotypes',           type: 'reading',    hasExplicitManifest: false },
-  '2.1': { unit: 2, sectionId: 'focus2-2.1', title: 'Vocabulary: Achievements',               type: 'vocabulary', hasExplicitManifest: false },
-  '2.2': { unit: 2, sectionId: 'focus2-2.2', title: 'Grammar: Past Simple',                   type: 'grammar',    hasExplicitManifest: false },
-  '2.3': { unit: 2, sectionId: 'focus2-2.3', title: 'Reading: Marie Curie biography',         type: 'reading',    hasExplicitManifest: false },
+  '1.1': { unit: 1, sectionId: '1.1', title: 'Vocabulary: Free-time activities',       type: 'vocabulary', hasExplicitManifest: false },
+  '1.2': { unit: 1, sectionId: '1.2', title: 'Grammar: Present tenses question forms', type: 'grammar',    hasExplicitManifest: true  },
+  '1.4': { unit: 1, sectionId: '1.4', title: 'Reading: Teenage stereotypes',           type: 'reading',    hasExplicitManifest: false },
+  '2.1': { unit: 2, sectionId: '2.1', title: 'Vocabulary: Achievements',               type: 'vocabulary', hasExplicitManifest: false },
+  '2.2': { unit: 2, sectionId: '2.2', title: 'Grammar: Past Simple',                   type: 'grammar',    hasExplicitManifest: false },
+  '2.3': { unit: 2, sectionId: '2.3', title: 'Reading: Marie Curie biography',         type: 'reading',    hasExplicitManifest: false },
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
