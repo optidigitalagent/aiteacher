@@ -61,17 +61,42 @@ if (missingEnv.length > 0) {
 const PORT         = Number(process.env.PORT ?? 4000)
 const FRONTEND_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000'
 
+// Build an explicit allowlist: primary frontend + any extra origins declared in
+// CORS_EXTRA_ORIGINS (comma-separated).  Set CORS_EXTRA_ORIGINS=http://localhost:3000
+// in Railway QA/dev to allow Playwright running a local frontend against the
+// Railway backend.  Leave it unset in production to restrict to FRONTEND_URL only.
+function buildAllowedOrigins(): Set<string> {
+  const origins = new Set<string>([FRONTEND_URL])
+  const extra = process.env.CORS_EXTRA_ORIGINS ?? ''
+  for (const o of extra.split(',').map((s) => s.trim()).filter(Boolean)) {
+    origins.add(o)
+  }
+  return origins
+}
+
+const ALLOWED_ORIGINS = buildAllowedOrigins()
+
+function corsOriginHandler(
+  requestOrigin: string | undefined,
+  callback: (err: Error | null, allow?: boolean) => void,
+): void {
+  // Allow non-browser requests (curl, server-to-server) where Origin is absent
+  if (!requestOrigin) { callback(null, true); return }
+  if (ALLOWED_ORIGINS.has(requestOrigin)) { callback(null, true); return }
+  callback(new Error(`CORS: origin not allowed — ${requestOrigin}`))
+}
+
 async function main(): Promise<void> {
   initObservability()
 
   const app = express()
 
   // ── CORS ───────────────────────────────────────────────────────────────────
-  // cors() automatically adds Vary: Origin, handles OPTIONS preflight with
-  // res.end() (no body), and only sets Access-Control-Allow-Origin when the
-  // incoming Origin matches FRONTEND_URL — no wildcard, credentials allowed.
+  // Allowlist-based: only origins in FRONTEND_URL + CORS_EXTRA_ORIGINS are
+  // permitted.  No wildcard; credentials: true preserved for cookie/JWT flows.
+  // Vary: Origin is set automatically by the cors package.
   const corsOptions: cors.CorsOptions = {
-    origin: FRONTEND_URL,
+    origin: corsOriginHandler,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -121,7 +146,7 @@ async function main(): Promise<void> {
   setupOpenAI()
 
   console.log(`[server] WS endpoint: ws://localhost:${PORT}/lesson`)
-  console.log(`[server] frontend origin: ${FRONTEND_URL}`)
+  console.log(`[server] CORS allowed origins: ${[...ALLOWED_ORIGINS].join(', ')}`)
 }
 
 main().catch((err) => {
