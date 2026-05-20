@@ -71,6 +71,11 @@ export class ExerciseEngine {
     const { exercises } = loadExercisesForSection(sectionId)
     const firstSpec     = exercises[0]
 
+    console.log(
+      `[engine:init] section="${sectionId}" lessonId=${lessonId} ` +
+      `exerciseCount=${exercises.length} firstSpec=${firstSpec ? `ex#${firstSpec.meta.exerciseNumber} type=${firstSpec.exerciseType} mode=${firstSpec.meta.runtimeMode} steps=${firstSpec.steps.length}` : 'NONE'}`,
+    )
+
     let firstExState: EngineExerciseState | undefined
     let skippedIds: string[] = []
 
@@ -78,9 +83,13 @@ export class ExerciseEngine {
       if (shouldAutoSkip(firstSpec)) {
         firstExState = skipExercise(initExerciseState(firstSpec))
         skippedIds   = [firstSpec.exerciseId]
+        console.log(`[engine:init] first_exercise_AUTO_SKIPPED ex#${firstSpec.meta.exerciseNumber} mode=${firstSpec.meta.runtimeMode} lessonId=${lessonId}`)
       } else {
         firstExState = initExerciseState(firstSpec)
+        console.log(`[engine:init] first_exercise_ACTIVE ex#${firstSpec.meta.exerciseNumber} mode=${firstSpec.meta.runtimeMode} stepCount=${firstExState.spec.steps.length} lessonId=${lessonId}`)
       }
+    } else {
+      console.error(`[engine:init] NO_FIRST_EXERCISE section="${sectionId}" lessonId=${lessonId} — exerciseQueue is empty, getCursor will return null`)
     }
 
     const state: EngineLessonState = {
@@ -99,8 +108,8 @@ export class ExerciseEngine {
 
     await this.saveWithCanonicalCursor(lessonId, state, 'engine_init')
     console.log(
-      `[engine] init lessonId=${lessonId} section=${sectionId} ` +
-      `exercises=${exercises.length}`,
+      `[engine] init_complete lessonId=${lessonId} section=${sectionId} ` +
+      `exercises=${exercises.length} firstExerciseActive=${firstExState?.status === 'active'}`,
     )
     return state
   }
@@ -312,8 +321,23 @@ export class ExerciseEngine {
 
   async getCursor(lessonId: string): Promise<ExerciseCursor | null> {
     const state = await loadEngineState(lessonId)
-    if (!state?.currentExerciseState) return null
-    if (isExerciseComplete(state.currentExerciseState)) return null
+    if (!state) {
+      console.error(`[engine:getCursor] state_not_found lessonId=${lessonId} — Redis may have lost state after init`)
+      return null
+    }
+    if (!state.currentExerciseState) {
+      console.error(`[engine:getCursor] no_current_exercise lessonId=${lessonId} section="${state.sectionId}" queue=${state.exerciseQueue.length}`)
+      return null
+    }
+    const complete = isExerciseComplete(state.currentExerciseState)
+    if (complete) {
+      console.error(
+        `[engine:getCursor] exercise_already_complete lessonId=${lessonId} ` +
+        `status="${state.currentExerciseState.status}" ` +
+        `stepIndex=${state.currentExerciseState.currentStepIndex}/${state.currentExerciseState.spec.steps.length}`,
+      )
+      return null
+    }
     return formatCursor(state.currentExerciseState, state)
   }
 

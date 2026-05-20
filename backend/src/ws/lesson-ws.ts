@@ -1238,27 +1238,53 @@ async function handleFocusLessonStart(
   // Engine Authority Migration: initialize Exercise Engine before STT/AI.
   // Engine owns all exercise state; AI only narrates what the engine decides.
   const engineSection = config.section ?? 'free'
+  console.log(`[diag] engine_init_start lessonId=${lessonId} engineSection="${engineSection}" configSection="${config.section ?? 'MISSING'}"`)
+  let engineInitOk = false
   try {
-    await exerciseEngine.init(lessonId, engineSection)
-    console.log(`[engine] initialized lessonId=${lessonId} section=${engineSection}`)
+    const initState = await exerciseEngine.init(lessonId, engineSection)
+    engineInitOk = true
+    console.log(
+      `[engine] initialized lessonId=${lessonId} section=${engineSection} ` +
+      `queue=${initState.exerciseQueue.length} hasFirstExercise=${!!initState.currentExerciseState} ` +
+      `firstStatus=${initState.currentExerciseState?.status ?? 'NONE'} ` +
+      `firstSteps=${initState.currentExerciseState?.spec.steps.length ?? 0}`,
+    )
   } catch (err) {
-    console.error('[engine] init failed (non-fatal, legacy path continues):', err instanceof Error ? err.message : err)
+    console.error('[engine] init FAILED (non-fatal, legacy path continues):', err instanceof Error ? err.message : err)
   }
 
   // Emit initial exercise cursor on lesson start so the frontend receives authoritative
   // exercise state immediately — without waiting for the first student answer or readiness intent.
   // Spec rule: emit exercise_cursor_updated after engine initialization if cursor exists.
+  console.log(`[diag] cursor_emit_check engineSection="${engineSection}" engineInitOk=${engineInitOk} willCheck=${engineSection !== 'free'}`)
   if (engineSection !== 'free') {
     try {
+      const engineState = await exerciseEngine.getState(lessonId)
+      console.log(
+        `[diag] engine_state_after_init lessonId=${lessonId} ` +
+        `stateExists=${!!engineState} ` +
+        `currentExercise=${engineState?.currentExerciseState?.spec.meta.exerciseNumber ?? 'NONE'} ` +
+        `exerciseStatus=${engineState?.currentExerciseState?.status ?? 'NONE'} ` +
+        `stepCount=${engineState?.currentExerciseState?.spec.steps.length ?? 0} ` +
+        `stepIndex=${engineState?.currentExerciseState?.currentStepIndex ?? -1}`,
+      )
       const initCursor = await exerciseEngine.getCursor(lessonId)
+      console.log(`[diag] getCursor_result lessonId=${lessonId} cursor=${initCursor ? `ex#${initCursor.exerciseNumber} type=${initCursor.exerciseType} items=${initCursor.itemTotal}` : 'NULL'}`)
       if (initCursor) {
         send(ws, { type: 'exercise_cursor_updated', cursor: initCursor })
         console.log(
           `[engine] init_cursor_emitted exercise=#${initCursor.exerciseNumber}` +
           ` type=${initCursor.exerciseType} items=${initCursor.itemTotal} lessonId=${lessonId}`,
         )
+      } else {
+        console.error(
+          `[diag] cursor_emit_SKIPPED lessonId=${lessonId} section="${engineSection}" ` +
+          `reason=getCursor_returned_null engineInitOk=${engineInitOk}`,
+        )
       }
-    } catch { /* non-fatal — lesson continues without initial cursor broadcast */ }
+    } catch (err) {
+      console.error(`[diag] cursor_emit_THREW lessonId=${lessonId} section="${engineSection}" error="${err instanceof Error ? err.message : String(err)}"`)
+    }
   }
 
   meta.micActive = false  // set true on first mic_start
