@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test'
  * Golden Runtime QA Harness — Playwright configuration.
  *
  * Required env vars:
- *   PLAYWRIGHT_BASE_URL     — frontend URL  (default: http://localhost:5173)
+ *   PLAYWRIGHT_BASE_URL     — frontend URL  (default: http://localhost:3000)
  *   PLAYWRIGHT_BACKEND_URL  — backend URL   (default: http://localhost:4000)
  *   PLAYWRIGHT_TEST_TOKEN   — JWT for a user with an active subscription
  *
@@ -21,7 +21,7 @@ export default defineConfig({
   retries: 0,             // no retries — regressions must be investigated, not masked
 
   use: {
-    baseURL:    process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173',
+    baseURL:    process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000',
     video:      'retain-on-failure',
     screenshot: 'only-on-failure',
     trace:      'retain-on-failure',

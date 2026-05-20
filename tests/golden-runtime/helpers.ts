@@ -38,13 +38,26 @@ export const SECTION_META: Record<GoldSection, SectionMeta> = {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 /**
- * Injects the auth token before page navigation via addInitScript.
+ * Injects the auth token and backend URLs before page navigation via addInitScript.
  * Must be called before page.goto() on any route that reads localStorage.
+ *
+ * Sets __rt_api_url__ and __rt_ws_url__ so the frontend's fetchMe and WebSocket
+ * connection target the same backend as PLAYWRIGHT_BACKEND_URL — not the build-time
+ * VITE_API_URL / VITE_WS_URL (which default to localhost:4000 and may not match the
+ * backend under test, e.g. when running against a Railway deployment).
  */
 export async function setAuthToken(page: Page, token: string): Promise<void> {
-  await page.addInitScript((t: string) => {
-    window.localStorage.setItem('auth_token', t)
-  }, token)
+  const wsUrl = BACKEND_URL
+    .replace(/^https:\/\//, 'wss://')
+    .replace(/^http:\/\//, 'ws://')
+  await page.addInitScript(
+    ({ t, api, ws }: { t: string; api: string; ws: string }) => {
+      window.localStorage.setItem('auth_token',    t)
+      window.localStorage.setItem('__rt_api_url__', api)
+      window.localStorage.setItem('__rt_ws_url__',  ws)
+    },
+    { t: token, api: BACKEND_URL, ws: wsUrl },
+  )
 }
 
 // ── Lesson API ────────────────────────────────────────────────────────────────

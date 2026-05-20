@@ -1,4 +1,9 @@
 function buildWsBase(): string {
+  // Runtime override: set by test helpers so WS reaches the correct backend
+  // regardless of VITE_* build-time env vars (e.g. when running against Railway).
+  const runtimeOverride =
+    typeof window !== 'undefined' ? localStorage.getItem('__rt_ws_url__') : null
+  if (runtimeOverride) return runtimeOverride
   const explicit = import.meta.env.VITE_WS_URL as string | undefined
   if (explicit) return explicit
   const api = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:4000'

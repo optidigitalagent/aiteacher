@@ -47,8 +47,20 @@ const AuthContext = createContext<AuthState>({
   signOut:         () => {},
 })
 
-const TOKEN_KEY = 'auth_token'
-const API_BASE  = import.meta.env.VITE_API_URL ?? ''
+const TOKEN_KEY     = 'auth_token'
+const API_BASE_ENV  = import.meta.env.VITE_API_URL ?? ''
+
+// Runtime override key — test helpers inject the correct backend URL via localStorage
+// so fetchMe hits the same host as startLessonSession (e.g., Railway vs. local).
+const RT_API_URL_KEY = '__rt_api_url__'
+
+function getApiBase(): string {
+  try {
+    return localStorage.getItem(RT_API_URL_KEY) ?? API_BASE_ENV
+  } catch {
+    return API_BASE_ENV
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user,          setUser]          = useState<AuthUser | null>(null)
@@ -58,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchMe = useCallback(async (t: string): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_BASE}/api/me`, {
+      const res = await fetch(`${getApiBase()}/api/me`, {
         headers: { Authorization: `Bearer ${t}` },
       })
       if (!res.ok) return false
