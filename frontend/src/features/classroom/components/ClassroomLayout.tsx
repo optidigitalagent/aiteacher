@@ -42,7 +42,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const sessionMeta = (location.state as LessonSessionMetadata | null) ?? null
 
   const isDemoMode    = mode === 'demo'
-  const resolvedSection = sessionMeta?.sectionNumber ?? ENV_SECTION
+  // section priority: navigation state > ?section= URL param > VITE_LESSON_SECTION env
+  const urlSection      = new URLSearchParams(location.search).get('section') ?? undefined
+  const resolvedSection = sessionMeta?.sectionNumber ?? urlSection ?? ENV_SECTION
 
   const wsRef = useRef<WebSocket | null>(null)
   const send = useCallback((payload: object) => {
@@ -464,12 +466,26 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
 
   // ── Connect WS once auth is confirmed (skipped in demo mode) ─────────────
   useEffect(() => {
-    if (isAuthLoading) return
+    console.log('[classroom:ws-effect] fired', {
+      isAuthLoading,
+      isAuthenticated,
+      isDemoMode,
+      paidSessionId,
+      storedToken: !!getStoredToken(),
+    })
+    if (isAuthLoading) {
+      console.log('[classroom:ws-effect] waiting for auth')
+      return
+    }
     if (!isAuthenticated) {
+      console.warn('[classroom:ws-effect] NOT authenticated → redirecting to /learning')
       navigate('/learning', { replace: true })
       return
     }
-    if (isDemoMode) return  // demo uses REST API via useDemoSession
+    if (isDemoMode) {
+      console.log('[classroom:ws-effect] demo mode — no WS needed')
+      return
+    }
 
     let activeWs: WebSocket | null = null
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -478,6 +494,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
 
     const connect = () => {
       const token = getStoredToken()
+      console.log('[classroom:ws-effect] connect() called', { hasToken: !!token, paidSessionId })
       const ws = createClassroomSocket(
         (msg) => onMessageRef.current(msg),
         () => {

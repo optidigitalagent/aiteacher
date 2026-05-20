@@ -69,21 +69,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token,         setToken]         = useState<string | null>(() => localStorage.getItem(TOKEN_KEY))
 
   const fetchMe = useCallback(async (t: string): Promise<boolean> => {
+    const apiBase = getApiBase()
+    console.log('[auth:fetchMe] start', { apiBase, tokenLen: t.length })
     try {
-      const res = await fetch(`${getApiBase()}/api/me`, {
+      const res = await fetch(`${apiBase}/api/me`, {
         headers: { Authorization: `Bearer ${t}` },
       })
-      if (!res.ok) return false
+      console.log('[auth:fetchMe] response', { status: res.status, ok: res.ok })
+      if (!res.ok) {
+        console.warn('[auth:fetchMe] non-OK response → isAuthenticated=false')
+        return false
+      }
       const data = await res.json() as {
         authenticated: boolean
         user?: AuthUser
         profile?: AuthProfile
       }
-      if (!data.authenticated || !data.user) return false
+      console.log('[auth:fetchMe] body', { authenticated: data.authenticated, hasUser: !!data.user })
+      if (!data.authenticated || !data.user) {
+        console.warn('[auth:fetchMe] unauthenticated body → isAuthenticated=false')
+        return false
+      }
       setUser(data.user)
       setProfile(data.profile ?? null)
+      console.log('[auth:fetchMe] success → isAuthenticated=true', { userId: data.user.id })
       return true
-    } catch {
+    } catch (err) {
+      console.error('[auth:fetchMe] fetch threw', err)
       return false
     }
   }, [])
@@ -114,11 +126,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Boot: check stored token
   useEffect(() => {
     const t = localStorage.getItem(TOKEN_KEY)
-    if (!t) { setIsAuthLoading(false); return }
+    console.log('[auth:boot] token in storage?', !!t, '| apiBase:', getApiBase())
+    if (!t) {
+      console.warn('[auth:boot] no token → isAuthLoading=false isAuthenticated=false')
+      setIsAuthLoading(false)
+      return
+    }
     fetchMe(t).then((ok) => {
+      console.log('[auth:boot] fetchMe result:', ok, '→ isAuthLoading=false isAuthenticated=' + ok)
       if (!ok) { localStorage.removeItem(TOKEN_KEY); setToken(null) }
       setIsAuthLoading(false)
-    }).catch(() => setIsAuthLoading(false))
+    }).catch((err) => {
+      console.error('[auth:boot] fetchMe promise rejected:', err)
+      setIsAuthLoading(false)
+    })
   }, [fetchMe])
 
   // When token changes externally (e.g. after OAuth callback)

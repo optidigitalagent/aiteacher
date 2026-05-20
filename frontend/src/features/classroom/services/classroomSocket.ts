@@ -1,15 +1,24 @@
+// Called at connection time (not module load time) so localStorage runtime
+// overrides injected by test helpers are always visible.
 function buildWsBase(): string {
   // Runtime override: set by test helpers so WS reaches the correct backend
   // regardless of VITE_* build-time env vars (e.g. when running against Railway).
   const runtimeOverride =
     typeof window !== 'undefined' ? localStorage.getItem('__rt_ws_url__') : null
-  if (runtimeOverride) return runtimeOverride
+  if (runtimeOverride) {
+    console.log('[classroomSocket] WS_BASE from localStorage override:', runtimeOverride)
+    return runtimeOverride
+  }
   const explicit = import.meta.env.VITE_WS_URL as string | undefined
-  if (explicit) return explicit
+  if (explicit) {
+    console.log('[classroomSocket] WS_BASE from VITE_WS_URL:', explicit)
+    return explicit
+  }
   const api = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:4000'
-  return api.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://')
+  const base = api.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://')
+  console.log('[classroomSocket] WS_BASE from VITE_API_URL fallback:', base)
+  return base
 }
-const WS_BASE = buildWsBase()
 
 // ── Visible payload types — content shown on student screen ──────────────────
 
@@ -167,8 +176,18 @@ export function createClassroomSocket(
   token?:     string,
   sessionId?: string,
 ): WebSocket {
-  let url = token ? `${WS_BASE}/lesson?token=${encodeURIComponent(token)}` : `${WS_BASE}/lesson`
+  // buildWsBase() reads localStorage at connection time so test-injected overrides
+  // (__rt_ws_url__) are always respected, even if the module was loaded before the
+  // addInitScript ran on a previous navigation.
+  const wsBase = buildWsBase()
+  let url = token ? `${wsBase}/lesson?token=${encodeURIComponent(token)}` : `${wsBase}/lesson`
   if (sessionId) url += `&sessionId=${encodeURIComponent(sessionId)}`
+  console.log('[classroomSocket] createClassroomSocket', {
+    wsBase,
+    hasToken: !!token,
+    sessionId,
+    url: url.replace(/token=[^&]+/, 'token=REDACTED'),
+  })
   const ws = new WebSocket(url)
 
   ws.onopen = () => {
