@@ -1245,6 +1245,22 @@ async function handleFocusLessonStart(
     console.error('[engine] init failed (non-fatal, legacy path continues):', err instanceof Error ? err.message : err)
   }
 
+  // Emit initial exercise cursor on lesson start so the frontend receives authoritative
+  // exercise state immediately — without waiting for the first student answer or readiness intent.
+  // Spec rule: emit exercise_cursor_updated after engine initialization if cursor exists.
+  if (engineSection !== 'free') {
+    try {
+      const initCursor = await exerciseEngine.getCursor(lessonId)
+      if (initCursor) {
+        send(ws, { type: 'exercise_cursor_updated', cursor: initCursor })
+        console.log(
+          `[engine] init_cursor_emitted exercise=#${initCursor.exerciseNumber}` +
+          ` type=${initCursor.exerciseType} items=${initCursor.itemTotal} lessonId=${lessonId}`,
+        )
+      }
+    } catch { /* non-fatal — lesson continues without initial cursor broadcast */ }
+  }
+
   meta.micActive = false  // set true on first mic_start
   meta.stt = createSTT(ws, meta)
 
