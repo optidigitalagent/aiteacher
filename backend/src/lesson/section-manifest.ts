@@ -541,10 +541,13 @@ export function getManifestForSection(sectionId: string): SectionExerciseManifes
 }
 
 // Normalize section IDs to the canonical "X.Y" dot format before lookup.
-// Supports: "6.1", "unit-6-section-1", "unit6-section1", "6_1", "unit6_section1"
+// Supports: "6.1", "focus2-6.1", "unit-6-section-1", "unit6-section1", "6_1"
 function normalizeSectionId(sectionId: string): string {
   // Already canonical "X.Y"
   if (/^\d+\.\d+$/.test(sectionId)) return sectionId
+  // "focus2-6.3" or "focus3-1.2" → "6.3" / "1.2"
+  const m0 = sectionId.match(/^focus\d+-(\d+\.\d+)$/)
+  if (m0) return m0[1]!
   // "unit-6-section-1" or "unit6-section1"
   const m1 = sectionId.match(/unit[-_]?(\d+)[-_]section[-_]?(\d+)/i)
   if (m1) return `${m1[1]}.${m1[2]}`

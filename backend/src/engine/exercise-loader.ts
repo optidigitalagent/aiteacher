@@ -6,6 +6,7 @@
 import type { ExerciseSpec } from './types.js'
 import { parseManifestEntry } from './exercise-parser.js'
 import { getManifestForSection } from '../lesson/section-manifest.js'
+import { tryBuildAutoManifest } from '../lesson/auto-section-manifest-builder.js'
 
 export interface LoadResult {
   exercises: ExerciseSpec[]
@@ -20,15 +21,25 @@ export interface LoadResult {
 export function loadExercisesForSection(sectionId: string): LoadResult {
   console.log(`[engine:loader] manifest_lookup_started section="${sectionId}"`)
 
-  const manifest = getManifestForSection(sectionId)
+  // Try explicit manifest first, then auto-builder
+  const manifest = getManifestForSection(sectionId) ?? tryBuildAutoManifest(sectionId)
 
   if (!manifest) {
-    console.warn(`[engine:loader] manifest_lookup_missing section="${sectionId}" — no hardcoded or JSON manifest found`)
-    console.warn(`[engine:loader] fallback_used=true section="${sectionId}" — engine queue will be empty; AI must NOT improvise exercises`)
+    const allowUnsafe = process.env.ALLOW_UNSAFE_LESSON_FALLBACK === 'true'
+    if (!allowUnsafe) {
+      console.error(
+        `[engine:loader] unsafe_fallback_blocked section="${sectionId}" — ` +
+        `no manifest found and ALLOW_UNSAFE_LESSON_FALLBACK is not enabled. ` +
+        `Returning empty queue to prevent AI-improvised paid lesson.`,
+      )
+    } else {
+      console.warn(`[engine:loader] fallback_used=true section="${sectionId}" — dev mode; AI must NOT improvise exercises`)
+    }
     return { exercises: [], sectionId, unit: 0, totalExecutable: 0, totalSkipped: 0 }
   }
 
-  console.log(`[engine:loader] manifest_lookup_resolved section="${sectionId}" source=hardcoded exercises=${manifest.exercises.length}`)
+  const source = manifest.section === sectionId ? 'explicit' : 'auto-built'
+  console.log(`[engine:loader] manifest_lookup_resolved section="${sectionId}" source=${source} exercises=${manifest.exercises.length}`)
 
   const exercises: ExerciseSpec[] = manifest.exercises.map(entry =>
     parseManifestEntry(entry, manifest.section, manifest.unit),
