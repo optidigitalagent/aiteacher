@@ -112,6 +112,7 @@ async function runSectionCertification(
       console.log(`  [${section}] session created: ${sessionId}`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
+      console.error(`  [${section}] startLessonSession FAILED: ${msg}`)
       return {
         result: 'BLOCKED',
         checks: { ...checks, lessonReady: false },
@@ -127,8 +128,10 @@ async function runSectionCertification(
     monitor.attach(page)
 
     // ── Navigate to classroom ─────────────────────────────────────────────
+    // Pass ?section= so the frontend routes to the correct section without relying on
+    // VITE_LESSON_SECTION env var (which defaults to 1.2 in .env.development).
     await setAuthToken(page, TEST_TOKEN)
-    await page.goto(`${BASE_URL}/classroom/${sessionId}`)
+    await page.goto(`${BASE_URL}/classroom/${sessionId}?section=${section}`)
 
     // ── CHECK 1: WS connects ──────────────────────────────────────────────
     try {
@@ -603,7 +606,7 @@ test.describe('Exercise cursor integrity — Section 1.2 deep dive', () => {
     const monitor = new WsMonitor()
     monitor.attach(page)
     await setAuthToken(page, TEST_TOKEN)
-    await page.goto(`${BASE_URL}/classroom/${sessionId}`)
+    await page.goto(`${BASE_URL}/classroom/${sessionId}?section=1.2`)
 
     await monitor.waitForType('lesson_ready', 20_000)
     await clickBeginLesson(page, 20_000)
@@ -665,7 +668,7 @@ test.describe('Exercise cursor integrity — Section 1.2 deep dive', () => {
     const monitor = new WsMonitor()
     monitor.attach(page)
     await setAuthToken(page, TEST_TOKEN)
-    await page.goto(`${BASE_URL}/classroom/${sessionId}`)
+    await page.goto(`${BASE_URL}/classroom/${sessionId}?section=1.2`)
 
     await monitor.waitForType('lesson_ready', 20_000)
     await clickBeginLesson(page, 20_000)
@@ -707,7 +710,7 @@ test.describe('WS reconnect resilience', () => {
     const monitor1 = new WsMonitor()
     monitor1.attach(page)
     await setAuthToken(page, TEST_TOKEN)
-    await page.goto(`${BASE_URL}/classroom/${sessionId}`)
+    await page.goto(`${BASE_URL}/classroom/${sessionId}?section=2.1`)
 
     await monitor1.waitForType('lesson_ready', 20_000)
     await clickBeginLesson(page, 20_000)
