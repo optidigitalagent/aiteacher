@@ -112,7 +112,7 @@ function buildGrammarManifest(
   const exercises: ExerciseManifestEntry[] = [
     {
       num: 1,
-      type: 'grammar_focus',
+      type: 'discussion',
       executable: true,
       runtimeMode: 'soft_speaking',
       instruction: `Study the grammar rule: ${grammarTarget}. The teacher will explain the key points and ask you a comprehension check.`,
