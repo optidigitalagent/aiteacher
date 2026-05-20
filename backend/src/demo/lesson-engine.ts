@@ -92,8 +92,7 @@ export function buildNextStepIntro(session: DemoSession, nextStep: StepContent |
       return topic.warmUpFollowUpQuestion
 
     case 'grammar_mcq':
-      // Explanation may contain **markdown** — chat renders it; TTS strips it via stripMarkdownForTts.
-      return `Quick grammar check — ${grammar.target}. ${grammar.explanation}`
+      return `Quick challenge — ${grammar.target}. Pick the one that sounds right to you.`
 
     case 'speaking_task':
       return topic.speakingPrompt
@@ -102,7 +101,7 @@ export function buildNextStepIntro(session: DemoSession, nextStep: StepContent |
       return topic.speakingFollowUpQuestion
 
     case 'writing_task':
-      return `Last exercise. ${topic.writingPrompt}`
+      return `Last one — and this is where it gets interesting. ${topic.writingPrompt}`
 
     default:
       return nextStep.prompt ?? null
@@ -238,40 +237,40 @@ export function buildWarmUpFeedback(_session: DemoSession, answer: string): stri
     // so we must NOT end this message with a question or the student hears two at once.
     const word = answer.trim()
     const cap = word.charAt(0).toUpperCase() + word.slice(1)
-    return `${cap} — got it. I'll use that today.`
+    return `${cap} — interesting. I'll use that today.`
   }
 
   // School subjects — respond to what the student actually said
   if (/\b(math|maths|mathematic|mathematics|algebra|geometry|calculus|trigonometry)\b/i.test(answer)) {
     if (wordCount >= 8) {
-      return "Maths — good choice. The fact that it trains your thinking is exactly right — that's what we'll build on today."
+      return "Maths — good choice. It trains a kind of thinking that most subjects don't — that's exactly what we'll build on today."
     }
     return "Maths — I'll use that today."
   }
   if (/\b(physics)\b/i.test(answer)) {
     return wordCount >= 8
-      ? "Physics — a subject that connects everything. That analytical mindset is useful here."
-      : "Physics — got it. Let's go."
+      ? "Physics is interesting because the more you learn, the more questions you get. That kind of curiosity is useful here."
+      : "Physics is interesting — it explains why things work the way they do. Let's use that."
   }
   if (/\b(chemistry|biology|science)\b/i.test(answer)) {
     const m = answer.match(/\b(chemistry|biology|science)\b/i)
     const subj = m ? m[0].charAt(0).toUpperCase() + m[0].slice(1) : 'Science'
-    return `${subj} — solid. I'll pull from that today.`
+    return `${subj} — solid. The way you think about cause and effect there will come up today too.`
   }
   if (/\b(history|geography)\b/i.test(answer)) {
     const m = answer.match(/\b(history|geography)\b/i)
     const subj = m ? m[0].charAt(0).toUpperCase() + m[0].slice(1) : 'That'
     return wordCount >= 8
-      ? `${subj} — understanding context is a real skill. Let's use that.`
+      ? `${subj} — understanding context is a real skill. We'll use that thinking today.`
       : `${subj} — I've got what I need.`
   }
   if (/\b(literature|language|english|writing)\b/i.test(answer)) {
-    return "Language — then you already know what it means to think carefully about words. Let's use that."
+    return "Language — then you already think carefully about words. That's useful here. Let's go."
   }
   if (/\b(art|music|sport|sports|pe|physical)\b/i.test(answer)) {
     const m = answer.match(/\b(art|music|sport|sports|pe|physical)\b/i)
     const subj = m ? m[0].charAt(0).toUpperCase() + m[0].slice(1) : 'That'
-    return `${subj} — good. I've got a clear picture. Let's get into the work.`
+    return `${subj} — interesting. I've got a clear picture. Let's get into the work.`
   }
 
   // YouTube / creator content — detect before "watching nothing" since both can appear together
@@ -279,7 +278,7 @@ export function buildWarmUpFeedback(_session: DemoSession, answer: string): stri
     if (/\b(watching\s+nothing|not\s+watching|nothing\s+right\s+now)\b/i.test(answer)) {
       return "MrBeast fan, here for lessons right now — good call. Let's use that."
     }
-    return "YouTube — got it. That gives me a lot to work with."
+    return "YouTube — that gives me a lot to work with. Let's go."
   }
 
   // Not watching anything right now
@@ -292,17 +291,17 @@ export function buildWarmUpFeedback(_session: DemoSession, answer: string): stri
   const properNouns = words.filter(w => w.length > 2 && /^[A-Z]/.test(w) && !stopWords.has(w))
   if (properNouns.length > 0 && wordCount >= 5) {
     const name = properNouns[0]!
-    return `${name} — got it. I've got what I need.`
+    return `${name} — interesting. I've got what I need.`
   }
 
   const hasPersonal = /\b(i|my|me)\b/i.test(answer)
   if (wordCount >= 12 && hasPersonal) {
-    return "Good — I've got a clear picture. Let's get into the exercises."
+    return "Good — that gives me something real to work with. Let's get into the exercises."
   }
   if (wordCount >= 6 && hasPersonal) {
-    return "Got it — that's enough to start. Let's go."
+    return "Yeah, I can hear that. Let's use it today."
   }
-  return "Okay — let's get started."
+  return "Okay — let's get into it."
 }
 
 export function buildFollowUpFeedback(session: DemoSession, answer: string, stepKey: string): string {
@@ -314,7 +313,7 @@ export function buildFollowUpFeedback(session: DemoSession, answer: string, step
   const wordCount = answer.trim().split(/\s+/).filter(Boolean).length
 
   if (wordCount <= 3) {
-    return "Tell me a bit more — give me a full sentence with that idea."
+    return "Tell me a bit more — one full sentence with that idea."
   }
 
   if (stepKey === 'speaking_followup') {
@@ -363,9 +362,9 @@ export function buildFollowUpFeedback(session: DemoSession, answer: string, step
     // Generic followup response — close cleanly (bridge step transitions immediately after)
     const wordCount2 = answer.trim().split(/\s+/).filter(Boolean).length
     if (wordCount2 >= 10) {
-      return "I can see what you mean — that gives me enough to work with."
+      return "Yeah — I can see what you mean. That gives me enough to work with."
     }
-    return "Good — I've got what I needed from this."
+    return "Good — I've got what I needed from that."
   }
 
   // warm_up_followup — acknowledge and model correct English
@@ -386,7 +385,7 @@ export function buildFollowUpFeedback(session: DemoSession, answer: string, step
   if (/\b(with\s+(someone|a\s+friend|friends|family|my|the))\b/i.test(answer)) {
     return "Social viewing — it changes the whole experience."
   }
-  return "Got it."
+  return "Yeah — that makes sense."
 }
 
 // Builds the teacher reply when a student asks about grammar or task rules instead of answering.
@@ -437,10 +436,15 @@ export function buildConfusedHint(session: DemoSession, stepKey: string, retryCo
   }
 
   if (stepKey === 'speaking_task' || stepKey === 'speaking_followup') {
-    return `No problem — describe something real from your experience. Start with "I…" and tell me what happened or what you think.`
+    if (retryCount === 0) {
+      return `That's okay — a lot of people need a second with this. It doesn't have to be something big. Just describe any moment you actually remember. Start with "I…"`
+    }
+    return `No problem — just start with "I…" and describe what happened. Even something small counts.`
   }
   if (stepKey === 'writing_task') {
-    return `Take your time. Start with one clear idea and add a reason — even 2–3 sentences is a solid start.`
+    return retryCount === 0
+      ? `Take your time. Just start with one clear idea — even 2–3 sentences with a reason is a solid start.`
+      : `Start with what you actually think. Even a short, simple sentence is better than nothing.`
   }
   return `No problem — even one full sentence is fine. Try starting with "I think…" or "In my opinion…"`
 }

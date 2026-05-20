@@ -112,20 +112,21 @@ Return ONLY valid JSON: {"score": 0-10, "feedback": "string", "correction": "str
 
 Rules:
 - Be SPECIFIC — reference what the student actually said, the subject they named, or the moment they described
-- NEVER open with empty phrases: "Great effort!", "Good attempt!", "Well done!", "Got it", "I see", "Interesting", "Useful", "You tried", "Specific answer"
-- NEVER say only "Tell me more" or "Let's keep going" without teaching something concrete
+- NEVER open with empty phrases: "Great effort!", "Good attempt!", "Well done!", "Got it", "I see", "Interesting", "Useful", "You tried", "Specific answer", "I hear you're not sure", "I hear you're"
+- NEVER say only "Tell me more" or "Give me more" — if you want more detail, ask something specific: "What part of [subject] interests you most?" or "What happened next?"
 - NEVER say "doesn't address the prompt", "unclear English", or "confusing" — instead extract the likely idea and redirect
-- If student starts with a meta-complaint ("you didn't hear me", "you misunderstood", "you little bit don't hear me well", "that's not what I meant") — start your feedback with "I hear you —" then continue with the evaluation of what they actually said
-- If student's answer is "I don't know", ends with "I don't know", or contains no real attempt at the task: score 3, acknowledge uncertainty, give ONE sentence frame. Example: "I hear you're not sure. Try: 'I would describe it as [simple idea].' Say it in your own words." NEVER praise a non-answer as "the right approach" or "correct".
-- If answer is unclear but contains real words: score 5, extract the likely idea, give a corrected sentence: "I can see the idea — a clearer version: '[correction]'. Try again in your own words."
+- NEVER say "A more natural way..." or "A more natural way to say that is..." — use varied correction phrasing: "Native speakers would usually say...", "A smoother version: ...", "You could also say...", "In natural English: ..."
+- If student starts with a meta-complaint ("you didn't hear me", "you misunderstood", "that's not what I meant") — start with "I can see what you meant —" then evaluate what they actually said
+- If student's answer is "I don't know", ends with "I don't know", or has no real attempt: score 3. NEVER say "I hear you're not sure." Instead use "That's okay — " or "Fair enough — " then give ONE sentence frame. Example: "That's okay — a lot of people pause here. Try: 'I would describe it as [idea].' Say it in your own words." NEVER praise a non-answer.
+- If answer is unclear but contains real words: score 5, extract the likely idea, give a corrected sentence: "I can see the idea — try: '[correction]'. Say it in your own words."
 - If answer is 1-3 words: score 5, say "[Word] — give me a full sentence: 'I [verb] [word] because...' — tell me something real."
 - If answer has genuine content but grammar errors: correct ONE key error and explain it briefly. Score 6 minimum when the student named a real place, person, experience, or idea — even if the grammar is imperfect. A real idea with broken grammar is better than no idea.
 - Score 5 only when the answer is too brief, repeats the question, or contains no personal idea at all.
 - If answer is keyboard smash / truly no readable words: score 2, say "Try one clear sentence in English — even a simple one helps."
-- correction: an improved version of EXACTLY what the student said — fix grammar and word order only, NEVER add content. If the student used wrong vocabulary (invented words, wrong noun choices like "beach" instead of "pitch"), or the text is so broken that a grammar-only fix still produces something meaningless or embarrassing, set correction to null. A bad correction is worse than no correction. Only provide correction when the result is clearly better English that the student can genuinely learn from.
+- correction: an improved version of EXACTLY what the student said — fix grammar and word order only, NEVER add content. If the student used wrong vocabulary or the text is so broken that a grammar-only fix still produces something meaningless, set correction to null. A bad correction is worse than no correction. Only provide correction when the result is clearly better English the student can learn from.
 - Score range: 6-8 for real attempts with genuine content. Reserve 9-10 for exceptional answers. Reserve 5 for near-empty answers only.
 - ALWAYS end with a question or clear instruction — the student must know what to do next.
-- If earlier warm-up context is provided, reference it naturally when relevant (e.g. "You mentioned X earlier — that same idea applies here...") — only if it genuinely connects to what they said now. Skip if it doesn't.
+- If warmUpAnswer contains an interesting idea (discoveries, world rules, online school, a specific subject or experience), reference it naturally when it genuinely connects — e.g. "You mentioned [idea] earlier — that same thinking applies here." Skip if it doesn't connect.
 - Keep feedback under 55 words total.`
 
   const voiceNote = isVoiceLike
@@ -188,20 +189,21 @@ export async function evaluateWriting(
 Return ONLY valid JSON: {"score": 0-10, "feedback": "string", "correction": "string or null"}
 
 Rules:
-- Be SPECIFIC — mention what they actually wrote or the topic/subject/idea they named
-- Give ONE concrete improvement: e.g. "Use 'because' after your main point" or "Start with 'I would' instead of starting mid-sentence"
-- NEVER open with empty phrases: "Got it", "Good ideas!", "You tried", "You attempted", "That gives me a better picture", "Clear idea"
-- NEVER say "doesn't address the prompt", "unclear", "confusing" — instead extract the idea and redirect firmly but warmly
-- If student mentions meta-complaints ("you didn't hear me", "you misunderstood") — briefly acknowledge: "I hear you —" then evaluate what they wrote
-- If answer is "I don't know", vague, or contains no real personal content: score 3, give a sentence frame. Do NOT praise a non-answer.
-- If answer is unclear but has real words: score 5, infer the idea, give a clearer 1-sentence version: "I can see you mean [idea] — try: '[correction]'. More specific this time."
+- Be SPECIFIC — mention what they actually wrote, the topic they named, the idea they described
+- Give ONE concrete improvement: e.g. "Use 'because' after your main point" or "Start with 'I would' instead of mid-sentence"
+- NEVER open with empty phrases: "Got it", "Good ideas!", "You tried", "You attempted", "That gives me a better picture", "Clear idea", "I hear you're not sure", "I hear you're"
+- NEVER say "doesn't address the prompt", "unclear", "confusing" — extract the idea and redirect warmly
+- NEVER say "A more natural way..." — use varied phrasing: "Native speakers would usually say...", "A smoother version: ...", "You could also say...", "In natural English: ..."
+- If student mentions meta-complaints ("you didn't hear me", "you misunderstood") — briefly acknowledge: "I can see what you meant —" then evaluate what they wrote
+- If answer is "I don't know", vague, or no real personal content: score 3. NEVER say "I hear you're not sure." Use "That's okay — " or "Fair enough — " then give a sentence frame. Do NOT praise a non-answer.
+- If answer is unclear but has real words: score 5, infer the idea, give a clearer version: "I can see the idea — try: '[correction]'. More specific this time."
 - If answer has weak grammar but real content: correct 1-2 key errors, explain briefly. Score 6 minimum when the student expressed a real idea with specifics (place, activity, reason) — even if grammar needs work.
 - Score 5 only when the answer is too brief, vague, or contains no real personal idea.
-- correction: an improved version of EXACTLY what the student wrote — fix grammar and word order only, NEVER add content. If the student used wrong vocabulary, invented phrases, or the writing is too incoherent for grammar-only correction to be meaningful, set correction to null. Only provide correction when it genuinely helps — a confusing correction is worse than none.
+- correction: an improved version of EXACTLY what the student wrote — fix grammar and word order only, NEVER add content. If the text is too incoherent for grammar-only correction to be meaningful, set correction to null. A confusing correction is worse than none.
 - If truly no readable words: score 2, say "Write 2-3 real English sentences about the topic — even simple ones count."
 - Score range: 6-8 for real attempts with genuine content. Reserve 9-10 for strong, well-structured responses. Reserve 5 for near-empty attempts only.
 - ALWAYS end with a question or clear instruction — student must know exactly what to do next.
-- If earlier context (speaking answer, warm-up) is provided, briefly reference it when naturally relevant — skip if it doesn't connect.
+- If earlier context (speaking answer, warm-up) is provided, reference it when it naturally connects — skip if it doesn't.
 - Keep feedback under 60 words total.`
 
   const speakingAnswer = (session.answers['speaking_task'] ?? '').slice(0, 100)

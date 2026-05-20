@@ -94,7 +94,7 @@ export const TOPIC_PACKS: Record<string, TopicPack> = {
     speakingPlaceholder: "e.g. I worked on… and what I'm most proud of is…",
     speakingFollowUpQuestion: "If you had to explain what you learned from that to a younger student — how would you describe it in simple terms?",
     speakingFollowUpPlaceholder: "e.g. I'd explain it by saying… / The main thing I learned was… and I'd put it simply as…",
-    writingPrompt: "If you could redesign one part of your school — lessons, schedule, rules, anything — what would you change and why?",
+    writingPrompt: "Imagine you had control over your school for a day. What's the first thing you'd change — the rules, the schedule, the lessons, or maybe nothing at all? And why?",
     writingPlaceholder: "e.g. The first thing I'd change is… because right now…",
   },
   future_career: {
@@ -162,8 +162,8 @@ export const GRAMMAR_PACKS: Record<string, GrammarPack> = {
     question: 'She _____ to London three times.',
     options: ['went', 'has been', 'goes', 'had been'],
     correctIndex: 1,
-    correctExplanation: "Exactly right! \"Has been\" is Present Perfect — perfect for talking about life experiences.",
-    wrongExplanation: "The correct answer is **has been** (Present Perfect). We use this when we talk about experiences without specifying exactly when they happened.",
+    correctExplanation: "Yes — \"has been\" is Present Perfect. It's the right form when you're talking about life experience rather than a specific past moment.",
+    wrongExplanation: "The answer is **has been** (Present Perfect). Use this when you're talking about experience in someone's life — not tied to a specific time. \"Went\" would need a when: \"She went last year.\"",
   },
   fix_mistakes: {
     target: 'Articles (a / an / the)',
@@ -171,8 +171,8 @@ export const GRAMMAR_PACKS: Record<string, GrammarPack> = {
     question: 'I saw _____ interesting film last night.',
     options: ['a', 'an', 'the', '–'],
     correctIndex: 1,
-    correctExplanation: "Perfect! \"An\" is correct because \"interesting\" starts with a vowel sound.",
-    wrongExplanation: "The correct answer is **an**. We use \"an\" before any word that starts with a vowel sound — like \"interesting\".",
+    correctExplanation: "Yes — \"an\" before a vowel sound. \"Interesting\" starts with a vowel, so native speakers reach for \"an\" automatically.",
+    wrongExplanation: "The answer is **an**. The rule: use \"an\" before any word that starts with a vowel sound. \"Interesting\" starts with a vowel sound — so it's \"an interesting film,\" not \"a interesting film.\"",
   },
   listening_check: {
     target: 'Past Simple',
@@ -180,8 +180,8 @@ export const GRAMMAR_PACKS: Record<string, GrammarPack> = {
     question: 'They _____ football yesterday afternoon.',
     options: ['played', 'have played', 'play', 'were playing'],
     correctIndex: 0,
-    correctExplanation: "Correct! \"Played\" is Past Simple — we use it for completed actions at a specific past time. \"Yesterday\" is the clue.",
-    wrongExplanation: "The correct answer is **played** (Past Simple). The word \"yesterday\" signals a completed, specific moment in the past — that always triggers Past Simple.",
+    correctExplanation: "Yes — \"played\" is Past Simple. \"Yesterday\" is the clue — it tells you this is a finished, specific moment in the past.",
+    wrongExplanation: "The answer is **played** (Past Simple). \"Yesterday afternoon\" pins this to a specific finished moment — that always calls for Past Simple. Present Perfect (\"have played\") can't be used with a specific past time.",
   },
   find_level: {
     target: 'First Conditional',
@@ -189,8 +189,8 @@ export const GRAMMAR_PACKS: Record<string, GrammarPack> = {
     question: 'If it rains tomorrow, we _____ the picnic.',
     options: ['cancel', 'cancelled', 'will cancel', 'would cancel'],
     correctIndex: 2,
-    correctExplanation: "Spot on! First Conditional: If + present simple → will + base verb. This talks about real future possibilities.",
-    wrongExplanation: "The correct answer is **will cancel**. First Conditional structure: If + present simple, will + base verb. \"Would\" belongs to the Second Conditional (hypothetical situations).",
+    correctExplanation: "Yes — \"will cancel.\" First Conditional: If + present simple, will + base verb. This is about a real future possibility.",
+    wrongExplanation: "The answer is **will cancel**. First Conditional: If + present simple → will + base verb. \"Would cancel\" sounds right but belongs to the Second Conditional — that's for hypothetical or unlikely situations, not real ones.",
   },
 }
 

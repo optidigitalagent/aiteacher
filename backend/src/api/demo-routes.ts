@@ -582,7 +582,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         sfShortAccept = true
       }
       feedbackMessage = sfShortAccept
-        ? 'Got it.'
+        ? 'Yeah — that makes sense.'
         : buildFollowUpFeedback(session, answer, 'speaking_followup')
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
         correctionMessage = classified.correction
@@ -653,28 +653,32 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         if (confirmIntent === 'yes') {
           await redis.del(pendingMeaningKey)
           const correctionMsg = [
-            `Great — I can see what you meant.`,
-            `A more natural way to say it:`,
+            `Yeah — I can see what you meant.`,
+            `In natural English, you'd say:`,
             `"${pending.inferredMeaning}"`,
             `Why this works: we use a full sentence with 'because' or 'to' to connect your idea.`,
-            `No problem — now try again in your own words.`,
+            `Now try saying it in your own words.`,
           ].join('\n')
-          res.status(422).json({ code: 'MEANING_CONFIRMED', message: ensureTeacherContinues(correctionMsg, stepPrompt), ...convAwaitingReply('meaning_confirmed_try_again') })
+          const spokenMsg = `Yeah — I can see what you meant. In natural English: "${pending.inferredMeaning}". Now try saying it in your own words.`
+          res.status(422).json({ code: 'MEANING_CONFIRMED', message: ensureTeacherContinues(correctionMsg, stepPrompt), spokenMessage: spokenMsg, ...convAwaitingReply('meaning_confirmed_try_again') })
           return
         }
 
         if (confirmIntent === 'no') {
           await redis.del(pendingMeaningKey)
           const frame = buildConfusedHint(session, stepKey, 2)
-          const frameMsg = `No problem. ${frame}`
-          res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(frameMsg, stepPrompt), ...convAwaitingReply('meaning_denied_try_again') })
+          const frameMsg = `No problem — let me try again. ${frame}`
+          const spokenMsg = `No problem — let me try again. Just start with "I..." and describe what you meant.`
+          res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(frameMsg, stepPrompt), spokenMessage: spokenMsg, ...convAwaitingReply('meaning_denied_try_again') })
           return
         }
 
         // Unclear response while waiting for yes/no — ask once more, no retry increment
+        const yesNoMsg = `Just yes or no — did I understand you correctly?\n"${pending.inferredMeaning}"\n(Say "yes" or "no" and we'll keep going.)`
         res.status(422).json({
           code: 'MEANING_UNCLEAR',
-          message: `Just yes or no — did I understand you correctly?\n"${pending.inferredMeaning}"\n(Say "yes" or "no" and we'll keep going.)`,
+          message: yesNoMsg,
+          spokenMessage: `Just yes or no — did I understand you correctly? "${pending.inferredMeaning}"`,
           ...convClarification('meaning_pending'),
         })
         return
@@ -695,11 +699,12 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
               'EX', 3600,
             )
             const msg = [
-              `I can see what you're trying to say.`,
-              `I think you mean: "${inferred}"`,
-              `Is that what you wanted to say? (yes / no)`,
+              `Do you mean something like this?`,
+              `"${inferred}"`,
+              `Just say yes or no.`,
             ].join('\n')
-            res.status(422).json({ code: 'MEANING_UNCLEAR', message: msg, ...convClarification('meaning_unclear') })
+            const spokenMsgInfer = `Do you mean something like this? "${inferred}" — just say yes or no.`
+            res.status(422).json({ code: 'MEANING_UNCLEAR', message: msg, spokenMessage: spokenMsgInfer, ...convClarification('meaning_unclear') })
             return
           }
           // Budget exhausted — give a frame hint and ask retry (no inference)
@@ -892,7 +897,9 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         ) {
           await incrementStepRetries(sessionId, stepKey)
           await incrementAttempts(sessionId)
-          const corrPart = score.correction ? `\n\nA more natural way: "${score.correction}"` : ''
+          const corrLabels = ['Native speakers would usually say', 'A smoother version', 'You could also say', 'In natural English']
+          const corrLabel = corrLabels[qualityRetryCount % corrLabels.length]!
+          const corrPart = score.correction ? `\n\n${corrLabel}: "${score.correction}"` : ''
           console.log(`[demo-conversation] stepKey=${stepKey} responseType=QUALITY_RETRY expectsStudentReply=true mayAdvance=false reason=low_score score=${score.score}`)
           res.status(422).json({
             code: 'QUALITY_RETRY',
