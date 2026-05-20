@@ -101,8 +101,10 @@ export interface LessonCompleteInput {
 // ── Result types ──────────────────────────────────────────────────────────────
 
 export interface OrchestratorAnswerResult {
-  // Events to emit to frontend (in order: cursor first, then feedback)
+  // Events to emit to frontend (in order: skipped cursors, then cursor, then feedback)
   cursorUpdate:   ExerciseCursor | null
+  // Intermediate skipped-exercise cursors emitted before cursorUpdate (gap fill)
+  skippedCursors?: ExerciseCursor[]
   feedback:       FeedbackEvent | null
   // Teacher Brain input — null means skip AI call (lesson complete, error, empty)
   teacherInput:   string | null
@@ -598,6 +600,7 @@ export class MasterLessonOrchestrator {
 
     return {
       cursorUpdate:   result.exerciseCursor,
+      skippedCursors: result.skippedExerciseCursors,
       feedback:       feedbackEvent,
       teacherInput,
       lessonComplete: false,
@@ -683,6 +686,16 @@ export class MasterLessonOrchestrator {
     emitFn:   (event: { type: string; [key: string]: unknown }) => void,
     lessonId: string,
   ): void {
+    // Emit intermediate skipped cursors first so frontend never sees a gap > 1
+    if (result.skippedCursors && result.skippedCursors.length > 0) {
+      for (const sc of result.skippedCursors) {
+        emitFn({ type: 'exercise_cursor_updated', cursor: sc })
+        console.log(
+          `[master-orch] skipped_cursor_emitted exercise=#${sc.exerciseNumber}` +
+          ` type=${sc.exerciseType} lessonId=${lessonId}`,
+        )
+      }
+    }
     if (result.cursorUpdate) {
       emitFn({ type: 'exercise_cursor_updated', cursor: result.cursorUpdate })
       console.log(

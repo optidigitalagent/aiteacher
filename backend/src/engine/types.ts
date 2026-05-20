@@ -7,6 +7,7 @@ import type { ExerciseCursor, TextBlock, PromptCard, Statement } from '../lesson
 export type ExerciseType =
   | 'sentence_transformation'
   | 'fill_in_the_gap'
+  | 'fill_gap'
   | 'translation'
   | 'reading_comprehension'
   | 'paragraph_reading'
@@ -17,6 +18,7 @@ export type ExerciseType =
   | 'audio_based'
   | 'discussion'
   | 'grammar_drill'
+  | 'grammar_focus'
   | 'grammar_focus_fill'
   | 'personal_fill'
   | 'pair_speaking'
@@ -31,6 +33,7 @@ export type ExerciseType =
   | 'choose_from_box'
   | 'vocabulary_fill_gap'
   | 'collocations_fill'
+  | 'speaking_prompt'
   | 'unknown'
 
 export type ValidationMode =
@@ -188,6 +191,8 @@ export interface EngineResult {
   exerciseCursor: ExerciseCursor | null  // for frontend broadcast
   promptContext: string                  // injected into AI system prompt
   nextExerciseSpec?: ExerciseSpec        // set when action = exercise_complete
+  // Cursors for exercises auto-skipped during the drain loop (exerciseNumber gap fill)
+  skippedExerciseCursors?: ExerciseCursor[]
 }
 
 // ── EngineTurnResult — deterministic contract for AI teacher response ──────────

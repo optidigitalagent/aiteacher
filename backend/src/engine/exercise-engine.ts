@@ -196,7 +196,12 @@ export class ExerciseEngine {
 
       finalState = this.mountNextExercise(this.bumpVersion(finalState), nextExState, currentNextSpec)
 
+      // Collect intermediate skipped cursors so the frontend never sees a gap > 1
+      const skippedExerciseCursors: ExerciseCursor[] = []
+
       while (nextExState.status === 'skipped') {
+        // Emit a cursor for this skipped exercise so frontend exerciseNumber sequence has no gap > 1
+        skippedExerciseCursors.push(formatCursor(nextExState, finalState))
         finalState = this.closeCurrentExercise(finalState, nextExState)
         const drained = resolveCompletedExerciseNumbers(finalState)
         const afterSkip = findNextExercise({
@@ -209,10 +214,11 @@ export class ExerciseEngine {
           await saveEngineState(lessonId, finalState)
           console.log(`[engine] lesson_complete (all remaining skipped) lessonId=${lessonId}`)
           return {
-            action:         'lesson_complete',
+            action:                'lesson_complete',
             validation,
-            exerciseCursor: null,
-            promptContext:  buildPromptContext(undefined, finalState),
+            exerciseCursor:        null,
+            promptContext:         buildPromptContext(undefined, finalState),
+            skippedExerciseCursors: skippedExerciseCursors.length > 0 ? skippedExerciseCursors : undefined,
           }
         }
         nextExState = shouldAutoSkip(afterSkip)
@@ -230,11 +236,12 @@ export class ExerciseEngine {
       )
 
       return {
-        action:           'exercise_complete',
+        action:                'exercise_complete',
         validation,
-        exerciseCursor:   formatCursor(nextExState, finalState),
-        promptContext:    buildPromptContext(nextExState, finalState),
-        nextExerciseSpec: currentNextSpec,
+        exerciseCursor:        formatCursor(nextExState, finalState),
+        promptContext:         buildPromptContext(nextExState, finalState),
+        nextExerciseSpec:      currentNextSpec,
+        skippedExerciseCursors: skippedExerciseCursors.length > 0 ? skippedExerciseCursors : undefined,
       }
     }
 

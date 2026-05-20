@@ -35,9 +35,12 @@ const REQUIRES_OPTIONS = new Set<ExerciseType>([
 
 const MANIFEST_TYPE_MAP: Record<string, ExerciseType> = {
   discussion:           'discussion',
+  grammar_focus:        'grammar_focus',
   grammar_focus_fill:   'grammar_focus_fill',
   grammar_drill:        'grammar_drill',
+  fill_gap:             'fill_gap',
   personal_fill:        'personal_fill',
+  speaking_prompt:      'speaking_prompt',
   pair_speaking:        'pair_speaking',
   listening_matching:   'listening_matching',
   listening_gap:        'listening_gap',
