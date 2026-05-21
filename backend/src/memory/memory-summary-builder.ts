@@ -2,8 +2,11 @@
 // Output must be short: injected into system prompt, not a DB dump.
 
 import { query } from '../db/postgres.js'
+import redis from '../db/redis.js'
 import type { TeacherMemorySummary, StudentMemoryProfile } from './types.js'
 import { aggregateWeakTopics } from './mistake-analyzer.js'
+import { loadTopWeakSkills } from './mastery-aggregator.js'
+import { recordTraceEvent } from '../runtime/trace-recorder.js'
 
 async function loadProfile(userId: string): Promise<StudentMemoryProfile | null> {
   const res = await query<{
@@ -115,6 +118,103 @@ export async function buildTeacherMemorySummary(userId: string): Promise<Teacher
   } catch (err) {
     console.error('[memory-summary] load error (ignored):', err)
     return null
+  }
+}
+
+// ── Phase 3D.3: Long-Term Mastery Advisory Block ──────────────────────────────
+// Reads persisted student_skill_mastery rows (written at lesson end by 3D.2).
+// Returns a short advisory block (~80 tokens) for teacher phrasing/hint depth only.
+// Caches result in Redis (4 h) to avoid per-turn DB reads.
+// Fails soft — returns '' on any error; lesson continues normally.
+
+const MASTERY_ADVISORY_TTL = 14_400 // 4 hours — matches lesson and session TTLs
+
+function masteryAdvisoryKey(userId: string): string {
+  return `mastery:advisory:${userId}`
+}
+
+export async function buildLongTermMasteryContextBlock(userId: string): Promise<string> {
+  // Cache check: avoid DB read on every teacher turn
+  try {
+    const cached = await redis.get(masteryAdvisoryKey(userId))
+    if (cached !== null) {
+      if (cached === '') {
+        recordTraceEvent({
+          eventType:      'mastery_context_skipped',
+          payloadSummary: `reason=cache_hit_empty userId_prefix=${userId.slice(0, 8)}`,
+          severity:       'debug',
+        })
+      } else {
+        recordTraceEvent({
+          eventType:      'mastery_context_injected',
+          payloadSummary: `source=redis_cache userId_prefix=${userId.slice(0, 8)}`,
+          severity:       'debug',
+        })
+      }
+      return cached
+    }
+  } catch { /* cache miss — fall through to DB */ }
+
+  try {
+    const skills = await loadTopWeakSkills(userId, 3)
+    // Only surface low/medium confidence — high confidence means student has mastered the skill
+    const weakSkills = skills.filter(
+      s => s.confidenceLevel === 'low' || s.confidenceLevel === 'medium',
+    )
+
+    if (weakSkills.length === 0) {
+      recordTraceEvent({
+        eventType:      'mastery_context_skipped',
+        payloadSummary: `reason=no_weak_skills count=0 userId_prefix=${userId.slice(0, 8)}`,
+        severity:       'debug',
+      })
+      redis.set(masteryAdvisoryKey(userId), '', 'EX', MASTERY_ADVISORY_TTL).catch(() => {})
+      return ''
+    }
+
+    recordTraceEvent({
+      eventType:      'mastery_context_loaded',
+      payloadSummary:
+        `count=${weakSkills.length}` +
+        ` skills=${weakSkills.map(s => s.skillTag).join(',')}` +
+        ` confidence=${weakSkills.map(s => s.confidenceLevel).join(',')}` +
+        ` userId_prefix=${userId.slice(0, 8)}`,
+      severity: 'info',
+    })
+
+    const skillPhrases = weakSkills.slice(0, 3).map(s => {
+      const readable = s.skillTag.replace(/_/g, ' ')
+      return `${readable} (${s.confidenceLevel} confidence)`
+    })
+
+    const block = [
+      '[LONG-TERM LEARNING SIGNAL — advisory only]',
+      `Recent weak area${skillPhrases.length > 1 ? 's' : ''}: ${skillPhrases.join('; ')}.`,
+      'If these skills appear again, keep first hints concrete and short.',
+      'Rule: Use this for phrasing and hint depth only. Do NOT change correctness, exercise order, progression, or cursor state.',
+      '[END LONG-TERM SIGNAL]',
+    ].join('\n')
+
+    redis.set(masteryAdvisoryKey(userId), block, 'EX', MASTERY_ADVISORY_TTL).catch(() => {})
+
+    recordTraceEvent({
+      eventType:      'mastery_context_injected',
+      payloadSummary:
+        `count=${weakSkills.length}` +
+        ` skills=${weakSkills.map(s => s.skillTag).join(',')}` +
+        ` source=db userId_prefix=${userId.slice(0, 8)}`,
+      severity: 'info',
+    })
+
+    return block
+  } catch (err) {
+    console.warn('[memory-summary] mastery context build failed (ignored):', err instanceof Error ? err.message : err)
+    recordTraceEvent({
+      eventType:      'mastery_context_skipped',
+      payloadSummary: `reason=db_error userId_prefix=${userId.slice(0, 8)}`,
+      severity:       'warn',
+    })
+    return ''
   }
 }
 

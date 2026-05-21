@@ -42,6 +42,10 @@ export type RuntimeTraceEventType =
   | 'mastery_aggregation_started'
   | 'mastery_state_updated'
   | 'mastery_aggregation_failed'
+  // Phase 3D.3: Long-Term Teacher Advisory Context
+  | 'mastery_context_loaded'
+  | 'mastery_context_injected'
+  | 'mastery_context_skipped'
 
 export type TraceEventSeverity = 'debug' | 'info' | 'warn' | 'error'
 

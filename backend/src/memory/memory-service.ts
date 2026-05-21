@@ -9,7 +9,7 @@ import {
   writeLessonCompletedEvent,
   writeLessonMemorySummary,
 } from './memory-events.js'
-import { buildTeacherMemorySummary, formatTeacherMemorySummaryForPrompt } from './memory-summary-builder.js'
+import { buildTeacherMemorySummary, formatTeacherMemorySummaryForPrompt, buildLongTermMasteryContextBlock } from './memory-summary-builder.js'
 import { updateSessionMemoryOnValidation, getSessionMemory } from './session-memory.js'
 import { aggregateWeakTopics } from './mistake-analyzer.js'
 import { aggregateMasteryFromSession } from './mastery-aggregator.js'
@@ -167,12 +167,18 @@ export const memoryService = {
     return buildTeacherMemorySummary(userId)
   },
 
-  // Formatted string ready for injection into system prompt
+  // Formatted string ready for injection into system prompt.
+  // Phase 3D.3: appends long-term mastery advisory block after base memory block.
+  // Both sections are advisory-only: phrasing and hint depth only, never correctness or progression.
   async getTeacherMemoryPromptBlock(userId: string): Promise<string> {
     try {
-      const summary = await buildTeacherMemorySummary(userId)
-      if (!summary) return ''
-      return formatTeacherMemorySummaryForPrompt(summary)
+      const [summary, masteryBlock] = await Promise.all([
+        buildTeacherMemorySummary(userId),
+        buildLongTermMasteryContextBlock(userId),
+      ])
+      const baseBlock = summary ? formatTeacherMemorySummaryForPrompt(summary) : ''
+      if (!baseBlock && !masteryBlock) return ''
+      return [baseBlock, masteryBlock].filter(Boolean).join('\n\n')
     } catch (err) {
       console.error('[memory] prompt block error (ignored):', err)
       return ''
