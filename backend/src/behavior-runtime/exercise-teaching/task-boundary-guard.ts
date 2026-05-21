@@ -11,7 +11,7 @@ export interface TaskBoundaryInput {
   completedItems:     number[]
   correctionTurn:     string | null
   currentCorrectAnswer: string   // server-side only — not to be revealed
-  revealOnTurn:       'B' | 'D'  // when reveal is allowed
+  revealOnTurn:       'B' | 'C' | 'D'  // when reveal is allowed
 }
 
 export interface TaskBoundaryResult {
@@ -42,7 +42,7 @@ export function evaluateTaskBoundary(input: TaskBoundaryInput): TaskBoundaryResu
   if (correctionTurn !== null && currentCorrectAnswer) {
     const turnMap: Record<string, number> = { A: 1, B: 2, C: 3, D: 4 }
     const currentTurnNum = turnMap[correctionTurn] ?? 0
-    const revealTurnNum  = revealOnTurn === 'B' ? 2 : 4
+    const revealTurnNum  = revealOnTurn === 'B' ? 2 : revealOnTurn === 'C' ? 3 : 4
 
     if (currentTurnNum < revealTurnNum) {
       violations.push(

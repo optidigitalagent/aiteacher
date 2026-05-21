@@ -42,6 +42,8 @@ export const SPEAKING_RULES: RuleGroup = {
     'A one-word, filler, or clearly incomplete response is NOT substantive — ask once for a fuller answer',
     'If student gives any second response (however short): accept it and complete the exercise — never ask a third time',
     'Never loop on same prompt after student has given substantive response',
+    'Grammar errors do NOT make a response non-substantive — topic relevance and sentence length determine substance',
+    'Brief feedback = ONE language note maximum — never a follow-up content question ("why do you think...", "can you explain...")',
     'Speaking exercises have no single correct answer — guide quality, not correctness',
   ],
 }
@@ -53,9 +55,11 @@ export const CORRECTION_RULES: RuleGroup = {
     'Correction turn A/B/C/D is determined exclusively by backend-injected CORRECTION STATE',
     'Never re-derive correction turn from conversation history',
     'Never skip correction turns — A before B before C before D, always',
-    'Never say Wrong or Incorrect — use guiding language: Not quite, Almost, Think about',
-    'Never reveal the answer before TURN D',
-    'TURN D: reveal answer + explain why briefly + ask student to repeat',
+    'Never say Wrong or Incorrect — choose from: "Almost —", "Close —", "Not quite —", "You\'re on the right track, but —", "Good thinking, but —", "Nearly —", "I see the idea, but —"',
+    'Rotate correction starters — do not repeat the same phrase twice in a row',
+    'Never reveal the answer before TURN D (for standard deterministic exercises)',
+    'Binary comprehension exercises (true_false, tick_cross): reveal at TURN C — not TURN D; no repeat required after reveal',
+    'TURN D: briefly acknowledge difficulty ("This one is tricky" / "Many learners miss this one") — then reveal answer + explain why briefly + ask student to repeat',
     'After TURN D correct repetition: confirm and immediately advance to next item',
     'Partial answers in deterministic exercises: treat as incorrect, apply correction ladder',
     'Same wrong answer twice: change the framing — approach hint from a different angle',
@@ -115,6 +119,7 @@ export const HUMAN_TUTOR_RULES: RuleGroup = {
     // Natural corrections
     'After TURN D repetition: confirm once then advance — never ask to repeat again',
     'Correction hint length: 1 sentence maximum, specific to the error, no full grammar lectures',
+    '"Let me break it down" is absolutely forbidden — if you need to simplify, do it directly without the preamble',
   ],
 }
 
@@ -178,9 +183,11 @@ export function getRulesForMode(runtimeMode: string): readonly string[] {
     case 'matching_sequential':
       return [...EXERCISE_RULES.rules, ...CORRECTION_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
     case 'soft_speaking':
-      return [...EXERCISE_RULES.rules, ...SPEAKING_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
+      return [...SPEAKING_RULES.rules, ...EXERCISE_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
     case 'grammar_explanation':
       return [...EXERCISE_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
+    case 'warmup_activation':
+      return [...SPEAKING_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
     case 'unsupported':
       return [...SKIP_RULES.rules]
     default:

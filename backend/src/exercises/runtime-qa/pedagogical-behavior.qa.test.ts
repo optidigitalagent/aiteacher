@@ -13,6 +13,8 @@
 //   8. Correction phrase bank exists and is referenced
 //   9. TURN D includes brief warmth guidance ("tricky" / "learners miss")
 //  10. Matching revealOnTurn remains B
+//  11. Phase 6B.1 correction rule visibility (see section below)
+//  12. Phase 6B.2 binary exercise calibration (true_false, tick_cross)
 
 import { describe, it, expect } from 'vitest'
 
@@ -503,7 +505,121 @@ describe('Exercise format registry completeness', () => {
       expect(policy.hintPolicy).toBeDefined()
       expect(policy.hintPolicy.turnA).toBeTruthy()
       expect(policy.hintPolicy.turnD).toBeTruthy()
-      expect(policy.hintPolicy.revealOnTurn).toMatch(/^[BD]$/)
+      expect(policy.hintPolicy.revealOnTurn).toMatch(/^[BCD]$/)
     })
   }
+})
+
+// ── 12. Phase 6B.2 — Binary Exercise Calibration ────────────────────────────
+//
+// true_false and tick_cross use a 3-turn A→B→C ladder with reveal at TURN C.
+// No repeat required after reveal. Hints must be evidence/context-focused —
+// no grammar coaching, no production-style scaffolding.
+
+describe('Phase 6B.2 — Binary exercise calibration', () => {
+  const BINARY_TYPES = ['true_false', 'tick_cross']
+  const GRAMMAR_COACHING_TERMS = [
+    'verb form', 'conjugat', 'present simple', 'past simple', 'third person',
+    'auxiliary verb', 'tense', 'subject agreement',
+  ]
+  const PRODUCTION_SCAFFOLDING_TERMS = [
+    'say the full sentence', 'complete the sentence', 'form a sentence',
+    'write the answer', 'say all the words',
+  ]
+
+  for (const type of BINARY_TYPES) {
+    describe(type, () => {
+      it('revealOnTurn is C (calibrated binary ladder)', () => {
+        expect(getHintPolicy(type).revealOnTurn).toBe('C')
+      })
+
+      it('maxRetries is 3 (not 4)', () => {
+        expect(getExerciseFormatPolicy(type).retryPolicy.maxRetries).toBe(3)
+      })
+
+      it('requireRepeatAfterReveal is false (no repeat for binary answers)', () => {
+        expect(getExerciseFormatPolicy(type).retryPolicy.requireRepeatAfterReveal).toBe(false)
+      })
+
+      it('TURN C contains REVEAL instruction', () => {
+        const turnC = getHintPolicy(type).turnC.toUpperCase()
+        expect(turnC).toMatch(/REVEAL/)
+      })
+
+      it('TURN A does NOT contain a REVEAL instruction', () => {
+        const turnA = getHintPolicy(type).turnA.toUpperCase()
+        expect(turnA).not.toMatch(/^REVEAL/)
+        expect(turnA).not.toMatch(/THE ANSWER IS/)
+      })
+
+      it('TURN B does NOT contain a REVEAL instruction', () => {
+        const turnB = getHintPolicy(type).turnB.toUpperCase()
+        expect(turnB).not.toMatch(/^REVEAL/)
+        expect(turnB).not.toMatch(/THE ANSWER IS/)
+      })
+
+      it('hint turns avoid grammar coaching terminology', () => {
+        const hints = [
+          getHintPolicy(type).turnA,
+          getHintPolicy(type).turnB,
+        ]
+        for (const hint of hints) {
+          for (const term of GRAMMAR_COACHING_TERMS) {
+            expect(
+              hint.toLowerCase().includes(term),
+              `${type} hint contains grammar coaching term "${term}": "${hint}"`,
+            ).toBe(false)
+          }
+        }
+      })
+
+      it('hint turns avoid production-style scaffolding', () => {
+        const hints = [
+          getHintPolicy(type).turnA,
+          getHintPolicy(type).turnB,
+        ]
+        for (const hint of hints) {
+          for (const term of PRODUCTION_SCAFFOLDING_TERMS) {
+            expect(
+              hint.toLowerCase().includes(term),
+              `${type} hint contains production scaffolding term "${term}": "${hint}"`,
+            ).toBe(false)
+          }
+        }
+      })
+
+      it('TURN A uses evidence/context language (re-read / look / detail / word)', () => {
+        const turnA = getHintPolicy(type).turnA.toLowerCase()
+        expect(turnA).toMatch(/read|look|detail|word|statement|context|carefully/)
+      })
+
+      it('TURN B references specific evidence or key detail', () => {
+        const turnB = getHintPolicy(type).turnB.toLowerCase()
+        expect(turnB).toMatch(/evidence|key word|specific|focus|context|detail|match|compare/)
+      })
+    })
+  }
+
+  it('standard deterministic types retain revealOnTurn D (no regression)', () => {
+    const STANDARD_TYPES = ['fill_gap', 'error_correction', 'complete_correct_form', 'reconstruction']
+    for (const type of STANDARD_TYPES) {
+      expect(getHintPolicy(type).revealOnTurn).toBe('D')
+    }
+  })
+
+  it('matching types retain revealOnTurn B (no regression)', () => {
+    const MATCHING_TYPES = ['matching', 'vocabulary_matching', 'find_opposites', 'collocations']
+    for (const type of MATCHING_TYPES) {
+      expect(getHintPolicy(type).revealOnTurn).toBe('B')
+    }
+  })
+
+  it('CORRECTION_RULES include binary exception (reveal at TURN C for binary types)', () => {
+    const hasBinaryException = CORRECTION_RULES.rules.some(r =>
+      r.toLowerCase().includes('binary') &&
+      r.includes('TURN C') &&
+      (r.includes('true_false') || r.includes('tick_cross')),
+    )
+    expect(hasBinaryException).toBe(true)
+  })
 })

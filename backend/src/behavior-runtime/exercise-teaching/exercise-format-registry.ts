@@ -36,9 +36,9 @@ export interface ExpectedAnswerPolicy {
 export interface HintPolicy {
   turnA: string  // First wrong attempt: guiding question, zero answer
   turnB: string  // Second wrong attempt: structural guidance or reveal (matching)
-  turnC: string  // Third wrong attempt: near-full hint
+  turnC: string  // Third wrong attempt: near-full hint or reveal (binary)
   turnD: string  // Fourth attempt: full reveal + repeat request
-  revealOnTurn:  'B' | 'D'   // When to reveal the answer
+  revealOnTurn:  'B' | 'C' | 'D'   // When to reveal the answer
 }
 
 export interface RetryPolicy {
@@ -76,8 +76,8 @@ export interface ExerciseFormatPolicy {
 const DETERMINISTIC_HINT: HintPolicy = {
   turnA: 'Ask ONE question targeting the exact grammar/vocabulary gap — e.g. "What form does the verb take with this subject?" Give zero part of the answer.',
   turnB: 'Give the pattern or rule — e.g. "With she/he/it, add -s to the verb. What does that give you here?" No direct word yet.',
-  turnC: 'Give the start of the answer — first letter, first word, or auxiliary — to guide completion.',
-  turnD: 'REVEAL: say the full correct answer + one-sentence rule + ask student to repeat the complete sentence.',
+  turnC: 'Give the start of the answer — first letter, first word, or auxiliary — to guide completion. Do NOT give the full answer yet.',
+  turnD: 'REVEAL: briefly acknowledge difficulty ("This one is tricky" or "Many learners miss this one") — then give the full correct answer + one-sentence rule + ask student to repeat the complete sentence.',
   revealOnTurn: 'D',
 }
 
@@ -103,8 +103,8 @@ const DETERMINISTIC_RETRY: RetryPolicy = {
   escalationNotes: [
     'Turn A: identify the precise knowledge gap — verb form? word order? collocation? Ask about ONLY that.',
     'Turn B: change the framing — new angle, not the same question rephrased.',
-    'Turn C: fill in almost everything — leave only the target word.',
-    'Turn D: reveal fully — "The answer is [X]." Brief rule. "Now say the full sentence."',
+    'Turn C: fill in almost everything — leave only the target word. Do NOT reveal the full answer yet.',
+    'Turn D: acknowledge difficulty briefly ("This one is tricky" / "Many learners miss this one") — then reveal: "The answer is [X]." Brief rule. "Now say the full sentence."',
   ],
 }
 
@@ -124,6 +124,29 @@ const SOFT_RETRY: RetryPolicy = {
     'If student gives one-word or filler: ask once for a fuller answer.',
     'If student gives any second response (however short): accept and complete exercise.',
     'Never ask a third time.',
+  ],
+}
+
+// Binary comprehension tasks (true_false, tick_cross):
+//   A: invite re-examination — no grammar coaching, no answer
+//   B: evidence pointer — reference the specific word/detail, no reveal
+//   C: fast reveal — one-sentence evidence-based explanation, move on immediately
+//   No repeat required — binary answers are one word; repeat has zero pedagogical value.
+const BINARY_HINT: HintPolicy = {
+  turnA: 'Invite re-examination without coaching: "Read the statement once more — is there a specific word or detail that seems off? Look carefully before you decide." Give no answer.',
+  turnB: 'Reference the specific evidence: "Focus on [the key word or detail in the statement]. Compare what it says to what you know or read — does it actually match?"',
+  turnC: 'REVEAL: "The answer is [true/false or tick/cross]. [One sentence citing the specific evidence or reason.] Let\'s move to the next one."',
+  turnD: 'REVEAL: "The answer is [true/false or tick/cross]." Confirm briefly. Move immediately to the next item.',
+  revealOnTurn: 'C',
+}
+
+const BINARY_RETRY: RetryPolicy = {
+  maxRetries: 3,
+  requireRepeatAfterReveal: false,
+  escalationNotes: [
+    'Turn A: invite careful re-reading — no grammar analysis. Ask student to look again at the statement.',
+    'Turn B: point to the specific evidence or key word — let student re-evaluate without coaching.',
+    'Turn C: reveal the answer with one evidence-based sentence. Move on immediately — do NOT ask to repeat.',
   ],
 }
 
@@ -393,7 +416,13 @@ const REGISTRY: Record<string, ExerciseFormatPolicy> = {
       partialAnswerRule: 'Word list without sentence structure: gently ask for a full sentence.',
       voiceAdaptation: 'Accept natural spoken sentences.',
     },
-    hintPolicy: SOFT_HINT,
+    hintPolicy: {
+      turnA: 'Ask about subject and verb from the prompt words: "Look at the words given. Which one is the subject? Which is the verb?"',
+      turnB: 'Give sentence skeleton direction: "Start with the subject. Put the verb in the correct form after it. What comes next?"',
+      turnC: 'Give a stronger structure clue: "Try starting with: [first 2-3 prompt words]... What word comes after that to complete the sentence?"',
+      turnD: 'REVEAL: "A correct sentence is: [model sentence]. Notice — subject first, then the verb form. Now say that sentence.',
+      revealOnTurn: 'D',
+    },
     retryPolicy: SOFT_RETRY,
     frontendRenderPolicy: SOFT_FRONTEND,
   },
@@ -496,8 +525,8 @@ const REGISTRY: Record<string, ExerciseFormatPolicy> = {
     hintPolicy: {
       ...DETERMINISTIC_HINT,
       turnA: 'Point to the error category — not the word: "Look at the verb — does it agree with the subject? Or is it the tense that\'s off?"',
-      turnB: 'Identify the error location: "The problem is with [verb/noun/preposition]. What should it be?"',
-      turnC: 'Give the correct element: "Change [wrong_word] to [correct_word]. Now say the full sentence."',
+      turnB: 'Identify the error location without revealing the correction: "The problem is with [verb/noun/preposition]. Think about what rule applies there."',
+      turnC: 'Point strongly to the error without giving the corrected word: "The issue is in the [verb/noun/preposition] — what grammatical rule should apply to [that word] here? What does the correct form look like?"',
     },
     retryPolicy: DETERMINISTIC_RETRY,
     frontendRenderPolicy: DETERMINISTIC_FRONTEND,
@@ -652,7 +681,13 @@ const REGISTRY: Record<string, ExerciseFormatPolicy> = {
       partialAnswerRule: 'Full sentence response: extract the target word.',
       voiceAdaptation: 'STT may capture sentence — extract the intended replacement.',
     },
-    hintPolicy: DETERMINISTIC_HINT,
+    hintPolicy: {
+      turnA: 'Ask for a word with the same meaning: "Look for a synonym — a word that means the same as [target word] but fits this context better. What word comes to mind?"',
+      turnB: 'Narrow the word class: "Think of a [word class] that means [brief meaning of target word]. What word fits the register here?"',
+      turnC: 'Give a stronger clue: "The answer starts with [first letter] and means [brief definition]. Can you find that word?"',
+      turnD: 'REVEAL: "The correct replacement is [answer]." Give one short example sentence showing its use.',
+      revealOnTurn: 'D',
+    },
     retryPolicy: DETERMINISTIC_RETRY,
     frontendRenderPolicy: DETERMINISTIC_FRONTEND,
   },
@@ -682,11 +717,11 @@ const REGISTRY: Record<string, ExerciseFormatPolicy> = {
       voiceAdaptation: 'Accept "yes/no", "right/wrong", "tick/cross" as valid.',
     },
     hintPolicy: {
-      ...DETERMINISTIC_HINT,
-      turnA: 'Draw attention to the error type: "Look at the verb — does it agree with the subject? Is the tense right?"',
-      turnB: 'Narrow down: "If it\'s a tick, the grammar must be correct. If cross, find what\'s wrong."',
+      ...BINARY_HINT,
+      turnA: 'Invite re-examination: "Read the sentence carefully once more — does every part sound natural and correct to you? Look again." No answer.',
+      turnB: 'Narrow the focus without grammar coaching: "Look at [the relevant part of the sentence] — does that seem right in context? Compare it to what you know."',
     },
-    retryPolicy: DETERMINISTIC_RETRY,
+    retryPolicy: BINARY_RETRY,
     frontendRenderPolicy: DETERMINISTIC_FRONTEND,
   },
 
@@ -715,11 +750,11 @@ const REGISTRY: Record<string, ExerciseFormatPolicy> = {
       voiceAdaptation: 'Accept affirmative/negative equivalents.',
     },
     hintPolicy: {
-      ...DETERMINISTIC_HINT,
-      turnA: 'Ask what would make it true or false: "Think about whether this matches reality. Is there a word that makes the statement incorrect?"',
-      turnB: 'Give context clue: "Look at [specific word]. Does that match what you know about [topic]?"',
+      ...BINARY_HINT,
+      turnA: 'Invite the student to re-examine the claim: "Read the statement once more — is there a specific word or claim that might not match the text or reality? Think carefully." No answer.',
+      turnB: 'Reference the specific evidence: "Look at [the key word or claim in the statement]. What does the context or text tell you about this — does it actually match?"',
     },
-    retryPolicy: DETERMINISTIC_RETRY,
+    retryPolicy: BINARY_RETRY,
     frontendRenderPolicy: DETERMINISTIC_FRONTEND,
   },
 
@@ -1093,7 +1128,13 @@ const REGISTRY: Record<string, ExerciseFormatPolicy> = {
       partialAnswerRule: 'If student gives approximate answer, ask them to find the exact word.',
       voiceAdaptation: 'Accept spoken word — normalize spelling variations.',
     },
-    hintPolicy: DETERMINISTIC_HINT,
+    hintPolicy: {
+      turnA: 'Guide student to scan the text. Ask: "Which part of the passage talks about [target idea]? Scan that section — what word do you see there?"',
+      turnB: 'Narrow the location: "Look at the sentence that mentions [surrounding context]. What exact word appears in that sentence?"',
+      turnC: 'Give a strong location clue: "The word is near [surrounding words in the text]. Look right there — what word do you find?"',
+      turnD: 'REVEAL: "The answer is [word/phrase]. It appears in [text location]." Ask student to confirm by reading it aloud.',
+      revealOnTurn: 'D',
+    },
     retryPolicy: DETERMINISTIC_RETRY,
     frontendRenderPolicy: {
       itemsVisible: true,

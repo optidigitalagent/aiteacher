@@ -210,10 +210,67 @@ export const NO_ADVANCE_BEFORE_REVEAL: CorrectionLadderScenario = {
   ],
 }
 
+// Phase 6B.2 — Binary exercise (true_false, tick_cross) calibrated ladder.
+// Reveal at TURN_C (not D). No repeat required. Fast pacing.
+export const BINARY_CORRECTION_LADDER: CorrectionLadderScenario = {
+  scenarioId: 'correction_006',
+  exerciseType: 'true_false',
+  title: 'Binary (true_false / tick_cross) — 3-turn calibrated ladder: reveal at TURN_C',
+  description:
+    'Binary comprehension exercises use A→B→C ladder. Reveal at TURN_C. ' +
+    'No repeat required after reveal. No grammar coaching in hints.',
+  turns: [
+    {
+      turn: 'TURN_A',
+      retryCount: 1,
+      studentAnswer: 'true',
+      expectedTeacherAction:
+        'Invite re-examination: point student to re-read the statement — no grammar coaching, no answer.',
+      shouldReveal: false,
+      shouldAdvance: false,
+    },
+    {
+      turn: 'TURN_B',
+      retryCount: 2,
+      studentAnswer: 'true',
+      expectedTeacherAction:
+        'Evidence pointer: reference the specific word or detail — no reveal yet.',
+      shouldReveal: false,
+      shouldAdvance: false,
+    },
+    {
+      turn: 'TURN_C',
+      retryCount: 3,
+      studentAnswer: 'true',
+      expectedTeacherAction:
+        'REVEAL with one evidence-based sentence. Move immediately to next item — do NOT ask to repeat.',
+      shouldReveal: true,
+      shouldAdvance: true,
+    },
+  ],
+  forbiddenBehaviors: [
+    'run full 4-turn A/B/C/D grammar ladder for binary items',
+    'ask student to repeat after reveal',
+    'grammar coaching during hints (verb form, tense, subject agreement)',
+    'reveal before TURN_C',
+    'wait until TURN_D to reveal for true_false or tick_cross',
+    'production-style scaffolding (say the full sentence, complete the sentence)',
+  ],
+  criticalChecks: [
+    'shouldRevealAnswer(retryCount=1) === false for true_false',
+    'shouldRevealAnswer(retryCount=2) === false for true_false',
+    'shouldRevealAnswer(retryCount=3) === true for true_false',
+    'requireRepeatAfterReveal === false for binary types',
+    'maxRetries === 3 for true_false and tick_cross',
+    'hintPolicy.revealOnTurn === "C" for true_false and tick_cross',
+  ],
+}
+
 export const ALL_CORRECTION_LADDER_SCENARIOS: CorrectionLadderScenario[] = [
   FILL_GAP_CORRECTION_LADDER,
   MATCHING_CORRECTION_LADDER,
   SPEAKING_NO_STRICT_LADDER,
   RETRY_COUNT_PRESERVED_RECONNECT,
   NO_ADVANCE_BEFORE_REVEAL,
+  BINARY_CORRECTION_LADDER,
 ]

@@ -452,6 +452,68 @@ const PROTOCOLS: Record<string, ExerciseTeachingProtocol> = {
     teacherTone: 'concise',
   },
 
+  true_false: {
+    exerciseType: 'true_false',
+    frontendRequirements: ['Statement is visible on screen.'],
+    teacherOpening: 'Is the statement true or false? Say "true" or "false".',
+    answerMode: 'normalized_exact',
+    acceptedAnswerShape: '"true" or "false" — also accept "yes/no", "correct/incorrect" as equivalents.',
+    shortAnswerPolicy:
+      'Accept "yes/no", "correct/incorrect", or affirmative/negative as true/false equivalents. ' +
+      'Do NOT reject informal equivalents — binary answers are low-production.',
+    studentQuestionPolicy:
+      'Brief answer in one sentence. Return: "Back to the statement — true or false?"',
+    firstRetry:
+      'Invite re-examination: "Read the statement once more — is there a specific word or claim that seems off?"',
+    secondRetry:
+      'Reference specific evidence: "Focus on [the key word or claim]. Compare it to the context — does it actually match?"',
+    finalReveal:
+      'Say "The answer is [true/false]." Add one evidence-based sentence. Move immediately to next item — do NOT ask student to repeat.',
+    completionRule:
+      'Complete when student gives the correct true/false equivalent. Fast pace — no repeat required after reveal.',
+    engagementChallengeRule:
+      'If student seems uncertain: "Look at the statement one more time — one specific detail will tell you."',
+    forbiddenBehavior: [
+      'Do NOT run a full 4-turn A/B/C/D grammar ladder for binary items.',
+      'Do NOT ask student to repeat the answer after reveal — move immediately to next item.',
+      'Do NOT lecture on grammar before student attempts.',
+      'Do NOT re-read the statement verbatim after first introduction.',
+      'Do NOT coach grammar structure — this is a comprehension/recognition task.',
+    ],
+    teacherTone: 'encouraging',
+  },
+
+  tick_cross: {
+    exerciseType: 'tick_cross',
+    frontendRequirements: ['Sentence is visible on screen.'],
+    teacherOpening: 'Is the sentence correct (tick) or incorrect (cross)? Say "tick" or "cross".',
+    answerMode: 'normalized_exact',
+    acceptedAnswerShape: '"tick" or "cross" — also accept "correct/incorrect", "right/wrong", "yes/no".',
+    shortAnswerPolicy:
+      'Accept "correct/incorrect", "right/wrong", or "yes/no" as tick/cross equivalents. ' +
+      'Do NOT reject informal equivalents — binary answers are low-production.',
+    studentQuestionPolicy:
+      'Brief answer in one sentence. Return: "Back to the sentence — tick or cross?"',
+    firstRetry:
+      'Ask student to re-examine: "Read the sentence carefully once more — does every part sound natural and correct to you?"',
+    secondRetry:
+      'Narrow without grammar coaching: "Look at [the relevant part of the sentence] — does that seem right in context?"',
+    finalReveal:
+      'Say "It is a [tick/cross]." Add one brief sentence. Move immediately to next item — do NOT ask student to repeat.',
+    completionRule:
+      'Complete when student gives the correct tick/cross equivalent. Fast pace — no repeat required after reveal.',
+    engagementChallengeRule:
+      'If student seems unsure: "Look at the sentence one more time — something specific will give it away."',
+    forbiddenBehavior: [
+      'Do NOT run a full 4-turn grammar coaching ladder.',
+      'Do NOT ask student to repeat after reveal — move on immediately.',
+      'Do NOT explain the grammar rule before student attempts.',
+      'Do NOT turn this into a grammar analysis or production exercise.',
+      'Do NOT coach verb form, tense, or agreement before first attempt.',
+    ],
+    teacherTone: 'encouraging',
+  },
+
 }
 
 // Shared soft-speaking protocol for roleplay and similar types

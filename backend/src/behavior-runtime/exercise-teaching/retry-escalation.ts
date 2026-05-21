@@ -31,7 +31,10 @@ export function buildRetryEscalation(input: RetryEscalationInput): RetryEscalati
   const hintPolicy  = getHintPolicy(exerciseType)
   const retryPolicy = getRetryPolicy(exerciseType)
 
-  const shouldReveal = correctionTurn === 'D' || (correctionTurn === 'B' && hintPolicy.revealOnTurn === 'B')
+  const shouldReveal =
+    correctionTurn === 'D' ||
+    (correctionTurn === 'B' && hintPolicy.revealOnTurn === 'B') ||
+    (correctionTurn === 'C' && hintPolicy.revealOnTurn === 'C')
 
   const hintMap: Record<string, string> = {
     A: hintPolicy.turnA,
@@ -52,10 +55,16 @@ export function buildRetryEscalation(input: RetryEscalationInput): RetryEscalati
   ]
 
   if (shouldReveal) {
-    lines.push(
-      `REVEAL REQUIRED: Say "The answer is ${correctAnswer}." + brief rule + ask student to repeat.`,
-      `After student repeats correctly: confirm once and advance to next item.`,
-    )
+    if (retryPolicy.requireRepeatAfterReveal) {
+      lines.push(
+        `REVEAL REQUIRED: Say "The answer is ${correctAnswer}." + brief rule + ask student to repeat.`,
+        `After student repeats correctly: confirm once and advance to next item.`,
+      )
+    } else {
+      lines.push(
+        `REVEAL REQUIRED: Say "The answer is ${correctAnswer}." + one brief explanation. Move immediately to the next item — do NOT ask student to repeat.`,
+      )
+    }
   } else {
     lines.push(`Do NOT reveal the answer yet. Hint only.`)
   }
