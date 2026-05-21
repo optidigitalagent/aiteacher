@@ -85,6 +85,19 @@ export const TEACHER_COMMUNICATION_PRINCIPLES = [
   'Praise the thinking not the person — avoid hollow effusive praise',
 ] as const
 
+export const CORRECTION_PHRASE_STARTERS = [
+  'Almost —',
+  'Close —',
+  'Not quite —',
+  "You're on the right track, but —",
+  'Good thinking, but —',
+  'Nearly —',
+  'I see the idea, but —',
+] as const
+
+export const CORRECTION_PHRASE_ROTATION_RULE =
+  'Rotate correction starters naturally across items. Do not repeat the same opener twice in a row. Do not over-praise. Keep each correction to one concise sentence.'
+
 export const EXERCISE_RUNTIME_MODE_MAP: Record<string, ExerciseRuntimeMode> = {
   fill_gap:                     'deterministic_sequential',
   error_correction:             'deterministic_sequential',
@@ -138,8 +151,8 @@ export const SKIP_POLICY = {
 export const CORRECTION_LADDER_DESCRIPTIONS = {
   A: 'Ask ONE guiding question. Give ZERO part of the answer. Target the specific knowledge gap.',
   B: 'Give ONE small hint. Do not reveal the full answer. Narrow the student\'s search space.',
-  C: 'Give a STRONGER hint. The answer is nearly deducible from this hint.',
-  D: 'REVEAL the full correct answer. Explain why briefly. Ask student to repeat the correct form.',
+  C: 'Give a STRONGER hint. The answer is nearly deducible from this hint. Do NOT reveal the corrected word yet.',
+  D: 'Briefly acknowledge difficulty — e.g. "This one is tricky" or "Many learners miss this one." Then REVEAL the full correct answer. Explain why in one sentence. Ask student to repeat the correct form.',
 } as const
 
 export const ANTI_HALLUCINATION_RULES = [
