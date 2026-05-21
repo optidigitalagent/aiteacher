@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid'
 import { requireAuth } from '../auth/middleware.js'
 import { query } from '../db/postgres.js'
 import { buildCheckout, verifySignature, decodeData } from './liqpay.js'
-import { activateSubscription } from './subscription-service.js'
+import { activateSubscription, getSubscription } from './subscription-service.js'
 
 const router = Router()
 
@@ -168,6 +168,37 @@ router.post('/billing/liqpay/callback', async (req: Request, res: Response) => {
   }
 
   res.json({ ok: true })
+})
+
+// POST /billing/activate — mock/dev activation; requires ENABLE_MOCK_BILLING=1
+// Auth is required. Does NOT bypass subscription checks — it provisions a real
+// subscription record that the normal lesson gate reads. Only available when
+// ENABLE_MOCK_BILLING env var is explicitly set to '1'.
+const MOCK_BILLING_ENABLED = process.env.ENABLE_MOCK_BILLING === '1'
+
+router.post('/billing/activate', requireAuth, async (req: Request, res: Response) => {
+  if (!MOCK_BILLING_ENABLED) {
+    res.status(404).json({ error: 'Not found' })
+    return
+  }
+
+  const userId = req.user!.userId
+  const { plan_id } = req.body as { plan_id?: unknown }
+
+  if (typeof plan_id !== 'string' || !plan_id.trim()) {
+    res.status(400).json({ error: 'plan_id is required' })
+    return
+  }
+
+  try {
+    await activateSubscription(userId, plan_id.trim())
+    const sub = await getSubscription(userId)
+    console.log(`[billing:activate] mock activated user=${userId} plan=${plan_id}`)
+    res.json({ ok: true, subscription: sub })
+  } catch (err) {
+    console.error('[billing:activate] error:', err instanceof Error ? err.message : err)
+    res.status(500).json({ error: 'Activation failed' })
+  }
 })
 
 export default router

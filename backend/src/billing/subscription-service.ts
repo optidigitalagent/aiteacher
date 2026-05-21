@@ -46,7 +46,8 @@ export async function getSubscription(userId: string): Promise<SubscriptionInfo 
   }
 }
 
-export async function activateSubscription(userId: string): Promise<void> {
+export async function activateSubscription(userId: string, planIdOverride?: string): Promise<void> {
+  const effectivePlanId = planIdOverride ?? PLAN_ID
   await withTransaction(async (client) => {
     const current = await client.query<{
       subscription_status: string
@@ -88,10 +89,10 @@ export async function activateSubscription(userId: string): Promise<void> {
          paid_lessons_limit  = EXCLUDED.paid_lessons_limit,
          paid_lesson_minutes = EXCLUDED.paid_lesson_minutes,
          updated_at          = NOW()`,
-      [userId, PLAN_ID, expiresAt, PLAN_TOTAL_MINUTES, PLAN_LESSONS_LIMIT, PLAN_LESSON_MINUTES],
+      [userId, effectivePlanId, expiresAt, PLAN_TOTAL_MINUTES, PLAN_LESSONS_LIMIT, PLAN_LESSON_MINUTES],
     )
 
-    console.log(`[billing] subscription activated user=${userId} expiresAt=${expiresAt.toISOString()} minutes=${PLAN_TOTAL_MINUTES}`)
+    console.log(`[billing] subscription activated user=${userId} plan=${effectivePlanId} expiresAt=${expiresAt.toISOString()} minutes=${PLAN_TOTAL_MINUTES}`)
   })
 }
 
