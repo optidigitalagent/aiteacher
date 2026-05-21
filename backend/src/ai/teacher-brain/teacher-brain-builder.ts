@@ -9,7 +9,15 @@
 import type { LessonState } from '../../lesson/types.js'
 import type { TeacherBrainContext } from './teacher-brain.types.js'
 import { CORRECTION_LADDER_DESCRIPTIONS, TEACHER_COMMUNICATION_PRINCIPLES } from './teacher-brain.constants.js'
-import { getRulesForMode, ANTI_CHAOS_RULES, SKIP_RULES, HUMAN_TUTOR_RULES } from './teacher-brain-rules.js'
+import {
+  getRulesForMode,
+  ANTI_CHAOS_RULES,
+  SKIP_RULES,
+  HUMAN_TUTOR_RULES,
+  EXERCISE_RULES,
+  CORRECTION_RULES,
+  SPEAKING_RULES,
+} from './teacher-brain-rules.js'
 import { selectExamples, formatExampleForPrompt } from './teacher-brain-examples.js'
 import {
   normalizeTeacherBrainContext,
@@ -155,7 +163,7 @@ function buildIsolationContractSection(): string {
     '  • "Let\'s stay on this item. Try once more." — for correction state.',
     '  • "You\'re close. Look at the auxiliary verb." — specific targeted hint.',
     '  • "I need the current exercise state before continuing." — state missing.',
-    '  • NEVER say "I\'m thinking...", "Could you repeat that?", "What do you want to do?"',
+    '  • NEVER say "I\'m thinking...", "Let me break it down", "Could you repeat that?", "What do you want to do?"',
   ].join('\n')
 }
 
@@ -274,20 +282,54 @@ function buildRuntimeTruthSection(ctx: TeacherBrainContext): string {
   return lines.join('\n')
 }
 
+// Phase 6B.1 fix: separate rule groups per mode guarantee full visibility of
+// CORRECTION_RULES without relying on a flat slice across heterogeneous groups.
+// Exported for QA assertions — do NOT inline into the builder.
+export type BehaviorContractRuleGroup = { label: string; rules: readonly string[] }
+
+export function selectBehaviorContractRules(mode: string): BehaviorContractRuleGroup[] {
+  switch (mode) {
+    case 'deterministic_sequential':
+    case 'matching_sequential':
+      return [
+        { label: 'EXERCISE RULES',    rules: EXERCISE_RULES.rules },
+        { label: 'CORRECTION RULES',  rules: CORRECTION_RULES.rules },
+      ]
+    case 'soft_speaking':
+    case 'warmup_activation':
+      return [
+        { label: 'SPEAKING RULES',    rules: SPEAKING_RULES.rules },
+      ]
+    case 'grammar_explanation':
+      return [
+        { label: 'EXERCISE RULES',    rules: EXERCISE_RULES.rules },
+      ]
+    case 'unsupported':
+      return []
+    default:
+      return [
+        { label: 'EXERCISE RULES',    rules: EXERCISE_RULES.rules },
+        { label: 'ANTI-CHAOS RULES',  rules: (ANTI_CHAOS_RULES.rules as readonly string[]).slice(0, 8) },
+      ]
+  }
+}
+
 function buildBehaviorContractSection(ctx: TeacherBrainContext): string {
   const mode = ctx.exercise.runtimeMode
-  const rules = getRulesForMode(mode)
+  const groups = selectBehaviorContractRules(mode)
 
-  if (rules.length === 0) return ''
+  if (groups.length === 0) return ''
 
-  const topRules = (rules as readonly string[]).slice(0, 6).map(r => `• ${r}`).join('\n')
+  const formatted = groups
+    .map(g => `[${g.label}]\n${g.rules.map(r => `• ${r}`).join('\n')}`)
+    .join('\n')
 
   let correctionNote = ''
   if (ctx.exercise.correctionTurn && mode !== 'soft_speaking' && mode !== 'grammar_explanation') {
     correctionNote = `\nCURRENT TURN ${ctx.exercise.correctionTurn}: ${CORRECTION_LADDER_DESCRIPTIONS[ctx.exercise.correctionTurn]}`
   }
 
-  return `── EXERCISE BEHAVIOR CONTRACT (${mode}) ──\n${topRules}${correctionNote}`
+  return `── EXERCISE BEHAVIOR CONTRACT (${mode}) ──\n${formatted}${correctionNote}`
 }
 
 function buildForbiddenSection(ctx: TeacherBrainContext): string {
