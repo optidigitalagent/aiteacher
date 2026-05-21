@@ -41,6 +41,22 @@ import {
   lookupVocabEntry,
 } from '../demo/abuse-guard.js'
 import { DEMO_AI_CONFIG, canUseDemoAI, DEMO_TTS_CONFIG, canUseDemoTTS } from '../demo/ai-config.js'
+import {
+  getOrCreateContinuity,
+  updateContinuityFromStudentInput,
+  detectUncertainty,
+  chooseSupportResponse,
+  chooseTransitionAck,
+} from '../runtime/conversation-continuity.js'
+import {
+  detectAndExplainVocabQuestion,
+  chooseShortAnswerReaction,
+  softenExpansionRequest,
+  chooseHumanReaction,
+  chooseCuriousFollowup,
+  chooseReflectiveTransition,
+  chooseCorrectionBridge,
+} from '../runtime/conversation-moves.js'
 
 const router = Router()
 
@@ -396,6 +412,16 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt), ...convRetry('moderation') })
         return
       }
+      // Uncertainty gate — "I don't know" before classifyInput gives a supportive response
+      // instead of the generic CONFUSED path. Only fires for short answers dominated by uncertainty.
+      if (detectUncertainty(answer)) {
+        const continuity = getOrCreateContinuity(sessionId)
+        const supportMsg = chooseSupportResponse(continuity, sessionId)
+        updateContinuityFromStudentInput(continuity, answer, 'support', sessionId)
+        console.log(`[demo-conversation] stepKey=warm_up responseType=UNCERTAINTY_SUPPORT expectsStudentReply=true`)
+        res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(supportMsg, stepPrompt), ...convRetry('uncertainty_expressed') })
+        return
+      }
       const classified = classifyInput(answer, expectedStep.minLength)
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=warm_up')
@@ -441,6 +467,17 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         correctionMessage = classified.correction
       }
       score = { feedback: feedbackMessage }
+      const continuityWu = getOrCreateContinuity(sessionId)
+      updateContinuityFromStudentInput(continuityWu, answer, 'acknowledge', sessionId)
+      // Topic callback: replace short/generic feedback with a human reaction when topic detected.
+      // buildWarmUpFeedback handles specific patterns well; this enriches only the generic fallbacks.
+      if (feedbackMessage.length < 55 && continuityWu.recentTopics.length > 0) {
+        const wuReaction = chooseHumanReaction(continuityWu, sessionId)
+        if (wuReaction) {
+          console.log(`[demo-conversation] warm_up reaction_first_path_used topic=${continuityWu.recentTopics[0]}`)
+          feedbackMessage = wuReaction
+        }
+      }
 
     } else if (stepKey === 'warm_up_followup') {
       const stepPrompt = expectedStep.prompt ?? ''
@@ -488,7 +525,14 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         if (wuFollowupRetries < 1) {
           await incrementStepRetries(sessionId, stepKey)
           await incrementAttempts(sessionId)
-          const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with your actual reasoning.", stepPrompt)
+          const continuityWuf0 = getOrCreateContinuity(sessionId)
+          // When topic is known, a curious followup is more conversational than a generic retry prompt.
+          const hasTopic0 = continuityWuf0.recentTopics.length > 0
+          const expansionPrompt = hasTopic0
+            ? chooseCuriousFollowup(continuityWuf0, sessionId)
+            : chooseShortAnswerReaction(continuityWuf0, sessionId)
+          if (hasTopic0) console.log(`[demo-conversation] warm_up_followup curious_followup_selected topic=${continuityWuf0.recentTopics[0]}`)
+          const msg = ensureTeacherContinues(expansionPrompt, stepPrompt)
           console.log(`[demo-conversation] stepKey=warm_up_followup responseType=INVALID_ANSWER expectsStudentReply=true mayAdvance=false reason=short_answer_retry`)
           res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convRetry('short_answer_retry') })
           return
@@ -497,13 +541,20 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         // buildFollowUpFeedback would say "give me more" which contradicts advancing.
         wuFollowupShortAccept = true
       }
+      const continuityWuf = getOrCreateContinuity(sessionId)
       feedbackMessage = wuFollowupShortAccept
-        ? 'Right — I\'ve got what I need.'
+        ? chooseTransitionAck(continuityWuf, sessionId)
         : buildFollowUpFeedback(session, answer, 'warm_up_followup')
+      // Replace short/generic fallback ("Yeah — that makes sense.") with a reflective transition.
+      if (!wuFollowupShortAccept && feedbackMessage.length < 50) {
+        console.log(`[demo-conversation] warm_up_followup conversational_transition_used`)
+        feedbackMessage = chooseReflectiveTransition(continuityWuf, sessionId)
+      }
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
         correctionMessage = classified.correction
       }
       score = { feedback: feedbackMessage }
+      updateContinuityFromStudentInput(continuityWuf, answer, 'followup', sessionId)
 
     } else if (stepKey === 'grammar_mcq') {
       // Server-side MCQ — no AI, no classification needed
@@ -551,6 +602,15 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         return
       }
 
+      // ── 0c-extra. Inline vocab question — catches "what means X" patterns ─────
+      const sfInlineVocab = detectAndExplainVocabQuestion(answer, sessionId)
+      if (sfInlineVocab) {
+        console.log(`[demo-vocab] inline_explanation step=speaking_followup`)
+        const sfVocabMsg = `${sfInlineVocab}\n\nNow, back to the question:`
+        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(sfVocabMsg, stepPrompt), ...convClarification('vocab_help') })
+        return
+      }
+
       const classified = classifyInput(answer, expectedStep.minLength)
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=speaking_followup')
@@ -573,7 +633,9 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         if (sfRetries < 1) {
           await incrementStepRetries(sessionId, stepKey)
           await incrementAttempts(sessionId)
-          const msg = ensureTeacherContinues("Tell me a bit more — give me a full sentence with that idea.", stepPrompt)
+          const continuitySf0 = getOrCreateContinuity(sessionId)
+          const expansionPrompt = softenExpansionRequest(continuitySf0, sessionId)
+          const msg = ensureTeacherContinues(expansionPrompt, stepPrompt)
           console.log(`[demo-conversation] stepKey=speaking_followup responseType=INVALID_ANSWER expectsStudentReply=true mayAdvance=false reason=short_answer_retry`)
           res.status(422).json({ code: 'INVALID_ANSWER', message: msg, ...convRetry('short_answer_retry') })
           return
@@ -581,12 +643,19 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         // Already asked once — accept with a neutral close, not "give me more".
         sfShortAccept = true
       }
+      const continuitySf = getOrCreateContinuity(sessionId)
       feedbackMessage = sfShortAccept
-        ? 'Yeah — that makes sense.'
+        ? chooseTransitionAck(continuitySf, sessionId)
         : buildFollowUpFeedback(session, answer, 'speaking_followup')
+      // Replace short/generic fallbacks with a reflective transition for a cleaner handoff.
+      if (!sfShortAccept && feedbackMessage.length < 45) {
+        console.log(`[demo-conversation] speaking_followup conversational_transition_used`)
+        feedbackMessage = chooseReflectiveTransition(continuitySf, sessionId)
+      }
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
         correctionMessage = classified.correction
       }
+      updateContinuityFromStudentInput(continuitySf, answer, 'followup', sessionId)
       score = { feedback: feedbackMessage }
 
     } else if (stepKey === 'speaking_task' || stepKey === 'writing_task') {
@@ -631,6 +700,16 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       if (detectAcknowledgment(answer)) {
         console.log(`[demo-ack] step=${stepKey}`)
         res.status(422).json({ code: 'ACKNOWLEDGMENT', message: ensureTeacherContinues("Good — now let's get back to it.", stepPrompt), ...convClarification('acknowledgment') })
+        return
+      }
+
+      // ── 0e. Inline vocab question — catches "what means X", "what's mean X" patterns ──
+      // Extra safety net for phrase questions that classifyInput's detectVocabWord may miss.
+      const inlineVocab = detectAndExplainVocabQuestion(answer, sessionId)
+      if (inlineVocab) {
+        console.log(`[demo-vocab] inline_explanation step=${stepKey}`)
+        const vocabMsg = `${inlineVocab}\n\nNow, back to the task:`
+        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(vocabMsg, stepPrompt), ...convClarification('vocab_help') })
         return
       }
 
@@ -897,9 +976,11 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         ) {
           await incrementStepRetries(sessionId, stepKey)
           await incrementAttempts(sessionId)
-          const corrLabels = ['Native speakers would usually say', 'A smoother version', 'You could also say', 'In natural English']
+          const continuityQr = getOrCreateContinuity(sessionId)
+          const corrBridge = chooseCorrectionBridge(continuityQr, sessionId)
+          const corrLabels = ['native speakers would usually say', 'a smoother version would be', 'you could also say', 'in natural English']
           const corrLabel = corrLabels[qualityRetryCount % corrLabels.length]!
-          const corrPart = score.correction ? `\n\n${corrLabel}: "${score.correction}"` : ''
+          const corrPart = score.correction ? `\n\n${corrBridge} ${corrLabel}: "${score.correction}"` : ''
           console.log(`[demo-conversation] stepKey=${stepKey} responseType=QUALITY_RETRY expectsStudentReply=true mayAdvance=false reason=low_score score=${score.score}`)
           res.status(422).json({
             code: 'QUALITY_RETRY',
@@ -1307,8 +1388,19 @@ router.post('/demo/tts', requireAuth, async (req: Request, res: Response): Promi
     })
 
   } catch (err) {
-    console.error('[demo/tts] error:', err instanceof Error ? err.message : err)
-    res.status(500).json({ code: 'TTS_FAILED', message: 'Voice generation failed' })
+    const isApiErr = err != null && typeof err === 'object' && 'status' in err
+    const errStatus = isApiErr ? (err as { status: number }).status : null
+    const errMsg = err instanceof Error ? err.message : String(err)
+    if (errStatus === 429) {
+      console.warn(`[demo-tts] openai_rate_limit type=${messageType} chars=${text.length}`)
+    } else if (errStatus === 401 || errStatus === 403) {
+      console.error(`[demo-tts] openai_auth_error status=${errStatus} type=${messageType}`)
+    } else {
+      console.error(`[demo-tts] openai_error status=${errStatus ?? 'unknown'} msg="${errMsg.slice(0, 120)}" type=${messageType}`)
+    }
+    // Degrade gracefully: text bubble is already visible in the frontend — lesson continues.
+    console.log(`[demo-tts] degrading_gracefully type=${messageType} text_visible=true audio_skipped=true`)
+    res.status(500).json({ code: 'TTS_FAILED', message: 'Voice generation failed', textAvailable: true })
   }
 })
 

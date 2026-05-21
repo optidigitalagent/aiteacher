@@ -2,7 +2,6 @@ import {
   TOPIC_PACKS,
   TEACHER_TONES,
   GRAMMAR_PACKS,
-  CONFIDENCE_INTROS,
   MISSION_INTROS,
 } from './script-data.js'
 
@@ -275,10 +274,15 @@ export function buildWarmUpFeedback(_session: DemoSession, answer: string): stri
 
   // YouTube / creator content — detect before "watching nothing" since both can appear together
   if (/\b(youtube|youtuber|mr\.?\s*beast|pewdiepie|channel|vlog)\b/i.test(answer)) {
+    const hasMrBeast = /\bmr\.?\s*beast\b/i.test(answer)
     if (/\b(watching\s+nothing|not\s+watching|nothing\s+right\s+now)\b/i.test(answer)) {
-      return "MrBeast fan, here for lessons right now — good call. Let's use that."
+      return hasMrBeast
+        ? "MrBeast videos are kind of hard to step away from even when you're not actively watching — the challenge scale is absurd. Good context for today."
+        : "Nothing right now — that's fine. YouTube is a good frame to use today."
     }
-    return "YouTube — that gives me a lot to work with. Let's go."
+    return hasMrBeast
+      ? "MrBeast videos are kind of impossible to ignore now — the challenges are huge and a little chaotic. I'll use that today."
+      : "YouTube — that gives me a lot to work with. Let's go."
   }
 
   // Not watching anything right now
@@ -313,7 +317,7 @@ export function buildFollowUpFeedback(session: DemoSession, answer: string, step
   const wordCount = answer.trim().split(/\s+/).filter(Boolean).length
 
   if (wordCount <= 3) {
-    return "Tell me a bit more — one full sentence with that idea."
+    return "What's your reason for that? Connect it into a full sentence."
   }
 
   if (stepKey === 'speaking_followup') {

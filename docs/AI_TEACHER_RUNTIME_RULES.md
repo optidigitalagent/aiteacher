@@ -2,169 +2,497 @@
 
 # PURPOSE
 
-This document defines how the AI teacher (Claude) is constrained within the
-paid lesson runtime. These rules are enforced through the system prompt in
-backend/src/ai/prompt-builder.ts and the orchestrator in
-backend/src/lesson/orchestrator.ts.
+This document defines:
+the core behavioral laws
+of the AI Teacher Runtime.
 
-Read this before modifying any AI prompts or orchestration logic.
+These are NOT implementation details.
 
---------------------------------------------------
-SECTION 1 — RESPONSE FORMAT CONTRACT
---------------------------------------------------
+These are:
+system behavior laws.
 
-# RULE 1 — AI Must Return Strict JSON
+Every Claude session must preserve these rules.
 
-Every Claude response must be valid JSON with this exact shape:
-
-```json
-{
-  "speech": "what you say aloud (short, max 2-3 sentences per turn)",
-  "display_text": "formatted for screen — may use **bold**, rule cards, exercise items",
-  "next_action": "continue_phase | transition_to:PHASE | student_confirmed_reading | rule_stated_correctly | summary_delivered | overview_shown | end_lesson",
-  "exercise": null | { ... exercise object ... },
-  "internal_note": "teaching log (not spoken)"
-}
-```
-
-If Claude returns malformed JSON, `parseSafe()` in claude-handler.ts returns null
-and the `fallback()` response is used: "I'm thinking... could you repeat that?"
-
-# RULE 2 — speech vs display_text Are Different
-
-- `speech` = what TTS reads aloud — keep SHORT (1-3 sentences, one exercise item only)
-- `display_text` = what appears in chat and exercise cards — may be longer, formatted
-
-The AI must NEVER read a full exercise list aloud.
-It says the instruction and first item in speech.
-The full exercise appears in display_text.
-
-# RULE 3 — Max Tokens = 400 Per Turn
-
-Claude API is called with `max_tokens: 400`.
-This is a hard limit defined in backend/src/ai/claude-handler.ts.
-Do NOT increase this. It controls cost AND prevents rambling.
+The goal is:
+to keep the classroom experience
+stable,
+educational,
+deterministic,
+human,
+and production-grade.
 
 --------------------------------------------------
-SECTION 2 — PHASE BEHAVIOR RULES
+SECTION 1 — WHAT THE SYSTEM IS
 --------------------------------------------------
 
-# RULE 4 — Phase Transitions Are Forward-Only
+The AI Teacher Runtime is:
 
-The AI can signal a phase transition using `next_action: "transition_to:PHASE"`.
-The `applyAISignal()` function in transitions.ts blocks backward transitions.
+- a realtime educational runtime
+- a deterministic lesson system
+- a curriculum-driven classroom
+- a structured tutoring environment
+- a voice-first lesson runtime
+- a persistent educational system
 
-Current phase order:
-DIAGNOSTIC → CONTEXT_INPUT → RULE_DISCOVERY → EXERCISES → VOCABULARY → DEEP_THINKING → WRAP_UP → END
+The AI Teacher Runtime is NOT:
 
-Phase 2 will replace this with a structured state machine.
-Until then, this order is fixed.
-
-# RULE 5 — DIAGNOSTIC Phase Rules
-
-- Ask 2 warm-up questions about the section topic
-- Do NOT teach grammar yet
-- After the student responds once → signal `transition_to:CONTEXT_INPUT`
-- Rule-based fallback: after 2 exchanges, transition is forced
-
-# RULE 6 — CONTEXT_INPUT Phase Rules (Focus Mode)
-
-For Grammar sections:
-1. Show the grammar overview card ONCE (`display_text` only, not speech)
-2. Signal `overview_shown`
-3. On next student message — detect readiness vs confusion
-4. If ready → "Good. Exercise 1." + first exercise item + `transition_to:EXERCISES`
-5. Never re-show the card
-
-For Vocabulary/Listening/Reading sections:
-- Skip rule discovery entirely
-- `transition_to:EXERCISES` immediately after section intro
-
-# RULE 7 — EXERCISES Phase Rules
-
-- Present exercises from Student Book OCR text — never invent
-- ONE item per turn — never stack questions
-- Use CORRECTION LADDER (A → B → C → D) for wrong answers
-- Never jump to TURN D without completing A, B, C
-- MANDATORY COMPLETION ANNOUNCEMENT when exercise ends
-- After 6+ exercises → `transition_to:VOCABULARY`
-- `currentExerciseNum` in LessonState tracks which exercise is active
-
-# RULE 8 — Anti-Rambling Rules
-
-The AI must NEVER:
-- Send more than 3 sentences in `speech`
-- Repeat itself across turns
-- Re-show an overview card that was already shown
-- Give unsolicited hints before the student attempts
-- Ask "Are you ready?" more than once per exercise
-
-If same explanation fails twice → change approach entirely.
-
-# RULE 9 — Teacher Personas
-
-Alex: warm but demanding, Socratic, pushes for reasoning
-Emma: warm and encouraging, patient, celebrates effort while maintaining rigor
-
-Both teachers:
-- Follow the same teaching protocol (ALEX_TEACHING_PROTOCOL applies to both)
-- Use the same phase sequence
-- Are grounded in the same textbook content
-- Cannot override exercise or phase behavior
-
-Teacher is set in `LessonState.teacherId` ('alex' | 'emma').
-Teacher name is passed to Claude via `buildSystemPrompt()` context.
+- a chatbot
+- a generic assistant
+- an open-ended AI conversation
+- a motivational companion
+- a freeform GPT tutor
+- an improvisational lesson generator
 
 --------------------------------------------------
-SECTION 3 — CONTENT RULES
+SECTION 2 — CORE EDUCATIONAL PRINCIPLES
 --------------------------------------------------
 
-# RULE 10 — No Invented Textbook Content
+# 1. The Teacher Leads The Lesson
 
-In Focus mode, all exercises must come from the Student Book OCR text.
-If an exercise cannot be found: "I can't locate Exercise N in the text. Let's skip to the next."
+The teacher is:
+the lesson authority.
 
-The AI must NOT invent exercises pretending to be from Focus 2.
+The teacher:
+- guides progression
+- controls pacing
+- controls transitions
+- controls explanations
+- controls exercise flow
 
-# RULE 11 — Absolute Content Lock
-
-In Focus mode, the AI is constrained to the section topic only.
-The system prompt includes an ABSOLUTE CONTENT LOCK block that forbids:
-- Everest/Hillary content (unless section is about it)
-- Past Simple (unless it IS the grammar focus)
-- Any topic not in the Student Book OCR for this section
-
-# RULE 12 — Translate Mode
-
-When student asks for translation (any language):
-- Give: word + Russian translation
-- Pronounce: phonetic with stressed syllable in CAPS
-- Example: one sentence from today's section topic
-- Return to the SAME exercise item (do NOT restart from beginning)
-
-# RULE 13 — Confusion Protocol (STUDENT_CONFUSED)
-
-When frontend sends `student_confused` event (student clicks "I don't understand"):
-- AI presents a MINI TEACHING CARD in `display_text`
-- Card format: Rule / Form / Example 1 / Example 2 / Common mistake / Try this
-- Set `exercise: null` during confusion response
-- After student fills the Try this gap → return to the exercise
+The student should NEVER feel:
+lost,
+unguided,
+or unsupported.
 
 --------------------------------------------------
-SECTION 4 — HISTORY AND CONTEXT RULES
+
+# 2. The Textbook Is The Curriculum Authority
+
+The textbook defines:
+- lesson structure
+- exercises
+- progression
+- reading material
+- vocabulary flow
+- grammar flow
+
+The AI may:
+- explain
+- adapt pacing
+- correct mistakes
+- clarify concepts
+
+The AI may NOT:
+- invent curriculum
+- invent fake textbook exercises
+- replace structured progression
+
 --------------------------------------------------
 
-# RULE 14 — Rolling Conversation History
+# 3. Lessons Must Feel Structured
 
-Claude receives the last 8 exchanges (16 messages) via Redis lesson context key.
-`trimHistory()` in prompt-builder.ts enforces this.
-History is stored per lesson, not per session (survives reconnects within same lesson).
+Every lesson must always communicate:
+- what we are doing
+- why we are doing it
+- what comes next
+- current objective
+- current exercise
 
-# RULE 15 — RAG Context Injection
+The classroom must NEVER feel:
+chaotic,
+random,
+or GPT-like.
 
-`queryRAG()` fetches top-3 Pinecone chunks for the grammar target + lesson topic.
-RAG context is injected into the system prompt.
-RAG context max: 800 tokens (enforced by Pinecone query limit, not code limit).
+--------------------------------------------------
 
-In Focus mode, RAG is used alongside Student Book OCR.
-Student Book OCR takes precedence over RAG for exercise content.
+# 4. Educational Value Over AI Creativity
+
+The system prioritizes:
+educational clarity.
+
+NOT:
+AI creativity.
+
+Creative AI behavior is allowed ONLY if:
+- it improves teaching
+- it improves understanding
+- it preserves lesson structure
+
+--------------------------------------------------
+SECTION 3 — LESSON FLOW RULES
+--------------------------------------------------
+
+# 5. Lessons Must Follow Clear Progression
+
+Progression always follows:
+
+Unit
+→ Section
+→ Exercise
+→ Step
+→ Sentence
+→ Paragraph
+
+The lesson should NEVER:
+jump unpredictably.
+
+--------------------------------------------------
+
+# 6. Exercise State Is Sacred
+
+The runtime must always know:
+- current exercise
+- current item
+- current sentence
+- current paragraph
+- current reading position
+
+This progression must survive:
+- reconnects
+- refreshes
+- save-and-leave
+- websocket interruptions
+
+--------------------------------------------------
+
+# 7. Reading Mode Is Interactive
+
+Reading mode is:
+live teacher-guided reading.
+
+NOT:
+passive speech recognition.
+
+The teacher should:
+- interrupt naturally
+- correct pronunciation
+- guide difficult words
+- continue reading naturally
+
+Only one reading chunk should be visible at a time.
+
+--------------------------------------------------
+
+# 8. Lesson Completion Must Feel Earned
+
+The teacher should:
+- acknowledge completion
+- summarize progress
+- explain strengths
+- explain weaknesses
+- prepare next focus areas
+
+Lesson endings should feel:
+human,
+educational,
+meaningful.
+
+--------------------------------------------------
+SECTION 4 — AI BEHAVIOR RULES
+--------------------------------------------------
+
+# 9. The Teacher Must Sound Human
+
+The teacher should sound:
+- concise
+- educational
+- natural
+- structured
+- responsive
+
+Avoid:
+- GPT essays
+- motivational spam
+- assistant phrasing
+- robotic confirmations
+- repetitive encouragement
+
+--------------------------------------------------
+
+# 10. The Teacher Must Recover Agenda
+
+If the student interrupts:
+the teacher should:
+1. answer naturally
+2. return to the lesson naturally
+
+The lesson must NEVER permanently derail.
+
+--------------------------------------------------
+
+# 11. Explanations Must Be Contextual
+
+The teacher explains:
+ONLY what matters right now.
+
+Avoid:
+- giant grammar lectures
+- broad theory dumps
+- unrelated examples
+
+The classroom should feel:
+interactive,
+not lecture-based.
+
+--------------------------------------------------
+
+# 12. Personality Must Never Break Structure
+
+Emma:
+- warm
+- supportive
+- patient
+
+Alex:
+- structured
+- concise
+- disciplined
+
+BUT:
+both must still preserve:
+- pacing
+- lesson structure
+- progression integrity
+- educational flow
+
+--------------------------------------------------
+SECTION 5 — VOICE & REALTIME RULES
+--------------------------------------------------
+
+# 13. Voice Interaction Must Feel Natural
+
+The runtime should support:
+- interruptions
+- quick responses
+- conversational flow
+- natural pauses
+- natural continuation
+
+The classroom should NEVER feel:
+laggy,
+robotic,
+or chaotic.
+
+--------------------------------------------------
+
+# 14. Teacher Speech Has Priority
+
+While teacher audio is playing:
+the runtime must avoid:
+- echo loops
+- self-transcription
+- overlapping speech
+
+--------------------------------------------------
+
+# 15. Mic Lifecycle Must Be Controlled
+
+The mic must NEVER:
+stay permanently open.
+
+The system should support:
+controlled speaking turns.
+
+--------------------------------------------------
+
+# 16. Speaking State Must Be Accurate
+
+The runtime must correctly know:
+- when teacher audio actually finishes
+- when student speaking starts
+- when interruptions happen
+- when playback queues end
+
+--------------------------------------------------
+SECTION 6 — RESUME & PERSISTENCE RULES
+--------------------------------------------------
+
+# 17. Lessons Must Survive Reconnects
+
+The classroom should survive:
+- websocket disconnects
+- refreshes
+- temporary network failure
+- save-and-leave
+
+The student should feel:
+the lesson never broke.
+
+--------------------------------------------------
+
+# 18. Resume Must Be Exact
+
+Resume restores:
+- exercise position
+- reading position
+- remaining time
+- teacher context
+- reflection context
+- active objective
+
+NOT:
+approximate lesson state.
+
+--------------------------------------------------
+
+# 19. Persistent Memory Must Be Educational
+
+The system may remember:
+- recurring grammar mistakes
+- pronunciation weaknesses
+- vocabulary struggles
+- pacing difficulties
+
+The system must NOT:
+become creepy AI memory.
+
+--------------------------------------------------
+SECTION 7 — COST & PERFORMANCE RULES
+--------------------------------------------------
+
+# 20. Runtime Must Be Cost-Aware
+
+Avoid:
+- duplicate AI calls
+- duplicate TTS
+- runaway STT streaming
+- reconnect spam
+- recursive orchestration
+
+--------------------------------------------------
+
+# 21. No Runtime Activity Before Begin Lesson
+
+Before:
+"Begin Lesson"
+
+There must be:
+- no AI calls
+- no TTS
+- no STT
+- no paid runtime consumption
+
+--------------------------------------------------
+
+# 22. Runtime Stability > Feature Quantity
+
+A stable lesson is more important than:
+experimental AI features.
+
+Never sacrifice:
+stability,
+continuity,
+or educational quality
+for flashy behavior.
+
+--------------------------------------------------
+SECTION 8 — UX PRINCIPLES
+--------------------------------------------------
+
+# 23. The Classroom Must Feel Calm
+
+The lesson should feel:
+- guided
+- stable
+- understandable
+- focused
+- intentional
+
+NOT:
+- noisy
+- chaotic
+- unpredictable
+
+--------------------------------------------------
+
+# 24. Students Must Always Understand Context
+
+The student should ALWAYS know:
+- current task
+- lesson goal
+- what to do next
+- what was completed
+
+--------------------------------------------------
+
+# 25. The System Must Feel Professional
+
+The runtime should feel like:
+a commercial learning platform.
+
+NOT:
+a hacked AI demo.
+
+--------------------------------------------------
+SECTION 9 — ENGINEERING PRINCIPLES
+--------------------------------------------------
+
+# 26. Incremental Evolution Only
+
+The runtime evolves:
+incrementally.
+
+Avoid:
+massive rewrites,
+architecture resets,
+or parallel runtime systems.
+
+--------------------------------------------------
+
+# 27. Preserve Stable Systems
+
+If a subsystem is stable:
+DO NOT rewrite it.
+
+--------------------------------------------------
+
+# 28. Backend Owns Truth
+
+The backend always owns:
+- progression
+- billing
+- persistence
+- runtime authority
+- reconnect state
+
+Frontend renders:
+state from backend authority.
+
+--------------------------------------------------
+
+# 29. Observability Is Mandatory
+
+Production systems require:
+- runtime logs
+- reconnect logs
+- lesson lifecycle logs
+- AI lifecycle logs
+- billing logs
+- provider fallback logs
+
+--------------------------------------------------
+
+# 30. Runtime Determinism Is Critical
+
+The same lesson state should produce:
+consistent runtime behavior.
+
+The system should avoid:
+random,
+chaotic,
+or unpredictable runtime branching.
+
+--------------------------------------------------
+FINAL PRINCIPLE
+--------------------------------------------------
+
+The AI Teacher Runtime should feel like:
+
+a real structured online English lesson
+with a professional human-like teacher,
+persistent educational continuity,
+stable realtime voice interaction,
+and deterministic curriculum progression.
+
+NOT:
+a GPT conversation pretending to teach.

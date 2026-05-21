@@ -64,6 +64,7 @@ import {
   traceRuntimeError,
 } from '../observability/index.js'
 import { hashUserId } from '../observability/langfuse-client.js'
+import { recordTraceEvent } from '../runtime/index.js'
 import { recordStudentMessage, recordTeacherMessage, recordSystemEvent } from '../lesson/transcript-recorder.js'
 import { classifyVoiceTranscript } from '../voice/voice-turn-stabilizer.js'
 
@@ -531,6 +532,15 @@ async function sendLessonResync(ws: WebSocket, meta: ClientMeta): Promise<void> 
       studentTurnAllowed:  !meta.ttsActive && !meta.aiProcessing,
       remainingMs,
       recentTranscript,
+    })
+    recordTraceEvent({
+      sessionId:    meta.sessionId,
+      userIdHash:   hashUserId(meta.userId),
+      eventType:    'lesson_resync_emitted',
+      payloadSummary: `exercise=${cursor?.exerciseNumber ?? 0} items=${cursor?.itemTotal ?? 0} transcript=${recentTranscript?.length ?? 0} visible=${hasVisiblePayload}`,
+      cursorVersion:  typeof cursor?.cursorVersion === 'number' ? cursor.cursorVersion : undefined,
+      exerciseType:   cursor?.exerciseType ?? undefined,
+      severity:       'info',
     })
     console.log(
       `[ws:reconnect] resync_sent lessonId=${meta.lessonId} ` +
@@ -1272,6 +1282,16 @@ async function handleFocusLessonStart(
       console.log(`[diag] getCursor_result lessonId=${lessonId} cursor=${initCursor ? `ex#${initCursor.exerciseNumber} type=${initCursor.exerciseType} items=${initCursor.itemTotal}` : 'NULL'}`)
       if (initCursor) {
         send(ws, { type: 'exercise_cursor_updated', cursor: initCursor })
+        recordTraceEvent({
+          sessionId:    meta.sessionId,
+          userIdHash:   hashUserId(meta.userId ?? null),
+          eventType:    'exercise_cursor_updated_emitted',
+          payloadSummary: `exercise=#${initCursor.exerciseNumber} type=${initCursor.exerciseType} items=${initCursor.itemTotal} source=init`,
+          cursorVersion:  typeof initCursor.cursorVersion === 'number' ? initCursor.cursorVersion : undefined,
+          exerciseId:     initCursor.exerciseId ?? undefined,
+          exerciseType:   initCursor.exerciseType ?? undefined,
+          severity:       'info',
+        })
         console.log(
           `[engine] init_cursor_emitted exercise=#${initCursor.exerciseNumber}` +
           ` type=${initCursor.exerciseType} items=${initCursor.itemTotal} lessonId=${lessonId}`,
@@ -1812,6 +1832,14 @@ async function processInput(
   const elapsedMs   = meta.lessonStartedAt ? Date.now() - meta.lessonStartedAt : 0
   const remainingMs = Math.max(0, MAX_LESSON_MS - elapsedMs)
 
+  recordTraceEvent({
+    sessionId:    meta.sessionId,
+    userIdHash:   hashUserId(meta.userId),
+    eventType:    'teacher_turn_started',
+    payloadSummary: `input_chars=${text.trim().length} remaining_min=${Math.round(remainingMs / 60_000)}`,
+    severity:     'debug',
+  })
+
   // Inject off-topic recovery guard only when the student input actually looks like
   // a side question or meta-request. Short exercise answers ("Stupid", "A", "letter B",
   // "negative") must NOT trigger recovery — they belong to exercise answer handling.
@@ -2059,6 +2087,14 @@ async function processInput(
   if (!result) return
   meta.aiCallCount++
 
+  recordTraceEvent({
+    sessionId:    meta.sessionId,
+    userIdHash:   hashUserId(meta.userId),
+    eventType:    'teacher_turn_completed',
+    payloadSummary: `phase=${result.phase} chars=${result.text?.length ?? 0}`,
+    severity:     'info',
+  })
+
   traceTeacherGeneration(meta.lessonId ?? '', {
     phase:          result.phase,
     responseLength: result.text?.length ?? 0,
@@ -2079,6 +2115,13 @@ async function processInput(
           ` current=item${(canonicalCursor?.itemIndex ?? 0) + 1}:exercise#${canonicalCursor?.exerciseNumber ?? '?'}`,
         )
         guardedText = guardResult.text
+        recordTraceEvent({
+          sessionId:    meta.sessionId,
+          userIdHash:   hashUserId(meta.userId),
+          eventType:    'guard_triggered',
+          payloadSummary: `guard=stale_item blocked="${(guardResult.blockedPhrase ?? '').slice(0, 60)}" exercise=#${canonicalCursor?.exerciseNumber ?? '?'} item=${(canonicalCursor?.itemIndex ?? 0) + 1}`,
+          severity:     'warn',
+        })
       }
     } catch { /* non-fatal — send original text */ }
 
@@ -2096,6 +2139,13 @@ async function processInput(
           ` lessonId=${meta.lessonId}`,
         )
         guardedText = execGuard.text
+        recordTraceEvent({
+          sessionId:    meta.sessionId,
+          userIdHash:   hashUserId(meta.userId),
+          eventType:    'runtime_violation_detected',
+          payloadSummary: `guard=execution_output type=${execGuard.violationType} blocked="${(execGuard.violation ?? '').slice(0, 60)}"`,
+          severity:     'warn',
+        })
       }
     } catch { /* non-fatal — send guarded text from stale-item guard */ }
   }
@@ -2275,6 +2325,13 @@ async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise
     meta.interruptPending = false
     meta.ttsActive = false
     console.log(`[paid-lesson] tts_skipped reason=interrupt_pending chars=${text.length}`)
+    recordTraceEvent({
+      sessionId:    meta.sessionId,
+      userIdHash:   hashUserId(meta.userId),
+      eventType:    'tts_skipped',
+      payloadSummary: `reason=interrupt_pending chars=${text.length}`,
+      severity:     'debug',
+    })
     send(ws, { type: 'teacher_turn_end' })
     return
   }
@@ -2285,6 +2342,13 @@ async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise
   // Abort previous AFTER registering new controller so the chain is clean
   try { prev?.abort() } catch { /* ignore abort-chain side effects */ }
   console.log(`[paid-lesson] teacher_speaking start chars=${text.length}`)
+  recordTraceEvent({
+    sessionId:    meta.sessionId,
+    userIdHash:   hashUserId(meta.userId),
+    eventType:    'tts_generated',
+    payloadSummary: `chars=${text.length}`,
+    severity:     'debug',
+  })
   try {
     await speakToClient(
       (msg) => send(ws, msg),
@@ -2877,6 +2941,13 @@ export function attachLessonWS(server: Server): void {
 
     clients.set(ws, meta)
     console.log(`[ws] client connected (user=${jwtUserId} session=${wsSessionId} reattach=${isReattach}), total=${clients.size}`)
+    recordTraceEvent({
+      sessionId:    wsSessionId,
+      userIdHash:   hashUserId(jwtUserId),
+      eventType:    'ws_attach_succeeded',
+      payloadSummary: `reattach=${isReattach} clients=${clients.size}`,
+      severity:     'info',
+    })
 
     if (!isReattach) {
       // Before showing "Begin Lesson", check if this session has a recoverable
@@ -2893,6 +2964,13 @@ export function attachLessonWS(server: Server): void {
       if (!laterRecovered) {
         // No recoverable lesson — signal frontend to show "Begin Lesson"
         console.log(`[ws:ownership] owner_set session=${wsSessionId ?? 'none'} connectionId=${meta.connectionId}`)
+        recordTraceEvent({
+          sessionId:    wsSessionId,
+          userIdHash:   hashUserId(jwtUserId),
+          eventType:    'lesson_ready_emitted',
+          payloadSummary: `session=${wsSessionId ?? 'none'}`,
+          severity:     'info',
+        })
         send(ws, { type: 'lesson_ready', sessionId: wsSessionId })
       }
     } else if (meta.lessonId) {

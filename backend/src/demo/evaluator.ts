@@ -21,19 +21,19 @@ export function buildRuleBasedSpeakingFeedback(answer: string): ScoreRecord {
     return {
       score: 5,
       feedback: hasPast
-        ? "You're on the right track. Add more specific detail — what exactly happened, and how did it make you feel?"
-        : "Good start. Try including a past event — tell me what happened and when.",
+        ? "You're on the right track. What exactly happened, and how did it make you feel? Give me one more specific detail."
+        : "Good start. Can you add a past event — what happened and when? Even one more sentence helps.",
     }
   }
   if (wordCount >= 5) {
     return {
       score: 4,
-      feedback: "That's a start — I need 2–3 full sentences to properly assess your speaking. Try expanding with a reason or example.",
+      feedback: "You've started — give me a bit more. What's one specific detail or reason you can add?",
     }
   }
   return {
     score: 3,
-    feedback: "Very brief. Give me 2–3 full sentences about the topic — I want to see how you actually use English.",
+    feedback: "That's short — tell me a bit more. Try: 'I think… because…' and give me one real idea.",
   }
 }
 
@@ -59,13 +59,13 @@ export function buildRuleBasedWritingFeedback(answer: string): ScoreRecord {
     return {
       score: 5,
       feedback: !hasBecause && !hasConnectors
-        ? "Add 'because' or 'however' to connect your ideas — it makes your writing sound significantly more sophisticated."
+        ? "Add 'because' or 'however' to connect your ideas — it makes a real difference to how the writing reads."
         : "You have the right ideas. Try adding a specific example to back them up.",
     }
   }
   return {
     score: 3,
-    feedback: "Too brief for a writing task. I need at least 3 sentences with reasons and examples to give useful feedback.",
+    feedback: "That's a start — add a reason or example to give it some weight. What makes you say that?",
   }
 }
 

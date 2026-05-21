@@ -27,6 +27,7 @@ import {
   recordNodeSkipped,
   recordMisconception,
 } from './pedagogical-progress-graph.js'
+import { getHintPolicy } from '../behavior-runtime/exercise-teaching/exercise-format-registry.js'
 
 // Inline readiness guard — mirrors normalizeIntentText + READINESS_INTENT_RE in lesson-ws.ts.
 // Kept local to avoid a circular import between lesson/ and ws/ layers.
@@ -129,28 +130,94 @@ function engineValidationToTurn(v: EngineValidationResult): CorrectionTurn {
   return 'C'
 }
 
+// ── Internal: answer-shape hint — detects format mismatch without leaking answer ──
+// Returns a one-line shape hint when the student's answer format is clearly wrong.
+// Never reveals the correct answer. Used to supplement correction turns A/B.
+
+function deriveAnswerShapeHint(
+  exerciseType: string,
+  studentAnswer: string,
+  correctAnswer: string,
+): string | null {
+  const studentWordCount = studentAnswer.trim().split(/\s+/).filter(Boolean).length
+  const correctWordCount = correctAnswer.trim().split(/\s+/).filter(Boolean).length
+
+  switch (exerciseType) {
+    case 'fill_gap':
+    case 'choose_from_box':
+    case 'replace_substitute_words':
+      if (studentWordCount > 3) {
+        return 'Answer shape: say just the missing word — not the full sentence.'
+      }
+      break
+    case 'complete_correct_form':
+      if (studentWordCount > 3) {
+        return 'Answer shape: say just the correct form of the bracketed word — not the full sentence.'
+      }
+      break
+    case 'form_transformation':
+    case 'rewrite_sentence':
+    case 'write_questions':
+    case 'error_correction':
+      if (studentWordCount < 3 && correctWordCount > 3) {
+        return 'Answer shape: say the COMPLETE sentence — all words are required.'
+      }
+      break
+    case 'reconstruction':
+      if (studentWordCount < 3 && correctWordCount > 3) {
+        return 'Answer shape: say all the words in the correct order — a full sentence.'
+      }
+      break
+  }
+  return null
+}
+
+// ── Internal: emit optional runtime trace event ───────────────────────────────
+
+function traceCorrection(event: string, data: Record<string, unknown>): void {
+  if (process.env.ENABLE_RUNTIME_TRACE !== '1') return
+  process.stderr.write(JSON.stringify({ event, ...data, timestamp: Date.now() }) + '\n')
+}
+
 // ── Internal: build correction context block for wrong answers ────────────────
+// Uses exercise-type-specific hint policy from the format registry so corrections
+// reflect the actual knowledge gap (grammar form? word order? vocabulary match?)
+// rather than falling back to generic "ask a guiding question" text.
 
 function buildCorrectionBlock(
   studentAnswer: string,
   correctAnswer: string,
   turn: CorrectionTurn,
+  exerciseType: string,
   currentItem?: string,
 ): string {
+  const hintPolicy = getHintPolicy(exerciseType)
+  const shapeHint  = deriveAnswerShapeHint(exerciseType, studentAnswer, correctAnswer)
+
   const TURN_INSTRUCTIONS: Record<CorrectionTurn, string> = {
-    A: `TURN A (attempt 1): Ask ONE guiding question targeting the exact knowledge gap. Give ZERO part of the answer.\n  Think: what specific rule caused this error? Ask about only that.`,
-    B: `TURN B (attempt 2): Give ONE small hint — one missing piece of information. Do NOT reveal the full answer.`,
-    C: `TURN C (attempt 3): Give a STRONGER hint. Student is still stuck — fill in almost everything.`,
-    D: `TURN D (attempt 4+): REVEAL THE FULL ANSWER NOW.\n  Say: "The answer is ${correctAnswer}. [Brief rule in one sentence]. Now repeat the full sentence after me."\n  Wait for the student to repeat correctly, then advance to the next item.`,
+    A: hintPolicy.turnA,
+    B: hintPolicy.turnB,
+    C: hintPolicy.turnC,
+    D: `TURN D — REVEAL THE FULL ANSWER NOW.\n  Say: "The answer is ${correctAnswer}. [Brief rule in one sentence]. Now repeat the full sentence after me."\n  Wait for the student to repeat correctly, then advance to the next item.`,
   }
-  const retryAnchor = (turn !== 'D' && currentItem)
+
+  const shapeHintLine = shapeHint ? `\nANSWER SHAPE REMINDER: ${shapeHint}` : ''
+  const retryAnchor   = (turn !== 'D' && currentItem)
     ? `\nCLOSING REQUIREMENT: After your ${turn === 'A' ? 'guiding question' : 'hint'}, end with: "Try again — ${currentItem}" so the student knows what to answer.`
     : ''
+
+  traceCorrection('correction_context_built', {
+    exerciseType,
+    turn,
+    hintSource: 'type_specific',
+    shapeHint:  shapeHint ?? null,
+  })
+
   return (
     `[EXERCISE RESULT] Student answered: "${studentAnswer}" — INCORRECT.\n` +
     `Correct answer (Teacher's Book reference — do NOT reveal until TURN D): "${correctAnswer}".\n\n` +
     `CORRECTION LADDER — you are at ${turn === 'D' ? 'TURN D — REVEAL THE ANSWER' : `TURN ${turn}`}:\n` +
-    `${TURN_INSTRUCTIONS[turn]}${retryAnchor}\n\n` +
+    `${TURN_INSTRUCTIONS[turn]}${shapeHintLine}${retryAnchor}\n\n` +
     `Set "exercise": null — do NOT advance the item until the student answers correctly (or until TURN D is resolved).\n` +
     `Do NOT restart at TURN A. You are at TURN ${turn}. Stay here.`
   )
@@ -344,8 +411,21 @@ function buildTeacherContextFromResult(
   } else if (result.action === 'step_wrong' && result.validation) {
     const turn        = engineValidationToTurn(result.validation)
     const currentItem = etr.currentItem || (result.exerciseCursor?.currentItem ?? '')
-    answerBlock = buildCorrectionBlock(studentAnswer, result.validation.correctAnswer, turn, currentItem)
+    traceCorrection('answer_context_derived', {
+      exerciseType:  etr.exerciseType,
+      turn,
+      retryCount:    etr.retryCount,
+      studentAnswer: studentAnswer.slice(0, 60),
+    })
+    answerBlock = buildCorrectionBlock(
+      studentAnswer,
+      result.validation.correctAnswer,
+      turn,
+      etr.exerciseType,
+      currentItem,
+    )
   } else if (result.action === 'step_revealed' && result.validation) {
+    traceCorrection('retry_guidance_selected', { exerciseType: etr.exerciseType, turn: 'D', forced: true })
     answerBlock =
       `[EXERCISE RESULT] Student answered: "${studentAnswer}" — INCORRECT (max retries reached).\n` +
       `TURN D: REVEAL THE FULL ANSWER NOW.\n` +

@@ -99,8 +99,8 @@ function buildVocabManifest(
 }
 
 // ── Grammar manifest ──────────────────────────────────────────────────────────
-// Exercise 1: grammar_focus — explain the target grammar rule (soft speaking)
-// Exercise 2: discussion — talk about the grammar in context
+// Exercise 1: discussion (soft_speaking) — teacher explains the grammar rule, checks comprehension
+// Exercise 2: discussion (soft_speaking) — student applies grammar in context
 
 function buildGrammarManifest(
   sectionId: string,

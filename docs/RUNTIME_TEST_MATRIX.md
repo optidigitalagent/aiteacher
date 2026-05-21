@@ -2,137 +2,589 @@
 
 # PURPOSE
 
-This document defines the test scenarios that must be validated after each phase.
-Tests are organized by phase. Phase 0 establishes the baseline and audit results.
+This document defines:
+mandatory runtime validation scenarios
+for the AI Teacher Paid Lesson Runtime.
 
-No automated test runner exists for runtime behavior — these are manual validation
-scenarios to be checked before marking a phase complete.
+The goal is:
+to prevent regressions,
+runtime instability,
+voice chaos,
+billing corruption,
+and reconnect failures.
 
---------------------------------------------------
-PHASE 0 — RUNTIME AUDIT BASELINE
---------------------------------------------------
-
-# WHAT WAS AUDITED (not tested — observation only)
-
-The following was verified by code inspection:
-
-✅ Backend typecheck passes (npm run build — no errors)
-✅ Frontend typecheck passes (tsc --noEmit — no errors)
-✅ lesson_ready event defined and emitted after WS auth
-✅ aiProcessing guard added to prevent concurrent AI calls
-✅ STT starts immediately on lesson begin (always-on — known gap)
-✅ TTS abort correctly propagated via AbortController
-✅ teacher_turn_end sent after TTS completes
-✅ Billing finalized on WS disconnect
-✅ Resume logic checks Redis TTL and lesson_sessions table
-✅ 50-minute hard cap via setTimeout in ClientMeta.maxDurationRef
-
-# KNOWN GAPS IDENTIFIED (not fixed in Phase 0)
-
-❌ STT stays open during teacher TTS (echo risk) — Phase 1
-❌ isSpeaking can get stuck if teacher_turn_end is lost — Phase 1
-❌ No cost counters persisted to DB (only logged) — future phase
-❌ No SIGTERM handler for billing finalize on process crash — future phase
-❌ Resume restores only rough state (not exact cursor) — Phase 6
+Every major phase MUST pass relevant tests
+before being considered stable.
 
 --------------------------------------------------
-PHASE 1 — VOICE RUNTIME STABILITY TESTS
+SECTION 1 — CORE LESSON FLOW TESTS
 --------------------------------------------------
 
-These tests must be validated manually before Phase 1 is complete:
+# TEST 1 — Begin Lesson Gate
 
-# Test 1.1 — Interrupt Mid-Sentence
-1. Start lesson, wait for teacher to speak
-2. Click mic button during teacher speech
-3. Expected: teacher TTS stops immediately, mic opens, STT begins
-4. Expected: no duplicate teacher response after interrupt
+Goal:
+Verify no runtime activity before lesson start.
 
-# Test 1.2 — Rapid Interrupt Spam
-1. Click interrupt button 5 times in rapid succession
-2. Expected: system stabilizes, no duplicate AI calls, no overlapping audio
+Steps:
+1. Open classroom
+2. Wait on "Begin Lesson"
+3. Monitor logs and network
 
-# Test 1.3 — Reconnect During Teacher Speech
-1. Start lesson, wait for teacher to speak
-2. Close browser tab and reopen during TTS
-3. Expected: resume message sent, no orphaned TTS playing
+Expected:
+- no STT streaming
+- no TTS generation
+- no AI calls
+- no paid minute consumption
+- no websocket lesson activity beyond connection
 
-# Test 1.4 — Reconnect During Student Speech
-1. Open mic, start speaking
-2. Close and reopen tab
-3. Expected: STT stops cleanly, no transcript sent for incomplete utterance
-
-# Test 1.5 — Mic Toggle Cycles
-1. Click mic on → speak → click mic off → click mic on again
-2. Expected: each toggle creates new clean STT session, no overlap
-
-# Test 1.6 — Echo Loop Test
-1. Let teacher speak through speakers (no headphones)
-2. Keep mic enabled during teacher playback
-3. Expected: STT does NOT transcribe teacher audio and trigger new AI call
-
-# Test 1.7 — Multiple Begin Lesson Clicks
-1. Click "Begin Lesson" button 3 times rapidly
-2. Expected: only one lesson created, only one greeting sent, no duplicate STT
-
-# Test 1.8 — Typing While Teacher Speaks
-1. Let teacher speak, simultaneously type in text input
-2. Submit message while teacher is mid-sentence
-3. Expected: message is queued or held, no duplicate AI calls (aiProcessing guard)
+Failure conditions:
+- AI speaks before begin
+- STT starts before begin
+- billing starts before begin
 
 --------------------------------------------------
-PHASE 2 — LESSON STATE MACHINE TESTS
---------------------------------------------------
 
-# Test 2.1 — Lesson Timeout at 50 Minutes
-1. Set PAID_PLAN_LESSON_MINUTES=1 in env for testing
-2. Start lesson, wait for timeout
-3. Expected: SESSION_TIME_LIMIT error sent, WS closed with 4408, billing finalized
+# TEST 2 — Normal Lesson Start
 
-# Test 2.2 — Reconnect Preserves Lesson State
-1. Start lesson, complete 2 exercises
-2. Close tab, wait 30 seconds, reopen
-3. Expected: lesson resumed, exercise number correct, phase correct
+Goal:
+Verify deterministic lesson initialization.
 
-# Test 2.3 — Side Question Returns To Agenda
-1. During EXERCISES phase, type an off-topic question
-2. Expected: teacher answers briefly, then returns to current exercise number
+Steps:
+1. Click Begin Lesson
+2. Observe first teacher turn
 
-# Test 2.4 — Phase Transitions Are Deterministic
-1. Start lesson, observe DIAGNOSTIC → CONTEXT_INPUT transition
-2. Expected: exactly 2 student exchanges before transition in free mode
+Expected:
+- teacher introduces lesson goal
+- teacher references selected section
+- teacher explains current task
+- lesson cursor initialized correctly
+- no duplicated teacher messages
 
-# Test 2.5 — Pause/Resume Preserves Objective
-1. Leave modal → "Save & Exit" → return to lesson
-2. Expected: resumed at same exercise number, same phase
+Failure conditions:
+- GPT-style greeting
+- duplicated intro
+- missing exercise context
+- missing lesson objective
 
 --------------------------------------------------
-PHASE 3 — TEXTBOOK ENGINE TESTS
---------------------------------------------------
 
-# Test 3.1 — Exercise Comes From Textbook
-1. Start section 1.2 lesson
-2. Expected: Exercise 1 content matches Focus 2 Unit 1 textbook exactly
+# TEST 3 — Exercise Progression
 
-# Test 3.2 — Word Box Rendering
-1. Navigate to an exercise with word box
-2. Expected: all words visible, used word marked after correct answer
+Goal:
+Verify deterministic exercise flow.
 
-# Test 3.3 — Reading Paragraph Rendering
-1. Navigate to a reading section
-2. Expected: paragraph displayed, student can read aloud, teacher can interrupt
+Steps:
+1. Complete multiple exercises
+2. Observe transitions
 
-# Test 3.4 — Reconnect During Reading
-1. Start reading exercise, close tab mid-reading
-2. Expected: same paragraph shown on resume, no restart from beginning
+Expected:
+- clear transitions
+- preserved exercise order
+- correct progression
+- visible lesson structure
 
-# Test 3.5 — Cursor Persistence
-1. Complete 3 exercises in section 1.2
-2. Close tab, reconnect
-3. Expected: resume at exercise 4, not exercise 1
+Failure conditions:
+- random jumps
+- skipped exercises
+- invented exercises
+- repeated exercises
 
 --------------------------------------------------
-PHASE 4-8 TESTS
+SECTION 2 — REALTIME VOICE TESTS
 --------------------------------------------------
 
-Tests for Phases 4-8 will be defined in their respective phase prompts.
-Each phase must define its own acceptance criteria tests before implementation.
+# TEST 4 — Teacher Speech Interruption
+
+Goal:
+Verify natural interruption handling.
+
+Steps:
+1. Let teacher speak
+2. Interrupt with mic input
+
+Expected:
+- teacher pauses naturally
+- student input processed
+- teacher responds
+- lesson resumes naturally
+
+Failure conditions:
+- duplicated teacher speech
+- ignored interruption
+- corrupted progression
+- overlapping TTS
+
+--------------------------------------------------
+
+# TEST 5 — Echo Loop Protection
+
+Goal:
+Prevent teacher self-transcription.
+
+Steps:
+1. Use speakers instead of headphones
+2. Let teacher speak loudly
+
+Expected:
+- teacher voice NOT transcribed as student
+- no recursive AI loop
+
+Failure conditions:
+- AI responds to itself
+- self-transcription detected
+- repeated teacher loops
+
+--------------------------------------------------
+
+# TEST 6 — Speaking State Accuracy
+
+Goal:
+Verify speaking lifecycle correctness.
+
+Steps:
+1. Observe long teacher response
+2. Watch mic enable timing
+
+Expected:
+- mic disabled during teacher speech
+- mic re-enabled ONLY after playback ends
+- speaking indicator accurate
+
+Failure conditions:
+- mic activates too early
+- playback still running while mic active
+- stale speaking state
+
+--------------------------------------------------
+
+# TEST 7 — Push-To-Talk Stability
+
+Goal:
+Verify controlled mic lifecycle.
+
+Steps:
+1. Rapidly toggle mic
+2. Interrupt repeatedly
+
+Expected:
+- stable recording lifecycle
+- no stuck recording
+- no duplicate streams
+
+Failure conditions:
+- permanent open mic
+- duplicated STT
+- broken recording state
+
+--------------------------------------------------
+SECTION 3 — READING MODE TESTS
+--------------------------------------------------
+
+# TEST 8 — Realtime Reading Flow
+
+Goal:
+Verify guided reading behavior.
+
+Steps:
+1. Start reading exercise
+2. Read paragraph aloud
+
+Expected:
+- one chunk visible
+- teacher listens live
+- natural pacing
+- reading progression preserved
+
+Failure conditions:
+- full text dump
+- passive transcription mode
+- lost reading cursor
+
+--------------------------------------------------
+
+# TEST 9 — Pronunciation Intervention
+
+Goal:
+Verify live correction behavior.
+
+Steps:
+1. Mispronounce difficult word
+
+Expected:
+- teacher interrupts naturally
+- pronunciation correction provided
+- reading resumes correctly
+
+Failure conditions:
+- reading resets
+- correction ignored
+- duplicated reading flow
+
+--------------------------------------------------
+
+# TEST 10 — Reading Resume
+
+Goal:
+Verify reading persistence.
+
+Steps:
+1. Disconnect during reading
+2. Reconnect
+
+Expected:
+- exact paragraph restored
+- exact sentence restored
+- reading resumes correctly
+
+Failure conditions:
+- reading restart
+- wrong paragraph
+- lost cursor
+
+--------------------------------------------------
+SECTION 4 — RECONNECT TESTS
+--------------------------------------------------
+
+# TEST 11 — Browser Refresh Mid-Lesson
+
+Goal:
+Verify reconnect safety.
+
+Steps:
+1. Refresh browser mid-exercise
+
+Expected:
+- lesson restored
+- progression preserved
+- no duplicate AI turns
+
+Failure conditions:
+- lesson restart
+- duplicated messages
+- lost state
+
+--------------------------------------------------
+
+# TEST 12 — Network Disconnect Recovery
+
+Goal:
+Verify websocket resilience.
+
+Steps:
+1. Simulate internet drop
+2. Restore connection
+
+Expected:
+- clean reconnect
+- preserved runtime
+- stable continuation
+
+Failure conditions:
+- duplicated runtime
+- stale reconnect
+- broken lesson
+
+--------------------------------------------------
+
+# TEST 13 — Save-And-Leave
+
+Goal:
+Verify persistence integrity.
+
+Steps:
+1. Leave during exercise
+2. Resume later
+
+Expected:
+- exact lesson restoration
+- preserved remaining time
+- preserved exercise state
+
+Failure conditions:
+- lesson restart
+- cursor corruption
+- time reset
+
+--------------------------------------------------
+SECTION 5 — CURRICULUM TESTS
+--------------------------------------------------
+
+# TEST 14 — Multi-Unit Progression
+
+Goal:
+Verify curriculum scaling.
+
+Steps:
+1. Test different units/sections
+
+Expected:
+- consistent lesson behavior
+- correct exercise rendering
+- correct transitions
+
+Failure conditions:
+- unit-specific instability
+- broken renderers
+- inconsistent pacing
+
+--------------------------------------------------
+
+# TEST 15 — Exercise Renderer Compatibility
+
+Goal:
+Verify all exercise types.
+
+Test:
+- fill-gap
+- matching
+- reading
+- vocabulary
+- grammar
+- mixed flows
+
+Expected:
+- deterministic rendering
+- stable progression
+
+Failure conditions:
+- malformed exercises
+- missing instructions
+- broken progression
+
+--------------------------------------------------
+SECTION 6 — AI BEHAVIOR TESTS
+--------------------------------------------------
+
+# TEST 16 — Agenda Recovery
+
+Goal:
+Verify lesson continuity after side questions.
+
+Steps:
+1. Ask unrelated question mid-exercise
+
+Expected:
+- concise answer
+- smooth lesson recovery
+
+Failure conditions:
+- lesson derailment
+- forgotten exercise
+- GPT-style tangent
+
+--------------------------------------------------
+
+# TEST 17 — GPT Rambling Prevention
+
+Goal:
+Verify concise teacher behavior.
+
+Steps:
+1. Trigger explanations repeatedly
+
+Expected:
+- concise contextual teaching
+- no essays
+- no fluff
+
+Failure conditions:
+- long monologues
+- repetitive encouragement
+- assistant-style behavior
+
+--------------------------------------------------
+
+# TEST 18 — Personality Consistency
+
+Goal:
+Verify Emma/Alex differentiation.
+
+Expected:
+Emma:
+- warm
+- patient
+- encouraging
+
+Alex:
+- concise
+- structured
+- disciplined
+
+Failure conditions:
+- identical personalities
+- exaggerated personalities
+- structure breakdown
+
+--------------------------------------------------
+SECTION 7 — MEMORY & REFLECTION TESTS
+--------------------------------------------------
+
+# TEST 19 — Persistent Learning Memory
+
+Goal:
+Verify educational memory persistence.
+
+Steps:
+1. Repeat grammar mistake
+2. Start later lesson
+
+Expected:
+- teacher remembers weakness
+- contextual reminder appears
+
+Failure conditions:
+- no memory persistence
+- creepy memory behavior
+- unrelated recall
+
+--------------------------------------------------
+
+# TEST 20 — Lesson Reflection Quality
+
+Goal:
+Verify reflection realism.
+
+Expected:
+- real strengths
+- real weaknesses
+- real pronunciation notes
+- real grammar notes
+
+Failure conditions:
+- generic GPT summary
+- fake observations
+- unrelated feedback
+
+--------------------------------------------------
+SECTION 8 — BILLING & COST TESTS
+--------------------------------------------------
+
+# TEST 21 — Minute Consumption Accuracy
+
+Goal:
+Verify billing integrity.
+
+Expected:
+- accurate minute tracking
+- reconnect-safe billing
+- no duplicate billing
+
+Failure conditions:
+- inflated minutes
+- missing minutes
+- duplicate usage rows
+
+--------------------------------------------------
+
+# TEST 22 — Cost Runaway Prevention
+
+Goal:
+Verify runtime efficiency.
+
+Monitor:
+- AI call count
+- TTS count
+- STT streaming time
+
+Expected:
+- no duplicate generation
+- no recursive loops
+- controlled usage
+
+Failure conditions:
+- runaway orchestration
+- duplicate TTS
+- permanent STT
+
+--------------------------------------------------
+SECTION 9 — STABILITY TESTS
+--------------------------------------------------
+
+# TEST 23 — Full 50-Minute Lesson
+
+Goal:
+Verify long-session stability.
+
+Expected:
+- stable runtime
+- stable memory
+- stable reconnects
+- stable progression
+
+Failure conditions:
+- degradation over time
+- state corruption
+- duplicated events
+
+--------------------------------------------------
+
+# TEST 24 — Rapid Interrupt Spam
+
+Goal:
+Stress-test realtime lifecycle.
+
+Steps:
+1. Rapidly interrupt teacher repeatedly
+
+Expected:
+- stable orchestration
+- stable TTS lifecycle
+- stable mic lifecycle
+
+Failure conditions:
+- runtime chaos
+- duplicated AI turns
+- broken speaking states
+
+--------------------------------------------------
+
+# TEST 25 — Weak Network Simulation
+
+Goal:
+Verify production resilience.
+
+Simulate:
+- packet loss
+- reconnects
+- delayed websocket delivery
+
+Expected:
+- graceful recovery
+- deterministic continuation
+
+Failure conditions:
+- duplicated sessions
+- stale state
+- reconnect corruption
+
+--------------------------------------------------
+SECTION 10 — FINAL ACCEPTANCE CRITERIA
+--------------------------------------------------
+
+The runtime is NOT considered stable unless:
+
+- reconnects are deterministic
+- reading mode stable
+- voice lifecycle stable
+- billing accurate
+- exercise progression deterministic
+- AI behavior teacher-like
+- no GPT-style chaos
+- no recursive voice loops
+- no duplicated runtime ownership
+- lesson continuity preserved
+- curriculum grounding preserved
+- runtime survives long lessons
+- production deployment stable
+
+--------------------------------------------------
+FINAL RULE
+--------------------------------------------------
+
+Passing TypeScript compilation
+does NOT mean
+the runtime is stable.
+
+ONLY:
+real runtime behavior
+determines runtime quality.

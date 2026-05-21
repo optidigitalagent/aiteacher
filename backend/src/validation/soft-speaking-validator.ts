@@ -426,32 +426,46 @@ export function detectAnswerSlots(
 // Instruction-context-aware so the hint fits the exercise.
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Repair prefix rotation — avoids repeating "Good start." on every attempt
+const REPAIR_PREFIXES = [
+  'Good start.',
+  "You've got the idea.",
+  'Right direction.',
+  'Almost there —',
+]
+
+function chooseRepairPrefix(attemptCount: number): string {
+  return REPAIR_PREFIXES[Math.min(attemptCount, REPAIR_PREFIXES.length - 1)]!
+}
+
 export function buildPedagogicalRetry(
   instruction: string,
   missingSlots: AnswerSlot[],
   subjectGuess = 'someone',
+  attemptCount = 0,
 ): string {
   if (missingSlots.length === 0) return ''
 
+  const prefix    = chooseRepairPrefix(attemptCount)
   const firstMissing = missingSlots[0]!
   const norm = normalizeText(instruction)
 
   switch (firstMissing) {
     case 'reason': {
       if (/inspir/.test(norm)) {
-        const sub = subjectGuess !== 'someone' ? subjectGuess : 'they'
-        const prefix = subjectGuess !== 'someone'
-          ? `Good start. ${subjectGuess} inspires you. `
-          : 'Good start. '
-        return `${prefix}Now add why: "${sub} inspires me because ..."`
+        const sub    = subjectGuess !== 'someone' ? subjectGuess : 'they'
+        const intro  = subjectGuess !== 'someone'
+          ? `${prefix} ${subjectGuess} inspires you. `
+          : `${prefix} `
+        return `${intro}Now add why: "${sub} inspires me because ..."`
       }
       if (/like|enjoy|prefer|favourite|favorite/.test(norm)) {
-        return `Good start. Now say why you like it.`
+        return `${prefix} Now say why you like it.`
       }
-      return `Good start. Now add why.`
+      return `${prefix} Now add why.`
     }
     case 'subject':
-      return `Good start. Who are you talking about?`
+      return `${prefix} Who are you talking about?`
     case 'preference':
       return `What do you like or enjoy? Tell me your preference.`
     case 'object':
@@ -568,7 +582,7 @@ function validateWithSlots(
 
     // STT/self-correction in progress
     if (hasSelfCorrect && semWords >= 2) {
-      const repairMsg = buildPedagogicalRetry(instruction, slotResult.missingSlots, subjectGuess)
+      const repairMsg = buildPedagogicalRetry(instruction, slotResult.missingSlots, subjectGuess, attemptCount)
       const interpretedPrefix = subjectGuess !== 'someone' ? `I understand — you mean ${subjectGuess}. ` : ''
       return {
         allowProgression:      false,
@@ -597,7 +611,7 @@ function validateWithSlots(
 
     // Some slots present but first required slot missing — targeted repair
     if (slotResult.presentSlots.length > 0) {
-      const repairMsg    = buildPedagogicalRetry(instruction, slotResult.missingSlots, subjectGuess)
+      const repairMsg    = buildPedagogicalRetry(instruction, slotResult.missingSlots, subjectGuess, attemptCount)
       const firstMissing = slotResult.missingSlots[0]!
       const issueType: SoftSpeakingIssueType =
         firstMissing === 'reason'     ? 'missing_reason'       :
@@ -622,7 +636,7 @@ function validateWithSlots(
       isPartiallyAcceptable: false,
       issueType:             'unclear_subject',
       repairPrompt:          instruction
-        ? `Good start. Now answer properly: ${instruction}`
+        ? `${chooseRepairPrefix(attemptCount)} Now answer properly: ${instruction}`
         : 'Please give a complete answer.',
       confidence:            0.7,
     }

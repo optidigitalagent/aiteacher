@@ -81,6 +81,13 @@ const PHRASE_VOCAB_MAP: Record<string, string> = {
   'in simple terms': 'simple_terms',
   'simple language': 'simple_terms',
   'simple words':   'simple_terms',
+  // Writing task phrases — "what makes it worth my time?" is in the writing prompt
+  'worth my time':  'worth_my_time',
+  'worth your time': 'worth_my_time',
+  'worth watching': 'worth_watching',
+  'worth it':       'worth_it',
+  'convince me':    'convince',
+  'pitch me':       'pitch',
 }
 
 const VOCAB_EXPLANATIONS: Record<string, { explanation: string; example: string; taskHint: string }> = {
@@ -183,6 +190,21 @@ const VOCAB_EXPLANATIONS: Record<string, { explanation: string; example: string;
     explanation: "'In simple terms' means explaining something using easy, clear words — the kind a young student would understand right away.",
     example: "Example: 'In simple terms, gravity is what pulls things toward the ground.'",
     taskHint: "Try: 'In simple terms, [what you learned] means...' — use words a 10-year-old would know.",
+  },
+  worth_my_time: {
+    explanation: "'Worth my time' means good or interesting enough to deserve your attention — something that justifies spending time on.",
+    example: "Example: 'Is this film worth my time?' means 'Is it good enough that I should watch it instead of something else?'",
+    taskHint: "Try: 'You should watch ___ because ___ — that's what makes it worth your time.'",
+  },
+  worth_watching: {
+    explanation: "'Worth watching' means a film or show is good enough to spend time on — not a waste.",
+    example: "Example: 'This series is definitely worth watching — the story is completely original.'",
+    taskHint: "Try: 'It's worth watching because ___.'",
+  },
+  worth_it: {
+    explanation: "'Worth it' means the result or experience justifies the effort or cost — yes, it was good enough.",
+    example: "Example: 'Was the three-hour film worth it?' means 'Was it good enough to justify the time?'",
+    taskHint: "Try using 'worth it' in a sentence about why someone should watch your recommendation.",
   },
 }
 

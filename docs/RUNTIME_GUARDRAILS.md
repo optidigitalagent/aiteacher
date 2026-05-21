@@ -2,144 +2,484 @@
 
 # PURPOSE
 
-This document defines the runtime safety rules that every Claude session
-must follow when working on the paid lesson system.
+This document defines:
+NON-NEGOTIABLE runtime protection rules
+for the Paid Lesson Runtime system.
 
-These are NOT optional guidelines.
-These are non-negotiable constraints derived from the PAID_LESSON_RUNTIME_ROADMAP.md.
+These guardrails exist to prevent:
+- architecture drift
+- GPT-style degeneration
+- reconnect instability
+- runtime chaos
+- billing corruption
+- lesson inconsistency
+- curriculum hallucination
+- voice/runtime regressions
 
-Any implementation that violates these guardrails is considered unsafe.
+Every Claude session MUST follow these rules.
+
+Violating these guardrails means:
+the system becomes unstable.
 
 --------------------------------------------------
 SECTION 1 — ARCHITECTURE GUARDRAILS
 --------------------------------------------------
 
-# GUARDRAIL 1 — Backend Is Always Authoritative
+# 1. Backend Owns Runtime Authority
 
-The backend owns:
-- lesson state (Redis)
-- lesson progression (PostgreSQL)
-- billing (paid_lesson_usage + user_lesson_profiles)
-- subscription gating (user_lesson_profiles.subscription_status)
-- exercise cursor (LessonState.currentExerciseNum)
-- session validity (lesson_sessions)
+Frontend is presentation only.
+
+Frontend MUST NOT:
+- invent lesson state
+- invent progression
+- invent billing state
+- invent exercise position
+- invent lesson completion
+- invent resume state
+- invent runtime ownership
+
+Backend remains authoritative for:
+- runtime lifecycle
+- lesson cursor
+- billing
+- persistence
+- reconnect logic
+- exercise progression
+- reflection state
+- learning memory
+
+--------------------------------------------------
+
+# 2. Single Runtime Ownership
+
+There must NEVER be:
+- multiple active lesson runtimes
+- duplicate orchestrators
+- duplicate websocket ownership
+- parallel lesson state machines
+
+One lesson session =
+one authoritative runtime.
+
+--------------------------------------------------
+
+# 3. Deterministic Lesson Progression
+
+The lesson must ALWAYS follow:
+textbook structure.
+
+The AI must NEVER:
+- invent curriculum
+- invent fake exercises
+- skip sections randomly
+- hallucinate textbook instructions
+- generate arbitrary lesson flow
+
+The textbook remains:
+the source of truth.
+
+--------------------------------------------------
+
+# 4. Resume Integrity
+
+Reconnects must NEVER:
+- restart exercises randomly
+- duplicate AI turns
+- lose exercise cursor
+- corrupt reading state
+- replay completed exercises
+
+Resume must restore:
+EXACT lesson state.
+
+--------------------------------------------------
+
+# 5. Runtime Persistence Safety
+
+Persistence must always preserve:
+- current unit
+- current section
+- current exercise
+- current sentence
+- current paragraph
+- remaining lesson time
+- active reading state
+- lesson objective
+- teacher context
+
+--------------------------------------------------
+SECTION 2 — VOICE RUNTIME GUARDRAILS
+--------------------------------------------------
+
+# 6. No Open Mic Runtime
+
+The mic must NEVER:
+remain permanently open.
+
+The runtime must support:
+push-to-talk style control.
+
+--------------------------------------------------
+
+# 7. Teacher Speech Must Pause Student Capture
+
+While teacher TTS is playing:
+student STT must NOT aggressively stream.
+
+Prevent:
+- echo loops
+- self-transcription
+- recursive AI turns
+- duplicate corrections
+
+--------------------------------------------------
+
+# 8. Interruptions Must Be Natural
+
+Student interruptions should:
+- pause teacher naturally
+- answer naturally
+- resume naturally
+
+Interruptions must NEVER:
+- corrupt progression
+- restart lesson state
+- duplicate context
+- create runaway loops
+
+--------------------------------------------------
+
+# 9. Speaking State Integrity
+
+The runtime must ALWAYS know:
+- teacher speaking state
+- student speaking state
+- queued audio state
+- playback completion state
+
+Never rely ONLY on:
+chunk arrival timing.
+
+--------------------------------------------------
+
+# 10. TTS Stability
+
+Prevent:
+- duplicated teacher speech
+- overlapping audio
+- replayed chunks
+- stale playback queues
+- abandoned playback timers
+
+--------------------------------------------------
+SECTION 3 — AI BEHAVIOR GUARDRAILS
+--------------------------------------------------
+
+# 11. No GPT Assistant Personality
+
+The teacher is NOT:
+a chatbot assistant.
+
+Avoid:
+- essays
+- motivational fluff
+- assistant phrasing
+- repeated encouragement
+- conversational drift
+
+The teacher should feel:
+professional,
+focused,
+educational.
+
+--------------------------------------------------
+
+# 12. Agenda Recovery Required
+
+The teacher must ALWAYS recover:
+- current exercise
+- current goal
+- current paragraph
+- current reading state
+
+Side questions must NEVER:
+derail lesson progression permanently.
+
+--------------------------------------------------
+
+# 13. In-Context Teaching Only
+
+The teacher explains:
+ONLY what is relevant NOW.
+
+Avoid:
+- giant theory explanations
+- unrelated examples
+- broad lectures
+
+--------------------------------------------------
+
+# 14. Exercise Authority
+
+Exercises come from:
+structured textbook data.
+
+NOT:
+AI generation.
+
+--------------------------------------------------
+
+# 15. Reflection Must Use Real Data
+
+Lesson reflections must use:
+REAL runtime behavior.
+
+Do NOT generate:
+generic GPT summaries.
+
+--------------------------------------------------
+SECTION 4 — CURRICULUM GUARDRAILS
+--------------------------------------------------
+
+# 16. Exercise Cursor Is Sacred
+
+The runtime cursor must ALWAYS track:
+- unit
+- section
+- exercise
+- item
+- sentence
+- paragraph
+
+The cursor is:
+authoritative lesson progression.
+
+--------------------------------------------------
+
+# 17. Reading Mode Rules
+
+Realtime reading mode must:
+- show one chunk at a time
+- allow live correction
+- allow interruption
+- continue after correction
+
+Reading mode is:
+interactive,
+NOT passive transcription.
+
+--------------------------------------------------
+
+# 18. Renderer Consistency
+
+Exercise rendering must remain:
+deterministic.
+
+The same exercise should ALWAYS:
+render the same structure.
+
+--------------------------------------------------
+
+# 19. Curriculum Consistency
+
+Every unit must behave:
+consistently.
+
+No:
+special-case chaos,
+unit-specific hacks,
+hardcoded flows.
+
+--------------------------------------------------
+SECTION 5 — BILLING & COST GUARDRAILS
+--------------------------------------------------
+
+# 20. Billing Authority Stays Backend-Only
 
 Frontend must NEVER:
-- invent lesson state
-- decide subscription access
-- fake lesson progress
-- advance exercises locally
-- extend lesson time
+calculate paid lesson authority.
 
-# GUARDRAIL 2 — No Concurrent AI Calls
-
-The `processInput()` function in lesson-ws.ts is guarded by `meta.aiProcessing`.
-
-When `aiProcessing === true`:
-- new STT transcripts must be dropped
-- new text_message inputs must be dropped
-- exercise_answer handling is exempt (it calls processInput too, so it follows same guard)
-
-Rationale: Two concurrent `orchestrator.process()` calls on the same lessonId
-would race on Redis reads/writes, corrupting lesson state (exchangeCount,
-currentExerciseNum, phase flags).
-
-# GUARDRAIL 3 — STT Is Always-On After Lesson Start
-
-Current architecture: DeepgramSTT connection opens on lesson start and stays
-open for the entire lesson. It cannot be paused at the protocol level.
-
-Frontend mitigation: PCM capture is stopped when teacher speaks (via `stopRecording()`
-called on `ai_text` event) and when `mic_enabled=false` is in effect.
-
-Phase 1 must implement server-side STT disabling during teacher TTS to fully
-close this echo risk. Phase 0 does NOT change this behavior.
-
-# GUARDRAIL 4 — isSpeaking Flag Instability
-
-`isSpeaking` on the frontend may get stuck as `true` if `teacher_turn_end`
-is lost (e.g., TTS abort due to interrupt).
-
-Current mitigations:
-- `scheduleSpeakOff(8000)` fallback timer on `ai_text`
-- `onTeacherTurnEnd()` uses precise `getScheduledAudioEndMs()` when available
-
-Phase 1 must implement more reliable mic lifecycle. Phase 0 does NOT change this.
-
-# GUARDRAIL 5 — No Backwards Phase Transitions
-
-`applyAISignal()` in transitions.ts enforces forward-only phase movement.
-AI cannot signal a backward transition. Rule-based transitions also only go forward.
-
-Phase 2 replaces the phase model with a new state machine.
-Until Phase 2 lands, the current 7-phase model (DIAGNOSTIC → END) remains.
-
-# GUARDRAIL 6 — Billing Finalization on Disconnect
-
-`finalizeUsage()` is called in the WS `close` handler.
-It updates `paid_lesson_usage.minutes_used` and `user_lesson_profiles.paid_minutes_used`.
-Minutes are capped at `PLAN_LESSON_MINUTES` (50 by default).
-
-Known gap: If the Railway process crashes (SIGKILL), `finalizeUsage()` may not run.
-This is acceptable for Phase 0. A shutdown handler can be added in a future phase.
+Backend owns:
+- remaining minutes
+- lesson access
+- lesson duration
+- paid runtime validation
 
 --------------------------------------------------
-SECTION 2 — IMPLEMENTATION GUARDRAILS
---------------------------------------------------
 
-# GUARDRAIL 7 — Do Not Touch Demo Runtime
+# 21. No Cost Runaway Loops
 
-The demo lesson runtime is implemented in:
-- backend/src/demo/lesson-engine.ts
-- backend/src/api/demo-routes.ts
-- frontend/src/features/classroom/hooks/useDemoSession.ts
-
-Demo runtime is NOT the paid runtime. Do NOT modify it during paid runtime phases.
-
-# GUARDRAIL 8 — Do Not Modify Billing Logic
-
-The billing system (LiqPay, subscriptions, usage tracking) is working and deployed.
-No phase should modify:
-- backend/src/billing/liqpay.ts
-- backend/src/billing/billing-routes.ts
-- backend/src/billing/subscription-service.ts
-
-Only runtime integration (how lesson-ws.ts calls finalizeUsage) is in scope.
-
-# GUARDRAIL 9 — Do Not Modify Authentication
-
-Auth system is working. Do not touch:
-- backend/src/auth/
-- backend/src/api/auth-routes.ts
-- frontend/src/context/AuthContext.tsx
-- frontend/src/lib/auth.ts
-
-# GUARDRAIL 10 — Preserve Existing Redis TTL Pattern
-
-All Redis lesson keys must use LESSON_TTL (4 hours / 14400 seconds).
-Never write Redis keys without TTL.
-Use MULTI/EXEC pipeline for multi-key atomic writes.
+Prevent:
+- duplicated AI calls
+- duplicate TTS
+- continuous STT streaming
+- reconnect initialization spam
+- recursive orchestration loops
 
 --------------------------------------------------
-SECTION 3 — DEPLOYMENT GUARDRAILS
+
+# 22. Cost Visibility Required
+
+Runtime logs should expose:
+- AI calls
+- TTS usage
+- STT usage
+- reconnect behavior
+- lesson duration
+- provider fallback behavior
+
 --------------------------------------------------
 
-# GUARDRAIL 11 — No Env Variable Changes Without Railway Update
+# 23. No AI Activity Before Begin Lesson
 
-New env variables require Railway redeploy with the variable added.
-Current required variables (check .env.example for full list):
-- ANTHROPIC_API_KEY
-- OPENAI_API_KEY or ELEVENLABS_API_KEY (TTS)
-- DEEPGRAM_API_KEY (STT)
-- DATABASE_URL (PostgreSQL)
-- REDIS_URL
-- JWT_SECRET
-- PAID_PLAN_LESSON_MINUTES (default 50)
+Before:
+"Begin Lesson"
 
-# GUARDRAIL 12 — Migration Order Is Fixed
+There must be:
+- no STT streaming
+- no TTS generation
+- no AI orchestration
+- no paid minute consumption
 
-Migrations run sequentially by filename.
-Never skip a migration number.
-Never modify a deployed migration file.
-Current highest migration: 010_fix_billing_precision.sql
-Next migration must be 011_*.sql.
+--------------------------------------------------
+SECTION 6 — RECONNECT & SAVE GUARDRAILS
+--------------------------------------------------
+
+# 24. Save-And-Leave Must Be Exact
+
+Save-and-leave must snapshot:
+- cursor
+- runtime state
+- remaining time
+- reading state
+- teacher state
+- active exercise state
+
+--------------------------------------------------
+
+# 25. Browser Refresh Must Be Safe
+
+Refresh should NEVER:
+- destroy lesson progression
+- corrupt runtime
+- duplicate lesson ownership
+
+--------------------------------------------------
+
+# 26. Redis Is Runtime Cache, Not Curriculum Source
+
+Redis stores:
+runtime state.
+
+Redis must NOT become:
+the authoritative curriculum source.
+
+--------------------------------------------------
+
+# 27. Runtime Must Degrade Gracefully
+
+If:
+- STT fails
+- TTS fails
+- Redis reconnects
+- websocket reconnects
+- AI delays occur
+
+The classroom should:
+recover gracefully.
+
+NOT collapse.
+
+--------------------------------------------------
+SECTION 7 — DEVELOPMENT GUARDRAILS
+--------------------------------------------------
+
+# 28. No Massive Rewrites Mid-Phase
+
+Claude must NEVER:
+rewrite the entire runtime during one phase.
+
+Changes must remain:
+targeted and incremental.
+
+--------------------------------------------------
+
+# 29. Preserve Stable Systems
+
+If a subsystem is stable:
+DO NOT rewrite it.
+
+Example:
+- billing
+- websocket ownership
+- lesson state machine
+- runtime persistence
+
+--------------------------------------------------
+
+# 30. Every Phase Must End With Handoff
+
+Every phase MUST produce:
+a detailed handoff.
+
+The next Claude session must understand:
+- what changed
+- what remains unstable
+- what was intentionally preserved
+- what risks exist
+
+--------------------------------------------------
+
+# 31. Runtime Tests Are Mandatory
+
+Compile success is NOT enough.
+
+Every phase requires:
+real runtime validation.
+
+--------------------------------------------------
+
+# 32. Avoid Architecture Drift
+
+Do NOT:
+- create parallel runtimes
+- create duplicate orchestration systems
+- create duplicate persistence layers
+- split runtime authority ambiguously
+
+--------------------------------------------------
+
+# 33. Production Mindset Required
+
+The system should always move toward:
+- stability
+- predictability
+- observability
+- educational quality
+- runtime safety
+- cost safety
+
+NOT:
+experimental AI chaos.
+
+--------------------------------------------------
+FINAL PRINCIPLE
+--------------------------------------------------
+
+The Paid Lesson Runtime is:
+
+NOT:
+a GPT chat app.
+
+It IS:
+a deterministic realtime educational runtime.
+
+Every implementation decision must improve:
+- lesson continuity
+- runtime stability
+- curriculum integrity
+- educational quality
+- reconnect safety
+- production readiness
+- voice interaction quality
+- cost sustainability
