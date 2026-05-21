@@ -20,7 +20,15 @@ import type {
   TeacherAction,
 } from '../engine/types.js'
 import { exerciseEngine } from '../engine/exercise-engine.js'
-import { memoryService } from '../memory/index.js'
+import {
+  memoryService,
+  updateAdaptiveSignal,
+  deriveMistakeCategory,
+  getSessionMemory,
+  buildAdaptiveLearningContextBlock,
+} from '../memory/index.js'
+import type { AdaptiveSignal } from '../memory/index.js'
+import { recordTraceEvent } from '../runtime/trace-recorder.js'
 import {
   recordNodeAttempt,
   recordNodeCompleted,
@@ -223,6 +231,15 @@ function buildCorrectionBlock(
   )
 }
 
+// ── Internal: safe skill tag from ExerciseMeta.skillFocus ────────────────────
+// Returns a short, bounded tag for adaptive signal logging.
+// Falls back to exerciseType if skillFocus is absent or empty.
+
+function normalizeSkillTag(skillFocus: string | null | undefined, exerciseType: string): string {
+  if (!skillFocus?.trim()) return exerciseType
+  return skillFocus.trim().toLowerCase().replace(/\s+/g, '_').slice(0, 40)
+}
+
 // ── Internal: build formal EngineTurnResult from EngineResult ────────────────
 // This is the deterministic contract that tells the Teacher Brain exactly what
 // happened and what it must do.  AI never mutates this object.
@@ -334,6 +351,7 @@ function buildTeacherContextFromResult(
   result: EngineResult,
   studentAnswer: string,
   etr: EngineTurnResult,
+  adaptiveBlock?: string,
 ): string {
   const stateBlock = result.promptContext
 
@@ -447,7 +465,10 @@ function buildTeacherContextFromResult(
   }
 
   const body = stateBlock ? stateBlock + '\n\n' + answerBlock : answerBlock
-  return historyBlackout + '\n\n' + body
+  // Phase 3C: Append advisory adaptive block after engine instructions (phrasing guide only).
+  // Placed last so the AI reads it after the specific turn instructions — the "how" after the "what".
+  const adaptiveSection = adaptiveBlock ? '\n\n' + adaptiveBlock : ''
+  return historyBlackout + '\n\n' + body + adaptiveSection
 }
 
 // ── MasterLessonOrchestrator ──────────────────────────────────────────────────
@@ -621,6 +642,105 @@ export class MasterLessonOrchestrator {
         .catch(() => { /* fail-soft */ })
     }
 
+    // ── Adaptive outcome values (pure/sync — shared by Phase 3B and 3C) ──────────
+    const adaptiveOutcome: AdaptiveSignal['outcome'] =
+      result.action === 'step_correct'    ||
+      result.action === 'soft_pass'       ||
+      result.action === 'exercise_complete' ||
+      result.action === 'lesson_complete'
+        ? 'correct'
+      : result.action === 'step_revealed'   ? 'revealed'
+      : result.action === 'exercise_skipped' ? 'skipped'
+      : 'wrong'
+
+    const adaptiveSkillTag = normalizeSkillTag(preSubmitSpec.meta.skillFocus, preSubmitSpec.exerciseType)
+
+    // answerShapeIssue: detect format mismatch on wrong answers (reuses existing pure fn)
+    const adaptiveAnswerShapeIssue: boolean =
+      adaptiveOutcome === 'wrong' && !!result.validation?.correctAnswer
+        ? deriveAnswerShapeHint(preSubmitSpec.exerciseType, studentAnswer, result.validation.correctAnswer) !== null
+        : false
+
+    // Phase 3C: Read session memory (pre-update state = previous turns' signals) and build
+    // advisory adaptive context block for the teacher correction context.
+    // Fail-soft: omit block on any Redis error — lesson continues normally.
+    // Advisory-only: this block may affect phrasing/hint depth. It cannot affect engine state,
+    // cursor progression, payment, WS protocol, or lesson FSM.
+    let adaptiveBlock = ''
+    if (userId) {
+      try {
+        const sessionMem = await getSessionMemory(lessonId, userId)
+        adaptiveBlock = buildAdaptiveLearningContextBlock({
+          sessionMemory:                 sessionMem,
+          exerciseType:                  preSubmitSpec.exerciseType,
+          skillTag:                      adaptiveSkillTag,
+          correctionTurn:                engineTurnResult.correctionTurn,
+          answerShapeIssueAlreadyHinted: adaptiveAnswerShapeIssue,
+          outcome:                       adaptiveOutcome,
+        })
+
+        if (adaptiveBlock) {
+          recordTraceEvent({
+            eventType:      'adaptive_context_injected',
+            exerciseType:   preSubmitSpec.exerciseType,
+            payloadSummary: `hintDepth=${sessionMem.hintDepthSignal ?? 'normal'} skill=${adaptiveSkillTag} shapeReminder=${(!adaptiveAnswerShapeIssue && (sessionMem.answerShapeIssues?.[preSubmitSpec.exerciseType] ?? 0) >= 2)} turn=${engineTurnResult.correctionTurn ?? 'none'}`,
+            severity:       'debug',
+          })
+        } else {
+          recordTraceEvent({
+            eventType:      'adaptive_context_skipped',
+            exerciseType:   preSubmitSpec.exerciseType,
+            payloadSummary: `reason=default_signals exerciseType=${preSubmitSpec.exerciseType}`,
+            severity:       'debug',
+          })
+        }
+      } catch {
+        // fail-soft: omit adaptive block, continue lesson normally
+        console.warn(`[master-orch] adaptive_context_build_failed lessonId=${lessonId} (ignored)`)
+      }
+    }
+
+    // Phase 3B: Adaptive Signal Logging — observes runtime truth, never alters it.
+    // Fired AFTER adaptive block is built so the block reads the pre-update session state.
+    // Fire-and-forget: fail-soft, does NOT block lesson progression or AI response.
+    if (userId) {
+      try {
+        const mistakeCat = adaptiveOutcome !== 'correct'
+          ? deriveMistakeCategory({
+              exerciseType:     preSubmitSpec.exerciseType,
+              skillTag:         adaptiveSkillTag,
+              retryCount:       preSubmitExercise.retryCount,
+              answerShapeIssue: adaptiveAnswerShapeIssue,
+              score:            result.validation?.score ?? 0,
+            })
+          : 'unknown' as const
+
+        const adaptiveSignal: AdaptiveSignal = {
+          userId,
+          sessionId:       sessionId ?? lessonId,
+          sectionId:       engineState.sectionId ?? '',
+          exerciseId:      preSubmitExercise.exerciseId,
+          exerciseType:    preSubmitSpec.exerciseType,
+          skillTag:        adaptiveSkillTag,
+          outcome:         adaptiveOutcome,
+          retryCount:      preSubmitExercise.retryCount,
+          correctionTurn:  engineTurnResult.correctionTurn,
+          mistakeCategory: mistakeCat,
+          answerShapeIssue: adaptiveAnswerShapeIssue,
+          confidenceScore: result.validation?.score ?? 1.0,
+          timestamp:       new Date().toISOString(),
+        }
+
+        traceCorrection('adaptive_signal_recorded', {
+          payloadSummary: `outcome=${adaptiveOutcome} exerciseType=${preSubmitSpec.exerciseType} mistakeCategory=${mistakeCat} skill=${adaptiveSkillTag} retry=${preSubmitExercise.retryCount} shape=${adaptiveAnswerShapeIssue}`,
+        })
+
+        updateAdaptiveSignal(lessonId, userId, adaptiveSignal).catch(() => { /* fail-soft */ })
+      } catch {
+        // adaptive signal build failure must never propagate into lesson runtime
+      }
+    }
+
     // Build feedback event for immediate frontend update
     const feedbackEvent: FeedbackEvent | null = result.validation
       ? {
@@ -665,8 +785,9 @@ export class MasterLessonOrchestrator {
       }
     }
 
-    // Build Teacher Brain context — AI verbalizes engine decision only
-    const teacherInput = buildTeacherContextFromResult(result, studentAnswer, engineTurnResult)
+    // Build Teacher Brain context — AI verbalizes engine decision only.
+    // Phase 3C: adaptiveBlock is advisory; injected at end of context (phrasing guide only).
+    const teacherInput = buildTeacherContextFromResult(result, studentAnswer, engineTurnResult, adaptiveBlock || undefined)
     console.log(`[master-orch] teacher_response_requested lessonId=${lessonId} action=${result.action}`)
 
     // Log canonical cursor version going into teacher context

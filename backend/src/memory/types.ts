@@ -6,6 +6,38 @@ export type ConfidenceTrend = 'declining' | 'stable' | 'improving'
 export type CorrectionStyle = 'ladder' | 'direct' | 'gentle'
 export type MemoryEventType = 'validation' | 'exercise_complete' | 'lesson_complete'
 
+// ── Phase 3B: Adaptive Signal Types ──────────────────────────────────────────
+
+export type MistakeCategory =
+  | 'tense'
+  | 'auxiliary_verb'
+  | 'word_order'
+  | 'subject_verb_agreement'
+  | 'vocabulary_choice'
+  | 'answer_shape'
+  | 'too_short'
+  | 'repeated_failure'
+  | 'off_topic'
+  | 'unknown'
+
+export type HintDepthSignal = 'normal' | 'reduced' | 'increased'
+
+export interface AdaptiveSignal {
+  userId: string
+  sessionId: string
+  sectionId: string
+  exerciseId: string
+  exerciseType: string
+  skillTag: string
+  outcome: 'correct' | 'wrong' | 'revealed' | 'skipped'
+  retryCount: number
+  correctionTurn: 'A' | 'B' | 'C' | 'D' | null
+  mistakeCategory: MistakeCategory
+  answerShapeIssue: boolean
+  confidenceScore: number
+  timestamp: string
+}
+
 // ── Session Memory (Redis, short-lived) ──────────────────────────────────────
 
 export interface SessionMemory {
@@ -16,6 +48,12 @@ export interface SessionMemory {
   voiceAttempts: number
   correctionTypes: string[]    // recent correction types this session
   recentTopics: string[]
+  // Phase 3B: Adaptive signal fields (optional for backward compat with existing Redis sessions)
+  wrongStreakBySkill?: Record<string, number>
+  correctStreak?: number
+  answerShapeIssues?: Record<string, number>
+  lastCorrectionTurnByType?: Record<string, 'A' | 'B' | 'C' | 'D'>
+  hintDepthSignal?: HintDepthSignal
 }
 
 // ── Validation Event (recorded per answer) ───────────────────────────────────
@@ -62,6 +100,39 @@ export interface LessonCompletedInput {
   completedExercises: string[]
   durationSeconds: number
   voiceAttemptCount: number
+}
+
+// ── Phase 3D.1: Persistent Mastery Schema ────────────────────────────────────
+
+export type ConfidenceLevel = 'low' | 'medium' | 'high'
+
+export interface StudentSkillMastery {
+  id: string
+  userId: string
+  skillTag: string
+  exerciseType: string
+  totalAttempts: number
+  correctCount: number
+  wrongCount: number
+  revealedCount: number
+  answerShapeIssueCount: number
+  avgRetryCount: number
+  recentWrongStreak: number
+  confidenceLevel: ConfidenceLevel
+  lastMistakeCategory: MistakeCategory | null
+  lastPracticedAt: Date | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface MasteryUpdateInput {
+  userId: string
+  skillTag: string
+  exerciseType: string
+  outcome: 'correct' | 'wrong' | 'revealed' | 'skipped'
+  retryCount: number
+  answerShapeIssue: boolean
+  mistakeCategory?: MistakeCategory
 }
 
 // ── Teacher Memory Summary (read-only, injected into AI prompt) ──────────────

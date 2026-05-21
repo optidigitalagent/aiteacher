@@ -12,6 +12,7 @@ import {
 import { buildTeacherMemorySummary, formatTeacherMemorySummaryForPrompt } from './memory-summary-builder.js'
 import { updateSessionMemoryOnValidation, getSessionMemory } from './session-memory.js'
 import { aggregateWeakTopics } from './mistake-analyzer.js'
+import { aggregateMasteryFromSession } from './mastery-aggregator.js'
 import type {
   ValidationEventInput,
   ExerciseCompletedInput,
@@ -151,6 +152,10 @@ export const memoryService = {
       await writeLessonCompletedEvent(input)
       await writeLessonMemorySummary(input)
       await refreshProfile(input.userId)
+      // Phase 3D.2: Lesson-end mastery aggregation — fire-and-forget, fail-soft
+      aggregateMasteryFromSession(input.userId, input.lessonId).catch((err) => {
+        console.warn('[memory] mastery aggregation failed (ignored):', err instanceof Error ? err.message : err)
+      })
       console.log(`[memory] lesson_complete recorded userId=${input.userId} lesson=${input.lessonId}`)
     } catch (err) {
       console.error('[memory] recordLessonCompleted error (ignored):', err)

@@ -32,6 +32,16 @@ export type RuntimeTraceEventType =
   | 'conversation_continuity_updated'
   | 'conversation_phrase_rotated'
   | 'conversation_softened_for_uncertainty'
+  // Phase 3B: Adaptive Signal Logging
+  | 'adaptive_signal_recorded'
+  | 'adaptive_session_state_updated'
+  // Phase 3C: Adaptive Context Injection
+  | 'adaptive_context_injected'
+  | 'adaptive_context_skipped'
+  // Phase 3D.2: Lesson-End Mastery Aggregation
+  | 'mastery_aggregation_started'
+  | 'mastery_state_updated'
+  | 'mastery_aggregation_failed'
 
 export type TraceEventSeverity = 'debug' | 'info' | 'warn' | 'error'
 
