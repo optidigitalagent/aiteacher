@@ -749,6 +749,76 @@ export function buildEmotionalAcknowledgment(
   }
 }
 
+// ── Phase 7.5: Communicative recast builder ───────────────────────────────────
+// Natural echo of corrected English without punishment — used after LOW severity grammar.
+// Returns a complete response or null if no pattern matches.
+// Zero AI calls. Best-effort — never throws.
+
+const RECAST_FOLLOWUPS: string[] = [
+  "What makes that interesting for you?",
+  "Would you tell me more about that?",
+  "Why do you enjoy it?",
+  "Is that something you'd recommend?",
+  "How long have you been into that?",
+]
+
+export function buildCommunicativeRecast(
+  studentText: string,
+  stepPrompt: string,
+  turnCount: number,
+  sessionId?: string,
+): string | null {
+  try {
+    const lower = studentText.toLowerCase().trim()
+    const followup = stepPrompt || RECAST_FOLLOWUPS[turnCount % RECAST_FOLLOWUPS.length]!
+
+    // "I watching X" → "Nice — you're watching X."
+    const watchingMatch = lower.match(/\bi\s+watching\s+(?:a\s+|an\s+|the\s+)?(.+?)(?:\s+and\s+|\s*$)/)
+    if (watchingMatch) {
+      const obj = (watchingMatch[1] ?? '').trim().replace(/[.!?]+$/, '')
+      emitMoveTrace(sessionId, 'communicative_recast type=watching')
+      return `Nice — you're watching ${obj}. ${followup}`
+    }
+
+    // "I go/went/going [to] X" → "So you went to X."
+    const goMatch = lower.match(/\bi\s+(?:go|went|going)\s+(?:to\s+)?(.+?)(?:\s+and\s+|\s*$)/)
+    if (goMatch) {
+      const dest = (goMatch[1] ?? '').trim().replace(/[.!?]+$/, '')
+      emitMoveTrace(sessionId, 'communicative_recast type=go')
+      return `So you went to ${dest}. ${followup}`
+    }
+
+    // "My teacher/X inspire me" → "Nice — your X inspires you."
+    const inspireMatch = lower.match(/\bmy\s+(\w+)\s+inspire\s+(?:me|us)\b/)
+    if (inspireMatch) {
+      const who = inspireMatch[1] ?? 'teacher'
+      emitMoveTrace(sessionId, 'communicative_recast type=inspire')
+      return `Nice — your ${who} inspires you. ${followup}`
+    }
+
+    // "I like/love X because Y" (Y is not a full clause) → acknowledge + continue
+    const becauseMatch = lower.match(/\bi\s+(?:like|love|enjoy)\s+(.+?)\s+because\b/)
+    if (becauseMatch) {
+      const what = (becauseMatch[1] ?? '').trim().replace(/[.!?]+$/, '')
+      emitMoveTrace(sessionId, 'communicative_recast type=like_because')
+      return `Nice — you like ${what}. ${followup}`
+    }
+
+    // "I want communication/X with Y" → rephrase naturally
+    const wantMatch = lower.match(/\bi\s+want\s+(.+?)\s+with\s+(.+?)(?:\s*$)/)
+    if (wantMatch) {
+      const goal = (wantMatch[1] ?? '').trim().replace(/[.!?]+$/, '')
+      const who  = (wantMatch[2] ?? '').trim().replace(/[.!?]+$/, '')
+      emitMoveTrace(sessionId, 'communicative_recast type=want_with')
+      return `So you want to connect with ${who}. ${followup}`
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
 // ── Public exports ────────────────────────────────────────────────────────────
 
 // Detects if the student is asking what a phrase means and returns an inline explanation.

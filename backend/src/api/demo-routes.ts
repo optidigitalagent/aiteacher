@@ -39,6 +39,7 @@ import {
   analyzeAnswerQuality,
   detectAcknowledgment,
   lookupVocabEntry,
+  isCommunicativelySubstantive,
 } from '../demo/abuse-guard.js'
 import { DEMO_AI_CONFIG, canUseDemoAI, DEMO_TTS_CONFIG, canUseDemoTTS } from '../demo/ai-config.js'
 import {
@@ -59,6 +60,7 @@ import {
   detectMultilingualInterruption,
   buildMultilingualPhraseAnswer,
   buildMeaningFirstResponse,
+  buildCommunicativeRecast,
   classifyDemoInput,
   detectPhraseQuestion,
 } from '../runtime/conversation-moves.js'
@@ -607,10 +609,12 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       }
       // Word-count floor: a one-word or very short answer needs elaboration — but only
       // ask once. If the student already tried and kept it short, accept and move on.
-      // Prevents the "ocean" → rejection → "it is ocean" → rejection → frustration loop.
+      // Phase 7.5: bypass the gate entirely for communicatively substantive short answers
+      // ("I watching funny movie", "My teacher inspire me") — meaning is clear, no retry.
       let wuFollowupShortAccept = false
       const wuFollowupWordCount = answer.trim().split(/\s+/).filter(Boolean).length
-      if (wuFollowupWordCount <= 5) {
+      const wuFollowupCommSubstantive = wuFollowupWordCount <= 5 && isCommunicativelySubstantive(answer)
+      if (wuFollowupWordCount <= 5 && !wuFollowupCommSubstantive) {
         const wuFollowupRetries = await getStepRetries(sessionId, stepKey)
         if (wuFollowupRetries < 1) {
           await incrementStepRetries(sessionId, stepKey)
@@ -632,13 +636,21 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         wuFollowupShortAccept = true
       }
       const continuityWuf = getOrCreateContinuity(sessionId)
-      feedbackMessage = wuFollowupShortAccept
-        ? chooseTransitionAck(continuityWuf, sessionId)
-        : buildFollowUpFeedback(session, answer, 'warm_up_followup')
-      // Replace short/generic fallback ("Yeah — that makes sense.") with a reflective transition.
-      if (!wuFollowupShortAccept && feedbackMessage.length < 50) {
-        console.log(`[demo-conversation] warm_up_followup conversational_transition_used`)
-        feedbackMessage = chooseReflectiveTransition(continuityWuf, sessionId)
+      // Phase 7.5: for communicatively substantive short answers, use a natural recast
+      // instead of the generic followup feedback — avoids "give me more" pressure.
+      if (wuFollowupCommSubstantive) {
+        const recast = buildCommunicativeRecast(answer, stepPrompt, continuityWuf.turnCount, sessionId)
+        feedbackMessage = recast ?? chooseTransitionAck(continuityWuf, sessionId)
+        console.log(`[demo-conversation] warm_up_followup communicative_recast_used answer="${answer.slice(0, 40)}"`)
+      } else {
+        feedbackMessage = wuFollowupShortAccept
+          ? chooseTransitionAck(continuityWuf, sessionId)
+          : buildFollowUpFeedback(session, answer, 'warm_up_followup')
+        // Replace short/generic fallback ("Yeah — that makes sense.") with a reflective transition.
+        if (!wuFollowupShortAccept && feedbackMessage.length < 50) {
+          console.log(`[demo-conversation] warm_up_followup conversational_transition_used`)
+          feedbackMessage = chooseReflectiveTransition(continuityWuf, sessionId)
+        }
       }
       if (classified.cls === 'VALID_WEAK_ENGLISH' && classified.correction) {
         correctionMessage = classified.correction
@@ -731,9 +743,11 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       }
       // Word-count floor: ask once for a full sentence, but accept on the second try
       // even if still short — prevents the student from being permanently stuck.
+      // Phase 7.5: bypass for communicatively substantive short answers.
       let sfShortAccept = false
       const sfWordCount = answer.trim().split(/\s+/).filter(Boolean).length
-      if (sfWordCount <= 3) {
+      const sfCommSubstantive = sfWordCount <= 3 && isCommunicativelySubstantive(answer)
+      if (sfWordCount <= 3 && !sfCommSubstantive) {
         const sfRetries = await getStepRetries(sessionId, stepKey)
         if (sfRetries < 1) {
           await incrementStepRetries(sessionId, stepKey)

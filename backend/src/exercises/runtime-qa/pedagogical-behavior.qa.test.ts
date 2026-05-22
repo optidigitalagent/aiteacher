@@ -465,20 +465,26 @@ describe('Phase 6B.1 — Correction Rule Visibility', () => {
     expect(speakingGroup!.rules.length).toBe(SPEAKING_RULES.rules.length)
   })
 
-  // Token budget guard: behavior contract must remain bounded
-  it('behavior contract total rules stay ≤ 20 for any mode (token budget guard)', () => {
-    const MODES = [
-      'deterministic_sequential', 'matching_sequential',
-      'soft_speaking', 'warmup_activation',
-      'grammar_explanation', 'unsupported', 'reading_text',
-    ]
-    for (const mode of MODES) {
+  // Token budget guard: behavior contract must remain bounded.
+  // Phase 7.5: soft_speaking/warmup_activation limits updated from 20→30 (6 new communicative rules added).
+  // buildRulesSection slices to 8 in actual prompts — this guard tracks cumulative growth only.
+  it('behavior contract total rules stay within budget for any mode', () => {
+    const MODE_LIMITS: Record<string, number> = {
+      'deterministic_sequential': 20,
+      'matching_sequential':      20,
+      'soft_speaking':            30,
+      'warmup_activation':        30,
+      'grammar_explanation':      20,
+      'unsupported':              20,
+      'reading_text':             20,
+    }
+    for (const [mode, limit] of Object.entries(MODE_LIMITS)) {
       const groups = selectBehaviorContractRules(mode)
       const totalRules = groups.reduce((sum, g) => sum + g.rules.length, 0)
       expect(
         totalRules,
-        `${mode} has ${totalRules} rules — exceeds token budget`,
-      ).toBeLessThanOrEqual(20)
+        `${mode} has ${totalRules} rules — exceeds budget of ${limit}`,
+      ).toBeLessThanOrEqual(limit)
     }
   })
 
@@ -813,10 +819,10 @@ describe('Phase 6B.3 — Soft-Speaking Threshold Calibration', () => {
 
   // ── Token budget guard ────────────────────────────────────────────────────
 
-  it('soft_speaking behavior contract stays within token budget (≤ 20 rules)', () => {
+  it('soft_speaking behavior contract stays within token budget (≤ 30 rules after Phase 7.5)', () => {
     const groups = selectBehaviorContractRules('soft_speaking')
     const totalRules = groups.reduce((sum, g) => sum + g.rules.length, 0)
-    expect(totalRules).toBeLessThanOrEqual(20)
+    expect(totalRules).toBeLessThanOrEqual(30)
   })
 
   it('new SPEAKING_RULES do not break the all-rules-visible assertion', () => {
@@ -995,16 +1001,18 @@ describe('Phase 7 — Conversational Pedagogy Layer', () => {
 
   // ── f) Token budget preserved ─────────────────────────────────────────────
 
-  it('soft_speaking behavior contract stays exactly at ≤ 20 rules after Phase 7 (budget guard)', () => {
+  it('soft_speaking behavior contract stays within ≤ 30 rules after Phase 7.5 (budget guard)', () => {
+    // Phase 7.5 added 6 communicative-tolerance rules to SPEAKING_RULES (total 26 incl. CONVERSATIONAL_PEDAGOGY).
+    // buildRulesSection still slices to 8 in actual prompts — this guard tracks overall growth.
     const groups = selectBehaviorContractRules('soft_speaking')
     const totalRules = groups.reduce((sum, g) => sum + g.rules.length, 0)
-    expect(totalRules).toBeLessThanOrEqual(20)
+    expect(totalRules).toBeLessThanOrEqual(30)
   })
 
-  it('warmup_activation behavior contract stays exactly at ≤ 20 rules after Phase 7', () => {
+  it('warmup_activation behavior contract stays within ≤ 30 rules after Phase 7.5', () => {
     const groups = selectBehaviorContractRules('warmup_activation')
     const totalRules = groups.reduce((sum, g) => sum + g.rules.length, 0)
-    expect(totalRules).toBeLessThanOrEqual(20)
+    expect(totalRules).toBeLessThanOrEqual(30)
   })
 
   it('deterministic_sequential budget unaffected by Phase 7 (≤ 20 rules)', () => {

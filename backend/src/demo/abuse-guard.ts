@@ -856,6 +856,12 @@ const CONTENT_VERBS = new Set([
   'choose','chose','pick','decided','decide','felt',
   'saw','was','were','am','are','had','did','does',
   'seen','shown','given','taken','done','means','makes','keeps',
+  // Phase 7.5: common -ing forms students use in communicative answers
+  'watching','listening','playing','working','studying','learning','practicing',
+  'thinking','enjoying','going','trying','reading','speaking','writing',
+  'talking','using','finding','helping','teaching','explaining','understanding',
+  'traveling','living','moving','growing','improving','starting','finishing',
+  'following','joining','sharing','connecting','inspire','inspires','inspired',
 ])
 
 const VAGUE_NOUNS = new Set([
@@ -973,6 +979,21 @@ export function analyzeAnswerQuality(
   }
 
   return { quality: 'valid', reason: 'ok', shouldAdvance: true }
+}
+
+// ── Phase 7.5: Communicative substance check ──────────────────────────────────
+// Returns true when a short answer is meaningfully communicative even if grammatically imperfect.
+// Subject pronoun + semantic content word + 3+ total words = communicatively substantive.
+// Used to bypass the word-count gate for answers like "I watching funny movie" (4 words).
+
+const SUBJECT_PRONOUNS_RE = /\b(i|my|we|our|he|she|his|her|they|their|it)\b/i
+
+export function isCommunicativelySubstantive(text: string): boolean {
+  const lower = text.toLowerCase().trim()
+  const words = lower.split(/\s+/).filter(Boolean)
+  if (words.length < 3) return false
+  if (!SUBJECT_PRONOUNS_RE.test(lower)) return false
+  return hasContentVerb(words) || words.some(w => CONTENT_VERBS.has(w))
 }
 
 // ─── Direct vocab entry lookup (for help endpoint — more permissive than detectVocabWord) ──

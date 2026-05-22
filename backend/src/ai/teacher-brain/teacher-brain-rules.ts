@@ -48,6 +48,12 @@ export const SPEAKING_RULES: RuleGroup = {
     'Communication success first: if the answer is understandable and on-topic, prefer a natural recast over a formal correction demand',
     'Short answers with 2+ meaningful words on topic: acknowledge what was communicated — do not demand a full sentence',
     'Low-severity grammar: echo the corrected form naturally ("Nice — you went to the cinema!") then move on — never demand a retry for recoverable grammar mistakes',
+    'LOW severity grammar errors (missing articles, tense drift, missing -s, broken "because" clause, missing preposition): recast naturally and continue — never push for a grammatical retry',
+    'HIGH severity only (word salad, 3+ strung gerunds, impossible to reconstruct meaning): ask for a simpler sentence — scaffold with a narrow question',
+    'Priority order: communicative success > learner confidence > conversational flow > grammar precision',
+    '"I watching funny movie" → "Nice — you\'re watching a funny movie. Would you recommend it?" — NOT "Try again with correct grammar."',
+    '"My teacher inspire me" → "Nice — your teacher inspires you. What makes their classes interesting?" — NOT a grammar correction demand',
+    '"I go America" → "So you\'d like to go to America? What would you do there?" — NOT a grammar retry prompt',
   ],
 }
 

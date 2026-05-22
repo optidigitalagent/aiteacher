@@ -178,6 +178,35 @@ function isCommunicativelySuccessful(words: string[], semWords: number): boolean
   return semWords >= 2 && hasSubstantiveContent(words)
 }
 
+// Phase 7.5: Grammar severity classification.
+// LOW  = cosmetic errors that don't impede meaning (tense drift, missing -s, no article).
+// HIGH = semantic collapse — meaning cannot be reconstructed (word salad, 3+ strung gerunds).
+// NONE = no detectable grammar issue.
+type GrammarSeverity = 'none' | 'low' | 'high'
+
+function assessGrammarSeverity(normalized: string, words: string[], semWords: number): GrammarSeverity {
+  // HIGH: 3+ gerunds strung together with no recoverable SVO ("walking going wanting friend")
+  const ingCount = words.filter(w => w.length > 4 && /ing$/.test(w)).length
+  if (ingCount >= 3) return 'high'
+
+  // HIGH: nearly empty semantic content despite length
+  if (words.length >= 5 && semWords <= 1) return 'high'
+
+  // LOW: progressive without auxiliary ("I watching", "I going")
+  if (/\bi\s+\w+ing\b/.test(normalized) && !/\bi\s+(am|was|were)\s+\w+ing\b/.test(normalized)) return 'low'
+
+  // LOW: existing broken grammar detection covers SOV / missing -s
+  if (detectBrokenGrammar(normalized)) return 'low'
+
+  // LOW: truncated because-clause ("I like geography because interesting countries")
+  if (/\bbecause\s+[a-z]+(?:\s+[a-z]+){0,3}\s*$/.test(normalized) && !/\bbecause\s+(i|he|she|they|it|we|you)\b/.test(normalized)) return 'low'
+
+  // LOW: missing preposition before place ("I go America", "I travel London")
+  if (/\b(?:go|went|travel|visit)\s+[a-z]{4,}\b/.test(normalized) && !/\b(?:go|went|travel|visit)\s+to\b/.test(normalized)) return 'low'
+
+  return 'none'
+}
+
 function findSubjectGuess(words: string[], fallback: string): string {
   const nameCandidate = words.find(
     w => w.length > 3 && !STOPWORDS.has(w) && !FILLER_PHRASES.has(w) && !NON_NAME_WORDS.has(w),
@@ -551,6 +580,19 @@ function validateWithSlots(
         confidence:            0.8,
       }
     }
+    // Phase 7.5: even with no required slots, HIGH severity collapse should trigger scaffold.
+    // "I walking going wanting friend come dog chips" is word salad — teacher must intervene.
+    const genericSeverity = assessGrammarSeverity(normalized, words, semWords)
+    if (genericSeverity === 'high' && attemptCount < 2) {
+      return {
+        allowProgression:      false,
+        needsRetry:            true,
+        isPartiallyAcceptable: false,
+        issueType:             'broken_grammar',
+        repairPrompt:          'Try a simpler sentence — one clear idea is enough.',
+        confidence:            0.8,
+      }
+    }
     return {
       allowProgression:      true,
       needsRetry:            false,
@@ -579,26 +621,34 @@ function validateWithSlots(
   // ── Required-slots gate ───────────────────────────────────────────────────────
   // This runs before max_attempts and before broken_grammar/repair paths.
   if (slotResult.missingSlots.length > 0) {
-    // Phase 6B.3: communicative success fast-path.
-    // At attempt ≥ 2, if the answer is understandable+on-topic with some slots present,
-    // soft-accept rather than escalating further. Prioritises communication success over
-    // perfect grammar or complete slot coverage.
+    // Phase 7.5: communicative success fast-path — grammar severity aware.
+    // LOW severity grammar (tense drift, missing -s, no article, truncated clause):
+    //   soft-accept at attempt ≥ 1 — one gentle scaffold is enough.
+    // Any severity (or HIGH severity): soft-accept at attempt ≥ 2 (existing behaviour).
+    // HIGH severity (word salad, 3+ gerunds): no early accept — scaffold required.
+    const grammarSeverity = assessGrammarSeverity(normalized, words, semWords)
+    const commSuccess = isCommunicativelySuccessful(words, semWords)
+
     if (
-      attemptCount >= 2 &&
-      isCommunicativelySuccessful(words, semWords) &&
-      slotResult.presentSlots.length > 0
+      commSuccess &&
+      slotResult.presentSlots.length > 0 &&
+      grammarSeverity !== 'high' &&
+      (
+        (attemptCount >= 1 && grammarSeverity === 'low') ||
+        attemptCount >= 2
+      )
     ) {
-      console.log(`[soft-speaking] comm_success_soft_accept attempt=${attemptCount} presentSlots=${slotResult.presentSlots.join(',')}`)
+      console.log(`[soft-speaking] comm_success_soft_accept attempt=${attemptCount} severity=${grammarSeverity} presentSlots=${slotResult.presentSlots.join(',')}`)
       return {
         allowProgression:      true,
         needsRetry:            false,
         isPartiallyAcceptable: true,
         issueType:             'acceptable_with_repair',
-        confidence:            0.6,
+        confidence:            0.65,
         recastHint:            slotResult.interpretedMeaning ?? undefined,
         teacherHint:           slotResult.interpretedMeaning
-          ? `Acknowledge "${slotResult.interpretedMeaning}" and continue.`
-          : "Acknowledge their effort — communication succeeded. Move on.",
+          ? `Recast naturally and continue: acknowledge "${slotResult.interpretedMeaning}".`
+          : "Communication succeeded — recast naturally and continue.",
       }
     }
 
