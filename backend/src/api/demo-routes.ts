@@ -57,6 +57,8 @@ import {
   chooseReflectiveTransition,
   chooseCorrectionBridge,
   detectMultilingualInterruption,
+  buildMultilingualPhraseAnswer,
+  detectPhraseQuestion,
 } from '../runtime/conversation-moves.js'
 
 const router = Router()
@@ -82,17 +84,22 @@ function ensureTeacherContinues(msg: string, stepPrompt: string): string {
   return t.endsWith('?') ? t : (stepPrompt ? `${t}\n\n${stepPrompt}` : t)
 }
 
-// ── Multilingual rescue response ──────────────────────────────────────────────
-// Called when a student speaks / writes in Ukrainian / Russian (detected via MULTILINGUAL_REQUEST_RE).
-// If the message contains a known English vocab word we explain it; otherwise give a
-// short English prompt.  Returns 200 chars max so TTS budget is not wasted.
-function buildMultilingualRescueText(answer: string): string {
-  const vocabKey = detectVocabWord(answer)
-  if (vocabKey && vocabKey !== '__confused__') {
-    const entry = VOCAB_EXPLANATIONS[vocabKey]
-    if (entry) return `Good question. ${entry.explanation}\n${entry.example}\n${entry.taskHint}`
+// ── Phase 7.3: Smart clarification answer ────────────────────────────────────
+// Routes STUDENT_QUESTION triggers to the correct response:
+//  • phrase/vocab/idiom lookup → buildMultilingualPhraseAnswer (never returns grammar MCQ text)
+//  • genuine grammar question → buildStudentQuestionResponse (grammar explanation)
+// This prevents grammar.wrongExplanation from leaking into vocab/translation answers.
+function buildClarificationAnswer(
+  answer: string,
+  session: DemoSession,
+  stepPrompt: string,
+  sessionId?: string,
+): string {
+  if (detectPhraseQuestion(answer)) {
+    console.log(`[demo_clarification_bad_fallback_prevented] answer="${answer.slice(0, 60)}" routed_to=phrase_lookup`)
+    return buildMultilingualPhraseAnswer(answer, stepPrompt, sessionId)
   }
-  return "I can see you're speaking or writing in Ukrainian or Russian — the lesson is in English. Try your answer in English: even a simple sentence works."
+  return buildStudentQuestionResponse(session, stepPrompt)
 }
 
 // ── Simple stable hash for cache keys ────────────────────────────────────────
@@ -446,8 +453,16 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
 
       // Clarification interceptors — must run before classifyInput so grammar questions
       // are not treated as valid answers and step is not inadvertently advanced.
+      // Phase 7.3: multilingual fires FIRST so "how to say [Cyrillic]" is never routed
+      // to buildStudentQuestionResponse which would return unrelated grammar MCQ text.
+      const wuMl = detectMultilingualInterruption(answer)
+      if (wuMl.detected) {
+        console.log(`[demo-multilingual-intercepted] stepKey=warm_up`)
+        res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: buildMultilingualPhraseAnswer(answer, stepPrompt, sessionId), ...convClarification('multilingual_rescue') })
+        return
+      }
       if (detectStudentQuestion(answer)) {
-        const response = buildStudentQuestionResponse(session, stepPrompt)
+        const response = buildClarificationAnswer(answer, session, stepPrompt, sessionId)
         console.log(`[demo-clarification-intercepted] stepKey=warm_up reason=student_question`)
         res.status(422).json({ code: 'STUDENT_QUESTION', message: response, ...convClarification('student_question') })
         return
@@ -456,12 +471,6 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       if (wuInlineVocab) {
         console.log(`[demo-clarification-intercepted] stepKey=warm_up reason=vocab_question`)
         res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(`${wuInlineVocab}\n\nNow, back to the question:`, stepPrompt), ...convClarification('vocab_help') })
-        return
-      }
-      const wuMl = detectMultilingualInterruption(answer)
-      if (wuMl.detected) {
-        console.log(`[demo-multilingual-intercepted] stepKey=warm_up`)
-        res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: ensureTeacherContinues(buildMultilingualRescueText(answer), stepPrompt), ...convClarification('multilingual_rescue') })
         return
       }
 
@@ -539,8 +548,15 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       }
 
       // Clarification interceptors — before classifyInput to catch grammar/vocab questions.
+      // Phase 7.3: multilingual fires FIRST so "how to say [Cyrillic]" is correctly handled.
+      const wufMl = detectMultilingualInterruption(answer)
+      if (wufMl.detected) {
+        console.log(`[demo-multilingual-intercepted] stepKey=warm_up_followup`)
+        res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: buildMultilingualPhraseAnswer(answer, stepPrompt, sessionId), ...convClarification('multilingual_rescue') })
+        return
+      }
       if (detectStudentQuestion(answer)) {
-        const response = buildStudentQuestionResponse(session, stepPrompt)
+        const response = buildClarificationAnswer(answer, session, stepPrompt, sessionId)
         console.log(`[demo-clarification-intercepted] stepKey=warm_up_followup reason=student_question`)
         res.status(422).json({ code: 'STUDENT_QUESTION', message: response, ...convClarification('student_question') })
         return
@@ -549,12 +565,6 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       if (wufInlineVocab) {
         console.log(`[demo-clarification-intercepted] stepKey=warm_up_followup reason=vocab_question`)
         res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(`${wufInlineVocab}\n\nNow, back to the question:`, stepPrompt), ...convClarification('vocab_help') })
-        return
-      }
-      const wufMl = detectMultilingualInterruption(answer)
-      if (wufMl.detected) {
-        console.log(`[demo-multilingual-intercepted] stepKey=warm_up_followup`)
-        res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: ensureTeacherContinues(buildMultilingualRescueText(answer), stepPrompt), ...convClarification('multilingual_rescue') })
         return
       }
 
@@ -649,15 +659,23 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         return
       }
 
-      // ── 0. Student question — answer grammar/task question, return to current task ──
+      // ── 0. Multilingual rescue — fires FIRST to prevent phrase lookups routing to grammar text ──
+      const sfMl = detectMultilingualInterruption(answer)
+      if (sfMl.detected) {
+        console.log(`[demo-multilingual-intercepted] stepKey=speaking_followup`)
+        res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: buildMultilingualPhraseAnswer(answer, stepPrompt, sessionId), ...convClarification('multilingual_rescue') })
+        return
+      }
+
+      // ── 0b. Student question — answer grammar/task question, return to current task ──
       if (detectStudentQuestion(answer)) {
-        const response = buildStudentQuestionResponse(session, stepPrompt)
+        const response = buildClarificationAnswer(answer, session, stepPrompt, sessionId)
         console.log(`[demo-conversation] stepKey=speaking_followup responseType=STUDENT_QUESTION expectsStudentReply=true mayAdvance=false reason=student_question`)
         res.status(422).json({ code: 'STUDENT_QUESTION', message: response, ...convClarification('student_question') })
         return
       }
 
-      // ── 0b. Embedded confusion — student is confused about the question itself ──
+      // ── 0c. Embedded confusion — student is confused about the question itself ──
       if (detectEmbeddedConfusion(answer)) {
         console.log('[demo-meta-help] embedded_confusion step=speaking_followup')
         const clarification = buildTaskClarification(session, 'speaking_followup', stepPrompt)
@@ -666,20 +684,12 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         return
       }
 
-      // ── 0c-extra. Inline vocab question — catches "what means X" patterns ─────
+      // ── 0d. Inline vocab question — catches "what means X" patterns ─────
       const sfInlineVocab = detectAndExplainVocabQuestion(answer, sessionId)
       if (sfInlineVocab) {
         console.log(`[demo-vocab] inline_explanation step=speaking_followup`)
         const sfVocabMsg = `${sfInlineVocab}\n\nNow, back to the question:`
         res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(sfVocabMsg, stepPrompt), ...convClarification('vocab_help') })
-        return
-      }
-
-      // ── 0d. Multilingual rescue — Ukrainian / Russian translation requests ──────
-      const sfMl = detectMultilingualInterruption(answer)
-      if (sfMl.detected) {
-        console.log(`[demo-multilingual-intercepted] stepKey=speaking_followup`)
-        res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: ensureTeacherContinues(buildMultilingualRescueText(answer), stepPrompt), ...convClarification('multilingual_rescue') })
         return
       }
 
@@ -747,16 +757,26 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         return
       }
 
-      // ── 0b. Student question — answer grammar/task question, return to current task ──
+      // ── 0b. Multilingual rescue — fires FIRST so "how to say [Cyrillic]" is never routed
+      // to buildStudentQuestionResponse which would return unrelated grammar MCQ text.
+      const taskMl = detectMultilingualInterruption(answer)
+      if (taskMl.detected) {
+        console.log(`[demo-multilingual-intercepted] stepKey=${stepKey}`)
+        res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: buildMultilingualPhraseAnswer(answer, stepPrompt, sessionId), ...convClarification('multilingual_rescue') })
+        return
+      }
+
+      // ── 0c. Student question — answer grammar/task question, return to current task ──
       // Must run before classifyInput — grammar questions parse as VALID and would hit AI eval.
+      // buildClarificationAnswer routes phrase lookups to phrase map instead of grammar text.
       if (detectStudentQuestion(answer)) {
-        const response = buildStudentQuestionResponse(session, stepPrompt)
+        const response = buildClarificationAnswer(answer, session, stepPrompt, sessionId)
         console.log(`[demo-conversation] stepKey=${stepKey} responseType=STUDENT_QUESTION expectsStudentReply=true mayAdvance=false reason=student_question`)
         res.status(422).json({ code: 'STUDENT_QUESTION', message: response, ...convClarification('student_question') })
         return
       }
 
-      // ── 0c. Embedded confusion — student is confused even when pattern not at start ──
+      // ── 0d. Embedded confusion — student is confused even when pattern not at start ──
       // Catches "I will describe it like... what should I describe, I don't understand"
       // detectStudentQuestion only matches anchored-to-start patterns.
       if (detectEmbeddedConfusion(answer)) {
@@ -767,7 +787,7 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         return
       }
 
-      // ── 0d. Acknowledgment — student reacting to teacher, not attempting the task ──
+      // ── 0e. Acknowledgment — student reacting to teacher, not attempting the task ──
       // Detected before classifyInput to prevent unnecessary AI calls.
       if (detectAcknowledgment(answer)) {
         console.log(`[demo-ack] step=${stepKey}`)
@@ -775,21 +795,13 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         return
       }
 
-      // ── 0e. Inline vocab question — catches "what means X", "what's mean X" patterns ──
+      // ── 0f. Inline vocab question — catches "what means X", "what's mean X" patterns ──
       // Extra safety net for phrase questions that classifyInput's detectVocabWord may miss.
       const inlineVocab = detectAndExplainVocabQuestion(answer, sessionId)
       if (inlineVocab) {
         console.log(`[demo-vocab] inline_explanation step=${stepKey}`)
         const vocabMsg = `${inlineVocab}\n\nNow, back to the task:`
         res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(vocabMsg, stepPrompt), ...convClarification('vocab_help') })
-        return
-      }
-
-      // ── 0f. Multilingual rescue — Ukrainian / Russian translation requests ──────
-      const taskMl = detectMultilingualInterruption(answer)
-      if (taskMl.detected) {
-        console.log(`[demo-multilingual-intercepted] stepKey=${stepKey}`)
-        res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: ensureTeacherContinues(buildMultilingualRescueText(answer), stepPrompt), ...convClarification('multilingual_rescue') })
         return
       }
 

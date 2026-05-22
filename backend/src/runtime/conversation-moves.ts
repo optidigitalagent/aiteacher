@@ -219,12 +219,124 @@ function extractVocabPhrase(text: string): string | null {
 const MULTILINGUAL_REQUEST_RE =
   /(як\s+сказати|як\s+перекласти|як\s+буде|як\s+по.?англ|як\s+правильно|що\s+означає|як\s+звучить|как\s+сказать|как\s+будет|как\s+перевести|как\s+по.?англ|что\s+значит|переведи|как\s+правильно)/i
 
+// ── Phase 7.3: Deterministic Cyrillic phrase map ──────────────────────────────
+// Maps common UA/RU phrases students ask about to English equivalents.
+// Longer keys listed before shorter prefixes so the first match is the most specific.
+
+const CYRILLIC_PHRASE_MAP: Array<readonly [string, string]> = [
+  // Ukrainian — film/media
+  ['смішний фільм',       'funny movie'],
+  ['смішне кіно',         'funny film'],
+  ['цікавий фільм',       'interesting movie'],
+  ['нудний фільм',        'boring movie'],
+  ['класний фільм',       'great movie'],
+  // Ukrainian — time
+  ['протягом 30 хвилин',  'for 30 minutes'],
+  ['протягом',            'for (a period of time)'],
+  // Ukrainian — achievement
+  ['встиг закінчити',     'managed to finish'],
+  ['встигти закінчити',   'managed to finish'],
+  ['встиг зробити',       'managed to do'],
+  ['встиг',               'managed to (do something in time)'],
+  // Russian — film/media
+  ['смешной фильм',       'funny movie'],
+  ['смешное кино',        'funny film'],
+  ['интересный фильм',    'interesting movie'],
+  ['скучный фильм',       'boring movie'],
+  // Russian — time
+  ['в течение 30 минут',  'for 30 minutes'],
+  ['в течение',           'for (a period of time)'],
+  // Russian — achievement
+  ['успел закончить',     'managed to finish'],
+  ['успеть закончить',    'managed to finish'],
+  ['успел сделать',       'managed to do'],
+  ['успел',               'managed to (do something in time)'],
+]
+
+// ── Phase 7.3: English idiom/phrase map ──────────────────────────────────────
+// Deterministic answers for English phrases students ask about during the demo.
+// Longer / more specific keys come first so the first match is the most specific.
+
+const ENGLISH_PHRASE_MAP: Array<readonly [string, string]> = [
+  ['keep pulling you back in',  'something keeps making you want to return to it or continue doing it'],
+  ['pull you back in',          'draw you back in — make you want to return or keep doing something'],
+  ['take part in',              'participate in; join an activity or event'],
+  ['come up with',              'think of or produce — an idea, plan, or answer'],
+  ['figure out',                'understand or solve something after thinking about it'],
+  ['work out',                  'exercise; or find a solution to a problem'],
+  ['break down',                'explain step by step; or stop working (for machines)'],
+  ['catch up',                  'reach the same level as others after being behind'],
+  ['keep up',                   'maintain the same pace or level as others'],
+  ['stand out',                 'be clearly better or more noticeable than others'],
+  ['give up',                   'stop trying; quit'],
+  ['make sense',                'be understandable or logical'],
+  ['make progress',             'move forward; improve over time'],
+  ['take notes',                'write down important information while listening'],
+  ['challenge',                 'something difficult that tests your skills or determination'],
+  ['competitive',               'wanting to win or be better than others'],
+  ['elaborate',                 'explain something in more detail'],
+  ['regardless',                'without being affected by other factors — no matter what'],
+]
+
+// Look up a phrase in the English idiom map. Case-insensitive substring match.
+function lookupEnglishPhrase(phrase: string): string | null {
+  const lower = phrase.toLowerCase().trim()
+  for (const [key, value] of ENGLISH_PHRASE_MAP) {
+    if (lower.includes(key.toLowerCase())) return value
+  }
+  return null
+}
+
+// Patterns to extract the requested phrase from a multilingual or ESL clarification question.
+// Works for UA/RU native-language patterns, English "how to say [Cyrillic]", and broken-ESL English.
+const PHRASE_EXTRACT_RE: RegExp[] = [
+  // UA: "як сказати X", "що означає X", "як перекласти X", etc.
+  /(?:як\s+сказати|як\s+перекласти|як\s+буде|що\s+означає|як\s+звучить|як\s+по.?англ\w*|як\s+правильно\s*(?:сказати)?)\s+(.+?)(?:\s+(?:по\s+англ\w+|англійською|in\s+english))?\s*$/i,
+  // RU: "как сказать X", "что значит X", "переведи X", etc.
+  /(?:как\s+сказать|как\s+будет|как\s+перевести|что\s+значит|как\s+по.?англ\w*|как\s+правильно\s*(?:сказать)?|переведи)\s+(.+?)(?:\s+(?:на\s+английском|in\s+english))?\s*$/i,
+  // English "what does [phrase] mean" / "what do [phrase] mean"
+  /^what\s+(?:does|do)\s+(.+?)\s+mean\s*[?!.]?\s*$/i,
+  // English broken-ESL: "what's mean X" / "whats mean X" / "what mean X" / "what means X"
+  /^what(?:'?s|\s+is)?\s+mean\s+(.+)/i,
+  /^what\s+means?\s+(.+)/i,
+  // English "how to say [phrase]", "how say [phrase]" — works for Cyrillic OR English phrases
+  /^(?:[\p{L}\s,]+?\s+)?how\s+(?:to\s+)?say\s+(.+)$/iu,
+]
+
+// Extract the requested phrase from a multilingual or clarification question.
+function extractRequestedPhrase(text: string): string | null {
+  for (const re of PHRASE_EXTRACT_RE) {
+    const m = text.match(re)
+    if (m?.[1]) {
+      const candidate = m[1].trim().replace(/[?!.,]+$/, '').trim().slice(0, 60)
+      if (candidate.length >= 2) return candidate
+    }
+  }
+  return null
+}
+
+// Look up a Cyrillic phrase in the deterministic map. Returns English translation or null.
+function lookupCyrillicPhrase(phrase: string): string | null {
+  const lower = phrase.toLowerCase().trim()
+  for (const [key, value] of CYRILLIC_PHRASE_MAP) {
+    if (lower.includes(key.toLowerCase())) return value
+  }
+  return null
+}
+
+// Returns true when the text is an English "how to say X" query where X contains Cyrillic.
+function isHowToSayCyrillicQuery(text: string): boolean {
+  if (!/\p{Script=Cyrillic}/u.test(text)) return false
+  return /(?:^|\s)how\s+(?:to\s+)?say\s+/i.test(text.trim())
+}
+
 export interface MultilingualInterruption {
   detected: boolean
   nativeText: string | null  // raw native-language fragment (short, safe to relay)
 }
 
-// Detects if the student is briefly asking in a native language how to say something in English.
+// Detects if the student is briefly asking in a native language how to say something in English,
+// OR using an English "how to say [Cyrillic phrase]" pattern.
 // Returns detected=true when the pattern matches. nativeText is the full utterance (caller truncates).
 // Safe to call on every turn — never throws.
 export function detectMultilingualInterruption(text: string): MultilingualInterruption {
@@ -232,10 +344,94 @@ export function detectMultilingualInterruption(text: string): MultilingualInterr
     if (MULTILINGUAL_REQUEST_RE.test(text)) {
       return { detected: true, nativeText: text.slice(0, 120) }
     }
+    // Phase 7.3: also detect "how to say [Cyrillic content]" (English query about Cyrillic phrase)
+    if (isHowToSayCyrillicQuery(text)) {
+      return { detected: true, nativeText: text.slice(0, 120) }
+    }
     return { detected: false, nativeText: null }
   } catch {
     return { detected: false, nativeText: null }
   }
+}
+
+// ── Phase 7.3: Multilingual phrase answer ─────────────────────────────────────
+// Extracts the requested phrase, looks it up in the deterministic map, and returns
+// a properly anchored response. Falls back safely if phrase is not recognized.
+// Returns a complete message — caller must NOT wrap in ensureTeacherContinues.
+
+export function buildMultilingualPhraseAnswer(
+  text: string,
+  stepPrompt: string,
+  sessionId?: string,
+): string {
+  try {
+    const requested = extractRequestedPhrase(text)
+    if (requested) {
+      // Try Cyrillic map first, then English idiom map
+      const cyrillicHit = lookupCyrillicPhrase(requested)
+      const englishHit  = cyrillicHit ? null : lookupEnglishPhrase(requested)
+      const explanation = cyrillicHit ?? englishHit
+
+      if (explanation) {
+        const mapType = cyrillicHit ? 'cyrillic' : 'english'
+        emitMoveTrace(sessionId, `phrase_answered map=${mapType} phrase="${requested.slice(0, 30)}"`)
+        console.log(`[demo_clarification_answer_built] requested_phrase="${requested.slice(0, 30)}" matched_phrase_key=found map=${mapType} fallback_used=false current_step_preserved=true`)
+        const anchor = stepPrompt
+          ? `Now let's return to the question: ${stepPrompt}`
+          : "Now let's continue."
+        if (cyrillicHit) {
+          // Cyrillic translation: show original → English
+          return `"${requested}" in English is "${explanation}".\n\n${anchor}`
+        }
+        // English idiom: explain meaning
+        return `"${requested.charAt(0).toUpperCase() + requested.slice(1)}" means: ${explanation}.\n\n${anchor}`
+      }
+      // Pattern matched but phrase not in either map — safe fallback, no grammar text
+      console.log(`[demo_clarification_answer_built] requested_phrase="${requested.slice(0, 30)}" matched_phrase_key=none fallback_used=true current_step_preserved=true`)
+      const hasCyrillic = /\p{Script=Cyrillic}/u.test(requested)
+      if (hasCyrillic) {
+        return `I can help with that phrase — try typing it in English. Now let's return to the question: ${stepPrompt}`
+      }
+      return `Good question! "${requested}" is a bit context-dependent — the key idea is the phrase you'll use in the exercise. Now let's return to the question: ${stepPrompt}`
+    }
+    // No phrase extracted — general multilingual rescue
+    console.log(`[demo_clarification_answer_built] requested_phrase=none fallback_used=true current_step_preserved=true`)
+    const anchor = stepPrompt ? `\n\n${stepPrompt}` : ''
+    const hasCyrillicText = /\p{Script=Cyrillic}/u.test(text)
+    if (hasCyrillicText) {
+      return `I can see you're writing in Ukrainian or Russian — the lesson is in English. Try your answer in English, even a simple sentence works.${anchor}`
+    }
+    return `I didn't catch what you meant. Let me know what word or phrase you need help with. Now let's return to the question:${anchor}`
+  } catch {
+    return `Try your answer in English — even a simple sentence is fine.\n\n${stepPrompt}`
+  }
+}
+
+// Returns true when the student input is a phrase/vocab lookup question rather than an exercise answer.
+// Used by demo-routes.ts to route STUDENT_QUESTION cases to phrase lookup instead of grammar text.
+export function detectPhraseQuestion(text: string): boolean {
+  try {
+    const lower = text.toLowerCase().trim()
+    // Cyrillic-language requests
+    if (MULTILINGUAL_REQUEST_RE.test(text)) return true
+    // English "how to say [Cyrillic]"
+    if (isHowToSayCyrillicQuery(text)) return true
+    // English "what does X mean", "what means X", "what's mean X"
+    if (/^what\s+(?:does|do)\s+.+\s+mean\s*[?!.]?\s*$/.test(lower)) return true
+    if (/^what(?:'?s|\s+is)?\s+mean\s+\S/.test(lower)) return true
+    if (/^what\s+means?\s+\S/.test(lower)) return true
+    // English "how to say X", "how say X" (pure English, no Cyrillic)
+    if (/^how\s+(?:to\s+)?say\s+\S/.test(lower)) return true
+    return false
+  } catch {
+    return false
+  }
+}
+
+// Exported wrapper around the private extractVocabPhrase — used by demo-routes.ts
+// when handling student questions to extract the phrase a student is asking about.
+export function extractVocabPhraseForLookup(text: string): string | null {
+  return extractVocabPhrase(text)
 }
 
 // ── Phase 7: Emotional acknowledgment phrases ─────────────────────────────────
