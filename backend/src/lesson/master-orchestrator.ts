@@ -210,9 +210,17 @@ function buildCorrectionBlock(
   }
 
   const shapeHintLine = shapeHint ? `\nANSWER SHAPE REMINDER: ${shapeHint}` : ''
-  const retryAnchor   = (turn !== 'D' && currentItem)
-    ? `\nCLOSING REQUIREMENT: After your ${turn === 'A' ? 'guiding question' : 'hint'}, end with: "Try again — ${currentItem}" so the student knows what to answer.`
-    : ''
+
+  // Phase 7 — UI-aware retry anchor: long items are already visible on screen, repeating them is robotic.
+  // Short items (≤5 words) benefit from verbal echo; long items just need "Try again."
+  const retryAnchor = (() => {
+    if (turn === 'D' || !currentItem) return ''
+    const wordCount = currentItem.trim().split(/\s+/).filter(Boolean).length
+    const anchor = wordCount <= 5
+      ? `"Try again — ${currentItem}"`
+      : `"Try again." (item is already on screen — do NOT repeat it verbatim)`
+    return `\nCLOSING REQUIREMENT: After your ${turn === 'A' ? 'guiding question' : 'hint'}, end with: ${anchor}`
+  })()
 
   traceCorrection('correction_context_built', {
     exerciseType,

@@ -15,6 +15,7 @@
 //  10. Matching revealOnTurn remains B
 //  11. Phase 6B.1 correction rule visibility (see section below)
 //  12. Phase 6B.2 binary exercise calibration (true_false, tick_cross)
+//  13. Phase 7 — Conversational Pedagogy Layer (new)
 
 import { describe, it, expect } from 'vitest'
 
@@ -28,6 +29,8 @@ import {
   HUMAN_TUTOR_RULES,
   CORRECTION_RULES,
   EXERCISE_RULES,
+  ANTI_CHAOS_RULES,
+  CONVERSATIONAL_PEDAGOGY_RULES,
 } from '../../ai/teacher-brain/teacher-brain-rules.js'
 import {
   CORRECTION_PHRASE_STARTERS,
@@ -39,6 +42,11 @@ import {
 import {
   validateSoftSpeakingAnswer,
 } from '../../validation/soft-speaking-validator.js'
+import {
+  detectMultilingualInterruption,
+  buildEmotionalAcknowledgment,
+  detectAndExplainVocabQuestion,
+} from '../../runtime/conversation-moves.js'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -816,5 +824,278 @@ describe('Phase 6B.3 — Soft-Speaking Threshold Calibration', () => {
     const speakingGroup = groups.find(g => g.label === 'SPEAKING RULES')
     expect(speakingGroup).toBeDefined()
     expect(speakingGroup!.rules.length).toBe(SPEAKING_RULES.rules.length)
+  })
+})
+
+// ── 13. Phase 7 — Conversational Pedagogy Layer ──────────────────────────────
+//
+// Assertions for:
+//  a) Conversational acknowledgment rule group exists and is bounded
+//  b) Bounded reaction rules visible in speaking modes
+//  c) Multilingual interruption detection (RU/UA patterns)
+//  d) Emotional acknowledgment behavior
+//  e) No free-chat drift (deterministic modes unaffected)
+//  f) Token budget preserved after Phase 7 changes
+//  g) ANTI_CHAOS_RULES rule 17 updated for UI-aware retry anchor
+
+describe('Phase 7 — Conversational Pedagogy Layer', () => {
+  // ── a) CONVERSATIONAL_PEDAGOGY_RULES rule group ───────────────────────────
+
+  it('CONVERSATIONAL_PEDAGOGY_RULES group exists and has exactly 4 rules', () => {
+    expect(CONVERSATIONAL_PEDAGOGY_RULES).toBeDefined()
+    expect(CONVERSATIONAL_PEDAGOGY_RULES.rules.length).toBe(4)
+  })
+
+  it('CONVERSATIONAL_PEDAGOGY_RULES rule 1: react to meaningful content before moving forward', () => {
+    const hasReactRule = CONVERSATIONAL_PEDAGOGY_RULES.rules.some(r =>
+      r.toLowerCase().includes('meaningful content') ||
+      r.toLowerCase().includes('acknowledge briefly'),
+    )
+    expect(hasReactRule).toBe(true)
+  })
+
+  it('CONVERSATIONAL_PEDAGOGY_RULES rule 2: maximum one acknowledgment per turn', () => {
+    const hasMaxOneRule = CONVERSATIONAL_PEDAGOGY_RULES.rules.some(r =>
+      r.toLowerCase().includes('maximum') && r.toLowerCase().includes('one'),
+    )
+    expect(hasMaxOneRule).toBe(true)
+  })
+
+  it('CONVERSATIONAL_PEDAGOGY_RULES rule 3: always continue lesson after acknowledgment', () => {
+    const hasContinueRule = CONVERSATIONAL_PEDAGOGY_RULES.rules.some(r =>
+      r.toLowerCase().includes('continue lesson') ||
+      r.toLowerCase().includes('lesson flow'),
+    )
+    expect(hasContinueRule).toBe(true)
+  })
+
+  it('CONVERSATIONAL_PEDAGOGY_RULES rule 4: bounded curiosity only — no free-chat', () => {
+    const hasBoundedRule = CONVERSATIONAL_PEDAGOGY_RULES.rules.some(r =>
+      r.toLowerCase().includes('bounded') ||
+      (r.toLowerCase().includes('follow-up') && r.toLowerCase().includes('not')),
+    )
+    expect(hasBoundedRule).toBe(true)
+  })
+
+  // ── b) Speaking mode behavior contract includes Phase 7 rules ─────────────
+
+  it('soft_speaking behavior contract includes CONVERSATIONAL PEDAGOGY RULES group', () => {
+    const groups = selectBehaviorContractRules('soft_speaking')
+    const convGroup = groups.find(g => g.label === 'CONVERSATIONAL PEDAGOGY RULES')
+    expect(convGroup).toBeDefined()
+    expect(convGroup!.rules.length).toBe(CONVERSATIONAL_PEDAGOGY_RULES.rules.length)
+  })
+
+  it('warmup_activation behavior contract includes CONVERSATIONAL PEDAGOGY RULES group', () => {
+    const groups = selectBehaviorContractRules('warmup_activation')
+    const convGroup = groups.find(g => g.label === 'CONVERSATIONAL PEDAGOGY RULES')
+    expect(convGroup).toBeDefined()
+  })
+
+  it('SPEAKING_RULES group still fully visible in soft_speaking after Phase 7 addition', () => {
+    const groups = selectBehaviorContractRules('soft_speaking')
+    const speakingGroup = groups.find(g => g.label === 'SPEAKING RULES')
+    expect(speakingGroup).toBeDefined()
+    expect(speakingGroup!.rules.length).toBe(SPEAKING_RULES.rules.length)
+  })
+
+  // ── c) Multilingual interruption detection ────────────────────────────────
+
+  it('detectMultilingualInterruption: detects Ukrainian "як сказати"', () => {
+    const result = detectMultilingualInterruption('як сказати протягом 30 хвилин')
+    expect(result.detected).toBe(true)
+    expect(result.nativeText).toBeTruthy()
+  })
+
+  it('detectMultilingualInterruption: detects Russian "как будет"', () => {
+    const result = detectMultilingualInterruption('как будет успел закончить?')
+    expect(result.detected).toBe(true)
+  })
+
+  it('detectMultilingualInterruption: detects Ukrainian "як перекласти"', () => {
+    const result = detectMultilingualInterruption('як перекласти "for 30 minutes"')
+    expect(result.detected).toBe(true)
+  })
+
+  it('detectMultilingualInterruption: detects Russian "переведи"', () => {
+    const result = detectMultilingualInterruption('переведи это слово пожалуйста')
+    expect(result.detected).toBe(true)
+  })
+
+  it('detectMultilingualInterruption: does NOT fire on normal English exercise answers', () => {
+    expect(detectMultilingualInterruption('She goes to school every day').detected).toBe(false)
+    expect(detectMultilingualInterruption('I managed to finish the project').detected).toBe(false)
+    expect(detectMultilingualInterruption('Does he usually play tennis?').detected).toBe(false)
+  })
+
+  it('detectMultilingualInterruption: nativeText is bounded (≤120 chars)', () => {
+    const longInput = 'як сказати ' + 'x'.repeat(200)
+    const result = detectMultilingualInterruption(longInput)
+    if (result.detected && result.nativeText) {
+      expect(result.nativeText.length).toBeLessThanOrEqual(120)
+    }
+  })
+
+  // ── d) Emotional acknowledgment behavior ──────────────────────────────────
+
+  it('buildEmotionalAcknowledgment: returns phrase for achievement content', () => {
+    const state = { recentTopics: [], emotionalSignal: 'neutral' as const, avoidedPhrases: [], correctionCount: 0, turnCount: 0 }
+    const phrase = buildEmotionalAcknowledgment('I solved the math project by myself', state)
+    expect(phrase).toBeTruthy()
+    expect(typeof phrase).toBe('string')
+    if (phrase) {
+      expect(phrase.split(' ').length).toBeLessThanOrEqual(15)  // bounded length
+    }
+  })
+
+  it('buildEmotionalAcknowledgment: returns phrase for difficulty content', () => {
+    const state = { recentTopics: [], emotionalSignal: 'neutral' as const, avoidedPhrases: [], correctionCount: 0, turnCount: 0 }
+    const phrase = buildEmotionalAcknowledgment("I can't do this, it's really difficult", state)
+    expect(phrase).toBeTruthy()
+  })
+
+  it('buildEmotionalAcknowledgment: returns null for short pure-exercise answers', () => {
+    const state = { recentTopics: [], emotionalSignal: 'neutral' as const, avoidedPhrases: [], correctionCount: 0, turnCount: 0 }
+    expect(buildEmotionalAcknowledgment('does', state)).toBeNull()
+    expect(buildEmotionalAcknowledgment('went', state)).toBeNull()
+    expect(buildEmotionalAcknowledgment('have', state)).toBeNull()
+  })
+
+  it('buildEmotionalAcknowledgment: never throws on any input', () => {
+    const state = { recentTopics: [], emotionalSignal: 'neutral' as const, avoidedPhrases: [], correctionCount: 0, turnCount: 0 }
+    expect(() => buildEmotionalAcknowledgment('', state)).not.toThrow()
+    expect(() => buildEmotionalAcknowledgment('ok', state)).not.toThrow()
+    expect(() => buildEmotionalAcknowledgment('!@#$%', state)).not.toThrow()
+  })
+
+  it('buildEmotionalAcknowledgment: rotates phrases with different turnCount', () => {
+    const text = 'I managed to solve this difficult problem all by myself yesterday'
+    const s0 = { recentTopics: [], emotionalSignal: 'neutral' as const, avoidedPhrases: [], correctionCount: 0, turnCount: 0 }
+    const s1 = { recentTopics: [], emotionalSignal: 'neutral' as const, avoidedPhrases: [], correctionCount: 0, turnCount: 1 }
+    const p0 = buildEmotionalAcknowledgment(text, s0)
+    const p1 = buildEmotionalAcknowledgment(text, s1)
+    // Either same (if pool size 1) or different — both must be non-null
+    expect(p0).toBeTruthy()
+    expect(p1).toBeTruthy()
+  })
+
+  // ── e) No free-chat drift — deterministic modes unaffected ─────────────────
+
+  it('deterministic_sequential behavior contract does NOT include CONVERSATIONAL PEDAGOGY RULES', () => {
+    const groups = selectBehaviorContractRules('deterministic_sequential')
+    const convGroup = groups.find(g => g.label === 'CONVERSATIONAL PEDAGOGY RULES')
+    expect(convGroup).toBeUndefined()
+  })
+
+  it('matching_sequential behavior contract does NOT include CONVERSATIONAL PEDAGOGY RULES', () => {
+    const groups = selectBehaviorContractRules('matching_sequential')
+    const convGroup = groups.find(g => g.label === 'CONVERSATIONAL PEDAGOGY RULES')
+    expect(convGroup).toBeUndefined()
+  })
+
+  // ── f) Token budget preserved ─────────────────────────────────────────────
+
+  it('soft_speaking behavior contract stays exactly at ≤ 20 rules after Phase 7 (budget guard)', () => {
+    const groups = selectBehaviorContractRules('soft_speaking')
+    const totalRules = groups.reduce((sum, g) => sum + g.rules.length, 0)
+    expect(totalRules).toBeLessThanOrEqual(20)
+  })
+
+  it('warmup_activation behavior contract stays exactly at ≤ 20 rules after Phase 7', () => {
+    const groups = selectBehaviorContractRules('warmup_activation')
+    const totalRules = groups.reduce((sum, g) => sum + g.rules.length, 0)
+    expect(totalRules).toBeLessThanOrEqual(20)
+  })
+
+  it('deterministic_sequential budget unaffected by Phase 7 (≤ 20 rules)', () => {
+    const groups = selectBehaviorContractRules('deterministic_sequential')
+    const totalRules = groups.reduce((sum, g) => sum + g.rules.length, 0)
+    expect(totalRules).toBeLessThanOrEqual(20)
+  })
+
+  // ── g) ANTI_CHAOS_RULES rule 17 updated for UI-aware retry anchor ─────────
+
+  it('ANTI_CHAOS_RULES rule 17 references short-item vs long-item retry distinction', () => {
+    const rule17 = ANTI_CHAOS_RULES.rules[16]  // 0-based index 16 = rule 17
+    expect(rule17).toBeDefined()
+    // Rule 17 must acknowledge that long items on screen should NOT be repeated verbatim
+    const hasUiAwareness = (
+      rule17!.toLowerCase().includes('screen') ||
+      rule17!.toLowerCase().includes('visible') ||
+      rule17!.toLowerCase().includes('≤5') ||
+      rule17!.toLowerCase().includes('short item') ||
+      rule17!.toLowerCase().includes('long item')
+    )
+    expect(hasUiAwareness).toBe(true)
+  })
+
+  it('ANTI_CHAOS_RULES rule 17 still requires a retry signal after correction', () => {
+    const rule17 = ANTI_CHAOS_RULES.rules[16]!
+    expect(rule17.toLowerCase()).toMatch(/try again/)
+  })
+})
+
+// ── 14. Phase 7.1 — Demo Voice Continuity & Clarification Routing ─────────────
+//
+// Assertions for:
+//  a) "what's mean X" pattern covered by detectAndExplainVocabQuestion
+//  b) detectMultilingualInterruption additional patterns
+//  c) No false positives on normal English answers
+//  d) Budget protection — TTS type 'key_correction' is in the allowed list (not checked here;
+//     the backend ai-config allowedMessageTypes whitelist is authoritative)
+
+describe('Phase 7.1 — Demo Voice Continuity & Clarification Routing', () => {
+  // ── a) "what's mean X" pattern ──────────────────────────────────────────────
+
+  it('detectAndExplainVocabQuestion: handles "what\'s mean worth my time" (new pattern)', () => {
+    const result = detectAndExplainVocabQuestion("what's mean worth my time")
+    expect(result).not.toBeNull()
+    expect(typeof result).toBe('string')
+    expect(result).toMatch(/worth my time/i)
+  })
+
+  it('detectAndExplainVocabQuestion: handles "what\'s mean pitch" (new pattern)', () => {
+    const result = detectAndExplainVocabQuestion("what's mean pitch?")
+    expect(result).not.toBeNull()
+  })
+
+  it('detectAndExplainVocabQuestion: returns null for unrecognized phrase (no false positives)', () => {
+    const result = detectAndExplainVocabQuestion("what's mean zxzxzxzx")
+    expect(result).toBeNull()
+  })
+
+  it('detectAndExplainVocabQuestion: never throws on edge-case inputs', () => {
+    expect(() => detectAndExplainVocabQuestion("what's mean")).not.toThrow()
+    expect(() => detectAndExplainVocabQuestion("")).not.toThrow()
+    expect(() => detectAndExplainVocabQuestion("!@#$")).not.toThrow()
+  })
+
+  // ── b) Multilingual patterns ─────────────────────────────────────────────────
+
+  it('detectMultilingualInterruption: detects "що означає" (Ukrainian)', () => {
+    expect(detectMultilingualInterruption('що означає challenge?').detected).toBe(true)
+  })
+
+  it('detectMultilingualInterruption: detects "як правильно" (Ukrainian)', () => {
+    expect(detectMultilingualInterruption('як правильно сказати це').detected).toBe(true)
+  })
+
+  it('detectMultilingualInterruption: detects mixed RU/UA "переведи"', () => {
+    expect(detectMultilingualInterruption('переведи challenge').detected).toBe(true)
+  })
+
+  // ── c) No false positives ────────────────────────────────────────────────────
+
+  it('detectMultilingualInterruption: does not fire on normal English answers', () => {
+    expect(detectMultilingualInterruption('Would you play it competitively?').detected).toBe(false)
+    expect(detectMultilingualInterruption('I love gaming because it is relaxing').detected).toBe(false)
+    expect(detectMultilingualInterruption("I don't know how to say this in English").detected).toBe(false)
+  })
+
+  it('detectAndExplainVocabQuestion: existing patterns still work after adding new one', () => {
+    // Pattern 1: "what means X"
+    expect(detectAndExplainVocabQuestion('what means worth my time')).not.toBeNull()
+    // Pattern 2: "what does X mean"
+    expect(detectAndExplainVocabQuestion('what does worth my time mean')).not.toBeNull()
   })
 })

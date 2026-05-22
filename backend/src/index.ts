@@ -27,11 +27,12 @@ import { checkConnection as checkRedis } from './db/redis.js'
 import { attachLessonWS, closeAllActiveClients } from './ws/lesson-ws.js'
 import { setupOpenAI } from './ai/openai-handler.js'
 import { initObservability, flushObservability } from './observability/index.js'
-import apiRoutes     from './api/routes.js'
-import authRoutes    from './api/auth-routes.js'
-import demoRoutes    from './api/demo-routes.js'
-import lessonRoutes  from './api/lesson-routes.js'
-import billingRoutes from './billing/billing-routes.js'
+import apiRoutes      from './api/routes.js'
+import authRoutes     from './api/auth-routes.js'
+import demoRoutes     from './api/demo-routes.js'
+import lessonRoutes   from './api/lesson-routes.js'
+import billingRoutes  from './billing/billing-routes.js'
+import telegramRoutes from './api/telegram-routes.js'
 
 const REQUIRED_ENV = [
   'DATABASE_URL', 'REDIS_URL', 'JWT_SECRET',
@@ -56,6 +57,14 @@ if (missingEnv.length > 0) {
   console.error('\nReplace placeholder values in backend/.env and restart the server.')
   console.error('See backend/.env.example for the required format.')
   process.exit(1)
+}
+
+// OpenAI / TTS key diagnostics — prefix only, never full key
+const _openAiKey = process.env.OPENAI_API_KEY ?? ''
+if (_openAiKey) {
+  console.log(`[env] OPENAI_API_KEY present=yes prefix=${_openAiKey.slice(0, 7)}... tts_model=${process.env.OPENAI_TTS_MODEL ?? 'tts-1'} voice=${process.env.OPENAI_TTS_VOICE ?? 'nova'}`)
+} else {
+  console.warn('[env] OPENAI_API_KEY present=no — demo TTS will degrade gracefully (audio skipped)')
 }
 
 const PORT         = Number(process.env.PORT ?? 4000)
@@ -112,6 +121,7 @@ async function main(): Promise<void> {
   app.use(demoRoutes)
   app.use(lessonRoutes)
   app.use(billingRoutes)
+  app.use(telegramRoutes)
   app.use(apiRoutes)
 
   const server = createServer(app)

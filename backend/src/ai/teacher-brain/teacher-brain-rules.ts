@@ -126,6 +126,18 @@ export const HUMAN_TUTOR_RULES: RuleGroup = {
   ],
 }
 
+// Phase 7: Conversational Pedagogy Layer — bounded emotional responsiveness
+export const CONVERSATIONAL_PEDAGOGY_RULES: RuleGroup = {
+  name: 'CONVERSATIONAL_PEDAGOGY_RULES',
+  description: 'Rules for bounded conversational engagement and emotional responsiveness to student content',
+  rules: [
+    'When student shares meaningful content (achievement, difficulty, personal experience): react with ONE brief phrase (6–12 words) before continuing the lesson — never ignore it, never over-expand it',
+    'Maximum ONE conversational acknowledgment per turn — then immediately continue lesson flow in the same response',
+    'After any acknowledgment: always return to lesson — never stop at the acknowledgment and never open follow-up discussion about student personal content',
+    'Bounded curiosity only: brief reactions like "That sounds difficult." or "Wow — so you did it alone?" are allowed; follow-up questions about personal content, multi-turn digressions, and free-chat loops are not',
+  ],
+}
+
 export const ANTI_CHAOS_RULES: RuleGroup = {
   name: 'ANTI_CHAOS_RULES',
   description: 'Explicit prohibitions derived from observed production failures',
@@ -162,8 +174,8 @@ export const ANTI_CHAOS_RULES: RuleGroup = {
     'Skip announcement is exactly one sentence — no teaching moment, no apology, no reflection',
     // Rule 16 — Exercise numbering authority
     'Exercise number in ANY announcement must match the number explicitly given in the ENGINE STATE block or EXERCISE TURN COMPLETION CONTRACT — never invent or guess a number',
-    // Rule 17 — Post-correction retry requirement
-    'After a correction (TURN A/B/C), always end your response with "Try again — [item text]" so the student knows what to say next',
+    // Rule 17 — Post-correction retry requirement (UI-aware)
+    'After a correction (TURN A/B/C), end with: "Try again — [item]" for short items (≤5 words) already memorised; for longer items visible on screen use "Try again." without repeating the full text verbatim',
   ],
 }
 
@@ -176,21 +188,24 @@ export const ALL_RULE_GROUPS: readonly RuleGroup[] = [
   MEMORY_RULES,
   ANTI_CHAOS_RULES,
   HUMAN_TUTOR_RULES,
+  CONVERSATIONAL_PEDAGOGY_RULES,
 ] as const
 
 export function getRulesForMode(runtimeMode: string): readonly string[] {
   // Phase H: HUMAN_TUTOR_RULES injected in all active exercise modes
+  // Phase 7: CONVERSATIONAL_PEDAGOGY_RULES appended to speaking modes
+  // Note: buildRulesSection slices to first 8 — full list is only for test coverage & selectBehaviorContractRules
   switch (runtimeMode) {
     case 'deterministic_sequential':
       return [...EXERCISE_RULES.rules, ...CORRECTION_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
     case 'matching_sequential':
       return [...EXERCISE_RULES.rules, ...CORRECTION_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
     case 'soft_speaking':
-      return [...SPEAKING_RULES.rules, ...EXERCISE_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
+      return [...SPEAKING_RULES.rules, ...HUMAN_TUTOR_RULES.rules, ...CONVERSATIONAL_PEDAGOGY_RULES.rules]
     case 'grammar_explanation':
       return [...EXERCISE_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
     case 'warmup_activation':
-      return [...SPEAKING_RULES.rules, ...HUMAN_TUTOR_RULES.rules]
+      return [...SPEAKING_RULES.rules, ...HUMAN_TUTOR_RULES.rules, ...CONVERSATIONAL_PEDAGOGY_RULES.rules]
     case 'unsupported':
       return [...SKIP_RULES.rules]
     default:

@@ -56,6 +56,7 @@ import {
   chooseCuriousFollowup,
   chooseReflectiveTransition,
   chooseCorrectionBridge,
+  detectMultilingualInterruption,
 } from '../runtime/conversation-moves.js'
 
 const router = Router()
@@ -79,6 +80,19 @@ const HELP_MAX_CHARS      = 160
 function ensureTeacherContinues(msg: string, stepPrompt: string): string {
   const t = msg.trim()
   return t.endsWith('?') ? t : (stepPrompt ? `${t}\n\n${stepPrompt}` : t)
+}
+
+// ── Multilingual rescue response ──────────────────────────────────────────────
+// Called when a student writes in Ukrainian / Russian (detected via MULTILINGUAL_REQUEST_RE).
+// If the message contains a known English vocab word we explain it; otherwise give a
+// short English prompt.  Returns 200 chars max so TTS budget is not wasted.
+function buildMultilingualRescueText(answer: string): string {
+  const vocabKey = detectVocabWord(answer)
+  if (vocabKey && vocabKey !== '__confused__') {
+    const entry = VOCAB_EXPLANATIONS[vocabKey]
+    if (entry) return `Good question. ${entry.explanation}\n${entry.example}\n${entry.taskHint}`
+  }
+  return "I can see you're writing in Ukrainian or Russian — the lesson is in English. Try your answer in English: even a simple sentence works."
 }
 
 // ── Simple stable hash for cache keys ────────────────────────────────────────
@@ -422,6 +436,28 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         res.status(422).json({ code: 'INVALID_ANSWER', message: ensureTeacherContinues(supportMsg, stepPrompt), ...convRetry('uncertainty_expressed') })
         return
       }
+
+      // Clarification interceptors — must run before classifyInput so grammar questions
+      // are not treated as valid answers and step is not inadvertently advanced.
+      if (detectStudentQuestion(answer)) {
+        const response = buildStudentQuestionResponse(session, stepPrompt)
+        console.log(`[demo-clarification-intercepted] stepKey=warm_up reason=student_question`)
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: response, ...convClarification('student_question') })
+        return
+      }
+      const wuInlineVocab = detectAndExplainVocabQuestion(answer, sessionId)
+      if (wuInlineVocab) {
+        console.log(`[demo-clarification-intercepted] stepKey=warm_up reason=vocab_question`)
+        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(`${wuInlineVocab}\n\nNow, back to the question:`, stepPrompt), ...convClarification('vocab_help') })
+        return
+      }
+      const wuMl = detectMultilingualInterruption(answer)
+      if (wuMl.detected) {
+        console.log(`[demo-multilingual-intercepted] stepKey=warm_up`)
+        res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: ensureTeacherContinues(buildMultilingualRescueText(answer), stepPrompt), ...convClarification('multilingual_rescue') })
+        return
+      }
+
       const classified = classifyInput(answer, expectedStep.minLength)
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=warm_up')
@@ -494,6 +530,27 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         res.status(422).json({ code: 'MODERATION', message: buildToxicModerationResponse(answer, stepPrompt), ...convRetry('moderation') })
         return
       }
+
+      // Clarification interceptors — before classifyInput to catch grammar/vocab questions.
+      if (detectStudentQuestion(answer)) {
+        const response = buildStudentQuestionResponse(session, stepPrompt)
+        console.log(`[demo-clarification-intercepted] stepKey=warm_up_followup reason=student_question`)
+        res.status(422).json({ code: 'STUDENT_QUESTION', message: response, ...convClarification('student_question') })
+        return
+      }
+      const wufInlineVocab = detectAndExplainVocabQuestion(answer, sessionId)
+      if (wufInlineVocab) {
+        console.log(`[demo-clarification-intercepted] stepKey=warm_up_followup reason=vocab_question`)
+        res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(`${wufInlineVocab}\n\nNow, back to the question:`, stepPrompt), ...convClarification('vocab_help') })
+        return
+      }
+      const wufMl = detectMultilingualInterruption(answer)
+      if (wufMl.detected) {
+        console.log(`[demo-multilingual-intercepted] stepKey=warm_up_followup`)
+        res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: ensureTeacherContinues(buildMultilingualRescueText(answer), stepPrompt), ...convClarification('multilingual_rescue') })
+        return
+      }
+
       const classified = classifyInput(answer, expectedStep.minLength)
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=warm_up_followup')
@@ -611,6 +668,14 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         return
       }
 
+      // ── 0d. Multilingual rescue — Ukrainian / Russian translation requests ──────
+      const sfMl = detectMultilingualInterruption(answer)
+      if (sfMl.detected) {
+        console.log(`[demo-multilingual-intercepted] stepKey=speaking_followup`)
+        res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: ensureTeacherContinues(buildMultilingualRescueText(answer), stepPrompt), ...convClarification('multilingual_rescue') })
+        return
+      }
+
       const classified = classifyInput(answer, expectedStep.minLength)
       if (classified.cls === 'VOCAB_HELP') {
         console.log('[demo-ai] skipped reason=VOCAB_HELP step=speaking_followup')
@@ -710,6 +775,14 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         console.log(`[demo-vocab] inline_explanation step=${stepKey}`)
         const vocabMsg = `${inlineVocab}\n\nNow, back to the task:`
         res.status(422).json({ code: 'VOCAB_HELP', message: ensureTeacherContinues(vocabMsg, stepPrompt), ...convClarification('vocab_help') })
+        return
+      }
+
+      // ── 0f. Multilingual rescue — Ukrainian / Russian translation requests ──────
+      const taskMl = detectMultilingualInterruption(answer)
+      if (taskMl.detected) {
+        console.log(`[demo-multilingual-intercepted] stepKey=${stepKey}`)
+        res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: ensureTeacherContinues(buildMultilingualRescueText(answer), stepPrompt), ...convClarification('multilingual_rescue') })
         return
       }
 
@@ -1391,12 +1464,25 @@ router.post('/demo/tts', requireAuth, async (req: Request, res: Response): Promi
     const isApiErr = err != null && typeof err === 'object' && 'status' in err
     const errStatus = isApiErr ? (err as { status: number }).status : null
     const errMsg = err instanceof Error ? err.message : String(err)
-    if (errStatus === 429) {
-      console.warn(`[demo-tts] openai_rate_limit type=${messageType} chars=${text.length}`)
+    const keyPrefix = (process.env.OPENAI_API_KEY ?? '').slice(0, 7) || '(not-set)'
+    const ttsModel  = process.env.OPENAI_TTS_MODEL ?? 'tts-1'
+
+    if (errMsg.includes('OPENAI_API_KEY not set') || errStatus === null && errMsg.includes('apiKey')) {
+      console.error(`[demo-tts] openai_key_missing — set OPENAI_API_KEY in Railway env vars`)
     } else if (errStatus === 401 || errStatus === 403) {
-      console.error(`[demo-tts] openai_auth_error status=${errStatus} type=${messageType}`)
+      console.error(`[demo-tts] openai_auth_error status=${errStatus} key_prefix=${keyPrefix} type=${messageType}`)
+      console.error(`[demo-tts] fix: verify OPENAI_API_KEY in Railway is valid and not expired`)
+    } else if (errStatus === 429) {
+      const isQuota = errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('billing') || errMsg.toLowerCase().includes('insufficient_quota')
+      if (isQuota) {
+        console.warn(`[demo-tts] openai_quota_billing key_prefix=${keyPrefix} type=${messageType}`)
+      } else {
+        console.warn(`[demo-tts] openai_rate_limit type=${messageType} chars=${text.length}`)
+      }
+    } else if (errStatus === 400 && errMsg.toLowerCase().includes('model')) {
+      console.error(`[demo-tts] openai_invalid_model model=${ttsModel} type=${messageType} — check OPENAI_TTS_MODEL`)
     } else {
-      console.error(`[demo-tts] openai_error status=${errStatus ?? 'unknown'} msg="${errMsg.slice(0, 120)}" type=${messageType}`)
+      console.error(`[demo-tts] openai_error status=${errStatus ?? 'unknown'} model=${ttsModel} key_prefix=${keyPrefix} msg="${errMsg.slice(0, 120)}" type=${messageType}`)
     }
     // Degrade gracefully: text bubble is already visible in the frontend — lesson continues.
     console.log(`[demo-tts] degrading_gracefully type=${messageType} text_visible=true audio_skipped=true`)

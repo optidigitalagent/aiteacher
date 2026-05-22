@@ -195,6 +195,8 @@ const VOCAB_QUESTION_PATTERNS: Array<RegExp> = [
   /\bwhat(?:'s|\s+is|\s+does|\s+do)\s+['"]?([a-z][\w\s']{1,35}?)['"]?\s+mean/i,
   /\bmeaning\s+of\s+['"]?([a-z][\w\s']{1,35}?)['"]?/i,
   /\bi\s+don'?t\s+(?:know|understand)\s+(?:what\s+)?['"]?([a-z][\w\s']{1,35}?)['"]?\s+mean/i,
+  // "what's mean X" / "whats mean X" — bad-English phrasing of "what does X mean"
+  /\bwhat'?s\s+mean\s+['"]?([a-z][\w\s']{1,35}?)['"]?\s*[?!.,]?$/i,
 ]
 
 function extractVocabPhrase(text: string): string | null {
@@ -207,6 +209,111 @@ function extractVocabPhrase(text: string): string | null {
     }
   }
   return null
+}
+
+// ── Phase 7: Multilingual interruption detection ──────────────────────────────
+// Detects brief RU/UA translation requests mid-lesson (e.g. "як сказати X", "как будет X").
+// Zero AI calls. Returns the native query text for caller to handle.
+
+// Note: \b is not used — JavaScript word boundaries don't match Cyrillic characters
+const MULTILINGUAL_REQUEST_RE =
+  /(як\s+сказати|як\s+перекласти|як\s+буде|як\s+по.?англ|як\s+правильно|що\s+означає|як\s+звучить|как\s+сказать|как\s+будет|как\s+перевести|как\s+по.?англ|что\s+значит|переведи|как\s+правильно)/i
+
+export interface MultilingualInterruption {
+  detected: boolean
+  nativeText: string | null  // raw native-language fragment (short, safe to relay)
+}
+
+// Detects if the student is briefly asking in a native language how to say something in English.
+// Returns detected=true when the pattern matches. nativeText is the full utterance (caller truncates).
+// Safe to call on every turn — never throws.
+export function detectMultilingualInterruption(text: string): MultilingualInterruption {
+  try {
+    if (MULTILINGUAL_REQUEST_RE.test(text)) {
+      return { detected: true, nativeText: text.slice(0, 120) }
+    }
+    return { detected: false, nativeText: null }
+  } catch {
+    return { detected: false, nativeText: null }
+  }
+}
+
+// ── Phase 7: Emotional acknowledgment phrases ─────────────────────────────────
+// Brief, bounded reactions to meaningful student content (achievements, difficulty, emotions).
+// Rotated by turnCount to avoid repetition. Never more than one per turn.
+
+const EMOTIONAL_ACKNOWLEDGMENTS_NEUTRAL: string[] = [
+  "That actually makes sense.",
+  "Fair enough — that's a real situation.",
+  "Interesting — good context for today.",
+  "That gives me a clearer picture.",
+]
+
+const EMOTIONAL_ACKNOWLEDGMENTS_EFFORT: string[] = [
+  "That sounds like it took real effort.",
+  "So you worked through it yourself — good.",
+  "That kind of practice is exactly what builds it.",
+  "Real work — that's the kind of thing that sticks.",
+]
+
+const EMOTIONAL_ACKNOWLEDGMENTS_DIFFICULTY: string[] = [
+  "That sounds difficult.",
+  "That's a hard one — understandably so.",
+  "Yeah, that can be genuinely tough.",
+  "Difficult situation — makes sense you'd notice that.",
+]
+
+const EMOTIONAL_ACKNOWLEDGMENTS_ACHIEVEMENT: string[] = [
+  "So you figured it out alone — impressive.",
+  "Wow — you solved that by yourself?",
+  "That's a real achievement, actually.",
+  "Doing that solo takes focus.",
+]
+
+// Detects emotional signal type from student text for selecting acknowledgment category.
+// Returns: 'achievement' | 'difficulty' | 'effort' | 'neutral'
+function detectAcknowledgmentCategory(text: string): 'achievement' | 'difficulty' | 'effort' | 'neutral' {
+  const lower = text.toLowerCase()
+  if (/\b(alone|myself|by myself|solved|finished|completed|managed|figured out|did it|on my own)\b/.test(lower)) {
+    return 'achievement'
+  }
+  if (/\b(hard|difficult|tough|struggle|couldn't|can't|stuck|confused|impossible|failed|gave up)\b/.test(lower)) {
+    return 'difficulty'
+  }
+  if (/\b(practised|practiced|worked|studied|tried|spent|hours|effort|every day|kept going)\b/.test(lower)) {
+    return 'effort'
+  }
+  return 'neutral'
+}
+
+// Returns a brief emotional acknowledgment phrase for meaningful student content.
+// Returns null when text is a simple exercise answer or filler (no meaningful content detected).
+// Zero AI calls. Rotates by turnCount.
+export function buildEmotionalAcknowledgment(
+  text: string,
+  state: ConversationContinuityState,
+  sessionId?: string,
+): string | null {
+  try {
+    // Only acknowledge when the text has enough content to be meaningful (>4 words, not pure exercise)
+    const wordCount = text.trim().split(/\s+/).filter(Boolean).length
+    if (wordCount <= 4) return null
+
+    const category = detectAcknowledgmentCategory(text)
+    let pool: string[]
+    switch (category) {
+      case 'achievement': pool = EMOTIONAL_ACKNOWLEDGMENTS_ACHIEVEMENT; break
+      case 'difficulty':  pool = EMOTIONAL_ACKNOWLEDGMENTS_DIFFICULTY;  break
+      case 'effort':      pool = EMOTIONAL_ACKNOWLEDGMENTS_EFFORT;       break
+      default:            return null  // 'neutral' — no forced acknowledgment
+    }
+
+    const phrase = pool[state.turnCount % pool.length]!
+    emitMoveTrace(sessionId, `emotional_acknowledgment category=${category}`)
+    return phrase
+  } catch {
+    return null
+  }
 }
 
 // ── Public exports ────────────────────────────────────────────────────────────

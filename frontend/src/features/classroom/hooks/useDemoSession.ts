@@ -282,8 +282,8 @@ export function useDemoSession({
         setIsSpeaking(false)
         setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: errMsgId, sender: 'ai', text: errMsgText }])
 
-        // Voice key teacher moments — corrections/quality retries feel personal when spoken
-        const spokeCodes = new Set(['MODERATION', 'MEANING_CONFIRMED', 'STUDENT_QUESTION', 'VOCAB_HELP', 'QUALITY_RETRY', 'META_HELP'])
+        // Voice all meaningful teacher responses — retries, corrections, clarifications, multilingual rescue
+        const spokeCodes = new Set(['MODERATION', 'MEANING_CONFIRMED', 'STUDENT_QUESTION', 'VOCAB_HELP', 'QUALITY_RETRY', 'META_HELP', 'INVALID_ANSWER', 'ACKNOWLEDGMENT', 'MULTILINGUAL_RESCUE'])
         if (spokeCodes.has(j.code ?? '') && j.message) {
           const spokenText = j.spokenMessage ?? j.message
           const voiceType = j.code === 'QUALITY_RETRY'

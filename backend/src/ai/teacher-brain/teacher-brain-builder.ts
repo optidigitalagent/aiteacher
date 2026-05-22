@@ -17,6 +17,7 @@ import {
   EXERCISE_RULES,
   CORRECTION_RULES,
   SPEAKING_RULES,
+  CONVERSATIONAL_PEDAGOGY_RULES,
 } from './teacher-brain-rules.js'
 import { selectExamples, formatExampleForPrompt } from './teacher-brain-examples.js'
 import {
@@ -117,6 +118,7 @@ export function buildPaidLessonTeacherBrainContext(input: TeacherBrainGuidanceIn
     buildBehaviorContractSection(ctx),
     buildExerciseTeachingBrainSection(ctx, input),  // Exercise Teaching Brain
     buildHumanTutorSection(ctx, state),    // Phase H: human tutor behavior
+    buildConversationalPedagogySection(ctx),         // Phase 7: bounded conversational engagement
     buildForbiddenSection(ctx),
     buildExamplesSection(ctx),
     buildStructuredOutputInstruction(),
@@ -295,10 +297,12 @@ export function selectBehaviorContractRules(mode: string): BehaviorContractRuleG
         { label: 'EXERCISE RULES',    rules: EXERCISE_RULES.rules },
         { label: 'CORRECTION RULES',  rules: CORRECTION_RULES.rules },
       ]
+    // Phase 7: CONVERSATIONAL_PEDAGOGY_RULES added for speaking modes (4 rules, budget ≤ 20)
     case 'soft_speaking':
     case 'warmup_activation':
       return [
-        { label: 'SPEAKING RULES',    rules: SPEAKING_RULES.rules },
+        { label: 'SPEAKING RULES',               rules: SPEAKING_RULES.rules },
+        { label: 'CONVERSATIONAL PEDAGOGY RULES', rules: CONVERSATIONAL_PEDAGOGY_RULES.rules },
       ]
     case 'grammar_explanation':
       return [
@@ -330,6 +334,40 @@ function buildBehaviorContractSection(ctx: TeacherBrainContext): string {
   }
 
   return `── EXERCISE BEHAVIOR CONTRACT (${mode}) ──\n${formatted}${correctionNote}`
+}
+
+// Phase 7: Conversational Pedagogy — bounded emotional responsiveness and multilingual rescue.
+// Injected in every paid lesson turn so the AI always knows how to react to human moments.
+// Does NOT loosen deterministic authority — all reactions must be brief and flow-preserving.
+function buildConversationalPedagogySection(ctx: TeacherBrainContext): string {
+  const lines: string[] = [
+    '── CONVERSATIONAL PEDAGOGY (Phase 7) ──',
+    '• React to meaningful student content BEFORE moving forward — never ignore human moments',
+    '  Examples: "That sounds difficult." / "So you solved it alone — that\'s impressive." / "That makes sense, actually."',
+    '• ONE brief acknowledgment only (6–12 words) — then immediately continue lesson in the same response',
+    '• NEVER open follow-up discussion — NEVER ask "why?" or "tell me more" about personal content during exercises',
+  ]
+
+  // Multilingual rescue guidance — always present
+  lines.push(
+    '',
+    '── MULTILINGUAL RESCUE (Phase 7) ──',
+    '• If student writes briefly in Russian or Ukrainian (e.g. "як сказати X" / "как будет X"):',
+    '  Respond: "You can say: \'[English phrase]\'." — then immediately: "Now [continue lesson]."',
+    '• Maximum 2 sentences for multilingual rescue — then return to English immersion immediately',
+    '• FORBIDDEN: switching lesson to Russian/Ukrainian, grammar lectures in native language, long translation chats',
+  )
+
+  // Duplicate-prompt prevention
+  lines.push(
+    '',
+    '── DUPLICATE PROMPT PREVENTION (Phase 7) ──',
+    '• After a correction hint: end with "Try again." for long items already visible on screen — never re-read the full item',
+    '• "Try again — [item]" format only for short items (≤5 words) where repetition aids memory',
+    '• Repair guidance + task repetition = robotic. Repair only. The student sees the item on screen.',
+  )
+
+  return lines.join('\n')
 }
 
 function buildForbiddenSection(ctx: TeacherBrainContext): string {
