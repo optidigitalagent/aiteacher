@@ -41,6 +41,7 @@ import {
   lookupVocabEntry,
   isCommunicativelySubstantive,
 } from '../demo/abuse-guard.js'
+import { normalizePhoneticallyRenderedEnglish, detectSttUncertain } from '../demo/phonetic-normalizer.js'
 import { DEMO_AI_CONFIG, canUseDemoAI, DEMO_TTS_CONFIG, canUseDemoTTS } from '../demo/ai-config.js'
 import {
   getOrCreateContinuity,
@@ -380,13 +381,33 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
   }
 
   // Hard cap all inputs — prevents wall-of-text abuse on rule-based steps
-  const answer = answerRaw.trim().slice(0, 600)
+  const answerRawTrimmed = answerRaw.trim().slice(0, 600)
 
   // Phase 7.2: diagnostic logging — detect Cyrillic content before any normalization
-  const hasCyrillic = /\p{Script=Cyrillic}/u.test(answer)
-  console.log(`[demo_stt_transcript_raw] stepKey=${stepKey} chars=${answer.length} hasCyrillic=${hasCyrillic}`)
-  if (hasCyrillic) {
-    console.log(`[demo_stt_multilingual_enabled] stepKey=${stepKey} script=Cyrillic`)
+  const hasCyrillicRaw = /\p{Script=Cyrillic}/u.test(answerRawTrimmed)
+  console.log(`[demo_stt_transcript_raw] stepKey=${stepKey} chars=${answerRawTrimmed.length} hasCyrillic=${hasCyrillicRaw}`)
+
+  // Phase 7.6: phonetic Cyrillic normalisation — runs before ALL routing logic.
+  // Translates mobile STT phonetic Cyrillic (e.g. "ай лайк") back to English ("I like").
+  // Real RU/UA clarification triggers are preserved unchanged.
+  const sttNorm = normalizePhoneticallyRenderedEnglish(answerRawTrimmed)
+  const answer  = sttNorm.normalizedText  // normalised for routing; may equal raw if no change
+
+  console.log(
+    `[demo_stt_script_ratio] stepKey=${stepKey}` +
+    ` cyrillicRatio=${sttNorm.cyrillicRatio.toFixed(2)}` +
+    ` isMostlyCyrillic=${sttNorm.isMostlyCyrillic}` +
+    ` clarificationPreserved=${sttNorm.clarificationPreserved}`,
+  )
+  if (sttNorm.wasNormalized) {
+    console.log(
+      `[demo_stt_normalized_transcript] stepKey=${stepKey}` +
+      ` raw="${answerRawTrimmed.slice(0, 60)}"` +
+      ` normalized="${answer.slice(0, 60)}"`,
+    )
+  }
+  if (sttNorm.clarificationPreserved) {
+    console.log(`[demo_stt_multilingual_trigger_preserved] stepKey=${stepKey}`)
   }
 
   try {
@@ -422,6 +443,27 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
     const nextStepIndex = isLastStep ? totalSteps : session.step_index + 1
     const nextStepContent = buildStep(session, nextStepIndex)
     const nextStepKey = nextStepContent?.key ?? 'completed'
+
+    // ── Phase 7.6 upgrade: STT uncertainty guard ──────────────────────────────
+    // Runs BEFORE all step-specific logic and BEFORE multilingual rescue routing.
+    // If the transcript is still ≥50% Cyrillic words after phonetic normalization
+    // AND is not a real clarification request → the browser STT likely misfired
+    // (e.g. WebKit ignoring rec.lang='en-US'). Do not route as multilingual rescue,
+    // do not increment abuse flags. Ask the student to repeat in English instead.
+    if (detectSttUncertain(sttNorm)) {
+      const stepPrompt = expectedStep.prompt ?? ''
+      const uncertainMsg = ensureTeacherContinues(
+        "I may have misheard that. Try saying it again in English, slowly.",
+        stepPrompt,
+      )
+      console.log(
+        `[demo_stt_uncertain] stepKey=${stepKey}` +
+        ` cyrillicRatio=${sttNorm.cyrillicRatio.toFixed(2)}` +
+        ` normalizedWordCyrillicRatio=${sttNorm.normalizedWordCyrillicRatio.toFixed(2)}`,
+      )
+      res.status(422).json({ code: 'STT_UNCERTAIN', message: uncertainMsg, ...convRetry('stt_uncertain') })
+      return
+    }
 
     // ── Step-specific evaluation ──────────────────────────────────────────────
 

@@ -283,7 +283,8 @@ export function useDemoSession({
         setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: errMsgId, sender: 'ai', text: errMsgText }])
 
         // Voice all meaningful teacher responses — retries, corrections, clarifications, multilingual rescue
-        const spokeCodes = new Set(['MODERATION', 'MEANING_CONFIRMED', 'STUDENT_QUESTION', 'VOCAB_HELP', 'QUALITY_RETRY', 'META_HELP', 'INVALID_ANSWER', 'ACKNOWLEDGMENT', 'MULTILINGUAL_RESCUE'])
+        // STT_UNCERTAIN: "I may have misheard that" must be voiced so the student knows to retry aloud
+        const spokeCodes = new Set(['MODERATION', 'MEANING_CONFIRMED', 'STUDENT_QUESTION', 'VOCAB_HELP', 'QUALITY_RETRY', 'META_HELP', 'INVALID_ANSWER', 'ACKNOWLEDGMENT', 'MULTILINGUAL_RESCUE', 'STT_UNCERTAIN'])
         if (spokeCodes.has(j.code ?? '') && j.message) {
           const spokenText = j.spokenMessage ?? j.message
           const voiceType = j.code === 'QUALITY_RETRY'

@@ -128,10 +128,12 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     const rec = new SpeechRecCtor()
     rec.continuous     = true
     rec.interimResults = true
-    // Phase 7.2: use the browser's configured language instead of forcing en-US.
-    // Students with Ukrainian/Russian browser settings get native-language STT.
-    rec.lang           = navigator.language
-    console.log(`[demo_stt_provider] provider=WebSpeechAPI lang=${rec.lang} multilingual_enabled=${rec.lang !== 'en-US' && rec.lang !== 'en'}`)
+    // Phase 7.6: English-first STT — default to en-US regardless of device locale.
+    // RU/UA typed clarifications still reach multilingual rescue via the backend.
+    // Phonetic Cyrillic renderings of English (from non-en-US STT) are normalised
+    // by backend/src/demo/phonetic-normalizer before routing.
+    rec.lang           = 'en-US'
+    console.log(`[demo_stt_lang_selected] provider=WebSpeechAPI lang=en-US strategy=english_first device_locale=${navigator.language}`)
     rec.onresult = (e) => {
       let collected = ''
       for (let i = 0; i < e.results.length; i++) {
