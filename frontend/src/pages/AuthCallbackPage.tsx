@@ -1,34 +1,53 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { setStoredToken } from '../lib/auth'
+import { setStoredToken, consumeStoredReturnTo } from '../lib/auth'
 import { useAuth } from '../context/AuthContext'
 
-function safeReturnTo(raw: string | null): string {
-  if (!raw) return '/demo/setup'
+const PENDING_TELEGRAM_TOKEN_KEY = 'pendingTelegramLinkToken'
+
+function isSafeReturnTo(raw: string | null): raw is string {
+  if (!raw) return false
   const t = raw.trim()
-  if (!t.startsWith('/')) return '/demo/setup'
-  if (t.startsWith('//')) return '/demo/setup'
-  if (t.includes('://')) return '/demo/setup'
-  return t
+  if (!t.startsWith('/')) return false
+  if (t.startsWith('//')) return false
+  if (t.includes('://')) return false
+  return true
+}
+
+function resolveReturnTo(urlParam: string | null): string {
+  // 1. returnTo from backend OAuth callback URL (most authoritative)
+  if (isSafeReturnTo(urlParam)) return urlParam
+
+  // 2. returnTo saved to sessionStorage just before OAuth redirect started
+  const fromStorage = consumeStoredReturnTo()
+  if (isSafeReturnTo(fromStorage)) return fromStorage
+
+  // 3. pendingTelegramLinkToken fallback — covers the case where returnTo
+  //    was lost entirely but the user came from /tg-connect
+  const tgToken = sessionStorage.getItem(PENDING_TELEGRAM_TOKEN_KEY)
+  if (tgToken) {
+    console.log('[auth] no returnTo found, falling back to pendingTelegramLinkToken')
+    return `/tg-connect?token=${encodeURIComponent(tgToken)}`
+  }
+
+  // 4. Default
+  return '/demo/setup'
 }
 
 export default function AuthCallbackPage() {
-  const navigate    = useNavigate()
+  const navigate       = useNavigate()
   const { refreshUser } = useAuth()
 
   useEffect(() => {
     const params   = new URLSearchParams(window.location.search)
     const token    = params.get('token')
-    const returnTo = safeReturnTo(params.get('returnTo'))
+    const returnTo = resolveReturnTo(params.get('returnTo'))
 
     if (token) {
-      // 1. persist token to localStorage
       setStoredToken(token)
       console.log('[auth] token stored, initialising session...')
-      // 2. populate AuthContext React state (user/profile/token) BEFORE
-      //    navigating so the target page already sees isAuthenticated=true
       refreshUser().then(() => {
-        console.log('[auth] session ready, redirecting to', returnTo)
+        console.log('[auth] session ready, redirecting to returnTo:', returnTo)
         navigate(returnTo, { replace: true })
       })
     } else {

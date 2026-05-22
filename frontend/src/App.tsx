@@ -9,6 +9,7 @@ import PricingPage from './pages/PricingPage'
 import PaymentSuccessPage from './pages/PaymentSuccessPage'
 import SupportPage from './pages/SupportPage'
 import AuthCallbackPage from './pages/AuthCallbackPage'
+import TelegramConnectPage from './pages/TelegramConnectPage'
 import ClassroomLayout from './features/classroom/components/ClassroomLayout'
 import DemoSetup from './components/demo/DemoSetup'
 
@@ -29,6 +30,9 @@ export default function App() {
 
           {/* OAuth callback — no layout */}
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
+
+          {/* Telegram account linking — no layout */}
+          <Route path="/tg-connect" element={<TelegramConnectPage />} />
 
           {/* Support redirects to /about#support */}
           <Route path="/support" element={<SupportPage />} />
