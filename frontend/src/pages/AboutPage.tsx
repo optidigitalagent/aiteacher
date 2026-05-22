@@ -311,6 +311,7 @@ const CSS = `
   @media(max-width:768px){
     .ab-hero-inner{grid-template-columns:1fr;}
     .ab-hero-visual{display:none;}
+    .ab-hero{padding:64px 0 56px;}
     .ab-steps{grid-template-columns:repeat(2,1fr);gap:24px;}
     .ab-steps::before{display:none;}
     .ab-philosophy-points{grid-template-columns:1fr;}
@@ -319,6 +320,20 @@ const CSS = `
     .ab-form-row{grid-template-columns:1fr;}
     .ab-final-cta-inner{padding:48px 32px;}
     .ab-final-cta-inner h2{font-size:36px;}
+  }
+  @media(max-width:480px){
+    .ab-container{padding:0 16px;}
+    .ab-hero-text h1{font-size:30px;letter-spacing:-0.5px;}
+    .ab-hero-subtitle{font-size:15px;}
+    .ab-hero-desc{font-size:14px;}
+    .ab-hero{padding:48px 0 40px;}
+    .ab-steps{grid-template-columns:1fr;}
+    .ab-final-cta-inner{padding:32px 20px;}
+    .ab-final-cta-inner h2{font-size:26px;}
+    .ab-final-cta-inner p{font-size:15px;}
+    .ab-btn-lg{height:46px;padding:0 24px;font-size:14px;}
+    .ab-support-info-card{padding:24px 20px;}
+    .ab-sparkle{display:none;}
   }
 `
 

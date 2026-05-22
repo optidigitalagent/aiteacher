@@ -587,9 +587,25 @@ const CSS = `
     .fl-book-grid    { grid-template-columns: 1fr; }
     .fl-teacher-grid { grid-template-columns: 1fr; }
     .fl-voice-grid   { grid-template-columns: 1fr; }
-    .fl-roadmap      { padding: 10px 12px; }
+    .fl-roadmap      { padding: 10px 12px; gap: 0; }
     .fl-road-chip    { font-size: 11px; padding: 4px 9px; }
+    .fl-road-arrow   { padding: 0 2px; font-size: 12px; }
     .fl-summary-card { padding: 28px 20px; }
+    .fl-mode-card    { min-height: 200px; padding: 28px 20px; }
+    .fl-page-title   { font-size: 22px; }
+    .fl-main         { padding: 20px 16px 40px; }
+    .fl-step-title   { font-size: 18px; }
+    .fl-teacher-card { min-height: 200px; padding: 24px 20px; }
+    .fl-section-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 480px) {
+    .fl-roadmap      { overflow-x: auto; overflow-y: visible; flex-wrap: nowrap; justify-content: flex-start; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+    .fl-roadmap::-webkit-scrollbar { display: none; }
+    .fl-road-chip    { font-size: 10px; padding: 4px 8px; white-space: nowrap; }
+    .fl-road-arrow   { font-size: 11px; padding: 0 1px; }
+    .fl-mode-card    { min-height: 180px; padding: 24px 16px; }
+    .fl-book-grid    { gap: 10px; }
+    .fl-main         { padding: 16px 12px 40px; }
   }
 `
 

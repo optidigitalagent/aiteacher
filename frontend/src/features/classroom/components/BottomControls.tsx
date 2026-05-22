@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { IcMic, IcSend, IcQ } from './icons'
 
 interface Props {
@@ -28,6 +28,27 @@ export default function BottomControls({
   const inputRef          = useRef<HTMLInputElement>(null)
   const helpInputRef      = useRef<HTMLInputElement>(null)
   const [focused, setFocused] = useState(false)
+  // iOS Safari: track visual viewport offset so fixed bar stays above keyboard
+  const [iosBottomOffset, setIosBottomOffset] = useState(0)
+
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const update = () => {
+      // On iOS, visualViewport.height shrinks when keyboard opens.
+      // Offset = how far the bottom of the visual viewport is from the layout bottom.
+      const layoutBottom = window.innerHeight
+      const vpBottom = Math.round(vv.offsetTop + vv.height)
+      const offset = Math.max(0, layoutBottom - vpBottom)
+      setIosBottomOffset(offset)
+    }
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [])
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (inputDisabled) return
@@ -44,7 +65,9 @@ export default function BottomControls({
       {/* Help input panel — appears above main bar when "I don't understand" is clicked */}
       {showHelpInput && (
         <div style={{
-          position: 'fixed', bottom: 116, left: '50%', transform: 'translateX(-50%)',
+          position: 'fixed',
+          bottom: `calc(max(16px, env(safe-area-inset-bottom, 16px)) + 80px + ${iosBottomOffset}px)`,
+          left: '50%', transform: 'translateX(-50%)',
           zIndex: 101,
           display: 'flex', alignItems: 'center', gap: 10,
           background: 'rgba(255,255,255,0.97)',
@@ -52,7 +75,7 @@ export default function BottomControls({
           borderRadius: 16,
           padding: '10px 14px',
           boxShadow: '0 4px 24px rgba(110,124,251,0.18), 0 0 0 1.5px rgba(110,124,251,0.2)',
-          width: 'calc(100% - 32px)', maxWidth: 780,
+          width: 'calc(100% - 24px)', maxWidth: 780,
         }}>
           <span style={{ fontSize: 13, color: '#9B8CFF', fontWeight: 700, flexShrink: 0, whiteSpace: 'nowrap' }}>
             ❓ Help:
@@ -100,32 +123,35 @@ export default function BottomControls({
 
       {/* Main bottom bar */}
       <div style={{
-        position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+        position: 'fixed',
+        bottom: `calc(max(16px, env(safe-area-inset-bottom, 16px)) + ${iosBottomOffset}px)`,
+        left: '50%', transform: 'translateX(-50%)',
         zIndex: 100,
-        display: 'flex', alignItems: 'center', gap: 14,
+        display: 'flex', alignItems: 'center', gap: 10,
         background: 'rgba(255,255,255,0.78)',
         backdropFilter: 'blur(30px)', WebkitBackdropFilter: 'blur(30px)',
         borderRadius: 99,
-        padding: '12px 20px 12px 16px',
+        padding: '10px 14px 10px 12px',
         boxShadow: '0 2px 0 rgba(255,255,255,0.95) inset, 0 4px 6px rgba(0,0,0,0.03), 0 20px 50px rgba(0,0,0,0.1), 0 0 0 1px rgba(255,255,255,0.4)',
-        width: 'calc(100% - 32px)', maxWidth: 780,
+        width: 'calc(100% - 24px)', maxWidth: 780,
       }}>
-        {/* "I don't understand" button — demo only */}
+        {/* "I don't understand" button */}
         {showExplain && (
           <button
             onClick={onExplain}
+            title="I don't understand"
             style={{
-              display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0,
+              display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
               background: showHelpInput ? 'rgba(110,124,251,0.12)' : 'none',
               border: showHelpInput ? '1.5px solid rgba(110,124,251,0.35)' : '1.5px solid #e8e8f0',
               borderRadius: 99,
-              padding: '10px 18px', cursor: 'pointer',
+              padding: '10px 14px', cursor: 'pointer',
               color: showHelpInput ? '#6E7CFB' : '#555', fontSize: 13.5, fontWeight: 600,
               transition: 'all 0.2s', whiteSpace: 'nowrap',
             }}
           >
             <IcQ s={14} c={showHelpInput ? '#6E7CFB' : '#888'} />
-            I don&apos;t understand
+            <span className="cls-explain-label">I don&apos;t understand</span>
           </button>
         )}
 

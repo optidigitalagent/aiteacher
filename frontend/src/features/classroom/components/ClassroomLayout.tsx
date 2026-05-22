@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import type { FeedbackState, TeachingCardData } from '../types'
 import type { LessonSessionMetadata } from '../../../types/lessonTypes'
@@ -200,7 +200,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const [feedback,             setFeedback]             = useState<FeedbackState>(null)
   const [feedbackExplanation,  setFeedbackExplanation]  = useState<string | null>(null)
   const [showHint,             setShowHint]             = useState(false)
-  const [chatOpen,        setChatOpen]        = useState(true)
+  const [chatOpen,        setChatOpen]        = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth >= 900
+  )
+  // Mobile-only (≤600px) chat overlay state
+  const [mobChatOpen,     setMobChatOpen]     = useState(false)
   const [teachingCard,    setTeachingCard]    = useState<TeachingCardData | null>(null)
   const [confirmedAnswer, setConfirmedAnswer] = useState('')
   const [lessonStarted,   setLessonStarted]   = useState(false)
@@ -771,6 +775,12 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     ? { ...question, answer: confirmedAnswer }
     : null
 
+  // Mobile overlay messages — same source as desktop chat panel
+  const mobChatMessages = useMemo(
+    () => isDemoMode ? demo.chatMessages : messages,
+    [isDemoMode, demo.chatMessages, messages]
+  )
+
   // ── Guards ────────────────────────────────────────────────────────────────
   if (isAuthLoading) {
     return (
@@ -852,7 +862,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           />
 
           {/* Center — exercise, demo step, teaching overlay, or waiting state */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', minWidth: 0 }}>
+          <div className="cls-classroom-center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', minWidth: 0 }}>
             {isDemoMode ? (
               demo.phase === 'ready' ? (
                 <div style={{ textAlign: 'center' }}>
@@ -1098,6 +1108,56 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         />
       </div>
 
+      {/* ── Mobile-only chat toggle button (≤600px) ─────────────────────────── */}
+      <button
+        className="cls-mob-chat-btn"
+        aria-label={mobChatOpen ? 'Close chat' : 'Open chat history'}
+        onClick={() => setMobChatOpen(o => !o)}
+      >
+        {mobChatOpen ? '✕' : '💬'}
+      </button>
+
+      {/* Mobile chat overlay — compact panel over content, closes on backdrop click */}
+      {mobChatOpen && (
+        <>
+          <div
+            className="cls-mob-chat-backdrop"
+            onClick={() => setMobChatOpen(false)}
+          />
+          <div className="cls-mob-chat-overlay">
+            <ChatPanel
+              messages={mobChatMessages}
+              onHide={() => setMobChatOpen(false)}
+              isDemoMode={isDemoMode}
+              teacherName={isDemoMode ? 'Sophie' : (sessionMeta?.teacherName ?? 'Teacher')}
+              onTranslate={isDemoMode
+                ? (msgId, text) => demo.handleTranslateMessage(msgId, text, 'ru')
+                : paidSessionId
+                  ? async (_msgId: string, text: string) => {
+                      try {
+                        const token = getStoredToken()
+                        const res = await fetch(`${API_BASE}/lesson/translate`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                          body: JSON.stringify({ sessionId: paidSessionId, text, targetLanguage: 'ru' }),
+                        })
+                        if (!res.ok) return null
+                        const j = (await res.json()) as { translation?: string }
+                        return j.translation ?? null
+                      } catch { return null }
+                    }
+                  : undefined
+              }
+              voiceMuted={isDemoMode ? demo.voiceMuted : undefined}
+              onToggleMute={isDemoMode ? demo.toggleVoiceMuted : undefined}
+              voiceStates={isDemoMode ? demo.voiceStates : undefined}
+              voiceMessages={isDemoMode ? demo.voiceMessages : undefined}
+              onPlayAudio={isDemoMode ? demo.handlePlayAudio : undefined}
+            />
+          </div>
+        </>
+      )}
+
       {/* Demo overlays — two-stage: lesson-complete modal first, full results after button click */}
       {isDemoMode && demo.phase === 'complete' && demo.finalResult && !showFullResults && (
         <LessonCompleteModal
@@ -1140,7 +1200,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           zIndex: 130, background: 'rgba(245,158,11,0.95)', backdropFilter: 'blur(4px)',
           borderRadius: 12, padding: '8px 20px', fontSize: 13, fontWeight: 700,
           color: '#78350f', boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
-          whiteSpace: 'nowrap',
+          maxWidth: 'calc(100vw - 32px)', textAlign: 'center' as const, wordBreak: 'break-word' as const,
         }}>
           {staleAnswerMsg}
         </div>
@@ -1212,6 +1272,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           borderRadius: 12, padding: '8px 20px', fontSize: 13, fontWeight: 700,
           color: '#78350f', boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
           display: 'flex', alignItems: 'center', gap: 8,
+          maxWidth: 'calc(100vw - 32px)',
         }}>
           <span style={{ fontSize: 16 }}>⏱</span>
           {lessonTimeWarning} {lessonTimeWarning === 1 ? 'minute' : 'minutes'} remaining in this lesson

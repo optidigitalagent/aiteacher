@@ -114,7 +114,7 @@ function SignOutModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm
         onClick={e => e.stopPropagation()}
         style={{
           background: '#fff', borderRadius: 20, padding: '36px 32px',
-          width: 360, boxShadow: '0 24px 64px rgba(15,23,42,0.18)',
+          width: 'min(360px, calc(100vw - 32px))', boxShadow: '0 24px 64px rgba(15,23,42,0.18)',
           border: '1px solid #F0EEF8',
         }}
       >

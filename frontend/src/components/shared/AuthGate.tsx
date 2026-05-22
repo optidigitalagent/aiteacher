@@ -53,9 +53,16 @@ const CSS = `
     padding: 48px 44px;
     max-width: 440px;
     width: calc(100% - 32px);
+    max-height: 92dvh;
+    overflow-y: auto;
     box-shadow: 0 32px 80px rgba(15,23,42,0.18), 0 0 0 1px rgba(230,234,242,0.8);
     animation: ag-slide-up 260ms cubic-bezier(0.22,1,0.36,1) both;
     text-align: center;
+  }
+  @media (max-width: 480px) {
+    .auth-gate-modal { padding: 32px 24px; border-radius: 20px; }
+    .auth-gate-icon  { width: 60px; height: 60px; font-size: 26px; margin-bottom: 18px; }
+    .auth-gate-title { font-size: 19px; }
   }
   @keyframes ag-slide-up {
     from { opacity: 0; transform: translateY(20px); }

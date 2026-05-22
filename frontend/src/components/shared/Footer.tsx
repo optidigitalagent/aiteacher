@@ -36,6 +36,12 @@ const CSS = `
   @media (max-width: 640px) {
     .site-footer-top { grid-template-columns: 1fr 1fr; gap: 28px; }
   }
+  @media (max-width: 480px) {
+    .site-footer .fc { padding: 0 16px; }
+    .site-footer { padding: 40px 0 24px; }
+    .site-footer-top { grid-template-columns: 1fr; gap: 24px; margin-bottom: 32px; }
+    .site-footer-socials { gap: 8px; }
+  }
 `
 
 const COLS = [

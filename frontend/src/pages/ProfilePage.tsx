@@ -45,6 +45,34 @@ const RANK_LADDER = [
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
+const PROFILE_CSS = `
+  .pf-main { max-width: 1200px; margin: 0 auto; padding: 40px 40px 80px; }
+  .pf-stats-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 16px; margin-bottom: 24px; }
+  .pf-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+  .pf-hero-card { display: flex; align-items: center; justify-content: space-between; gap: 32px; flex-wrap: wrap; }
+  .pf-gradient-cta { border-radius: 24px; background: linear-gradient(135deg,#7B8CFF 0%,#A18BFF 50%,#FFB38C 100%); padding: 48px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  @media (max-width: 768px) {
+    .pf-main { padding: 24px 20px 60px; }
+    .pf-stats-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .pf-gradient-cta { padding: 28px 24px; }
+  }
+  @media (max-width: 600px) {
+    .pf-main { padding: 20px 16px 60px; }
+    .pf-stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .pf-two-col { grid-template-columns: 1fr; gap: 16px; }
+    .pf-hero-card { flex-direction: column; align-items: flex-start; gap: 16px; }
+    .pf-gradient-cta { padding: 24px 20px; flex-direction: column; text-align: center; align-items: center; }
+  }
+  @media (max-width: 480px) {
+    .pf-stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .pf-hero-name { font-size: 22px !important; }
+  }
+  @media (max-width: 360px) {
+    .pf-hero-name { font-size: 18px !important; }
+    .pf-hero-text-wrap { min-width: 0; }
+  }
+`
+
 const S = {
   page:         { background: '#FFFFFF', minHeight: '100vh', color: '#0F172A' },
   main:         { maxWidth: 1200, margin: '0 auto', padding: '40px 40px 80px' },
@@ -200,7 +228,7 @@ function EditProfileModal({ initialName, initialEmoji, token, onClose, onSaved }
     >
       <div
         onClick={e => e.stopPropagation()}
-        style={{ background: '#fff', borderRadius: 20, padding: '36px 32px', width: 420, boxShadow: '0 24px 64px rgba(15,23,42,0.18)', border: '1px solid #F0EEF8' }}
+        style={{ background: '#fff', borderRadius: 20, padding: '32px 24px', width: 'min(420px, calc(100vw - 32px))', maxHeight: '90dvh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(15,23,42,0.18)', border: '1px solid #F0EEF8' }}
       >
         <div style={{ fontFamily: "'Sora', sans-serif", fontSize: 20, fontWeight: 800, color: '#0F172A', marginBottom: 24 }}>Edit profile</div>
 
@@ -289,14 +317,14 @@ function ProfileHero({
       : <span style={{ fontSize: 32, fontWeight: 800, color: '#fff' }}>{displayName.charAt(0).toUpperCase()}</span>
 
   return (
-    <div style={{ ...S.card, background: 'linear-gradient(135deg,#FAFBFF 0%,#FFF8F4 100%)', border: '1px solid #EEE9FF', padding: '40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 32, flexWrap: 'wrap', marginBottom: 24 }}>
+    <div className="pf-hero-card" style={{ ...S.card, background: 'linear-gradient(135deg,#FAFBFF 0%,#FFF8F4 100%)', border: '1px solid #EEE9FF', padding: '28px 28px 28px', marginBottom: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
         <div style={{ width: 88, height: 88, borderRadius: '50%', background: 'linear-gradient(135deg,#7B8CFF 0%,#A18BFF 60%,#FFB38C 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 24px rgba(123,140,255,0.3)' }}>
           {avatarContent}
         </div>
-        <div>
+        <div className="pf-hero-text-wrap" style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
-            <h1 style={{ fontFamily: "'Sora', sans-serif", fontSize: 28, fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>{displayName}</h1>
+            <h1 className="pf-hero-name" style={{ fontFamily: "'Sora', sans-serif", fontSize: 28, fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.5px', wordBreak: 'break-word' as const }}>{displayName}</h1>
             <span style={{ background: 'linear-gradient(135deg,#7B8CFF18,#A18BFF18)', color: '#7B8CFF', fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 999, border: '1px solid rgba(123,140,255,0.2)' }}>{level}</span>
           </div>
           <div style={{ fontSize: 15, fontWeight: 600, color: '#A18BFF', marginBottom: 10 }}>✦ {rank}</div>
@@ -327,7 +355,7 @@ function StatsGrid({ stats }: { stats: ProfileStats }) {
     : '—'
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 16, marginBottom: 24 }}>
+    <div className="pf-stats-grid">
       <StatCard icon="📚" value={stats.lessonsCompleted} label="Lessons completed" accent="#7B8CFF" />
       <StatCard icon="⏱" value={formatTime(stats.learningTimeMinutes)} label="Learning time" accent="#A18BFF" />
       <StatCard icon="🔥" value={stats.currentStreakDays === 0 ? '0d' : `${stats.currentStreakDays}d`} label="Current streak" accent="#FFB38C" />
@@ -539,7 +567,7 @@ function GradientCTA() {
   const navigate = useNavigate()
   const [hoverBtn, setHoverBtn] = useState(false)
   return (
-    <div style={{ borderRadius: 24, background: 'linear-gradient(135deg,#7B8CFF 0%,#A18BFF 50%,#FFB38C 100%)', padding: '48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap' }}>
+    <div className="pf-gradient-cta">
       <div>
         <h2 style={{ fontFamily: "'Sora', sans-serif", fontSize: 28, fontWeight: 800, color: '#fff', margin: '0 0 8px', letterSpacing: '-0.5px' }}>Ready for your next lesson?</h2>
         <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.85)', margin: 0 }}>Continue learning with your AI teacher.</p>
@@ -560,17 +588,18 @@ function GradientCTA() {
 function LoadingSkeleton() {
   return (
     <div style={S.page}>
-      <main style={S.main}>
-        <div style={{ ...S.card, height: 160, background: 'linear-gradient(135deg,#FAFBFF,#FFF8F4)', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 28, padding: 40 }}>
-          <div style={{ width: 88, height: 88, borderRadius: '50%', background: '#F0EEF8' }} />
-          <div style={{ flex: 1 }}>
-            <div style={{ width: 160, height: 24, background: '#F0EEF8', borderRadius: 8, marginBottom: 12 }} />
-            <div style={{ width: 120, height: 16, background: '#F0EEF8', borderRadius: 8 }} />
+      <style>{PROFILE_CSS}</style>
+      <main className="pf-main">
+        <div style={{ ...S.card, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 20, padding: '24px 28px', flexWrap: 'wrap' }}>
+          <div style={{ width: 80, height: 80, borderRadius: '50%', background: '#F0EEF8', flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 120 }}>
+            <div style={{ width: 140, height: 22, background: '#F0EEF8', borderRadius: 8, marginBottom: 10 }} />
+            <div style={{ width: 100, height: 14, background: '#F0EEF8', borderRadius: 8 }} />
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 16 }}>
+        <div className="pf-stats-grid">
           {[1,2,3,4,5].map(i => (
-            <div key={i} style={{ ...S.card, height: 100, background: '#FAFAFA' }} />
+            <div key={i} style={{ ...S.card, height: 90, background: '#FAFAFA' }} />
           ))}
         </div>
       </main>
@@ -658,6 +687,7 @@ export default function ProfilePage() {
 
   return (
     <div style={S.page}>
+      <style>{PROFILE_CSS}</style>
       {showEditModal && token && (
         <EditProfileModal
           initialName={displayName}
@@ -668,7 +698,7 @@ export default function ProfilePage() {
         />
       )}
 
-      <main style={S.main}>
+      <main className="pf-main">
         {fetchError && (
           <div style={{ marginBottom: 16, padding: '12px 18px', background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <span style={{ fontSize: 13, color: '#92400E', fontWeight: 500 }}>Couldn't load your profile data — showing cached info.</span>
@@ -689,7 +719,7 @@ export default function ProfilePage() {
           <StatsGrid stats={stats} />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
+        <div className="pf-two-col">
           <ProductivityCard stats={stats} />
           <RankProgressCard xp={xp} rank={rank} />
         </div>
@@ -698,7 +728,7 @@ export default function ProfilePage() {
           <LessonHistoryCard history={pd?.learningHistory ?? []} />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 24 }}>
+        <div className="pf-two-col">
           <TestsCard tests={pd?.completedTests ?? []} />
           <AchievementsCard
             achievements={pd?.achievements ?? []}

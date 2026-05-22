@@ -172,6 +172,21 @@ const CSS = `
     .hp-features-row { grid-template-columns: 1fr; }
     .hp-cta-block { flex-direction: column; gap: 28px; text-align: center; padding: 40px 28px; }
     .hp-section { padding: 64px 0; }
+    .hp-hero { padding: 40px 0 56px; }
+  }
+  @media (max-width: 480px) {
+    .hp-container { padding: 0 16px; }
+    .hp-hero-h1 { font-size: 28px; line-height: 1.15; }
+    .hp-hero-sub { font-size: 15px; }
+    .hp-hero-visual { height: 220px; }
+    .hp-hero-card { display: none; }
+    .hp-section-title { font-size: 26px; }
+    .hp-section { padding: 48px 0; }
+    .hp-cta-block { padding: 28px 20px; }
+    .hp-cta-title { font-size: 22px; }
+    .hp-cta-sub { font-size: 14px; }
+    .hp-hero-badge { font-size: 11px; padding: 5px 11px; }
+    .hp-btn-primary, .hp-btn-secondary { font-size: 14px; padding: 11px 20px; }
   }
 `
 

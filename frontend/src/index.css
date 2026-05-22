@@ -5,11 +5,13 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    overflow-x: hidden;
   }
   html, body, #root {
     height: 100%;
     background-color: #F5F5F7;
     font-family: 'DM Sans', sans-serif;
+    overflow-x: hidden;
   }
 
   *, *::before, *::after {
@@ -122,29 +124,124 @@
 
 /* ── MOBILE CLASSROOM LAYOUT ── */
 
-/* Tablet (768–900px): collapse sidebars, keep center + compact right panel */
-@media (max-width: 900px) {
+/* Tablet (601–900px): collapse sidebars */
+@media (min-width: 601px) and (max-width: 900px) {
   .cls-classroom-grid {
-    grid-template-columns: 110px 1fr 120px !important;
+    grid-template-columns: 90px 1fr 110px !important;
     gap: 8px !important;
     padding: 10px 12px !important;
     padding-bottom: 100px !important;
   }
+  /* TeacherPanel has width:170 inline — override to fill its 90px column */
+  .cls-classroom-grid > *:first-child {
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+  /* SectionProgressPanel — reduce horizontal padding for 110px column */
+  .cls-classroom-grid > *:last-child {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
 }
 
-/* Phone (<600px): minimal columns — teacher panel becomes very narrow */
+/* Phone (<600px): single column — hide side panels, center fills space */
 @media (max-width: 600px) {
   .cls-classroom-grid {
-    grid-template-columns: 0 1fr 96px !important;
-    gap: 6px !important;
-    padding: 6px 8px !important;
-    padding-bottom: 96px !important;
-    overflow-x: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0 !important;
+    padding: 8px 10px 100px !important;
+    overflow: hidden !important;
   }
+  /* Hide TeacherPanel (first child) and SectionProgressPanel (last child) */
+  .cls-classroom-grid > *:first-child,
+  .cls-classroom-grid > *:last-child {
+    display: none !important;
+  }
+  /* Center panel fills all available height */
+  .cls-classroom-center {
+    flex: 1 !important;
+    min-height: 0 !important;
+    padding: 4px !important;
+  }
+}
+
+/* ── CLASSROOM HEADER RESPONSIVE ── */
+@media (max-width: 480px) {
+  .cls-hdr-logo-text    { display: none; }
+  .cls-hdr-teacher-chip { display: none !important; }
+}
+@media (max-width: 360px) {
+  .cls-hdr-exit-label { display: none; }
+}
+
+/* ── BOTTOM CONTROLS RESPONSIVE ── */
+@media (max-width: 430px) {
+  .cls-explain-label { display: none; }
 }
 
 /* ── TIPS DRAWER ANIMATION (defined as JS inline, backup here) ── */
 @keyframes cls-slide-in-right {
   from { transform: translateX(100%); opacity: 0; }
   to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* ── MOBILE CHAT OVERLAY (≤600px only) ── */
+.cls-mob-chat-btn {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .cls-mob-chat-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    bottom: 110px;
+    left: 16px;
+    z-index: 96;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: linear-gradient(135deg, #6E7CFB, #9B8CFF);
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(110, 124, 251, 0.45);
+    outline: none;
+    padding: 0;
+    transition: transform 0.15s, opacity 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .cls-mob-chat-btn:active {
+    transform: scale(0.92);
+    opacity: 0.85;
+  }
+
+  .cls-mob-chat-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 94;
+    background: rgba(15, 23, 42, 0.18);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+
+  .cls-mob-chat-overlay {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 88px;
+    height: 55vh;
+    max-height: calc(100vh - 150px);
+    z-index: 95;
+    border-radius: 20px;
+    overflow: hidden;
+    animation: cls-slide-up 0.22s ease forwards;
+  }
 }
