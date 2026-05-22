@@ -83,7 +83,7 @@ function ensureTeacherContinues(msg: string, stepPrompt: string): string {
 }
 
 // ── Multilingual rescue response ──────────────────────────────────────────────
-// Called when a student writes in Ukrainian / Russian (detected via MULTILINGUAL_REQUEST_RE).
+// Called when a student speaks / writes in Ukrainian / Russian (detected via MULTILINGUAL_REQUEST_RE).
 // If the message contains a known English vocab word we explain it; otherwise give a
 // short English prompt.  Returns 200 chars max so TTS budget is not wasted.
 function buildMultilingualRescueText(answer: string): string {
@@ -92,7 +92,7 @@ function buildMultilingualRescueText(answer: string): string {
     const entry = VOCAB_EXPLANATIONS[vocabKey]
     if (entry) return `Good question. ${entry.explanation}\n${entry.example}\n${entry.taskHint}`
   }
-  return "I can see you're writing in Ukrainian or Russian — the lesson is in English. Try your answer in English: even a simple sentence works."
+  return "I can see you're speaking or writing in Ukrainian or Russian — the lesson is in English. Try your answer in English: even a simple sentence works."
 }
 
 // ── Simple stable hash for cache keys ────────────────────────────────────────
@@ -370,6 +370,13 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
 
   // Hard cap all inputs — prevents wall-of-text abuse on rule-based steps
   const answer = answerRaw.trim().slice(0, 600)
+
+  // Phase 7.2: diagnostic logging — detect Cyrillic content before any normalization
+  const hasCyrillic = /\p{Script=Cyrillic}/u.test(answer)
+  console.log(`[demo_stt_transcript_raw] stepKey=${stepKey} chars=${answer.length} hasCyrillic=${hasCyrillic}`)
+  if (hasCyrillic) {
+    console.log(`[demo_stt_multilingual_enabled] stepKey=${stepKey} script=Cyrillic`)
+  }
 
   try {
     const session = await loadSession(sessionId, userId)

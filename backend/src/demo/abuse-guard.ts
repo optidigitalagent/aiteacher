@@ -326,6 +326,10 @@ const STUDENT_QUESTION_PATTERNS: RegExp[] = [
   /^what\s+is\s+(the\s+)?(grammar|rule|formula)\b/i,// "what is the grammar rule"
   /^i\s+don'?t\s+understand\s+why\b/i,              // "i don't understand why"
   /^how\s+(can|do)\s+i\s+(say|write|use|form)\b/i,  // "how can I say..."
+  // Phase 7.2: broken ESL / non-native clarification patterns
+  /^what'?s?\s+mean\b/i,                            // "what's mean X" / "whats mean X"
+  /^what\s+means?\s+\w/i,                           // "what means challenge" / "what mean that"
+  /^how\s+(?:to\s+)?say\b/i,                        // "how say X" / "how to say X" (no subject)
 ]
 
 export function detectStudentQuestion(text: string): boolean {

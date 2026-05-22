@@ -33,18 +33,20 @@ export class DeepgramSTT {
     }
 
     const conn = createClient(API_KEY).listen.live({
-      model:           'nova-2',
-      language:        'en-US',
-      smart_format:    true,
-      interim_results: true,
+      model:            'nova-2',
+      // Phase 7.2: enable auto language detection for UA/RU/EN learner speech.
+      // Removes the forced 'en-US' lock that corrupted Cyrillic speech into English phonetics.
+      detect_language:  true,
+      smart_format:     true,
+      interim_results:  true,
       // endpointing controls how fast Deepgram marks is_final — keep it snappy
-      endpointing:     300,
+      endpointing:      300,
       // utterance_end_ms: fires UtteranceEnd event after N ms of silence
       // This is what we use to actually send the transcript to the AI
       utterance_end_ms: UTTERANCE_END_MS,
-      encoding:        'linear16',
-      sample_rate:     16000,
-      channels:        1,
+      encoding:         'linear16',
+      sample_rate:      16000,
+      channels:         1,
     })
 
     conn.on(LiveTranscriptionEvents.Open, () => {
@@ -66,15 +68,19 @@ export class DeepgramSTT {
 
     // Accumulate is_final segments and forward interim for live display
     conn.on(LiveTranscriptionEvents.Transcript, (data: Record<string, unknown>) => {
-      const channel = data['channel'] as Record<string, unknown> | undefined
-      const alts    = channel?.['alternatives'] as Array<Record<string, unknown>> | undefined
-      const text    = (alts?.[0]?.['transcript'] as string) ?? ''
+      const channel      = data['channel'] as Record<string, unknown> | undefined
+      const alts         = channel?.['alternatives'] as Array<Record<string, unknown>> | undefined
+      const text         = (alts?.[0]?.['transcript'] as string) ?? ''
+      const detectedLang = (channel?.['detected_language'] as string | undefined) ?? 'unknown'
       if (!text) return
       if (data['is_final']) {
+        console.log(`[demo_stt_language_detected] lang=${detectedLang} chars=${text.length}`)
         // Skip segment if it is identical to the most recently appended segment.
         // Deepgram can emit the same is_final text multiple times for poor audio,
         // which causes "View. View. View." accumulation artifacts.
-        const segNorm = text.toLowerCase().replace(/[^a-z\s]/g, '').trim()
+        // Phase 7.2: use Unicode letter class (\p{L}) so Cyrillic segments are
+        // normalised correctly — /[^a-z\s]/g stripped all non-ASCII and broke dedup.
+        const segNorm = text.toLowerCase().replace(/[^\p{L}\s]/gu, '').trim()
         if (segNorm && segNorm === this.lastFinalSegmentNorm) {
           // Duplicate is_final — skip but still emit interim so UI stays updated
           this.onInterim?.(this.transcriptBuffer)

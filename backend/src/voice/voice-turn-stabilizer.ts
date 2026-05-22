@@ -87,8 +87,10 @@ export function classifyVoiceTranscript(
     return { usable: false, kind: 'noise', normalizedText: '', reason: 'empty' }
   }
 
-  // Basic letter-content check — catches pure punctuation/symbol noise
-  const letters = (text.match(/[a-zA-Z]/g) ?? []).length
+  // Basic letter-content check — catches pure punctuation/symbol noise.
+  // Phase 7.2: use Unicode letter class (\p{L}) so Cyrillic/Ukrainian/Russian
+  // transcripts are not rejected as 'no_letters' noise (was /[a-zA-Z]/g).
+  const letters = (text.match(/\p{L}/gu) ?? []).length
   if (letters === 0) {
     return { usable: false, kind: 'noise', normalizedText: '', reason: 'no_letters' }
   }

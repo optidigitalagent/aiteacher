@@ -128,7 +128,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     const rec = new SpeechRecCtor()
     rec.continuous     = true
     rec.interimResults = true
-    rec.lang           = 'en-US'
+    // Phase 7.2: use the browser's configured language instead of forcing en-US.
+    // Students with Ukrainian/Russian browser settings get native-language STT.
+    rec.lang           = navigator.language
+    console.log(`[demo_stt_provider] provider=WebSpeechAPI lang=${rec.lang} multilingual_enabled=${rec.lang !== 'en-US' && rec.lang !== 'en'}`)
     rec.onresult = (e) => {
       let collected = ''
       for (let i = 0; i < e.results.length; i++) {
