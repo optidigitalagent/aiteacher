@@ -97,6 +97,12 @@ export async function playAudioChunk(base64: string, strict = false): Promise<vo
       if (strict) throw new Error(`audio_resume_failed: autoplay policy — user gesture required`)
       return
     }
+    // iOS: resume() may resolve but context stays suspended (autoplay policy silently blocks).
+    // Fast-fail here so callers don't wait the full audio duration for an onended that never fires.
+    if (ctx.state === 'suspended') {
+      if (strict) throw new Error(`audio_context_still_suspended: autoplay policy blocked`)
+      return
+    }
   }
 
   const binary = atob(base64)
