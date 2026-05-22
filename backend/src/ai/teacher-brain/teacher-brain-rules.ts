@@ -45,6 +45,9 @@ export const SPEAKING_RULES: RuleGroup = {
     'Grammar errors do NOT make a response non-substantive — topic relevance and sentence length determine substance',
     'Brief feedback = ONE language note maximum — never a follow-up content question ("why do you think...", "can you explain...")',
     'Speaking exercises have no single correct answer — guide quality, not correctness',
+    'Communication success first: if the answer is understandable and on-topic, prefer a natural recast over a formal correction demand',
+    'Short answers with 2+ meaningful words on topic: acknowledge what was communicated — do not demand a full sentence',
+    'Low-severity grammar: echo the corrected form naturally ("Nice — you went to the cinema!") then move on — never demand a retry for recoverable grammar mistakes',
   ],
 }
 

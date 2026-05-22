@@ -80,6 +80,7 @@ export interface SoftSpeakingValidationResult {
   interpretedMeaning?:   string
   repairPrompt?:         string
   teacherHint?:          string
+  recastHint?:           string  // natural recast of student's meaning for soft reformulation
   confidence:            number
 }
 
@@ -168,6 +169,13 @@ function semanticWordCount(words: string[]): number {
 
 function hasSubstantiveContent(words: string[]): boolean {
   return words.some(w => w.length > 1 && !STOPWORDS.has(w) && !FILLER_PHRASES.has(w) && !NON_NAME_WORDS.has(w))
+}
+
+// Phase 6B.3: communication success heuristic.
+// Returns true when the answer is understandable and on-topic (≥2 semantic words + substantive).
+// Used to gate the communicative success fast-path — does NOT bypass nonsense/filler rejection.
+function isCommunicativelySuccessful(words: string[], semWords: number): boolean {
+  return semWords >= 2 && hasSubstantiveContent(words)
 }
 
 function findSubjectGuess(words: string[], fallback: string): string {
@@ -477,9 +485,11 @@ export function buildPedagogicalRetry(
     case 'question':
       return `Try to form a question. For example: "What do you enjoy doing?"`
     case 'answer':
-      return `Now give your answer in a full sentence.`
+      return instruction
+        ? `Tell me: ${instruction.slice(0, 60)}`
+        : 'Say a bit more — what is your answer?'
     default:
-      return `Please give a fuller answer.`
+      return `Please say a bit more.`
   }
 }
 
@@ -489,7 +499,9 @@ export function buildPedagogicalRetry(
 //
 // Ordering invariant:
 //   1. detectAnswerSlots runs FIRST.
-//   2. missingSlots.length > 0 ALWAYS blocks progression — no override.
+//   2. missingSlots.length > 0 normally blocks progression.
+//      Exception (Phase 6B.3): communicative success fast-path soft-accepts at
+//      attempt ≥ 2 when answer is understandable+on-topic with some slots present.
 //   3. acceptable_with_repair and max_attempts_soft_accept only fire when
 //      ALL required slots are present (missingSlots.length === 0).
 // ══════════════════════════════════════════════════════════════════════════════
@@ -524,16 +536,18 @@ function validateWithSlots(
     }
   }
 
-  // Generic discussion — no specific slots required, just need some content
+  // Generic discussion — no specific slots required, just need some content.
+  // Phase 6B.3: threshold lowered from 3 to 2 semantic words — two meaningful words
+  // on-topic is communicatively sufficient; do not escalate short-but-valid answers.
   if (taskSpec.requiredSlots.length === 0) {
     const semWords = semanticWordCount(words)
-    if (semWords < 3 && attemptCount < 3) {
+    if (semWords < 2 && attemptCount < 3) {
       return {
         allowProgression:      false,
         needsRetry:            true,
         isPartiallyAcceptable: false,
         issueType:             'too_short',
-        repairPrompt:          `Try to give a fuller answer. ${instruction}`,
+        repairPrompt:          `Try to say a bit more. ${instruction}`,
         confidence:            0.8,
       }
     }
@@ -562,9 +576,32 @@ function validateWithSlots(
   // When a pre-computed interpretation result is available, use it — avoids duplicate work.
   const slotResult = preComputedSlotResult ?? detectAnswerSlots(correctedText, taskSpec.requiredSlots, rawTranscript)
 
-  // ── Required-slots gate: missingSlots always block progression ──────────────
+  // ── Required-slots gate ───────────────────────────────────────────────────────
   // This runs before max_attempts and before broken_grammar/repair paths.
   if (slotResult.missingSlots.length > 0) {
+    // Phase 6B.3: communicative success fast-path.
+    // At attempt ≥ 2, if the answer is understandable+on-topic with some slots present,
+    // soft-accept rather than escalating further. Prioritises communication success over
+    // perfect grammar or complete slot coverage.
+    if (
+      attemptCount >= 2 &&
+      isCommunicativelySuccessful(words, semWords) &&
+      slotResult.presentSlots.length > 0
+    ) {
+      console.log(`[soft-speaking] comm_success_soft_accept attempt=${attemptCount} presentSlots=${slotResult.presentSlots.join(',')}`)
+      return {
+        allowProgression:      true,
+        needsRetry:            false,
+        isPartiallyAcceptable: true,
+        issueType:             'acceptable_with_repair',
+        confidence:            0.6,
+        recastHint:            slotResult.interpretedMeaning ?? undefined,
+        teacherHint:           slotResult.interpretedMeaning
+          ? `Acknowledge "${slotResult.interpretedMeaning}" and continue.`
+          : "Acknowledge their effort — communication succeeded. Move on.",
+      }
+    }
+
     // Broken grammar AND slots missing — guide toward full correct form
     if (brokenGrammar && semWords >= 1) {
       return {
@@ -603,8 +640,8 @@ function validateWithSlots(
         isPartiallyAcceptable: false,
         issueType:             'too_short',
         repairPrompt:          instruction
-          ? `Tell me more. ${instruction}`
-          : 'Please answer with a complete sentence.',
+          ? `Tell me a bit more. ${instruction}`
+          : 'Say a bit more — try again.',
         confidence:            0.9,
       }
     }
@@ -636,8 +673,8 @@ function validateWithSlots(
       isPartiallyAcceptable: false,
       issueType:             'unclear_subject',
       repairPrompt:          instruction
-        ? `${chooseRepairPrefix(attemptCount)} Now answer properly: ${instruction}`
-        : 'Please give a complete answer.',
+        ? `${chooseRepairPrefix(attemptCount)} ${instruction}`
+        : 'Please say a bit more.',
       confidence:            0.7,
     }
   }
@@ -722,7 +759,7 @@ export function validateSoftSpeakingAnswer(input: SoftSpeakingInput): SoftSpeaki
       issueType:             'off_task',
       repairPrompt:          input.instruction
         ? `First answer this one: ${input.instruction}`
-        : 'Please answer with a complete sentence.',
+        : 'Please give a short answer.',
       confidence:            0.9,
     }
   }

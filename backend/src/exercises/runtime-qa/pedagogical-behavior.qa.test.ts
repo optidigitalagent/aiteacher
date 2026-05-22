@@ -36,6 +36,9 @@ import {
 import {
   selectBehaviorContractRules,
 } from '../../ai/teacher-brain/teacher-brain-builder.js'
+import {
+  validateSoftSpeakingAnswer,
+} from '../../validation/soft-speaking-validator.js'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -621,5 +624,197 @@ describe('Phase 6B.2 — Binary exercise calibration', () => {
       (r.includes('true_false') || r.includes('tick_cross')),
     )
     expect(hasBinaryException).toBe(true)
+  })
+})
+
+// ── 13. Phase 6B.3 — Soft-Speaking Threshold Calibration ─────────────────────
+//
+// Validates that soft-speaking thresholds prioritise communication success,
+// accept partial answers at attempt ≥ 2 when understandable and on-topic,
+// and avoid demanding full sentences.
+//
+// Strict rules preserved:
+//   - blank/filler still rejected
+//   - off-task filler at attempt 2 still rejected (no free-chat drift)
+//   - deterministic exercises unaffected
+
+describe('Phase 6B.3 — Soft-Speaking Threshold Calibration', () => {
+  // ── Rule assertions ────────────────────────────────────────────────────────
+
+  it('communication success priority rule is in SPEAKING_RULES', () => {
+    const hasCommSuccess = SPEAKING_RULES.rules.some(r =>
+      r.toLowerCase().includes('communication success') ||
+      (r.toLowerCase().includes('understandable') && r.toLowerCase().includes('on-topic')),
+    )
+    expect(hasCommSuccess).toBe(true)
+  })
+
+  it('short answers with 2+ meaningful words rule is in SPEAKING_RULES', () => {
+    const hasShortRule = SPEAKING_RULES.rules.some(r =>
+      (r.includes('2+') && r.toLowerCase().includes('meaningful')) ||
+      r.toLowerCase().includes('do not demand a full sentence'),
+    )
+    expect(hasShortRule).toBe(true)
+  })
+
+  it('low-severity grammar recast rule is in SPEAKING_RULES', () => {
+    const hasRecastRule = SPEAKING_RULES.rules.some(r =>
+      r.toLowerCase().includes('recast') ||
+      r.toLowerCase().includes('echo') ||
+      (r.toLowerCase().includes('low-severity') && r.toLowerCase().includes('grammar')),
+    )
+    expect(hasRecastRule).toBe(true)
+  })
+
+  it('new calibration rules are visible in soft_speaking behavior contract', () => {
+    const groups = selectBehaviorContractRules('soft_speaking')
+    const speakingGroup = groups.find(g => g.label === 'SPEAKING RULES')
+    expect(speakingGroup).toBeDefined()
+    // Should contain communication success rule
+    const hasCommSuccess = speakingGroup!.rules.some(r =>
+      r.toLowerCase().includes('communication success'),
+    )
+    expect(hasCommSuccess).toBe(true)
+  })
+
+  // ── Validator: communicative success acceptance ────────────────────────────
+
+  it('generic_discussion: 2 semantic words accepted (not blocked as too_short)', () => {
+    // Before calibration: semWords < 3 blocked. After: only semWords < 2 blocks.
+    // "I love reading" → love + reading = 2 semantic words → should now pass
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-001',
+      exerciseNumber:    1,
+      exerciseType:      'discussion',
+      instruction:       'Tell me about your weekend.',
+      itemText:          'Tell me about your weekend.',
+      studentTranscript: 'I love reading.',
+      attemptCount:      0,
+    })
+    expect(result.allowProgression).toBe(true)
+  })
+
+  it('communicatively successful partial answer accepted at attempt 2', () => {
+    // "My teacher inspires me." — subject present, reason missing.
+    // At attempt 2, communicative success fast-path should soft-accept.
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-002',
+      exerciseNumber:    2,
+      exerciseType:      'discussion',
+      instruction:       'Who inspires you and why?',
+      itemText:          'Who inspires you and why?',
+      studentTranscript: 'My teacher inspires me.',
+      attemptCount:      2,
+    })
+    expect(result.allowProgression).toBe(true)
+    expect(result.isPartiallyAcceptable).toBe(true)
+    expect(result.issueType).toBe('acceptable_with_repair')
+  })
+
+  it('partial answer at attempt 0 NOT fast-pathed (still asks for missing slot)', () => {
+    // Same transcript but attempt 0 — fast-path requires attempt ≥ 2
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-003',
+      exerciseNumber:    3,
+      exerciseType:      'discussion',
+      instruction:       'Who inspires you and why?',
+      itemText:          'Who inspires you and why?',
+      studentTranscript: 'My teacher inspires me.',
+      attemptCount:      0,
+    })
+    // At attempt 0 with reason missing, should ask for reason
+    expect(result.allowProgression).toBe(false)
+    expect(result.needsRetry).toBe(true)
+  })
+
+  // ── Validator: no free-chat regression ────────────────────────────────────
+
+  it('blank answer still rejected — no free-chat regression', () => {
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-004',
+      exerciseNumber:    4,
+      exerciseType:      'discussion',
+      instruction:       'Tell me about yourself.',
+      itemText:          'Tell me about yourself.',
+      studentTranscript: '',
+      attemptCount:      0,
+    })
+    expect(result.allowProgression).toBe(false)
+  })
+
+  it('pure filler still rejected at attempt 0', () => {
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-005',
+      exerciseNumber:    5,
+      exerciseType:      'discussion',
+      instruction:       'What is your favourite hobby?',
+      itemText:          'What is your favourite hobby?',
+      studentTranscript: 'ok',
+      attemptCount:      0,
+    })
+    expect(result.allowProgression).toBe(false)
+    expect(result.issueType).toBe('off_task')
+  })
+
+  it('pure filler at attempt 2 still rejected (no free-chat drift)', () => {
+    // Fast-path requires isCommunicativelySuccessful — pure filler has no substantive content
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-006',
+      exerciseNumber:    6,
+      exerciseType:      'discussion',
+      instruction:       'Who inspires you and why?',
+      itemText:          'Who inspires you and why?',
+      studentTranscript: 'ok',
+      attemptCount:      2,
+    })
+    expect(result.allowProgression).toBe(false)
+    expect(result.issueType).toBe('off_task')
+  })
+
+  // ── Repair prompt tone ─────────────────────────────────────────────────────
+
+  it('off_task fallback repair does not demand "complete sentence"', () => {
+    // Empty instruction → triggers the fallback text (not the instruction-based prompt)
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-007',
+      exerciseNumber:    7,
+      exerciseType:      'discussion',
+      instruction:       '',
+      itemText:          '',
+      studentTranscript: 'ok',
+      attemptCount:      0,
+    })
+    const repair = result.repairPrompt ?? ''
+    expect(repair.toLowerCase()).not.toMatch(/complete sentence|full sentence/)
+  })
+
+  it('partial answer repair prompt does not say "answer properly"', () => {
+    // Partial answer at attempt 0 — repair should be constructive, not pressuring
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-008',
+      exerciseNumber:    8,
+      exerciseType:      'discussion',
+      instruction:       'Who inspires you and why?',
+      itemText:          'Who inspires you and why?',
+      studentTranscript: 'My teacher inspires me.',
+      attemptCount:      0,
+    })
+    const repair = result.repairPrompt ?? result.teacherHint ?? ''
+    expect(repair.toLowerCase()).not.toContain('answer properly')
+  })
+
+  // ── Token budget guard ────────────────────────────────────────────────────
+
+  it('soft_speaking behavior contract stays within token budget (≤ 20 rules)', () => {
+    const groups = selectBehaviorContractRules('soft_speaking')
+    const totalRules = groups.reduce((sum, g) => sum + g.rules.length, 0)
+    expect(totalRules).toBeLessThanOrEqual(20)
+  })
+
+  it('new SPEAKING_RULES do not break the all-rules-visible assertion', () => {
+    const groups = selectBehaviorContractRules('soft_speaking')
+    const speakingGroup = groups.find(g => g.label === 'SPEAKING RULES')
+    expect(speakingGroup).toBeDefined()
+    expect(speakingGroup!.rules.length).toBe(SPEAKING_RULES.rules.length)
   })
 })

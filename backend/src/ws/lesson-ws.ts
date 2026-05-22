@@ -1656,7 +1656,7 @@ function buildSoftSpeakingContext(result: EngineResult, studentText: string): st
 // Includes interpretation result so Teacher Brain responds to interpreted meaning, not raw STT.
 function buildSoftSpeakingRetryContext(mv: ManifestVoiceResult, studentText: string): string {
   const r      = mv.softSpeakingRetry!
-  const repair = r.repairPrompt ?? r.teacherHint ?? 'Try again with a complete sentence.'
+  const repair = r.repairPrompt ?? r.teacherHint ?? 'Give it another go.'
 
   const interpretationLine = r.interpretedMeaning
     ? `Interpreted student intent: "${r.interpretedMeaning}" (do NOT respond to raw STT noise).`
