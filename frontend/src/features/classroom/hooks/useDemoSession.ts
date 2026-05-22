@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChatMessage, LessonStep } from '../types'
-import { playAudioChunk, stopAudioPlayback } from '../services/voiceApi'
+import { playAudioChunk, stopAudioPlayback, warmAudioContext } from '../services/voiceApi'
 
 function stripMarkdownForTts(text: string): string {
   return text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim()
@@ -67,6 +67,8 @@ export interface UseDemoSessionReturn {
   handlePlayAudio:        (messageId: string, messageType: string, text: string) => Promise<void>
   isStaticAudioPlaying:   boolean  // always false — kept for API compatibility
   interruptAudio:         () => void
+  audioUnlockRequired:    boolean
+  unlockAudio:            () => void
 }
 
 function uid() { return Math.random().toString(36).slice(2) }
@@ -107,9 +109,10 @@ export function useDemoSession({
   const [lessonStarted,  setLessonStarted]  = useState(false)
   const [sessionId,      setSessionId]      = useState<string | null>(null)
 
-  const [voiceMuted,    setVoiceMuted]    = useState(false)
-  const [voiceStates,   setVoiceStates]   = useState<Record<string, VoicePlayState>>({})
-  const [voiceMessages, setVoiceMessages] = useState<Record<string, { type: string; text: string }>>({})
+  const [voiceMuted,           setVoiceMuted]           = useState(false)
+  const [voiceStates,          setVoiceStates]          = useState<Record<string, VoicePlayState>>({})
+  const [voiceMessages,        setVoiceMessages]        = useState<Record<string, { type: string; text: string }>>({})
+  const [audioUnlockRequired,  setAudioUnlockRequired]  = useState(false)
 
   const pendingLessonRef = useRef<{
     introText:        string
@@ -181,15 +184,30 @@ export function useDemoSession({
       if (voiceGenerationRef.current !== myGeneration) {
         setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
       } else {
-        console.log(`[demo-voice] error id=${messageId} reason=${err instanceof Error ? err.message : 'unknown'}`)
+        const msg = err instanceof Error ? err.message : 'unknown'
+        const isAutoplayBlock = err instanceof Error && (
+          msg.includes('audio_resume_failed') ||
+          msg.includes('audio_context_still_suspended') ||
+          msg.includes('NotAllowedError')
+        )
+        if (isAutoplayBlock) {
+          console.log(`[demo_audio_autoplay_blocked] id=${messageId}`)
+          setAudioUnlockRequired(true)
+        } else {
+          console.log(`[demo-voice] error id=${messageId} reason=${msg}`)
+        }
         setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
       }
     }
   }, [token])
 
+  // Maximum time to wait for TTS to complete before unblocking the lesson.
+  // Covers: network fetch + decode + full playback. Safety net for mobile autoplay hangs.
+  const TTS_MAX_WAIT_MS = 10_000
+
   // ── Show an AI teacher message with typing animation + TTS ────────────────────
-  // Always reveals the text bubble. TTS plays if not muted/exhausted.
-  // Increments voiceGenerationRef before TTS so interruptAudio() can cancel mid-play.
+  // Text is always revealed immediately. TTS plays if not muted/exhausted.
+  // Audio is enhancement only — if blocked or timed out, lesson continues via text.
   const showAiMessage = useCallback(async (text: string, ttsType?: string, ttsOverride?: string): Promise<string> => {
     setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: 'typing', sender: 'ai', isTyping: true }])
     setIsSpeaking(true)
@@ -205,9 +223,27 @@ export function useDemoSession({
       if (!voiceMutedRef.current && !ttsLimitReachedRef.current) {
         voiceGenerationRef.current += 1
         const t0 = Date.now()
-        await handlePlayAudio(msgId, ttsType, ttsText)
-        // TTS returned instantly — add read time so student can absorb text
-        if (Date.now() - t0 < 600) {
+        let timedOut = false
+
+        // Race TTS against a hard ceiling — prevents mobile autoplay hang from blocking the lesson.
+        // If TTS wins: normal path, read-time sleep added if it returned instantly (error/cached).
+        // If timeout wins: log and unblock with a short read-time only.
+        await Promise.race([
+          handlePlayAudio(msgId, ttsType, ttsText),
+          new Promise<void>((resolve) => setTimeout(() => {
+            timedOut = true
+            resolve()
+          }, TTS_MAX_WAIT_MS)),
+        ])
+
+        const elapsed = Date.now() - t0
+        if (timedOut) {
+          console.log(`[demo_audio_playback_timeout] id=${msgId} elapsedMs=${elapsed}`)
+          console.log('[demo_mic_unblocked_after_audio_skip]')
+          await sleep(1200)
+        } else if (elapsed < 600) {
+          // TTS returned instantly (blocked, error, or limit) — give student time to read
+          console.log('[demo_mic_unblocked_after_audio_skip]')
           await sleep(Math.min(1200 + ttsText.length * 40, 3500))
         }
       } else {
@@ -225,6 +261,14 @@ export function useDemoSession({
     voiceGenerationRef.current += 1
     stopAudioPlayback()
     setIsSpeaking(false)
+  }, [])
+
+  // ── Audio unlock (mobile gesture) ─────────────────────────────────────────────
+  // Called from a user tap so the AudioContext can resume under the autoplay policy.
+  const unlockAudio = useCallback(() => {
+    console.log('[demo_audio_unlocked]')
+    warmAudioContext()
+    setAudioUnlockRequired(false)
   }, [])
 
   const toggleVoiceMuted = useCallback(() => {
@@ -563,5 +607,7 @@ export function useDemoSession({
     voiceStates, voiceMessages, handlePlayAudio,
     isStaticAudioPlaying: false,
     interruptAudio,
+    audioUnlockRequired,
+    unlockAudio,
   }
 }

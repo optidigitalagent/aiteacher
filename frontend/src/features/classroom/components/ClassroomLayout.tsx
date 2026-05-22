@@ -875,7 +875,13 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                     Your lesson is ready
                   </div>
                   <button
-                    onClick={() => { void demo.startLesson() }}
+                    onClick={() => {
+                      // Warm the AudioContext synchronously inside the user gesture so iOS
+                      // autoplay policy allows TTS playback without a separate unlock step.
+                      console.log('[demo_audio_unlock_required] warming context on Begin Lesson')
+                      warmAudioContext()
+                      void demo.startLesson()
+                    }}
                     style={{
                       padding: '15px 44px',
                       background: 'linear-gradient(135deg, #6E7CFB 0%, #9B8CFF 100%)',
@@ -1179,6 +1185,29 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           onStay={() => demo.setShowLeaveModal(false)}
           onLeave={() => navigate('/')}
         />
+      )}
+
+      {/* Mobile audio unlock indicator — shown when TTS was blocked by autoplay policy.
+          Tapping it warms the AudioContext so subsequent TTS messages play with sound.
+          The lesson remains fully usable via text even without tapping this. */}
+      {isDemoMode && demo.audioUnlockRequired && demo.lessonStarted && demo.phase !== 'complete' && (
+        <button
+          onClick={demo.unlockAudio}
+          style={{
+            position: 'fixed', top: 70, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 120,
+            background: 'rgba(110,124,251,0.92)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+            borderRadius: 99, border: 'none',
+            padding: '8px 18px',
+            color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 8,
+            boxShadow: '0 4px 20px rgba(110,124,251,0.40)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <span style={{ fontSize: 15 }}>🔊</span>
+          Tap to enable voice
+        </button>
       )}
 
       {/* Recovery banner — waits for backend state snapshot after reconnect */}
