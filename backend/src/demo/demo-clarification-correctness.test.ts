@@ -14,6 +14,8 @@ import { describe, it, expect } from 'vitest'
 
 import {
   buildMultilingualPhraseAnswer,
+  buildMeaningFirstResponse,
+  classifyDemoInput,
   detectPhraseQuestion,
   detectMultilingualInterruption,
 } from '../runtime/conversation-moves.js'
@@ -235,6 +237,190 @@ describe('Phase 7.3 — detectMultilingualInterruption extended', () => {
   it('still does NOT detect English idiom question (no Cyrillic)', () => {
     // English-only idiom questions go via detectStudentQuestion → buildClarificationAnswer
     expect(detectMultilingualInterruption('what does keep pulling you back in mean').detected).toBe(false)
+  })
+})
+
+// ── Phase 7.4: Meaning-first classifier ──────────────────────────────────────
+
+describe('Phase 7.4 — classifyDemoInput', () => {
+  it('classifies pure answer as ANSWER_ONLY', () => {
+    const r = classifyDemoInput('I really like watching films on weekends')
+    expect(r.cls).toBe('ANSWER_ONLY')
+  })
+
+  it('classifies pure multilingual request as MULTILINGUAL_RESCUE_ONLY', () => {
+    const r = classifyDemoInput('How to say географія in English')
+    expect(r.cls).toBe('MULTILINGUAL_RESCUE_ONLY')
+  })
+
+  it('classifies mixed answer + translation as ANSWER_WITH_MULTILINGUAL_RESCUE', () => {
+    const r = classifyDemoInput('I find interesting How to say географія I like географія')
+    expect(r.cls).toBe('ANSWER_WITH_MULTILINGUAL_RESCUE')
+    expect(r.hasAnswerContent).toBe(true)
+    expect(r.answerFragment).not.toBeNull()
+  })
+
+  it('classifies watching + RU translation request as ANSWER_WITH_MULTILINGUAL_RESCUE', () => {
+    const r = classifyDemoInput('right now I am watching смешный фильм как это сказать')
+    expect(r.cls).toBe('ANSWER_WITH_MULTILINGUAL_RESCUE')
+    expect(r.hasAnswerContent).toBe(true)
+  })
+
+  it('pure Cyrillic question is MULTILINGUAL_RESCUE_ONLY', () => {
+    const r = classifyDemoInput('як сказати протягом 30 хвилин')
+    expect(r.cls).toBe('MULTILINGUAL_RESCUE_ONLY')
+  })
+})
+
+// ── Phase 7.4: buildMeaningFirstResponse ─────────────────────────────────────
+
+const WARM_UP_PROMPT = 'Tell me about a subject you enjoy at school.'
+
+describe('Phase 7.4 — buildMeaningFirstResponse: geography + like', () => {
+  const input    = 'I find interesting How to say географія I like географія'
+  const fragment = 'I find interesting I like'
+
+  it('includes the word geography', () => {
+    const r = buildMeaningFirstResponse(input, fragment, WARM_UP_PROMPT)
+    expect(r.toLowerCase()).toContain('geography')
+  })
+
+  it('acknowledges student likes / finds interesting geography', () => {
+    const r = buildMeaningFirstResponse(input, fragment, WARM_UP_PROMPT)
+    const lower = r.toLowerCase()
+    expect(lower).toMatch(/find.{0,20}interesting|like.{0,20}geography|geography.{0,30}interesting/)
+  })
+
+  it('does NOT say "try typing it in English"', () => {
+    const r = buildMeaningFirstResponse(input, fragment, WARM_UP_PROMPT)
+    expect(r.toLowerCase()).not.toContain('try typing it in english')
+  })
+
+  it('does NOT contain grammar leak phrases', () => {
+    const r = buildMeaningFirstResponse(input, fragment, WARM_UP_PROMPT)
+    const lower = r.toLowerCase()
+    expect(lower).not.toContain('first conditional')
+    expect(lower).not.toContain('will cancel')
+    expect(lower).not.toContain('if it rains')
+  })
+
+  it('asks a natural follow-up or returns to step', () => {
+    const r = buildMeaningFirstResponse(input, fragment, WARM_UP_PROMPT)
+    // Must end with a question or a step anchor — teacher continues
+    expect(r).toMatch(/[?]|let's continue|now,/i)
+  })
+
+  it('does not throw', () => {
+    expect(() => buildMeaningFirstResponse(input, fragment, WARM_UP_PROMPT)).not.toThrow()
+  })
+})
+
+describe('Phase 7.4 — buildMeaningFirstResponse: funny movie + watching', () => {
+  const input    = 'right now I am watching смешный фильм как это сказать'
+  const fragment = 'right now I am watching'
+
+  it('includes "funny movie"', () => {
+    const r = buildMeaningFirstResponse(input, fragment, WARM_UP_PROMPT)
+    expect(r.toLowerCase()).toContain('funny movie')
+  })
+
+  it('acknowledges the watching context', () => {
+    const r = buildMeaningFirstResponse(input, fragment, WARM_UP_PROMPT)
+    expect(r.toLowerCase()).toMatch(/watching|funny movie|i can see/)
+  })
+
+  it('does NOT say "try typing it in English"', () => {
+    const r = buildMeaningFirstResponse(input, fragment, WARM_UP_PROMPT)
+    expect(r.toLowerCase()).not.toContain('try typing it in english')
+  })
+})
+
+describe('Phase 7.4 — buildMeaningFirstResponse: pure translation request (no answer)', () => {
+  it('pure "How to say географія" → falls back to buildMultilingualPhraseAnswer style', () => {
+    // MULTILINGUAL_RESCUE_ONLY goes through buildMultilingualPhraseAnswer, not buildMeaningFirstResponse
+    // But if called directly, must still return geography and not crash
+    const r = buildMultilingualPhraseAnswer('How to say географія in English', WARM_UP_PROMPT)
+    expect(r.toLowerCase()).toContain('geography')
+    expect(r.toLowerCase()).not.toContain('try typing it in english')
+  })
+})
+
+// ── Phase 7.4: New school-subject phrase map entries ─────────────────────────
+
+describe('Phase 7.4 — New school subject translations', () => {
+  const cases: Array<[string, string]> = [
+    ['як сказати географія',    'geography'],
+    ['як сказати біологія',    'biology'],
+    ['як сказати математика',   'maths'],
+    ['як сказати історія',      'history'],
+    ['як сказати англійська',   'english'],
+    ['как сказать география',   'geography'],
+    ['как сказать биология',    'biology'],
+    ['как сказать история',     'history'],
+    ['як сказати смішний',      'funny'],
+    ['як сказати цікавий',      'interesting'],
+    ['как сказать интересный',  'interesting'],
+    ['як сказати серіал',       'series'],
+    ['как сказать сериал',      'series'],
+  ]
+
+  for (const [input, expected] of cases) {
+    it(`"${input}" → "${expected}"`, () => {
+      const r = buildMultilingualPhraseAnswer(input, WARM_UP_PROMPT)
+      expect(r.toLowerCase()).toContain(expected)
+    })
+  }
+})
+
+// ── Phase 7.4: Unknown Cyrillic fallback — no "try typing" ───────────────────
+
+describe('Phase 7.4 — Unknown Cyrillic fallback is safe', () => {
+  it('unknown Cyrillic phrase does NOT say "try typing it in English"', () => {
+    const r = buildMultilingualPhraseAnswer('як сказати абвгдеж', WARM_UP_PROMPT)
+    expect(r.toLowerCase()).not.toContain('try typing it in english')
+  })
+
+  it('unknown Cyrillic fallback contains the step prompt', () => {
+    const r = buildMultilingualPhraseAnswer('як сказати абвгдеж', WARM_UP_PROMPT)
+    expect(r).toContain(WARM_UP_PROMPT)
+  })
+
+  it('unknown Cyrillic fallback does not contain grammar leak', () => {
+    const r = buildMultilingualPhraseAnswer('як сказати абвгдеж', WARM_UP_PROMPT)
+    const lower = r.toLowerCase()
+    expect(lower).not.toContain('first conditional')
+    expect(lower).not.toContain('will cancel')
+  })
+})
+
+// ── Phase 7.4: Clarification inside answer — not invalid ─────────────────────
+
+describe('Phase 7.4 — Clarification inside answer is not treated as invalid', () => {
+  it('ANSWER_WITH_MULTILINGUAL_RESCUE has answerFragment', () => {
+    const r = classifyDemoInput('I like географія how to say it')
+    expect(r.cls).toBe('ANSWER_WITH_MULTILINGUAL_RESCUE')
+    expect(r.answerFragment).toBeTruthy()
+  })
+
+  it('buildMeaningFirstResponse for "I like географія" includes geography', () => {
+    const r = buildMeaningFirstResponse(
+      'I like географія how to say it',
+      'I like',
+      WARM_UP_PROMPT,
+    )
+    expect(r.toLowerCase()).toContain('geography')
+  })
+
+  it('meaning-first response does not advance step (no grammar/completion text)', () => {
+    const r = buildMeaningFirstResponse(
+      'I like географія how to say it',
+      'I like',
+      WARM_UP_PROMPT,
+    )
+    const lower = r.toLowerCase()
+    expect(lower).not.toContain('well done')
+    expect(lower).not.toContain('correct answer')
+    expect(lower).not.toContain('will cancel')
   })
 })
 

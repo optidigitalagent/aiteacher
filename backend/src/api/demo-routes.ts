@@ -58,6 +58,8 @@ import {
   chooseCorrectionBridge,
   detectMultilingualInterruption,
   buildMultilingualPhraseAnswer,
+  buildMeaningFirstResponse,
+  classifyDemoInput,
   detectPhraseQuestion,
 } from '../runtime/conversation-moves.js'
 
@@ -453,11 +455,18 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
 
       // Clarification interceptors — must run before classifyInput so grammar questions
       // are not treated as valid answers and step is not inadvertently advanced.
-      // Phase 7.3: multilingual fires FIRST so "how to say [Cyrillic]" is never routed
-      // to buildStudentQuestionResponse which would return unrelated grammar MCQ text.
+      // Phase 7.4: meaning-first — mixed answer+translation gets a combined response
+      // instead of discarding the answer content entirely.
       const wuMl = detectMultilingualInterruption(answer)
       if (wuMl.detected) {
-        console.log(`[demo-multilingual-intercepted] stepKey=warm_up`)
+        const wuMlClass = classifyDemoInput(answer)
+        if (wuMlClass.cls === 'ANSWER_WITH_MULTILINGUAL_RESCUE' && wuMlClass.answerFragment) {
+          console.log(`[demo-multilingual-meaning-first] stepKey=warm_up answerFragment="${wuMlClass.answerFragment.slice(0, 40)}"`)
+          const msg = buildMeaningFirstResponse(answer, wuMlClass.answerFragment, stepPrompt, sessionId)
+          res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: msg, ...convClarification('multilingual_rescue') })
+          return
+        }
+        console.log(`[demo-multilingual-intercepted] stepKey=warm_up cls=${wuMlClass.cls}`)
         res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: buildMultilingualPhraseAnswer(answer, stepPrompt, sessionId), ...convClarification('multilingual_rescue') })
         return
       }
@@ -548,10 +557,17 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
       }
 
       // Clarification interceptors — before classifyInput to catch grammar/vocab questions.
-      // Phase 7.3: multilingual fires FIRST so "how to say [Cyrillic]" is correctly handled.
+      // Phase 7.4: meaning-first routing for mixed answer + translation messages.
       const wufMl = detectMultilingualInterruption(answer)
       if (wufMl.detected) {
-        console.log(`[demo-multilingual-intercepted] stepKey=warm_up_followup`)
+        const wufMlClass = classifyDemoInput(answer)
+        if (wufMlClass.cls === 'ANSWER_WITH_MULTILINGUAL_RESCUE' && wufMlClass.answerFragment) {
+          console.log(`[demo-multilingual-meaning-first] stepKey=warm_up_followup answerFragment="${wufMlClass.answerFragment.slice(0, 40)}"`)
+          const msg = buildMeaningFirstResponse(answer, wufMlClass.answerFragment, stepPrompt, sessionId)
+          res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: msg, ...convClarification('multilingual_rescue') })
+          return
+        }
+        console.log(`[demo-multilingual-intercepted] stepKey=warm_up_followup cls=${wufMlClass.cls}`)
         res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: buildMultilingualPhraseAnswer(answer, stepPrompt, sessionId), ...convClarification('multilingual_rescue') })
         return
       }
@@ -659,10 +675,17 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         return
       }
 
-      // ── 0. Multilingual rescue — fires FIRST to prevent phrase lookups routing to grammar text ──
+      // ── 0. Multilingual rescue — Phase 7.4: meaning-first for mixed answer + translation ──
       const sfMl = detectMultilingualInterruption(answer)
       if (sfMl.detected) {
-        console.log(`[demo-multilingual-intercepted] stepKey=speaking_followup`)
+        const sfMlClass = classifyDemoInput(answer)
+        if (sfMlClass.cls === 'ANSWER_WITH_MULTILINGUAL_RESCUE' && sfMlClass.answerFragment) {
+          console.log(`[demo-multilingual-meaning-first] stepKey=speaking_followup answerFragment="${sfMlClass.answerFragment.slice(0, 40)}"`)
+          const msg = buildMeaningFirstResponse(answer, sfMlClass.answerFragment, stepPrompt, sessionId)
+          res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: msg, ...convClarification('multilingual_rescue') })
+          return
+        }
+        console.log(`[demo-multilingual-intercepted] stepKey=speaking_followup cls=${sfMlClass.cls}`)
         res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: buildMultilingualPhraseAnswer(answer, stepPrompt, sessionId), ...convClarification('multilingual_rescue') })
         return
       }
@@ -757,11 +780,17 @@ router.post('/demo/answer', requireAuth, async (req: Request, res: Response): Pr
         return
       }
 
-      // ── 0b. Multilingual rescue — fires FIRST so "how to say [Cyrillic]" is never routed
-      // to buildStudentQuestionResponse which would return unrelated grammar MCQ text.
+      // ── 0b. Multilingual rescue — Phase 7.4: meaning-first for mixed answer + translation ──
       const taskMl = detectMultilingualInterruption(answer)
       if (taskMl.detected) {
-        console.log(`[demo-multilingual-intercepted] stepKey=${stepKey}`)
+        const taskMlClass = classifyDemoInput(answer)
+        if (taskMlClass.cls === 'ANSWER_WITH_MULTILINGUAL_RESCUE' && taskMlClass.answerFragment) {
+          console.log(`[demo-multilingual-meaning-first] stepKey=${stepKey} answerFragment="${taskMlClass.answerFragment.slice(0, 40)}"`)
+          const msg = buildMeaningFirstResponse(answer, taskMlClass.answerFragment, stepPrompt, sessionId)
+          res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: msg, ...convClarification('multilingual_rescue') })
+          return
+        }
+        console.log(`[demo-multilingual-intercepted] stepKey=${stepKey} cls=${taskMlClass.cls}`)
         res.status(422).json({ code: 'MULTILINGUAL_RESCUE', message: buildMultilingualPhraseAnswer(answer, stepPrompt, sessionId), ...convClarification('multilingual_rescue') })
         return
       }

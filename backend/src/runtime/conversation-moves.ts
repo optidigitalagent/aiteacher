@@ -217,7 +217,7 @@ function extractVocabPhrase(text: string): string | null {
 
 // Note: \b is not used — JavaScript word boundaries don't match Cyrillic characters
 const MULTILINGUAL_REQUEST_RE =
-  /(як\s+сказати|як\s+перекласти|як\s+буде|як\s+по.?англ|як\s+правильно|що\s+означає|як\s+звучить|как\s+сказать|как\s+будет|как\s+перевести|как\s+по.?англ|что\s+значит|переведи|как\s+правильно)/i
+  /(як\s+сказати|як\s+перекласти|як\s+буде|як\s+по.?англ|як\s+правильно|що\s+означає|як\s+звучить|як\s+це\s+сказати|як\s+то\s+сказати|как\s+сказать|как\s+будет|как\s+перевести|как\s+по.?англ|что\s+значит|переведи|как\s+правильно|как\s+(?:это|то)\s+сказать)/i
 
 // ── Phase 7.3: Deterministic Cyrillic phrase map ──────────────────────────────
 // Maps common UA/RU phrases students ask about to English equivalents.
@@ -230,6 +230,26 @@ const CYRILLIC_PHRASE_MAP: Array<readonly [string, string]> = [
   ['цікавий фільм',       'interesting movie'],
   ['нудний фільм',        'boring movie'],
   ['класний фільм',       'great movie'],
+  ['смішний',             'funny'],
+  ['цікавий',             'interesting'],
+  ['нудний',              'boring'],
+  ['серіал',              'series'],
+  ['фільм',               'film'],
+  // Ukrainian — school subjects
+  ['географія',           'geography'],
+  ['біологія',            'biology'],
+  ['математика',          'maths'],
+  ['хімія',               'chemistry'],
+  ['фізика',              'physics'],
+  ['історія',             'history'],
+  ['англійська',          'English'],
+  ['українська',          'Ukrainian'],
+  ['природознавство',     'science'],
+  // Ukrainian — feelings/actions
+  ['подобається',         'like'],
+  ['дуже подобається',    'really like'],
+  ['цікавить',            'interests me'],
+  ['нравиться',           'like'],
   // Ukrainian — time
   ['протягом 30 хвилин',  'for 30 minutes'],
   ['протягом',            'for (a period of time)'],
@@ -239,10 +259,29 @@ const CYRILLIC_PHRASE_MAP: Array<readonly [string, string]> = [
   ['встиг зробити',       'managed to do'],
   ['встиг',               'managed to (do something in time)'],
   // Russian — film/media
+  ['смешный фильм',       'funny movie'],
   ['смешной фильм',       'funny movie'],
   ['смешное кино',        'funny film'],
   ['интересный фильм',    'interesting movie'],
   ['скучный фильм',       'boring movie'],
+  ['смешной',             'funny'],
+  ['интересный',          'interesting'],
+  ['скучный',             'boring'],
+  ['сериал',              'series'],
+  ['фильм',               'film'],
+  // Russian — school subjects
+  ['география',           'geography'],
+  ['биология',            'biology'],
+  ['математика',          'maths'],
+  ['химия',               'chemistry'],
+  ['физика',              'physics'],
+  ['история',             'history'],
+  ['английский',          'English'],
+  ['природоведение',      'science'],
+  // Russian — feelings/actions
+  ['нравится',            'like'],
+  ['очень нравится',      'really like'],
+  ['интересует',          'interests me'],
   // Russian — time
   ['в течение 30 минут',  'for 30 minutes'],
   ['в течение',           'for (a period of time)'],
@@ -390,7 +429,8 @@ export function buildMultilingualPhraseAnswer(
       console.log(`[demo_clarification_answer_built] requested_phrase="${requested.slice(0, 30)}" matched_phrase_key=none fallback_used=true current_step_preserved=true`)
       const hasCyrillic = /\p{Script=Cyrillic}/u.test(requested)
       if (hasCyrillic) {
-        return `I can help with that phrase — try typing it in English. Now let's return to the question: ${stepPrompt}`
+        const anchor = stepPrompt ? `Now let's return to the question: ${stepPrompt}` : "Let's continue."
+        return `I'm not sure about that exact word, but you can describe it simply in English. ${anchor}`
       }
       return `Good question! "${requested}" is a bit context-dependent — the key idea is the phrase you'll use in the exercise. Now let's return to the question: ${stepPrompt}`
     }
@@ -432,6 +472,203 @@ export function detectPhraseQuestion(text: string): boolean {
 // when handling student questions to extract the phrase a student is asking about.
 export function extractVocabPhraseForLookup(text: string): string | null {
   return extractVocabPhrase(text)
+}
+
+// ── Phase 7.4: Meaning-first demo input classifier ────────────────────────────
+// Classifies each student input before routing, so mixed messages (answer +
+// translation request) are handled as meaning-first rather than pure interruptions.
+
+export type DemoInputClass =
+  | 'ANSWER_ONLY'
+  | 'CLARIFICATION_ONLY'
+  | 'ANSWER_WITH_CLARIFICATION'
+  | 'MULTILINGUAL_RESCUE_ONLY'
+  | 'ANSWER_WITH_MULTILINGUAL_RESCUE'
+  | 'OFF_TASK'
+  | 'LOW_SIGNAL'
+
+export interface DemoInputClassification {
+  cls: DemoInputClass
+  hasAnswerContent: boolean
+  hasClarification: boolean
+  clarificationPhrase: string | null
+  answerFragment: string | null
+}
+
+// Strips Cyrillic, multilingual request phrases, and "how to say X" patterns from
+// text, leaving only the English answer content. Returns null if too little remains.
+function extractAnswerFragment(text: string): string | null {
+  // Remove all Cyrillic character blocks
+  let stripped = text.replace(/[\p{Script=Cyrillic}]+/gu, ' ')
+  // Remove "how to say [remaining word]" / "how say [word]"
+  stripped = stripped.replace(/\bhow\s+(?:to\s+)?say\s+\w*/gi, ' ')
+  // Remove any residual "in english" suffix left by Cyrillic removal
+  stripped = stripped.replace(/\bin\s+english\b/gi, ' ')
+  stripped = stripped.replace(/\s{2,}/g, ' ').trim()
+
+  const words = stripped.split(/\s+/).filter(Boolean)
+  // Skip pure function words; "I" (length 1) is a content word — do NOT filter by length >= 2
+  const SKIP = new Set(['a','an','the','to','of','in','on','at','by','for','with','how','say','it','is','and','or','but','so'])
+  const meaningful = words.filter(w => w.length >= 1 && !SKIP.has(w.toLowerCase()))
+  if (meaningful.length < 2) return null
+  return stripped
+}
+
+// Scans all Cyrillic blocks in `text` and returns the first map hit found.
+function extractAndLookupCyrillicFromText(text: string): string | null {
+  const blocks = text.match(/[\p{Script=Cyrillic}][\p{Script=Cyrillic}\s]*/gu) ?? []
+  for (const block of blocks) {
+    const hit = lookupCyrillicPhrase(block.trim())
+    if (hit) return hit
+  }
+  return null
+}
+
+export function classifyDemoInput(text: string): DemoInputClassification {
+  try {
+    const hasMultilingualRequest =
+      MULTILINGUAL_REQUEST_RE.test(text) || isHowToSayCyrillicQuery(text)
+
+    const answerFragment = extractAnswerFragment(text)
+    const hasAnswerContent = answerFragment !== null
+
+    if (!hasMultilingualRequest) {
+      return {
+        cls: 'ANSWER_ONLY',
+        hasAnswerContent: true,
+        hasClarification: false,
+        clarificationPhrase: null,
+        answerFragment: text,
+      }
+    }
+
+    const clarificationPhrase = extractRequestedPhrase(text)
+
+    if (hasAnswerContent) {
+      return {
+        cls: 'ANSWER_WITH_MULTILINGUAL_RESCUE',
+        hasAnswerContent: true,
+        hasClarification: true,
+        clarificationPhrase,
+        answerFragment,
+      }
+    }
+
+    return {
+      cls: 'MULTILINGUAL_RESCUE_ONLY',
+      hasAnswerContent: false,
+      hasClarification: true,
+      clarificationPhrase,
+      answerFragment: null,
+    }
+  } catch {
+    return {
+      cls: 'ANSWER_ONLY',
+      hasAnswerContent: true,
+      hasClarification: false,
+      clarificationPhrase: null,
+      answerFragment: text,
+    }
+  }
+}
+
+// Sentiment patterns used to acknowledge the student's meaning in mixed messages.
+const ANSWER_SENTIMENT_PATTERNS: Array<{ re: RegExp; buildMsg: (word: string) => string }> = [
+  { re: /\bi\s+(?:really\s+)?like\b/i,                  buildMsg: (w) => w ? `Nice — you like ${w}.`                         : 'Nice — I can see what you mean.' },
+  { re: /\bi\s+(?:really\s+)?love\b/i,                  buildMsg: (w) => w ? `Great — you love ${w}.`                        : 'Great — I can see what you mean.' },
+  { re: /\bi'?m\s+watching|\bi\s+am\s+watching/i,       buildMsg: (w) => w ? `Nice — you're watching a ${w}.`               : 'Nice — I can see what you mean.' },
+  { re: /\bi\s+find\b.{0,20}\binteresting\b/i,          buildMsg: (w) => w ? `You find ${w} interesting — good.`             : 'Good — I can see what you mean.' },
+  { re: /\binteresting\b.{0,30}\bi\s+(?:like|love)\b/i, buildMsg: (w) => w ? `You find ${w} interesting — good.`             : 'Good — I can see what you mean.' },
+  { re: /\bi\s+(?:am\s+|'?m\s+)?interested\b/i,        buildMsg: (w) => w ? `You're interested in ${w} — nice.`             : 'I can see what you mean.' },
+  { re: /\bi\s+enjoy\b/i,                                buildMsg: (w) => w ? `You enjoy ${w} — good context.`               : 'I can see what you mean.' },
+  { re: /\bi\s+(?:am\s+|'?m\s+)?studying\b/i,           buildMsg: (w) => w ? `You're studying ${w} — good.`                  : 'Good — I can see what you mean.' },
+  { re: /\bi\s+(?:am\s+|'?m\s+)?learning\b/i,           buildMsg: (w) => w ? `You're learning ${w} — good.`                  : 'Good — I can see what you mean.' },
+]
+
+function detectAnswerSentiment(fragment: string, translation: string): string {
+  const lower = fragment.toLowerCase()
+  for (const { re, buildMsg } of ANSWER_SENTIMENT_PATTERNS) {
+    if (re.test(lower)) return buildMsg(translation)
+  }
+  return translation ? `Good — ${translation}.` : 'Good — I can see what you mean.'
+}
+
+// Subject-aware follow-up questions used after answering an inline translation.
+const SUBJECT_FOLLOWUPS: Record<string, string> = {
+  geography:   'What makes it interesting for you?',
+  biology:     'What part of biology do you enjoy most?',
+  maths:       'Is it something you enjoy or more of a challenge?',
+  chemistry:   'What kind of chemistry topics do you find interesting?',
+  physics:     'What draws you to physics?',
+  history:     'Which period of history interests you most?',
+  english:     'What helps you learn English best?',
+  'funny movie': 'Would you recommend it to a friend?',
+  'funny film':  'Would you recommend it to a friend?',
+  series:        'How many episodes in — would you recommend it?',
+  film:          'What did you think of it?',
+}
+
+function chooseSubjectFollowup(translation: string, stepPrompt: string): string {
+  const key = translation.toLowerCase()
+  const followup = SUBJECT_FOLLOWUPS[key]
+  if (followup) return followup
+  // Generic: return to the step prompt
+  return stepPrompt ? `Now, ${stepPrompt.charAt(0).toLowerCase() + stepPrompt.slice(1)}` : "Let's continue."
+}
+
+// ── Phase 7.4: Meaning-first response for mixed answer + translation ──────────
+// Called when classifyDemoInput returns ANSWER_WITH_MULTILINGUAL_RESCUE.
+// Answers the translation, acknowledges the student's meaning, asks a follow-up.
+// Never says "try typing it in English". Never marks the answer as invalid.
+
+export function buildMeaningFirstResponse(
+  text: string,
+  answerFragment: string,
+  stepPrompt: string,
+  sessionId?: string,
+): string {
+  try {
+    const requested = extractRequestedPhrase(text)
+    let translationLine = ''
+    let translation = ''
+
+    if (requested) {
+      const cyrillicHit = lookupCyrillicPhrase(requested)
+      if (cyrillicHit) {
+        translation = cyrillicHit
+        translationLine = `You can say "${cyrillicHit}."`
+      } else {
+        // Phrase extracted but not in map — try direct Cyrillic block scan as fallback.
+        // Handles "how to say it" where 'it' refers back to a Cyrillic word in the message.
+        const directHit = extractAndLookupCyrillicFromText(text)
+        if (directHit) {
+          translation = directHit
+          translationLine = `You can say "${directHit}."`
+        } else {
+          translationLine = `I'm not sure about that exact word, but no problem.`
+        }
+      }
+    } else {
+      // extractRequestedPhrase failed (e.g. "как это сказать" where phrase precedes the request).
+      // Scan Cyrillic blocks directly.
+      const directHit = extractAndLookupCyrillicFromText(text)
+      if (directHit) {
+        translation = directHit
+        translationLine = `You can say "${directHit}."`
+      }
+    }
+
+    const sentimentAck  = detectAnswerSentiment(answerFragment, translation)
+    const followup      = chooseSubjectFollowup(translation, stepPrompt)
+
+    const parts = [translationLine, sentimentAck, followup].filter(Boolean)
+    const result = parts.join(' ')
+    emitMoveTrace(sessionId, `meaning_first_response translation="${translation.slice(0, 20)}"`)
+    console.log(`[demo_meaning_first] fragment="${answerFragment.slice(0, 40)}" translation="${translation}" followup="${followup.slice(0, 40)}"`)
+    return result
+  } catch {
+    return buildMultilingualPhraseAnswer(text, stepPrompt, sessionId)
+  }
 }
 
 // ── Phase 7: Emotional acknowledgment phrases ─────────────────────────────────
