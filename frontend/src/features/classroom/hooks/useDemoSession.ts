@@ -131,54 +131,95 @@ export function useDemoSession({
   // Phase 7.8: tracks which AI message index is being voiced (0 = first/greeting)
   const messageIndexRef    = useRef(0)
 
+  // Phase 7.10: client-side TTS fetch cache — deduplicates pre-warm + on-demand calls for same text
+  type TtsCachedResult = {
+    audio?:  string
+    budget?: { callsUsed: number; charsUsed: number; callsLimit: number; charsLimit: number }
+  } | null
+  type TtsCacheEntry = {
+    promise:  Promise<TtsCachedResult>
+    resolved: boolean
+    result:   TtsCachedResult
+  }
+  const ttsFetchCacheRef = useRef<Map<string, TtsCacheEntry>>(new Map())
+
   useEffect(() => { submittingRef.current  = submitting  }, [submitting])
   useEffect(() => { currentStepRef.current = currentStep }, [currentStep])
   useEffect(() => { sessionIdRef.current   = sessionId   }, [sessionId])
   useEffect(() => { voiceMutedRef.current  = voiceMuted  }, [voiceMuted])
 
   // ── Core TTS playback ─────────────────────────────────────────────────────────
+  // Phase 7.10: checks client-side cache before fetching — pre-warm promise is reused
+  // if it is still in-flight (demo_tts_inflight_reused) or already resolved
+  // (demo_tts_duplicate_suppressed), preventing a duplicate HTTP request.
+  // Generation check after any await discards audio that arrived after the lesson advanced
+  // (demo_tts_late_arrival_skipped).
   const handlePlayAudio = useCallback(async (messageId: string, messageType: string, text: string) => {
     const sid = sessionIdRef.current
     if (!sid) return
     const myGeneration = voiceGenerationRef.current
     setVoiceStates(prev => ({ ...prev, [messageId]: 'loading' }))
     try {
-      const res = await fetch(`${API_BASE}/demo/tts`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body:    JSON.stringify({ sessionId: sid, messageId, messageType, messageText: text }),
-      })
-      if (voiceGenerationRef.current !== myGeneration) {
-        setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
-        return
-      }
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}) as Record<string, unknown>) as Record<string, unknown>
-        const code = (errBody['code'] as string | undefined) ?? String(res.status)
-        console.log(`[demo-voice] error id=${messageId} status=${res.status} code=${code}`)
-        if (res.status === 429) {
-          const isStepStart = messageType === 'main_prompt' || messageType === 'greeting'
-          if (!isStepStart) ttsLimitReachedRef.current = true
+      const cacheKey = `${sid}:${messageType}:${text}`
+      const cached   = ttsFetchCacheRef.current.get(cacheKey)
+      let j: TtsCachedResult
+
+      if (cached) {
+        // Reuse pre-warm or in-flight promise — no extra HTTP request
+        if (cached.resolved) {
+          console.log(`[demo_tts_duplicate_suppressed] id=${messageId} type=${messageType}`)
+          j = cached.result
+        } else {
+          console.log(`[demo_tts_inflight_reused] id=${messageId} type=${messageType}`)
+          j = await cached.promise
         }
+      } else {
+        const fetchPromise: Promise<TtsCachedResult> = fetch(`${API_BASE}/demo/tts`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body:    JSON.stringify({ sessionId: sid, messageId, messageType, messageText: text }),
+        }).then(async (res): Promise<TtsCachedResult> => {
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}) as Record<string, unknown>) as Record<string, unknown>
+            const code = (errBody['code'] as string | undefined) ?? String(res.status)
+            console.log(`[demo-voice] error id=${messageId} status=${res.status} code=${code}`)
+            if (res.status === 429) {
+              const isStepStart = messageType === 'main_prompt' || messageType === 'greeting'
+              if (!isStepStart) ttsLimitReachedRef.current = true
+            }
+            return null
+          }
+          return res.json() as Promise<TtsCachedResult>
+        }).catch((err: unknown): TtsCachedResult => {
+          const msg = err instanceof Error ? err.message : 'unknown'
+          console.log(`[demo-voice] fetch_error id=${messageId} reason=${msg}`)
+          return null
+        })
+
+        const entry: TtsCacheEntry = { promise: fetchPromise, resolved: false, result: null }
+        ttsFetchCacheRef.current.set(cacheKey, entry)
+        j = await fetchPromise
+        entry.resolved = true
+        entry.result   = j
+      }
+
+      // Single generation check after all async waits
+      if (voiceGenerationRef.current !== myGeneration) {
+        if (j?.audio) console.log(`[demo_tts_late_arrival_skipped] id=${messageId} type=${messageType}`)
         setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
         return
       }
-      const j = (await res.json()) as {
-        audio?: string
-        budget?: { callsUsed: number; charsUsed: number; callsLimit: number; charsLimit: number }
+
+      if (!j?.audio) {
+        setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
+        return
       }
+
       if (j.budget) {
         const { callsUsed, charsUsed, callsLimit, charsLimit } = j.budget
         console.log(`[demo-tts-budget] callsUsed=${callsUsed} charsUsed=${charsUsed} callsLimit=${callsLimit} charsLimit=${charsLimit} type=${messageType}`)
       }
-      if (!j.audio) {
-        setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
-        return
-      }
-      if (voiceGenerationRef.current !== myGeneration) {
-        setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
-        return
-      }
+
       setVoiceStates(prev => ({ ...prev, [messageId]: 'playing' }))
       console.log(`[demo_audio_play_started] id=${messageId} type=${messageType}`)
       await playAudioChunk(j.audio, true)
@@ -204,9 +245,10 @@ export function useDemoSession({
     }
   }, [token])
 
-  // Maximum time to wait for TTS to complete before unblocking the lesson.
-  // Covers: network fetch + decode + full playback. Safety net for mobile autoplay hangs.
-  const TTS_MAX_WAIT_MS = 10_000
+  // Phase 7.10: max time to block lesson flow waiting for TTS.
+  // Text is shown before this timer starts. After 1.5 s, lesson advances and audio
+  // continues in background (plays when ready if still generation-current).
+  const TTS_MAX_WAIT_MS = 1_500
 
   // ── Show an AI teacher message with typing animation + TTS ────────────────────
   // Text is always revealed immediately. TTS plays if not muted/exhausted.
@@ -218,10 +260,13 @@ export function useDemoSession({
 
     setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: 'typing', sender: 'ai', isTyping: true }])
     setIsSpeaking(true)
-    await sleep(Math.min(500 + text.length * 6, 1200))
+    // Phase 7.10: shorter typing animation so text appears faster (max 800 ms, was 1200 ms)
+    await sleep(Math.min(300 + text.length * 4, 800))
 
     const msgId = uid()
     setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: msgId, sender: 'ai', text }])
+    // Text is now visible — TTS fetch starts next (text-first strategy)
+    console.log(`[demo_text_rendered_before_tts] msgIndex=${msgIndex} id=${msgId} type=${ttsType ?? 'none'}`)
 
     if (ttsType) {
       const ttsText = stripMarkdownForTts(ttsOverride ?? text).slice(0, 350)
@@ -248,7 +293,9 @@ export function useDemoSession({
 
         const elapsed = Date.now() - t0
         if (timedOut) {
+          // TTS fetch or playback still in-flight — lesson advances via text, audio continues in background
           console.log(`[demo_audio_play_failed] msgIndex=${msgIndex} id=${msgId} reason=timeout elapsedMs=${elapsed}`)
+          console.log('[demo_interaction_unblocked_before_tts]')
           console.log('[demo_mic_unblocked_after_audio_skip]')
           await sleep(1200)
         } else if (elapsed < 600) {
@@ -476,15 +523,25 @@ export function useDemoSession({
           currentStep:      data.currentStep,
         }
 
-        // Pre-warm greeting TTS in background so audio starts immediately on "Begin Lesson"
-        // Fire-and-forget — errors are silently ignored; on-demand fetch is the fallback
+        // Phase 7.10: pre-warm greeting TTS and store the result promise in the client-side cache.
+        // If the user clicks "Begin Lesson" before this resolves, handlePlayAudio reuses the
+        // in-flight promise (demo_tts_inflight_reused) instead of launching a duplicate request.
+        // If it has already resolved by then, the cached result is used directly
+        // (demo_tts_duplicate_suppressed) with no network round-trip.
         if (data.introText && data.id) {
           const prewarmText = stripMarkdownForTts(data.introText).slice(0, 350)
-          void fetch(`${API_BASE}/demo/tts`, {
-            method: 'POST',
+          const cacheKey    = `${data.id}:greeting:${prewarmText}`
+          const prewarmPromise: Promise<TtsCachedResult> = fetch(`${API_BASE}/demo/tts`, {
+            method:  'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ sessionId: data.id, messageType: 'greeting', messageText: prewarmText }),
-          }).catch(() => {})
+            body:    JSON.stringify({ sessionId: data.id, messageType: 'greeting', messageText: prewarmText }),
+          }).then(async (res): Promise<TtsCachedResult> => {
+            if (!res.ok) return null
+            return res.json() as Promise<TtsCachedResult>
+          }).catch((): TtsCachedResult => null)
+          const entry: TtsCacheEntry = { promise: prewarmPromise, resolved: false, result: null }
+          ttsFetchCacheRef.current.set(cacheKey, entry)
+          void prewarmPromise.then(result => { entry.resolved = true; entry.result = result })
         }
 
         console.log('[demo-phase] ready')
