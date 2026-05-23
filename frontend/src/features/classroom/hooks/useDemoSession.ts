@@ -152,6 +152,12 @@ export function useDemoSession({
   // Prevents duplicate queue entries from replay button or callback recreation.
   const enqueuedJobIdsRef = useRef<Set<string>>(new Set())
 
+  // Phase 7.12D: global teacher message chain — ALL showAiMessage calls are serialized.
+  // No two teacher messages may render/play concurrently; only mic interrupt can break sequence.
+  const teacherMessageChainRef = useRef<Promise<void>>(Promise.resolve())
+  const chainGenerationRef     = useRef(0)
+  const pendingChainKeysRef    = useRef<Set<string>>(new Set())
+
   // Phase 7.10: client-side TTS fetch cache — deduplicates pre-warm + on-demand calls for same text
   type TtsCachedResult = {
     audio?:  string
@@ -297,9 +303,6 @@ export function useDemoSession({
     }
   }, [token])
 
-  // Phase 7.10: max time to block lesson flow waiting for TTS on normal turns.
-  const TTS_MAX_WAIT_MS = 1_500
-
   // ── Show an AI teacher message with typing animation + TTS ────────────────────
   // Text is always revealed immediately. TTS plays if not muted/exhausted.
   // Audio is enhancement only — if blocked or timed out, lesson continues via text.
@@ -357,32 +360,15 @@ export function useDemoSession({
           console.log(`[demo_show_message_blocking_wait_done] id=${msgId} type=${ttsType} elapsedMs=${elapsed}`)
 
         } else {
-          // ── Normal turn: fast-path race against 1.5 s cap ─────────────────────
-          // Phase 7.12: no generation increment — only mic interruption changes generation.
-          console.log(`[demo_turn_start] id=${msgId} type=${ttsType}`)
+          // ── Normal turn: blocking await inside the global teacher message chain ─
+          // Phase 7.12D: no 1.5 s race — showAiMessage blocks until audio is truly done
+          // (or interrupted by mic/generation change). The chain in enqueueTeacherMessage
+          // guarantees this fn is never called while another showAiMessage is in progress,
+          // so the direct await cannot cause overlap.
+          console.log(`[demo_teacher_message_rendered] id=${msgId} type=${ttsType}`)
           const t0 = Date.now()
-          let timedOut = false
-
-          await Promise.race([
-            handlePlayAudio(msgId, ttsType, ttsText),
-            new Promise<void>((resolve) => setTimeout(() => {
-              timedOut = true
-              resolve()
-            }, TTS_MAX_WAIT_MS)),
-          ])
-
-          const elapsed = Date.now() - t0
-          if (timedOut) {
-            console.log(`[demo_turn_complete] id=${msgId} type=${ttsType} reason=timeout elapsedMs=${elapsed}`)
-            console.log('[demo_mic_unblocked_after_audio_skip]')
-            await sleep(1200)
-          } else if (elapsed < 600) {
-            console.log(`[demo_turn_complete] id=${msgId} type=${ttsType} reason=fast_return elapsedMs=${elapsed}`)
-            console.log('[demo_mic_unblocked_after_audio_skip]')
-            await sleep(Math.min(1200 + ttsText.length * 40, 3500))
-          } else {
-            console.log(`[demo_turn_complete] id=${msgId} type=${ttsType} elapsedMs=${elapsed}`)
-          }
+          await handlePlayAudio(msgId, ttsType, ttsText)
+          console.log(`[demo_teacher_message_audio_done] id=${msgId} type=${ttsType} elapsedMs=${Date.now() - t0}`)
         }
 
       } else {
@@ -404,10 +390,66 @@ export function useDemoSession({
     return msgId
   }, [handlePlayAudio])
 
+  // ── Global teacher message chain (Phase 7.12D) ────────────────────────────────
+  // ALL teacher messages must go through this wrapper.
+  // Rule: teacher→teacher waits. Student mic→teacher interrupts.
+  //
+  // Duplicate suppression: key = sessionId + messageType + hashText(text).
+  // If the same key is already in the chain (pending or in-flight), skip insertion.
+  //
+  // Cancellation: each chain slot captures chainGenerationRef at enqueue time.
+  // When mic fires and chainGenerationRef is incremented, queued slots see the
+  // mismatch and skip execution (returning '' immediately), draining the chain fast.
+  const enqueueTeacherMessage = useCallback((
+    messageType: string,
+    text: string,
+    fn: () => Promise<string>,
+  ): Promise<string> => {
+    const sid = sessionIdRef.current ?? 'no_session'
+    const key = `${sid}:${messageType}:${hashText(text)}`
+
+    if (pendingChainKeysRef.current.has(key)) {
+      console.log(`[demo_teacher_chain_duplicate_suppressed] key=${key}`)
+      return Promise.resolve('')
+    }
+
+    const pendingCount = pendingChainKeysRef.current.size
+    if (pendingCount > 0) {
+      console.log(`[demo_teacher_next_message_waiting] key=${key} pending=${pendingCount}`)
+      console.log('[demo_teacher_overlap_prevented]')
+    }
+
+    console.log(`[demo_teacher_chain_enqueue] key=${key} type=${messageType}`)
+    pendingChainKeysRef.current.add(key)
+
+    const myGeneration = chainGenerationRef.current
+
+    const resultPromise: Promise<string> = teacherMessageChainRef.current.then(async () => {
+      pendingChainKeysRef.current.delete(key)
+
+      if (chainGenerationRef.current !== myGeneration) {
+        console.log(`[demo_teacher_chain_cancelled_by_mic] key=${key}`)
+        return ''
+      }
+
+      console.log(`[demo_teacher_chain_start] key=${key} type=${messageType}`)
+      const msgId = await fn()
+      console.log(`[demo_teacher_chain_complete] key=${key} type=${messageType}`)
+      return msgId
+    })
+
+    // Advance chain tail — catch so one failure never blocks subsequent messages
+    teacherMessageChainRef.current = resultPromise.then(() => {}, () => {})
+    return resultPromise
+  }, [])
+
   // ── Interrupt all audio + cancel any running showAiMessage TTS ────────────────
   const interruptAudio = useCallback(() => {
     voiceGenerationRef.current += 1  // marks all in-flight handlePlayAudio calls as stale
+    chainGenerationRef.current += 1  // marks all queued chain slots as cancelled
+    pendingChainKeysRef.current.clear()
     console.log('[demo_audio_queue_interrupted_by_mic]')
+    console.log('[demo_teacher_chain_cancelled_by_mic]')
     clearTeacherAudioQueue()         // stops current playback + resolves all queued jobs
     setIsSpeaking(false)
   }, [])
@@ -426,6 +468,8 @@ export function useDemoSession({
     setVoiceMuted(prev => {
       if (!prev) {
         voiceGenerationRef.current += 1
+        chainGenerationRef.current += 1
+        pendingChainKeysRef.current.clear()
         clearTeacherAudioQueue()
       }
       return !prev
@@ -443,6 +487,8 @@ export function useDemoSession({
 
     console.log(`[demo_answer_submit_started] chars=${answerStr.length} step=${step.key}`)
     voiceGenerationRef.current += 1  // marks all in-flight TTS calls as stale
+    chainGenerationRef.current += 1  // cancels any queued chain slots from previous turn
+    pendingChainKeysRef.current.clear()
     clearTeacherAudioQueue()         // stops current audio + drains queue (mic interrupt)
     setIsSpeaking(false)
 
@@ -472,6 +518,7 @@ export function useDemoSession({
         const errMsgText = j.message ?? 'Please try again.'
         const errMsgId = uid()
 
+        // Route error/retry messages through the global chain so they don't overlap
         setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: 'typing', sender: 'ai', isTyping: true }])
         setIsSpeaking(true)
         await sleep(900)
@@ -487,9 +534,13 @@ export function useDemoSession({
             ? (step.key === 'speaking_task' ? 'speaking_feedback' : step.key === 'writing_task' ? 'writing_feedback' : 'key_correction')
             : 'key_correction'
           const ttsText = stripMarkdownForTts(spokenText).slice(0, 300)
-          voiceGenerationRef.current += 1
           setVoiceMessages(prev => ({ ...prev, [errMsgId]: { type: voiceType, text: ttsText } }))
-          if (!voiceMutedRef.current) void handlePlayAudio(errMsgId, voiceType, ttsText)
+          if (!voiceMutedRef.current) {
+            void enqueueTeacherMessage(voiceType, ttsText, async () => {
+              await handlePlayAudio(errMsgId, voiceType, ttsText)
+              return errMsgId
+            })
+          }
         }
         return
       }
@@ -520,7 +571,8 @@ export function useDemoSession({
       const spokenFeedback = j.feedback.spokenFeedback ?? undefined
 
       await sleep(400)
-      await showAiMessage(feedbackText, effectiveTtsType, spokenFeedback)
+      await enqueueTeacherMessage(effectiveTtsType, feedbackText, () =>
+        showAiMessage(feedbackText, effectiveTtsType, spokenFeedback))
 
       setSelectedOption(null)
       setCompletedSteps(prev => [...prev, step.key])
@@ -550,7 +602,8 @@ export function useDemoSession({
           if (j.nextStepIntro) {
             console.log(`[demo-advance] nextStep=${j.nextStep.key} mode=${convMode}`)
             await sleep(500)
-            await showAiMessage(j.nextStepIntro, 'main_prompt')
+            await enqueueTeacherMessage('main_prompt', j.nextStepIntro, () =>
+              showAiMessage(j.nextStepIntro!, 'main_prompt'))
           } else {
             console.log(`[demo-advance] nextStep=${j.nextStep.key} mode=${convMode}`)
           }
@@ -571,7 +624,7 @@ export function useDemoSession({
       setSubmitting(false)
       console.log('[demo_answer_submit_finished]')
     }
-  }, [token, showAiMessage, handlePlayAudio])
+  }, [token, showAiMessage, handlePlayAudio, enqueueTeacherMessage])
 
   // ── Session initialisation ────────────────────────────────────────────────────
   useEffect(() => {
@@ -685,11 +738,13 @@ export function useDemoSession({
       // Lock mic + input for the entire greeting → main_prompt intro sequence
       setIntroSequenceActive(true)
 
-      // Phase 7.12B: strictly sequential intro — greeting audio must complete before
-      // main_prompt text renders. showAiMessage(isIntroTurn=true) is now a blocking
-      // await that resolves only when the queue job ends, fails, or hits its 12s cap.
+      // Phase 7.12D: intro messages go through the global chain so any rogue concurrent
+      // message (e.g. from handleHelpRequest) is serialized behind greeting + main_prompt.
+      // isIntroTurn=true inside showAiMessage uses playTeacherAudioAndWaitForRealEnd
+      // (event-gated) rather than the serial queue — the chain provides the outer gate.
       console.log('[demo_intro_greeting_begin]')
-      await showAiMessage(pending.introText, 'greeting', undefined, { isIntroTurn: true })
+      await enqueueTeacherMessage('greeting', pending.introText, () =>
+        showAiMessage(pending.introText, 'greeting', undefined, { isIntroTurn: true }))
       console.log('[demo_intro_greeting_complete]')
 
       setLessonStarted(true)
@@ -702,7 +757,8 @@ export function useDemoSession({
         const stepIntro = pending.currentStepIntro ?? pending.currentStep.prompt ?? ''
         if (stepIntro) {
           console.log('[demo_intro_prompt_begin]')
-          await showAiMessage(stepIntro, 'main_prompt', undefined, { isIntroTurn: true })
+          await enqueueTeacherMessage('main_prompt', stepIntro, () =>
+            showAiMessage(stepIntro, 'main_prompt', undefined, { isIntroTurn: true }))
           console.log('[demo_intro_prompt_complete]')
         }
       }
@@ -716,7 +772,7 @@ export function useDemoSession({
       console.log('[demo-phase] error')
       setPhase('error')
     }
-  }, [showAiMessage])
+  }, [showAiMessage, enqueueTeacherMessage])
 
   // ── Input handlers ────────────────────────────────────────────────────────────
   const handleTextSubmit = useCallback((answer: string) => {
@@ -743,7 +799,9 @@ export function useDemoSession({
           body:    JSON.stringify({ sessionId: sid, text: trimmed }),
         })
         const j = (await res.json()) as { message?: string }
-        await showAiMessage(j.message ?? "I couldn't process that help request.", 'key_correction')
+        const helpText = j.message ?? "I couldn't process that help request."
+        await enqueueTeacherMessage('key_correction', helpText, () =>
+          showAiMessage(helpText, 'key_correction'))
       } catch {
         setIsSpeaking(false)
         setChatMessages(prev => [
@@ -752,7 +810,7 @@ export function useDemoSession({
         ])
       }
     })()
-  }, [token, showAiMessage])
+  }, [token, showAiMessage, enqueueTeacherMessage])
 
   const handleTranslateMessage = useCallback(async (
     _messageId: string,
