@@ -104,25 +104,27 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const toggleDemoMic = useCallback(() => {
     const ph = demoPhaseRef.current
     // Block recording before lesson starts or after it completes
-    if (ph === 'loading' || ph === 'ready' || ph === 'intro' || ph === 'complete') return
-    // Phase 7.10B: block mic while greeting and first main_prompt are logically in progress.
-    // introSequenceActive stays true from startLesson until after main_prompt logical completion.
+    if (ph === 'loading' || ph === 'ready' || ph === 'intro' || ph === 'complete') {
+      console.log(`[demo_mic_start_blocked] reason=phase_${ph}`)
+      return
+    }
+    // Block mic while greeting + first main_prompt are in progress (introSequenceActive).
+    // With 7.10C caps (2.5s + 2.0s), this blocks for at most ~5s total.
     if (demoIntroActiveRef.current) {
-      console.log('[demo-mic] blocked reason=intro_sequence_active')
+      console.log('[demo_mic_start_blocked] reason=intro_sequence_active')
       return
     }
     if (demoListening) {
-      console.log('[demo-mic] clicked reason=stop_recording phase=' + ph)
+      console.log(`[demo_mic_stop] phase=${ph}`)
       if (demoMicTimerRef.current) { clearTimeout(demoMicTimerRef.current); demoMicTimerRef.current = null }
       demoSpeechRef.current?.stop()
       return
     }
-    const wasStaticPlaying = demoStaticPlayingRef.current
-    console.log(`[demo-mic] clicked reason=start_recording phase=${ph} wasStaticPlaying=${wasStaticPlaying}`)
-    // interruptAudio increments the generation counter — cancels any running playMessages loop
-    // so it won't advance to the next message after the mic starts recording.
+    console.log(`[demo_mic_start_allowed] phase=${ph}`)
+    // interruptAudio increments voiceGenerationRef — cancels in-flight handlePlayAudio calls.
+    // Any audio playing after this point will see a stale generation and self-cancel.
     demoInterruptRef.current()
-    console.log(`[demo-mic] accepted stoppedAudio=${wasStaticPlaying}`)
+    console.log('[demo_audio_cancelled_for_mic]')
     const w = window as unknown as Record<string, unknown>
     const SpeechRecCtor = (w['SpeechRecognition'] ?? w['webkitSpeechRecognition']) as
       (new () => WebSpeechRec) | undefined
@@ -190,6 +192,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   useEffect(() => {
     demoSubmitRef.current = (text: string) => {
       if (!text.trim()) return
+      console.log(`[demo_answer_submit_started] source=voice chars=${text.length}`)
       setAnswer('')
       demo.handleTextSubmit(text)
     }
