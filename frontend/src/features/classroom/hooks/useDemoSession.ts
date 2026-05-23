@@ -292,18 +292,13 @@ export function useDemoSession({
   // Phase 7.10: max time to block lesson flow waiting for TTS on normal turns.
   const TTS_MAX_WAIT_MS = 1_500
 
-  // Phase 7.12: intro mic-unlock caps — raised to allow full audio playback.
-  // Cap only unlocks the mic early; audio continues in the serial queue until it
-  // ends naturally or the student interrupts. 8s/6s covers typical mobile latency.
-  const GREETING_AUDIO_CAP_MS    = 8_000
-  const MAIN_PROMPT_AUDIO_CAP_MS = 6_000
-
   // ── Show an AI teacher message with typing animation + TTS ────────────────────
   // Text is always revealed immediately. TTS plays if not muted/exhausted.
   // Audio is enhancement only — if blocked or timed out, lesson continues via text.
   //
-  // isIntroTurn=true (greeting, main_prompt): simple race against short cap (2.5s/2.0s).
-  //   Mic unlocks within ~5s total on slowest mobile networks. Audio wins if fast.
+  // isIntroTurn=true (greeting, main_prompt): Phase 7.12B blocking await — returns
+  //   only after audio ends, fails, or the queue's 12s internal cap fires.
+  //   This prevents main_prompt text from rendering while greeting audio still plays.
   //
   // isIntroTurn=false (normal feedback/followup turns): fast-path race against 1.5s cap.
   const showAiMessage = useCallback(async (
@@ -340,29 +335,18 @@ export function useDemoSession({
       if (!voiceMutedRef.current && !ttsLimitReachedRef.current) {
 
         if (isIntroTurn) {
-          // Phase 7.12: serial queue ensures greeting finishes before main_prompt starts.
-          // Cap only unlocks the mic early — audio continues in queue until it ends
-          // naturally or the student interrupts via mic (clearTeacherAudioQueue).
-          // Generation is NOT incremented here; only mic interruption increments it.
-          const maxCap = ttsType === 'greeting' ? GREETING_AUDIO_CAP_MS : MAIN_PROMPT_AUDIO_CAP_MS
-          console.log(`[demo_turn_start] id=${msgId} type=${ttsType} cap=${maxCap}ms`)
+          // Phase 7.12B: blocking intro await — do NOT race against a sleep cap here.
+          // showAiMessage must not return until this audio job is truly done so that
+          // startLesson() cannot render main_prompt while greeting is still speaking.
+          // The queue's own 12s internal cap (maxQueueMs in handlePlayAudio) is the
+          // safety net; handlePlayAudio resolves on audio end, queue cap, or any error.
+          console.log(`[demo_show_message_blocking_wait_start] id=${msgId} type=${ttsType}`)
 
           const t0 = Date.now()
-          let hitCap = false
-          await Promise.race([
-            handlePlayAudio(msgId, ttsType, ttsText),
-            sleep(maxCap).then(() => { hitCap = true }),
-          ])
+          await handlePlayAudio(msgId, ttsType, ttsText)
           const elapsed = Date.now() - t0
 
-          if (hitCap) {
-            // Audio may still be playing in the queue — leave it running.
-            // Serial queue ensures main_prompt audio waits for greeting to finish.
-            console.log(`[demo_teacher_audio_ended] id=${msgId} type=${ttsType} reason=cap_hit elapsedMs=${elapsed}`)
-          } else {
-            console.log(`[demo_teacher_audio_ended] id=${msgId} type=${ttsType} reason=natural elapsedMs=${elapsed}`)
-          }
-          console.log(`[demo_turn_complete] id=${msgId} type=${ttsType}`)
+          console.log(`[demo_show_message_blocking_wait_done] id=${msgId} type=${ttsType} elapsedMs=${elapsed}`)
 
         } else {
           // ── Normal turn: fast-path race against 1.5 s cap ─────────────────────
@@ -693,8 +677,12 @@ export function useDemoSession({
       // Lock mic + input for the entire greeting → main_prompt intro sequence
       setIntroSequenceActive(true)
 
-      // AI teacher greeting — intro turn: waits for audio to complete before advancing
+      // Phase 7.12B: strictly sequential intro — greeting audio must complete before
+      // main_prompt text renders. showAiMessage(isIntroTurn=true) is now a blocking
+      // await that resolves only when the queue job ends, fails, or hits its 12s cap.
+      console.log('[demo_intro_greeting_begin]')
       await showAiMessage(pending.introText, 'greeting', undefined, { isIntroTurn: true })
+      console.log('[demo_intro_greeting_complete]')
 
       setLessonStarted(true)
       console.log('[demo-phase] lesson')
@@ -703,16 +691,17 @@ export function useDemoSession({
       if (pending.currentStep) {
         setCurrentStep(pending.currentStep)
         await sleep(500)
-        // AI teacher poses the first exercise — also an intro turn (mic locked until done)
         const stepIntro = pending.currentStepIntro ?? pending.currentStep.prompt ?? ''
         if (stepIntro) {
+          console.log('[demo_intro_prompt_begin]')
           await showAiMessage(stepIntro, 'main_prompt', undefined, { isIntroTurn: true })
+          console.log('[demo_intro_prompt_complete]')
         }
       }
 
-      // Intro sequence complete — unlock mic and input for student responses
+      // Both intro messages complete — unlock mic and input for student responses
       setIntroSequenceActive(false)
-      console.log('[demo_mic_unlocked_after_turn]')
+      console.log('[demo_intro_mic_unlocked]')
     } catch {
       setIntroSequenceActive(false)
       setError('Could not start your lesson. Please refresh.')
