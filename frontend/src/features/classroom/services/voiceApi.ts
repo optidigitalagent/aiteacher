@@ -274,6 +274,112 @@ export function stopHtmlAudioPlayback(): void {
   if (res) res()  // resolve any pending play promise so callers never hang
 }
 
+// ── Teacher audio serial queue (demo mode) ────────────────────────────────
+// Ensures teacher TTS messages never interrupt each other.
+// Only mic interruption via clearTeacherAudioQueue() may break the sequence.
+// Each job has a hard maxMs cap so the queue never deadlocks.
+
+type _TJob = {
+  id:      string
+  playFn:  () => Promise<void>
+  maxMs:   number
+  resolve: () => void
+  reject:  (e: Error) => void
+}
+
+let _tJobs: _TJob[] = []
+let _tBusy           = false
+
+function _tNext(): void {
+  if (_tBusy || _tJobs.length === 0) return
+  _tBusy = true
+  const job = _tJobs.shift()!
+  console.log(`[demo_audio_queue_start] id=${job.id}`)
+
+  let settled = false
+  let capId: ReturnType<typeof setTimeout> | null = null
+
+  const finish = (err?: Error) => {
+    if (settled) return
+    settled = true
+    if (capId) { clearTimeout(capId); capId = null }
+    _tBusy = false
+    console.log(`[demo_audio_queue_end] id=${job.id}`)
+    if (err) { job.reject(err) } else { job.resolve() }
+    _tNext()
+  }
+
+  capId = setTimeout(() => {
+    capId = null
+    console.log(`[demo_audio_queue_cap_hit] id=${job.id}`)
+    stopHtmlAudioPlayback()
+    finish()
+  }, job.maxMs)
+
+  job.playFn()
+    .then(() => finish())
+    .catch((e: unknown) => finish(e instanceof Error ? e : new Error(String(e))))
+}
+
+export function enqueueTeacherAudio(jobId: string, base64: string, maxMs: number): Promise<void> {
+  const waiting = _tBusy || _tJobs.length > 0
+  console.log(`[demo_audio_queue_enqueue] id=${jobId} pending=${_tJobs.length}`)
+  if (waiting) console.log('[demo_teacher_audio_waiting_for_previous]')
+  return new Promise<void>((resolve, reject) => {
+    _tJobs.push({ id: jobId, playFn: () => _playBlobQueued(base64), maxMs, resolve, reject })
+    _tNext()
+  })
+}
+
+export function clearTeacherAudioQueue(): void {
+  const n = _tJobs.length
+  console.log(`[demo_audio_queue_cleared] pending=${n}`)
+  const jobs = _tJobs.splice(0)
+  _tBusy = false
+  for (const j of jobs) j.resolve()  // resolve all pending so awaiting callers don't hang
+  stopHtmlAudioPlayback()
+}
+
+// Internal: plays base64 MP3 via HTMLAudio without stopping current audio.
+// Queue guarantees at most one job plays at a time, so no stop-before-play needed.
+function _playBlobQueued(base64: string): Promise<void> {
+  const binary = atob(base64)
+  const bytes  = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  const blob = new Blob([bytes], { type: 'audio/mpeg' })
+  const url  = URL.createObjectURL(blob)
+  _htmlAudioUrl = url
+  const audio   = new Audio(url)
+  _htmlAudioEl  = audio
+  console.log('[demo_html_audio_created]')
+  return new Promise<void>((resolve, reject) => {
+    _htmlAudioResolve = resolve
+    audio.onended = () => {
+      console.log('[demo_html_audio_ended]')
+      _htmlAudioEl = null; _htmlAudioResolve = null
+      URL.revokeObjectURL(url); if (_htmlAudioUrl === url) _htmlAudioUrl = null
+      resolve()
+    }
+    audio.onerror = () => {
+      console.log('[demo_html_audio_error]')
+      _htmlAudioEl = null; _htmlAudioResolve = null
+      URL.revokeObjectURL(url); if (_htmlAudioUrl === url) _htmlAudioUrl = null
+      resolve()
+    }
+    console.log('[demo_html_audio_play_started]')
+    audio.play().catch((err: unknown) => {
+      const name = err instanceof Error ? err.name : String(err)
+      console.log(`[demo_html_audio_play_rejected] reason=${name}`)
+      _htmlAudioEl = null; _htmlAudioResolve = null
+      URL.revokeObjectURL(url); if (_htmlAudioUrl === url) _htmlAudioUrl = null
+      if (name === 'NotAllowedError' || name === 'AbortError')
+        reject(new Error(`html_audio_play_rejected: ${name}`))
+      else
+        resolve()
+    })
+  })
+}
+
 // Play a silent 1-frame WAV inline to grant HTMLAudio playback permission
 // within the current user gesture, so subsequent async audio.play() calls
 // succeed on iOS without NotAllowedError.

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChatMessage, LessonStep } from '../types'
-import { playAudioBlobWithHtmlAudio, stopHtmlAudioPlayback, primeHtmlAudio } from '../services/voiceApi'
+import { primeHtmlAudio, enqueueTeacherAudio, clearTeacherAudioQueue } from '../services/voiceApi'
 
 function stripMarkdownForTts(text: string): string {
   return text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim()
@@ -75,6 +75,11 @@ export interface UseDemoSessionReturn {
 
 function uid() { return Math.random().toString(36).slice(2) }
 function sleep(ms: number) { return new Promise<void>((r) => setTimeout(r, ms)) }
+function hashText(s: string): string {
+  let h = 5381
+  for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0
+  return h.toString(36)
+}
 
 function buildFeedbackText(
   fb: { message: string; correction: string | null; score: number | null; correct: boolean | null },
@@ -141,6 +146,11 @@ export function useDemoSession({
   // Phase 7.10E: authoritative intro-started guard — survives useCallback recreation
   // (belt-and-suspenders on top of pendingLessonRef to prevent duplicate greeting/main_prompt TTS)
   const introStartedRef = useRef(false)
+
+  // Phase 7.12: tracks job IDs currently in the teacher audio queue (or playing).
+  // Stable key: sessionId + messageType + hashText(ttsText).
+  // Prevents duplicate queue entries from replay button or callback recreation.
+  const enqueuedJobIdsRef = useRef<Set<string>>(new Set())
 
   // Phase 7.10: client-side TTS fetch cache — deduplicates pre-warm + on-demand calls for same text
   type TtsCachedResult = {
@@ -234,11 +244,30 @@ export function useDemoSession({
         console.log(`[demo-tts-budget] callsUsed=${callsUsed} charsUsed=${charsUsed} callsLimit=${callsLimit} charsLimit=${charsLimit} type=${messageType}`)
       }
 
+      // Phase 7.12: serial queue — stable job ID prevents duplicate queue entries.
+      // Key: sessionId + messageType + textHash (no messageId — same text = same job).
+      const isIntroType = messageType === 'greeting' || messageType === 'main_prompt'
+      const maxQueueMs  = isIntroType ? 12_000 : 8_000
+      const jobId       = `${sid}:${messageType}:${hashText(text)}`
+
+      if (enqueuedJobIdsRef.current.has(jobId)) {
+        console.log(`[demo_audio_queue_duplicate_suppressed] jobId=${jobId} type=${messageType}`)
+        setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
+        return
+      }
+
       setVoiceStates(prev => ({ ...prev, [messageId]: 'playing' }))
       console.log(`[demo_audio_play_started] id=${messageId} type=${messageType}`)
-      await playAudioBlobWithHtmlAudio(j.audio)
+      enqueuedJobIdsRef.current.add(jobId)
+      try {
+        await enqueueTeacherAudio(jobId, j.audio, maxQueueMs)
+      } finally {
+        enqueuedJobIdsRef.current.delete(jobId)
+      }
       setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
     } catch (err) {
+      const jobIdForClean = `${sessionIdRef.current ?? ''}:${messageType}:${hashText(text)}`
+      enqueuedJobIdsRef.current.delete(jobIdForClean)
       if (voiceGenerationRef.current !== myGeneration) {
         setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
       } else {
@@ -263,11 +292,11 @@ export function useDemoSession({
   // Phase 7.10: max time to block lesson flow waiting for TTS on normal turns.
   const TTS_MAX_WAIT_MS = 1_500
 
-  // Phase 7.10C: mobile-safe intro caps — max time we wait for each intro audio to finish.
-  // Short caps ensure mic unlocks within ~5s total even on slow mobile networks.
-  // Audio continues to play in background if it started; cap only prevents hanging.
-  const GREETING_AUDIO_CAP_MS    = 2_500
-  const MAIN_PROMPT_AUDIO_CAP_MS = 2_000
+  // Phase 7.12: intro mic-unlock caps — raised to allow full audio playback.
+  // Cap only unlocks the mic early; audio continues in the serial queue until it
+  // ends naturally or the student interrupts. 8s/6s covers typical mobile latency.
+  const GREETING_AUDIO_CAP_MS    = 8_000
+  const MAIN_PROMPT_AUDIO_CAP_MS = 6_000
 
   // ── Show an AI teacher message with typing animation + TTS ────────────────────
   // Text is always revealed immediately. TTS plays if not muted/exhausted.
@@ -311,11 +340,11 @@ export function useDemoSession({
       if (!voiceMutedRef.current && !ttsLimitReachedRef.current) {
 
         if (isIntroTurn) {
-          // ── Intro turn: simple race — audio OR cap, whichever comes first ──────
-          // Phase 7.10C: caps reduced to 2.5s/2.0s so mic unlocks quickly on mobile.
-          // No two-phase detection — just wait for audio to finish or cap to expire.
+          // Phase 7.12: serial queue ensures greeting finishes before main_prompt starts.
+          // Cap only unlocks the mic early — audio continues in queue until it ends
+          // naturally or the student interrupts via mic (clearTeacherAudioQueue).
+          // Generation is NOT incremented here; only mic interruption increments it.
           const maxCap = ttsType === 'greeting' ? GREETING_AUDIO_CAP_MS : MAIN_PROMPT_AUDIO_CAP_MS
-          voiceGenerationRef.current += 1
           console.log(`[demo_turn_start] id=${msgId} type=${ttsType} cap=${maxCap}ms`)
 
           const t0 = Date.now()
@@ -327,9 +356,8 @@ export function useDemoSession({
           const elapsed = Date.now() - t0
 
           if (hitCap) {
-            // Cancel any still-playing audio so it doesn't bleed into the next turn
-            voiceGenerationRef.current += 1
-            stopHtmlAudioPlayback()
+            // Audio may still be playing in the queue — leave it running.
+            // Serial queue ensures main_prompt audio waits for greeting to finish.
             console.log(`[demo_teacher_audio_ended] id=${msgId} type=${ttsType} reason=cap_hit elapsedMs=${elapsed}`)
           } else {
             console.log(`[demo_teacher_audio_ended] id=${msgId} type=${ttsType} reason=natural elapsedMs=${elapsed}`)
@@ -338,7 +366,7 @@ export function useDemoSession({
 
         } else {
           // ── Normal turn: fast-path race against 1.5 s cap ─────────────────────
-          voiceGenerationRef.current += 1
+          // Phase 7.12: no generation increment — only mic interruption changes generation.
           console.log(`[demo_turn_start] id=${msgId} type=${ttsType}`)
           const t0 = Date.now()
           let timedOut = false
@@ -386,8 +414,9 @@ export function useDemoSession({
 
   // ── Interrupt all audio + cancel any running showAiMessage TTS ────────────────
   const interruptAudio = useCallback(() => {
-    voiceGenerationRef.current += 1
-    stopHtmlAudioPlayback()
+    voiceGenerationRef.current += 1  // marks all in-flight handlePlayAudio calls as stale
+    console.log('[demo_audio_queue_interrupted_by_mic]')
+    clearTeacherAudioQueue()         // stops current playback + resolves all queued jobs
     setIsSpeaking(false)
   }, [])
 
@@ -404,8 +433,8 @@ export function useDemoSession({
   const toggleVoiceMuted = useCallback(() => {
     setVoiceMuted(prev => {
       if (!prev) {
-        stopHtmlAudioPlayback()
         voiceGenerationRef.current += 1
+        clearTeacherAudioQueue()
       }
       return !prev
     })
@@ -421,8 +450,8 @@ export function useDemoSession({
     }
 
     console.log(`[demo_answer_submit_started] chars=${answerStr.length} step=${step.key}`)
-    voiceGenerationRef.current += 1
-    stopHtmlAudioPlayback()
+    voiceGenerationRef.current += 1  // marks all in-flight TTS calls as stale
+    clearTeacherAudioQueue()         // stops current audio + drains queue (mic interrupt)
     setIsSpeaking(false)
 
     setChatMessages(prev => [
