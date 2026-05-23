@@ -257,6 +257,102 @@ let _htmlAudioEl:      HTMLAudioElement | null = null
 let _htmlAudioUrl:     string | null           = null
 let _htmlAudioResolve: (() => void) | null     = null
 
+// ── Intro audio: event-gated playback (Phase 7.12C) ──────────────────────────
+// Completely separate from the serial queue.
+// Promise resolves ONLY on audio.onended / onerror / play() rejection / explicit
+// stopIntroAudio() call / maxSafetyMs last-resort timeout — NEVER on a timing
+// estimate or queue cap.
+
+let _introAudioEl:      HTMLAudioElement | null              = null
+let _introAudioUrl:     string | null                        = null
+let _introAudioResolve: (() => void) | null                  = null
+let _introAudioTimer:   ReturnType<typeof setTimeout> | null = null
+
+export function stopIntroAudio(): void {
+  if (_introAudioTimer) { clearTimeout(_introAudioTimer); _introAudioTimer = null }
+  if (_introAudioEl) {
+    _introAudioEl.pause()
+    _introAudioEl.src     = ''
+    _introAudioEl.onended = null
+    _introAudioEl.onerror = null
+    _introAudioEl         = null
+  }
+  if (_introAudioUrl) { URL.revokeObjectURL(_introAudioUrl); _introAudioUrl = null }
+  const res = _introAudioResolve
+  _introAudioResolve = null
+  if (res) res()   // unblock any awaiting caller
+}
+
+export async function playTeacherAudioAndWaitForRealEnd(
+  base64:  string,
+  opts:    { jobId: string; maxSafetyMs: number },
+): Promise<void> {
+  const { jobId, maxSafetyMs } = opts
+
+  stopIntroAudio()   // tear down any previous intro audio before creating new
+
+  const binary = atob(base64)
+  const bytes  = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  const blob = new Blob([bytes], { type: 'audio/mpeg' })
+  const url  = URL.createObjectURL(blob)
+  _introAudioUrl = url
+
+  const audio   = new Audio(url)
+  _introAudioEl = audio
+
+  console.log(`[demo_html_audio_created] jobId=${jobId}`)
+
+  return new Promise<void>((resolve) => {
+    _introAudioResolve = resolve
+
+    let settled = false
+    const settle = (reason: string) => {
+      if (settled) return
+      settled = true
+      if (_introAudioTimer) { clearTimeout(_introAudioTimer); _introAudioTimer = null }
+      if (_introAudioEl === audio)  { _introAudioEl = null }
+      if (_introAudioResolve === resolve) { _introAudioResolve = null }
+      if (_introAudioUrl === url)   { URL.revokeObjectURL(url); _introAudioUrl = null }
+      console.log(`[demo_intro_next_message_allowed] jobId=${jobId} reason=${reason}`)
+      resolve()
+    }
+
+    _introAudioTimer = setTimeout(() => {
+      _introAudioTimer = null
+      const ct  = isFinite(audio.currentTime) ? audio.currentTime.toFixed(2) : '?'
+      const dur = isFinite(audio.duration)    ? audio.duration.toFixed(2)    : '?'
+      console.log(`[demo_intro_audio_safety_timeout] jobId=${jobId} currentTime=${ct} duration=${dur}`)
+      audio.pause()
+      audio.onended = null
+      audio.onerror = null
+      settle('safety_timeout')
+    }, maxSafetyMs)
+
+    audio.onended = () => {
+      const ct  = isFinite(audio.currentTime) ? audio.currentTime.toFixed(2) : '?'
+      const dur = isFinite(audio.duration)    ? audio.duration.toFixed(2)    : '?'
+      console.log(`[demo_intro_audio_real_ended] jobId=${jobId}`)
+      console.log(`[demo_html_audio_duration] duration=${dur} jobId=${jobId}`)
+      console.log(`[demo_html_audio_current_time_on_end] currentTime=${ct} duration=${dur} jobId=${jobId}`)
+      settle('ended')
+    }
+
+    audio.onerror = () => {
+      const ct = isFinite(audio.currentTime) ? audio.currentTime.toFixed(2) : '?'
+      console.log(`[demo_intro_audio_error] jobId=${jobId} currentTime=${ct}`)
+      settle('error')
+    }
+
+    console.log(`[demo_html_audio_play_started] jobId=${jobId}`)
+    audio.play().catch((err: unknown) => {
+      const name = err instanceof Error ? err.name : String(err)
+      console.log(`[demo_html_audio_play_rejected] reason=${name} jobId=${jobId}`)
+      settle('play_rejected')
+    })
+  })
+}
+
 export function stopHtmlAudioPlayback(): void {
   if (_htmlAudioEl) {
     _htmlAudioEl.pause()
@@ -338,6 +434,7 @@ export function clearTeacherAudioQueue(): void {
   _tBusy = false
   for (const j of jobs) j.resolve()  // resolve all pending so awaiting callers don't hang
   stopHtmlAudioPlayback()
+  stopIntroAudio()   // also unblock any in-progress event-gated intro audio
 }
 
 // Internal: plays base64 MP3 via HTMLAudio without stopping current audio.

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChatMessage, LessonStep } from '../types'
-import { primeHtmlAudio, enqueueTeacherAudio, clearTeacherAudioQueue } from '../services/voiceApi'
+import { primeHtmlAudio, enqueueTeacherAudio, clearTeacherAudioQueue, playTeacherAudioAndWaitForRealEnd } from '../services/voiceApi'
 
 function stripMarkdownForTts(text: string): string {
   return text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim()
@@ -244,10 +244,9 @@ export function useDemoSession({
         console.log(`[demo-tts-budget] callsUsed=${callsUsed} charsUsed=${charsUsed} callsLimit=${callsLimit} charsLimit=${charsLimit} type=${messageType}`)
       }
 
-      // Phase 7.12: serial queue — stable job ID prevents duplicate queue entries.
+      // Phase 7.12C: stable job ID prevents duplicate queue entries.
       // Key: sessionId + messageType + textHash (no messageId — same text = same job).
       const isIntroType = messageType === 'greeting' || messageType === 'main_prompt'
-      const maxQueueMs  = isIntroType ? 12_000 : 8_000
       const jobId       = `${sid}:${messageType}:${hashText(text)}`
 
       if (enqueuedJobIdsRef.current.has(jobId)) {
@@ -260,7 +259,16 @@ export function useDemoSession({
       console.log(`[demo_audio_play_started] id=${messageId} type=${messageType}`)
       enqueuedJobIdsRef.current.add(jobId)
       try {
-        await enqueueTeacherAudio(jobId, j.audio, maxQueueMs)
+        if (isIntroType) {
+          // Phase 7.12C: real HTMLAudio end-gating — intro must not advance until
+          // audio.onended / onerror / play() rejection fires. 15 s timeout is last-resort
+          // only; it must NOT fire during a normal-length greeting or prompt.
+          await playTeacherAudioAndWaitForRealEnd(j.audio, { jobId, maxSafetyMs: 15_000 })
+        } else {
+          // Normal post-answer turns: serial queue with 8 s cap keeps teacher turns
+          // from overlapping while preserving the fast text-first UX.
+          await enqueueTeacherAudio(jobId, j.audio, 8_000)
+        }
       } finally {
         enqueuedJobIdsRef.current.delete(jobId)
       }
