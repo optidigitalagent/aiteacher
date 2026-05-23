@@ -69,6 +69,8 @@ export interface UseDemoSessionReturn {
   interruptAudio:         () => void
   audioUnlockRequired:    boolean
   unlockAudio:            () => void
+  // Phase 7.10B: true while greeting + first main_prompt are playing (mic/input locked)
+  introSequenceActive:    boolean
 }
 
 function uid() { return Math.random().toString(36).slice(2) }
@@ -113,6 +115,8 @@ export function useDemoSession({
   const [voiceStates,          setVoiceStates]          = useState<Record<string, VoicePlayState>>({})
   const [voiceMessages,        setVoiceMessages]        = useState<Record<string, { type: string; text: string }>>({})
   const [audioUnlockRequired,  setAudioUnlockRequired]  = useState(false)
+  // Phase 7.10B: true while greeting + first main_prompt are logically in progress
+  const [introSequenceActive,  setIntroSequenceActive]  = useState(false)
 
   const pendingLessonRef = useRef<{
     introText:        string
@@ -130,6 +134,10 @@ export function useDemoSession({
   const voiceGenerationRef = useRef(0)
   // Phase 7.8: tracks which AI message index is being voiced (0 = first/greeting)
   const messageIndexRef    = useRef(0)
+
+  // Phase 7.10B: callback fired by handlePlayAudio the moment audio playback begins.
+  // showAiMessage sets this before calling handlePlayAudio for intro turns; cleared after first use.
+  const audioStartCallbackRef = useRef<(() => void) | null>(null)
 
   // Phase 7.10: client-side TTS fetch cache — deduplicates pre-warm + on-demand calls for same text
   type TtsCachedResult = {
@@ -221,6 +229,13 @@ export function useDemoSession({
       }
 
       setVoiceStates(prev => ({ ...prev, [messageId]: 'playing' }))
+      // Phase 7.10B: signal the intro-turn sequencer that audio is about to play.
+      // Cleared after first use so stale calls (e.g. ChatPanel replay) do not trigger it.
+      if (audioStartCallbackRef.current) {
+        const cb = audioStartCallbackRef.current
+        audioStartCallbackRef.current = null
+        cb()
+      }
       console.log(`[demo_audio_play_started] id=${messageId} type=${messageType}`)
       await playAudioChunk(j.audio, true)
       setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
@@ -245,70 +260,154 @@ export function useDemoSession({
     }
   }, [token])
 
-  // Phase 7.10: max time to block lesson flow waiting for TTS.
+  // Phase 7.10: max time to block lesson flow waiting for TTS on normal turns.
   // Text is shown before this timer starts. After 1.5 s, lesson advances and audio
   // continues in background (plays when ready if still generation-current).
   const TTS_MAX_WAIT_MS = 1_500
 
+  // Phase 7.10B: intro turn sequencing timings.
+  // AUDIO_START_WINDOW_MS — how long to wait for TTS fetch to complete and audio to START.
+  //   After this window, if audio hasn't started we use estimated read time instead.
+  // GREETING_AUDIO_CAP_MS / MAIN_PROMPT_AUDIO_CAP_MS — hard caps for how long we wait
+  //   for audio to FINISH naturally. Prevents hanging forever on slow/long audio.
+  //   Chosen to comfortably cover typical TTS greeting (5–8 s) and first question (3–6 s).
+  const AUDIO_START_WINDOW_MS    = 1_500
+  const GREETING_AUDIO_CAP_MS    = 9_000
+  const MAIN_PROMPT_AUDIO_CAP_MS = 7_000
+
   // ── Show an AI teacher message with typing animation + TTS ────────────────────
   // Text is always revealed immediately. TTS plays if not muted/exhausted.
   // Audio is enhancement only — if blocked or timed out, lesson continues via text.
-  const showAiMessage = useCallback(async (text: string, ttsType?: string, ttsOverride?: string): Promise<string> => {
-    // Phase 7.8: track message index for early-playback diagnostics
+  //
+  // isIntroTurn=true (greeting, main_prompt): two-phase sequenced wait.
+  //   Phase 1 — wait up to AUDIO_START_WINDOW_MS for audio to start.
+  //   Phase 2 — if audio started, wait for it to end (with hard cap).
+  //             if audio didn't start, use estimated read time.
+  //   This guarantees greeting fully plays before main_prompt text/audio starts.
+  //
+  // isIntroTurn=false (normal feedback/followup turns): existing fast-path race.
+  const showAiMessage = useCallback(async (
+    text: string,
+    ttsType?: string,
+    ttsOverride?: string,
+    options: { isIntroTurn?: boolean } = {},
+  ): Promise<string> => {
+    const { isIntroTurn = false } = options
     const msgIndex = messageIndexRef.current
     messageIndexRef.current += 1
 
     setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: 'typing', sender: 'ai', isTyping: true }])
     setIsSpeaking(true)
-    // Phase 7.10: shorter typing animation so text appears faster (max 800 ms, was 1200 ms)
     await sleep(Math.min(300 + text.length * 4, 800))
 
     const msgId = uid()
     setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: msgId, sender: 'ai', text }])
-    // Text is now visible — TTS fetch starts next (text-first strategy)
-    console.log(`[demo_text_rendered_before_tts] msgIndex=${msgIndex} id=${msgId} type=${ttsType ?? 'none'}`)
+    console.log(`[demo_teacher_text_rendered] msgIndex=${msgIndex} id=${msgId} type=${ttsType ?? 'none'} intro=${isIntroTurn}`)
 
     if (ttsType) {
       const ttsText = stripMarkdownForTts(ttsOverride ?? text).slice(0, 350)
       setVoiceMessages(prev => ({ ...prev, [msgId]: { type: ttsType, text: ttsText } }))
 
       if (!voiceMutedRef.current && !ttsLimitReachedRef.current) {
-        if (msgIndex === 0) {
-          console.log(`[demo_audio_first_message_play_attempt] msgIndex=0 ttsType=${ttsType} id=${msgId}`)
-        }
-        voiceGenerationRef.current += 1
-        const t0 = Date.now()
-        let timedOut = false
 
-        // Race TTS against a hard ceiling — prevents mobile autoplay hang from blocking the lesson.
-        // If TTS wins: normal path, read-time sleep added if it returned instantly (error/cached).
-        // If timeout wins: log and unblock with a short read-time only.
-        await Promise.race([
-          handlePlayAudio(msgId, ttsType, ttsText),
-          new Promise<void>((resolve) => setTimeout(() => {
-            timedOut = true
-            resolve()
-          }, TTS_MAX_WAIT_MS)),
-        ])
+        if (isIntroTurn) {
+          // ── Intro turn: two-phase sequenced wait ─────────────────────────────
+          const maxCap = ttsType === 'greeting' ? GREETING_AUDIO_CAP_MS : MAIN_PROMPT_AUDIO_CAP_MS
 
-        const elapsed = Date.now() - t0
-        if (timedOut) {
-          // TTS fetch or playback still in-flight — lesson advances via text, audio continues in background
-          console.log(`[demo_audio_play_failed] msgIndex=${msgIndex} id=${msgId} reason=timeout elapsedMs=${elapsed}`)
-          console.log('[demo_interaction_unblocked_before_tts]')
-          console.log('[demo_mic_unblocked_after_audio_skip]')
-          await sleep(1200)
-        } else if (elapsed < 600) {
-          // TTS returned fast (blocked, error, or rate-limit) — give student time to read
-          console.log(`[demo_audio_play_failed] msgIndex=${msgIndex} id=${msgId} reason=fast_return elapsedMs=${elapsed}`)
-          console.log('[demo_mic_unblocked_after_audio_skip]')
-          await sleep(Math.min(1200 + ttsText.length * 40, 3500))
+          let audioDidStart = false
+          let resolveAudioStart!: () => void
+          const audioStartedP = new Promise<void>(r => { resolveAudioStart = r })
+
+          // Register the signal — handlePlayAudio calls it the moment audio begins playing
+          audioStartCallbackRef.current = () => {
+            audioDidStart = true
+            resolveAudioStart()
+          }
+
+          if (msgIndex === 0) {
+            console.log(`[demo_audio_first_message_play_attempt] msgIndex=0 ttsType=${ttsType} id=${msgId}`)
+          }
+          voiceGenerationRef.current += 1
+          console.log(`[demo_teacher_turn_start] id=${msgId} type=${ttsType}`)
+
+          const playPromise = handlePlayAudio(msgId, ttsType, ttsText)
+
+          // Phase 1: wait for audio to start OR fall back after start window
+          await Promise.race([audioStartedP, sleep(AUDIO_START_WINDOW_MS)])
+
+          if (audioDidStart) {
+            console.log(`[demo_teacher_audio_started] id=${msgId} type=${ttsType}`)
+            // Phase 2: wait for audio to finish OR hit hard cap
+            const t0 = Date.now()
+            let hitCap = false
+            await Promise.race([
+              playPromise,
+              sleep(maxCap).then(() => { hitCap = true }),
+            ])
+            const elapsed = Date.now() - t0
+
+            if (hitCap) {
+              // Audio exceeded hard cap — stop it and advance
+              console.log(`[demo_teacher_audio_ended] id=${msgId} type=${ttsType} reason=cap_hit elapsedMs=${elapsed}`)
+              stopAudioPlayback()
+              voiceGenerationRef.current += 1
+            } else if (elapsed < 300) {
+              // Audio resolved immediately — blocked by autoplay or decode error; give read time
+              console.log(`[demo_teacher_audio_skipped] id=${msgId} type=${ttsType} reason=fast_failure elapsedMs=${elapsed}`)
+              await sleep(Math.min(1200 + ttsText.length * 40, 3500))
+            } else {
+              console.log(`[demo_teacher_audio_ended] id=${msgId} type=${ttsType} reason=natural elapsedMs=${elapsed}`)
+            }
+          } else {
+            // Audio did not start within AUDIO_START_WINDOW_MS — use estimated read time
+            audioStartCallbackRef.current = null  // discard stale callback
+            console.log(`[demo_teacher_audio_skipped] id=${msgId} type=${ttsType} reason=start_timeout`)
+            await sleep(Math.min(1200 + ttsText.length * 40, 3500))
+          }
+          console.log(`[demo_teacher_logical_complete] id=${msgId} type=${ttsType}`)
+
+        } else {
+          // ── Normal turn: existing fast-path race against 1.5 s cap ──────────
+          if (msgIndex === 0) {
+            console.log(`[demo_audio_first_message_play_attempt] msgIndex=0 ttsType=${ttsType} id=${msgId}`)
+          }
+          voiceGenerationRef.current += 1
+          const t0 = Date.now()
+          let timedOut = false
+
+          await Promise.race([
+            handlePlayAudio(msgId, ttsType, ttsText),
+            new Promise<void>((resolve) => setTimeout(() => {
+              timedOut = true
+              resolve()
+            }, TTS_MAX_WAIT_MS)),
+          ])
+
+          const elapsed = Date.now() - t0
+          if (timedOut) {
+            console.log(`[demo_audio_play_failed] msgIndex=${msgIndex} id=${msgId} reason=timeout elapsedMs=${elapsed}`)
+            console.log('[demo_interaction_unblocked_before_tts]')
+            console.log('[demo_mic_unblocked_after_audio_skip]')
+            await sleep(1200)
+          } else if (elapsed < 600) {
+            console.log(`[demo_audio_play_failed] msgIndex=${msgIndex} id=${msgId} reason=fast_return elapsedMs=${elapsed}`)
+            console.log('[demo_mic_unblocked_after_audio_skip]')
+            await sleep(Math.min(1200 + ttsText.length * 40, 3500))
+          }
         }
+
       } else {
+        // Muted or TTS limit reached — use estimated read time regardless of turn type
         const skipReason = voiceMutedRef.current ? 'muted' : 'limit_reached'
         console.log(`[demo_audio_skip_reason] msgIndex=${msgIndex} id=${msgId} reason=${skipReason}`)
         setVoiceStates(prev => ({ ...prev, [msgId]: 'done' }))
-        await sleep(Math.min(1000 + text.length * 30, 4000))
+        if (isIntroTurn) {
+          console.log(`[demo_teacher_audio_skipped] id=${msgId} type=${ttsType ?? 'none'} reason=${skipReason}`)
+          await sleep(Math.min(1200 + text.length * 35, 3500))
+          console.log(`[demo_teacher_logical_complete] id=${msgId} type=${ttsType ?? 'none'}`)
+        } else {
+          await sleep(Math.min(1000 + text.length * 30, 4000))
+        }
       }
     }
 
@@ -561,7 +660,12 @@ export function useDemoSession({
   // until the first TTS attempt times out (previously up to message 5–6).
   const startLesson = useCallback(async (audioPrimedPromise?: Promise<boolean>) => {
     const pending = pendingLessonRef.current
-    if (!pending) return
+    // Guard: pendingLessonRef is consumed (set to null) on first call.
+    // Second call (double-click, React StrictMode double-effect) returns early.
+    if (!pending) {
+      console.log('[demo_start_ignored_duplicate]')
+      return
+    }
     pendingLessonRef.current = null
 
     // Await priming result before starting lesson flow.
@@ -577,9 +681,11 @@ export function useDemoSession({
     try {
       console.log('[demo-phase] intro')
       setPhase('intro')
+      // Lock mic + input for the entire greeting → main_prompt intro sequence
+      setIntroSequenceActive(true)
 
-      // AI teacher greeting
-      await showAiMessage(pending.introText, 'greeting')
+      // AI teacher greeting — intro turn: waits for audio to complete before advancing
+      await showAiMessage(pending.introText, 'greeting', undefined, { isIntroTurn: true })
 
       setLessonStarted(true)
       console.log('[demo-phase] lesson')
@@ -588,13 +694,18 @@ export function useDemoSession({
       if (pending.currentStep) {
         setCurrentStep(pending.currentStep)
         await sleep(500)
-        // AI teacher poses the first exercise
+        // AI teacher poses the first exercise — also an intro turn (mic locked until done)
         const stepIntro = pending.currentStepIntro ?? pending.currentStep.prompt ?? ''
         if (stepIntro) {
-          await showAiMessage(stepIntro, 'main_prompt')
+          await showAiMessage(stepIntro, 'main_prompt', undefined, { isIntroTurn: true })
         }
       }
+
+      // Intro sequence complete — unlock mic and input for student responses
+      setIntroSequenceActive(false)
+      console.log('[demo_mic_unlocked_after_turn]')
     } catch {
+      setIntroSequenceActive(false)
       setError('Could not start your lesson. Please refresh.')
       console.log('[demo-phase] error')
       setPhase('error')
@@ -695,5 +806,6 @@ export function useDemoSession({
     interruptAudio,
     audioUnlockRequired,
     unlockAudio,
+    introSequenceActive,
   }
 }

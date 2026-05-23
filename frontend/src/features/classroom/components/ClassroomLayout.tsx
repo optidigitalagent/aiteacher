@@ -105,6 +105,12 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     const ph = demoPhaseRef.current
     // Block recording before lesson starts or after it completes
     if (ph === 'loading' || ph === 'ready' || ph === 'intro' || ph === 'complete') return
+    // Phase 7.10B: block mic while greeting and first main_prompt are logically in progress.
+    // introSequenceActive stays true from startLesson until after main_prompt logical completion.
+    if (demoIntroActiveRef.current) {
+      console.log('[demo-mic] blocked reason=intro_sequence_active')
+      return
+    }
     if (demoListening) {
       console.log('[demo-mic] clicked reason=stop_recording phase=' + ph)
       if (demoMicTimerRef.current) { clearTimeout(demoMicTimerRef.current); demoMicTimerRef.current = null }
@@ -196,6 +202,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   demoPhaseRef.current         = demo.phase
   demoStaticPlayingRef.current = demo.isStaticAudioPlaying
   demoInterruptRef.current     = demo.interruptAudio
+  // Phase 7.10B: tracks introSequenceActive via ref so toggleDemoMic avoids stale closure
+  const demoIntroActiveRef = useRef(false)
+  demoIntroActiveRef.current = demo.introSequenceActive
 
   // ── Local UI state ────────────────────────────────────────────────────────
   const [answer,               setAnswer]               = useState('')
@@ -641,6 +650,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       const ph = demoPhaseRef.current
       if (ph === 'loading' || ph === 'ready' || ph === 'intro') {
         console.log(`[demo-submit] blocked reason=phase_${ph}`)
+        return
+      }
+      // Phase 7.10B: also block during greeting + first main_prompt logical turns
+      if (demoIntroActiveRef.current) {
+        console.log('[demo-submit] blocked reason=intro_sequence_active')
         return
       }
       // User submitting interrupts any playing audio and cancels any running playMessages loop
@@ -1115,6 +1129,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           isPartialTranscript={!isDemoMode && isPartialTranscript}
           inputDisabled={
             (isDemoMode && !demo.lessonStarted) ||
+            (isDemoMode && demo.introSequenceActive) ||
             (isDemoMode && demo.phase === 'complete') ||
             (!isDemoMode && !lessonStarted) ||
             (!isDemoMode && isRecovering) ||
