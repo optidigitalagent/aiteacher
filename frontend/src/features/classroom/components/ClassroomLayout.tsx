@@ -84,8 +84,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     continuous: boolean; interimResults: boolean; lang: string
     onresult: ((e: { results: ArrayLike<SpeechResult> }) => void) | null
     onend: (() => void) | null
-    onerror: (() => void) | null
-    start(): void; stop(): void
+    onerror: ((e: { error?: string }) => void) | null
+    start(): void; stop(): void; abort?(): void
   }
   const [demoListening,     setDemoListening]     = useState(false)
   const demoSpeechRef          = useRef<WebSpeechRec | null>(null)
@@ -117,7 +117,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     if (demoListening) {
       console.log(`[demo_mic_stop] phase=${ph}`)
       if (demoMicTimerRef.current) { clearTimeout(demoMicTimerRef.current); demoMicTimerRef.current = null }
-      demoSpeechRef.current?.stop()
+      // Wrapped in try-catch: stop() may throw if called within the 50ms startup window
+      // before rec.start() has fired. onend will still fire and clean up state.
+      try { demoSpeechRef.current?.stop() } catch (_) { console.log('[demo_recognition_abort] reason=user_stop_during_init') }
       return
     }
     console.log(`[demo_mic_start_allowed] phase=${ph}`)
@@ -125,6 +127,22 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     // Any audio playing after this point will see a stale generation and self-cancel.
     demoInterruptRef.current()
     console.log('[demo_audio_cancelled_for_mic]')
+
+    // Phase 7.10E: hard reset any stale recognition instance before creating a new one.
+    // On iOS, audio playback can prematurely fire onend on a live recognition without
+    // clearing the ref, leaving a zombie instance that blocks new recording sessions.
+    if (demoSpeechRef.current) {
+      const stale = demoSpeechRef.current
+      stale.onresult = null
+      stale.onend    = null
+      stale.onerror  = null
+      try { stale.stop() } catch (_) {}
+      try { stale.abort?.() } catch (_) {}
+      demoSpeechRef.current = null
+      console.log('[demo_recognition_cleanup] stale instance killed')
+    }
+    demoTranscriptRef.current = ''
+
     const w = window as unknown as Record<string, unknown>
     const SpeechRecCtor = (w['SpeechRecognition'] ?? w['webkitSpeechRecognition']) as
       (new () => WebSpeechRec) | undefined
@@ -132,17 +150,17 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       console.warn('[demo voice] SpeechRecognition not supported')
       return
     }
-    demoTranscriptRef.current = ''
+
     const rec = new SpeechRecCtor()
     rec.continuous     = true
     rec.interimResults = true
     // Phase 7.6: English-first STT — default to en-US regardless of device locale.
-    // RU/UA typed clarifications still reach multilingual rescue via the backend.
-    // Phonetic Cyrillic renderings of English (from non-en-US STT) are normalised
-    // by backend/src/demo/phonetic-normalizer before routing.
     rec.lang           = 'en-US'
+    console.log('[demo_recognition_create]')
     console.log(`[demo_stt_lang_selected] provider=WebSpeechAPI lang=en-US strategy=english_first device_locale=${navigator.language}`)
+
     rec.onresult = (e) => {
+      console.log('[demo_recognition_result]')
       let collected = ''
       for (let i = 0; i < e.results.length; i++) {
         collected += (e.results[i]![0] as SpeechAlt).transcript
@@ -150,30 +168,52 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       demoTranscriptRef.current = collected
       setAnswer(collected)
     }
+
     rec.onend = () => {
+      const finalText = demoTranscriptRef.current.trim()
+      console.log(`[demo_recognition_end] hasTranscript=${!!finalText} chars=${finalText.length}`)
       setDemoListening(false)
       demoSpeechRef.current = null
       if (demoMicTimerRef.current) { clearTimeout(demoMicTimerRef.current); demoMicTimerRef.current = null }
-      const finalText = demoTranscriptRef.current.trim()
       if (finalText) {
         // Brief pause so state settles, then auto-submit
         setTimeout(() => { demoSubmitRef.current(finalText) }, 250)
+      } else {
+        // Empty transcript — mic state is already reset; user can tap mic again
+        console.log('[demo_recognition_end] empty_transcript mic_reset_complete')
       }
     }
-    rec.onerror = () => {
+
+    rec.onerror = (e) => {
+      const code = e?.error ?? 'unknown'
+      console.log(`[demo_recognition_error] code=${code}`)
       setDemoListening(false)
       demoSpeechRef.current = null
       if (demoMicTimerRef.current) { clearTimeout(demoMicTimerRef.current); demoMicTimerRef.current = null }
     }
-    try {
-      rec.start()
-      setDemoListening(true)
-      demoSpeechRef.current = rec
-      // Auto-stop after 60 seconds
-      demoMicTimerRef.current = setTimeout(() => { rec.stop() }, 60000)
-    } catch {
-      console.warn('[demo voice] start failed')
-    }
+
+    // Set ref and listening state immediately to block double-tap before the 50ms delay fires.
+    demoSpeechRef.current = rec
+    setDemoListening(true)
+
+    // Phase 7.10E: 50ms buffer — gives iOS time to release the audio session before
+    // starting recognition, preventing AudioContext/SpeechRecognition conflict.
+    setTimeout(() => {
+      try {
+        rec.start()
+        console.log('[demo_recognition_start]')
+        // Auto-stop after 60 seconds
+        demoMicTimerRef.current = setTimeout(() => {
+          console.log('[demo_recognition_abort] reason=60s_timeout')
+          rec.stop()
+        }, 60000)
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        console.log(`[demo_recognition_error] code=start_failed msg=${errMsg}`)
+        setDemoListening(false)
+        demoSpeechRef.current = null
+      }
+    }, 50)
   }, [demoListening])
 
   // ── Demo session hook (always called, enabled only in demo mode) ──────────
@@ -192,9 +232,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   useEffect(() => {
     demoSubmitRef.current = (text: string) => {
       if (!text.trim()) return
-      console.log(`[demo_answer_submit_started] source=voice chars=${text.length}`)
+      console.log(`[demo_submit_called] source=voice chars=${text.length}`)
       setAnswer('')
       demo.handleTextSubmit(text)
+      console.log('[demo_submit_completed]')
     }
   }, [demo.handleTextSubmit])
 

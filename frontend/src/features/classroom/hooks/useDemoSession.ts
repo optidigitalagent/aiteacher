@@ -138,6 +138,10 @@ export function useDemoSession({
   // Phase 7.10C: tracks last AI message text to suppress exact-duplicate chat bubbles
   const lastAiMsgTextRef = useRef<string>('')
 
+  // Phase 7.10E: authoritative intro-started guard — survives useCallback recreation
+  // (belt-and-suspenders on top of pendingLessonRef to prevent duplicate greeting/main_prompt TTS)
+  const introStartedRef = useRef(false)
+
   // Phase 7.10: client-side TTS fetch cache — deduplicates pre-warm + on-demand calls for same text
   type TtsCachedResult = {
     audio?:  string
@@ -293,6 +297,8 @@ export function useDemoSession({
     lastAiMsgTextRef.current = text
     setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: msgId, sender: 'ai', text }])
     console.log(`[demo_teacher_text_rendered] msgIndex=${msgIndex} id=${msgId} type=${ttsType ?? 'none'} intro=${isIntroTurn}`)
+    if (ttsType === 'greeting')    console.log('[demo_greeting_rendered]')
+    if (ttsType === 'main_prompt') console.log('[demo_main_prompt_rendered]')
 
     if (ttsType) {
       const ttsText = stripMarkdownForTts(ttsOverride ?? text).slice(0, 350)
@@ -620,6 +626,15 @@ export function useDemoSession({
   // failed we show the "Tap to enable voice" banner immediately rather than waiting
   // until the first TTS attempt times out (previously up to message 5–6).
   const startLesson = useCallback(async (audioPrimedPromise?: Promise<boolean>) => {
+    // Phase 7.10E: introStartedRef is the primary guard — survives useCallback recreation.
+    // pendingLessonRef remains as secondary (data availability) guard.
+    if (introStartedRef.current) {
+      console.log('[demo_intro_duplicate_blocked]')
+      return
+    }
+    introStartedRef.current = true
+    console.log('[demo_intro_start]')
+
     const pending = pendingLessonRef.current
     // Guard: pendingLessonRef is consumed (set to null) on first call.
     // Second call (double-click, React StrictMode double-effect) returns early.
