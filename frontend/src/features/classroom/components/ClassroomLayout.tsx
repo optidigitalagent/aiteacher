@@ -25,7 +25,7 @@ import {
 } from '../services/classroomSocket'
 import TipsDrawer from './TipsDrawer'
 import { useAuth, getStoredToken }      from '../../../context/AuthContext'
-import { warmAudioContext, getScheduledAudioEndMs, primeAudioContext } from '../services/voiceApi'
+import { warmAudioContext, getScheduledAudioEndMs, primeAudioContext, requestMicPreflight } from '../services/voiceApi'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -212,11 +212,15 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const [lessonStarted,   setLessonStarted]   = useState(false)
   const [paidLessonReady, setPaidLessonReady] = useState(false)
   const beginSentRef = useRef(false)
+  // Phase 7.9: prevents double-click during async mic preflight on demo Begin Lesson
+  const demoBeginSentRef = useRef(false)
   // Set true when user sends interrupt so the next ai_text doesn't close the mic
   const interruptSentRef = useRef(false)
   // Demo help input
   const [showHelpInput,   setShowHelpInput]   = useState(false)
   const [helpInputValue,  setHelpInputValue]  = useState('')
+  // Phase 7.9: mic preflight denied banner (demo mode)
+  const [micPermissionDenied, setMicPermissionDenied] = useState(false)
   // Two-stage lesson end: first show modal inside classroom, then full results on click
   const [showFullResults, setShowFullResults] = useState(false)
   // Paid lesson end
@@ -875,14 +879,20 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                     Your lesson is ready
                   </div>
                   <button
-                    onClick={() => {
-                      // Phase 7.8: play a silent 1-sample buffer synchronously within the
-                      // gesture (iOS requires real audio play, not only resume(), to lift the
-                      // autoplay restriction). primeAudioContext() returns a Promise that
-                      // resolves once resume() confirms the context is running — we pass it to
-                      // startLesson so it can show the unlock banner early if priming failed,
-                      // rather than waiting until the first TTS times out (message 5–6 before).
+                    onClick={async () => {
+                      // Phase 7.9: prevent double-click during async mic preflight
+                      if (demoBeginSentRef.current) return
+                      demoBeginSentRef.current = true
+                      // Both calls initiated synchronously within the gesture so the browser
+                      // handles iOS autoplay unlock (Phase 7.8 silent buffer) AND the mic
+                      // permission prompt from the same user interaction.
+                      // primeAudioContext returns a Promise we pass through to startLesson.
+                      // requestMicPreflight: stops tracks immediately — no recording started.
                       const primingPromise = primeAudioContext()
+                      const micGranted = await requestMicPreflight()
+                      if (!micGranted) {
+                        setMicPermissionDenied(true)
+                      }
                       void demo.startLesson(primingPromise)
                     }}
                     style={{
@@ -1211,6 +1221,40 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           <span style={{ fontSize: 15 }}>🔊</span>
           Tap to enable voice
         </button>
+      )}
+
+      {/* Phase 7.9: mic permission denied — lesson continues in text mode */}
+      {isDemoMode && micPermissionDenied && demo.lessonStarted && demo.phase !== 'complete' && (
+        <div
+          style={{
+            position: 'fixed', top: 116, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 120,
+            background: 'rgba(245,158,11,0.95)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+            borderRadius: 16, border: 'none',
+            padding: '10px 12px 10px 18px',
+            color: '#78350f', fontSize: 13, fontWeight: 600,
+            display: 'flex', alignItems: 'center', gap: 8,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+            maxWidth: 'min(460px, calc(100vw - 32px))',
+          }}
+        >
+          <span style={{ fontSize: 16, flexShrink: 0 }}>🎤</span>
+          <span style={{ flex: 1, lineHeight: 1.45 }}>
+            Microphone permission is needed for speaking practice. You can still read the lesson text, but voice input will not work.
+          </span>
+          <button
+            onClick={() => setMicPermissionDenied(false)}
+            style={{
+              background: 'rgba(0,0,0,0.12)', border: 'none', borderRadius: 99,
+              width: 22, height: 22, fontSize: 12, fontWeight: 900,
+              color: '#78350f', cursor: 'pointer', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 0,
+            }}
+          >
+            ✕
+          </button>
+        </div>
       )}
 
       {/* Recovery banner — waits for backend state snapshot after reconnect */}

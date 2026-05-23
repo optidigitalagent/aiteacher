@@ -15,6 +15,35 @@ export async function requestMicPermission(): Promise<MediaStream> {
   })
 }
 
+// Phase 7.9: Mic permission preflight — call synchronously inside Begin Lesson tap.
+// Requests getUserMedia, stops tracks immediately (no recording started), and returns
+// whether permission was granted. On iOS/Android, initiating this within the same
+// gesture as primeAudioContext() ensures the browser prompt appears before first TTS,
+// so the user does not need a second interaction to unlock audio.
+export async function requestMicPreflight(): Promise<boolean> {
+  console.log('[demo_mic_permission_requested]')
+  if (!navigator.mediaDevices?.getUserMedia) {
+    console.log('[demo_mobile_preflight_failed] reason=api_unavailable')
+    return false
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    stream.getTracks().forEach(t => t.stop())
+    console.log('[demo_mic_permission_granted]')
+    console.log('[demo_mobile_preflight_success]')
+    return true
+  } catch (err) {
+    const name = err instanceof Error ? err.name : String(err)
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      console.log('[demo_mic_permission_denied]')
+    } else {
+      console.log(`[demo_mic_permission_denied] reason=${name}`)
+    }
+    console.log('[demo_mobile_preflight_failed]')
+    return false
+  }
+}
+
 let captureCtx:      AudioContext | null = null
 let captureSource:   MediaStreamAudioSourceNode | null = null
 let captureProc:     ScriptProcessorNode | null = null
