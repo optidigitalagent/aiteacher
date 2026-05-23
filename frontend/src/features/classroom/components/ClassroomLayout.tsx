@@ -25,7 +25,7 @@ import {
 } from '../services/classroomSocket'
 import TipsDrawer from './TipsDrawer'
 import { useAuth, getStoredToken }      from '../../../context/AuthContext'
-import { warmAudioContext, getScheduledAudioEndMs, primeAudioContext, requestMicPreflight } from '../services/voiceApi'
+import { warmAudioContext, getScheduledAudioEndMs, primeHtmlAudio, requestMicPreflight } from '../services/voiceApi'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -123,6 +123,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       return
     }
     console.log(`[demo_mic_start_allowed] phase=${ph}`)
+    // Stop any playing HTML audio before SpeechRecognition starts — on iOS the audio
+    // session must be released before recognition can acquire the microphone.
+    console.log('[demo_html_audio_stopped_for_mic]')
     // interruptAudio increments voiceGenerationRef — cancels in-flight handlePlayAudio calls.
     // Any audio playing after this point will see a stale generation and self-cancel.
     demoInterruptRef.current()
@@ -941,17 +944,16 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                       // Phase 7.9: prevent double-click during async mic preflight
                       if (demoBeginSentRef.current) return
                       demoBeginSentRef.current = true
-                      // Both calls initiated synchronously within the gesture so the browser
-                      // handles iOS autoplay unlock (Phase 7.8 silent buffer) AND the mic
-                      // permission prompt from the same user interaction.
-                      // primeAudioContext returns a Promise we pass through to startLesson.
+                      // Phase 7.11: demo TTS uses HTMLAudio — prime the HTMLAudio path
+                      // synchronously in this gesture so iOS lifts the autoplay restriction
+                      // for all subsequent async audio.play() calls.
                       // requestMicPreflight: stops tracks immediately — no recording started.
-                      const primingPromise = primeAudioContext()
+                      primeHtmlAudio()
                       const micGranted = await requestMicPreflight()
                       if (!micGranted) {
                         setMicPermissionDenied(true)
                       }
-                      void demo.startLesson(primingPromise)
+                      void demo.startLesson()  // no audioPrimedPromise needed for HTMLAudio path
                     }}
                     style={{
                       padding: '15px 44px',

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChatMessage, LessonStep } from '../types'
-import { playAudioChunk, stopAudioPlayback, primeAudioContext } from '../services/voiceApi'
+import { playAudioBlobWithHtmlAudio, stopHtmlAudioPlayback, primeHtmlAudio } from '../services/voiceApi'
 
 function stripMarkdownForTts(text: string): string {
   return text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim()
@@ -185,6 +185,7 @@ export function useDemoSession({
           j = await cached.promise
         }
       } else {
+        console.log(`[demo_tts_backend_request_started] id=${messageId} type=${messageType}`)
         const fetchPromise: Promise<TtsCachedResult> = fetch(`${API_BASE}/demo/tts`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -226,6 +227,8 @@ export function useDemoSession({
         return
       }
 
+      console.log(`[demo_tts_backend_response_received] id=${messageId} type=${messageType}`)
+
       if (j.budget) {
         const { callsUsed, charsUsed, callsLimit, charsLimit } = j.budget
         console.log(`[demo-tts-budget] callsUsed=${callsUsed} charsUsed=${charsUsed} callsLimit=${callsLimit} charsLimit=${charsLimit} type=${messageType}`)
@@ -233,7 +236,7 @@ export function useDemoSession({
 
       setVoiceStates(prev => ({ ...prev, [messageId]: 'playing' }))
       console.log(`[demo_audio_play_started] id=${messageId} type=${messageType}`)
-      await playAudioChunk(j.audio, true)
+      await playAudioBlobWithHtmlAudio(j.audio)
       setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
     } catch (err) {
       if (voiceGenerationRef.current !== myGeneration) {
@@ -243,7 +246,8 @@ export function useDemoSession({
         const isAutoplayBlock = err instanceof Error && (
           msg.includes('audio_resume_failed') ||
           msg.includes('audio_context_still_suspended') ||
-          msg.includes('NotAllowedError')
+          msg.includes('NotAllowedError') ||
+          msg.includes('html_audio_play_rejected')
         )
         if (isAutoplayBlock) {
           console.log(`[demo_audio_autoplay_blocked] id=${messageId}`)
@@ -325,7 +329,7 @@ export function useDemoSession({
           if (hitCap) {
             // Cancel any still-playing audio so it doesn't bleed into the next turn
             voiceGenerationRef.current += 1
-            stopAudioPlayback()
+            stopHtmlAudioPlayback()
             console.log(`[demo_teacher_audio_ended] id=${msgId} type=${ttsType} reason=cap_hit elapsedMs=${elapsed}`)
           } else {
             console.log(`[demo_teacher_audio_ended] id=${msgId} type=${ttsType} reason=natural elapsedMs=${elapsed}`)
@@ -383,7 +387,7 @@ export function useDemoSession({
   // ── Interrupt all audio + cancel any running showAiMessage TTS ────────────────
   const interruptAudio = useCallback(() => {
     voiceGenerationRef.current += 1
-    stopAudioPlayback()
+    stopHtmlAudioPlayback()
     setIsSpeaking(false)
   }, [])
 
@@ -393,14 +397,14 @@ export function useDemoSession({
   // warmAudioContext so the tap fully unlocks iOS for all subsequent TTS messages.
   const unlockAudio = useCallback(() => {
     console.log('[demo_audio_unlocked]')
-    void primeAudioContext()  // silent buffer plays synchronously in this gesture
+    primeHtmlAudio()  // silent HTMLAudio play in this gesture unlocks future async plays on iOS
     setAudioUnlockRequired(false)
   }, [])
 
   const toggleVoiceMuted = useCallback(() => {
     setVoiceMuted(prev => {
       if (!prev) {
-        stopAudioPlayback()
+        stopHtmlAudioPlayback()
         voiceGenerationRef.current += 1
       }
       return !prev
@@ -418,7 +422,7 @@ export function useDemoSession({
 
     console.log(`[demo_answer_submit_started] chars=${answerStr.length} step=${step.key}`)
     voiceGenerationRef.current += 1
-    stopAudioPlayback()
+    stopHtmlAudioPlayback()
     setIsSpeaking(false)
 
     setChatMessages(prev => [

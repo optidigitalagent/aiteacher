@@ -248,6 +248,95 @@ export function getScheduledAudioEndMs(): number {
   return remaining > 0 ? remaining * 1000 : 0
 }
 
+// ── Demo TTS: HTMLAudioElement playback ───────────────────────────────────────
+// Used for demo mode only. Replaces WebAudio decode/schedule to avoid the iOS
+// AudioContext ↔ SpeechRecognition audio-session conflict that caused first-TTS
+// cutoff and dead-mic-after-audio symptoms on mobile.
+
+let _htmlAudioEl:      HTMLAudioElement | null = null
+let _htmlAudioUrl:     string | null           = null
+let _htmlAudioResolve: (() => void) | null     = null
+
+export function stopHtmlAudioPlayback(): void {
+  if (_htmlAudioEl) {
+    _htmlAudioEl.pause()
+    _htmlAudioEl.src     = ''
+    _htmlAudioEl.onended = null  // clear before calling resolve so events can't double-fire
+    _htmlAudioEl.onerror = null
+    _htmlAudioEl         = null
+  }
+  if (_htmlAudioUrl) {
+    URL.revokeObjectURL(_htmlAudioUrl)
+    _htmlAudioUrl = null
+  }
+  const res = _htmlAudioResolve
+  _htmlAudioResolve = null
+  if (res) res()  // resolve any pending play promise so callers never hang
+}
+
+// Play a silent 1-frame WAV inline to grant HTMLAudio playback permission
+// within the current user gesture, so subsequent async audio.play() calls
+// succeed on iOS without NotAllowedError.
+export function primeHtmlAudio(): void {
+  // Minimal valid WAV: RIFF/WAVE/fmt (PCM 1ch 44100Hz 16bit) + 0-byte data chunk
+  const silent = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
+  const a = new Audio(silent)
+  void a.play().catch(() => {})
+}
+
+export async function playAudioBlobWithHtmlAudio(base64: string): Promise<void> {
+  stopHtmlAudioPlayback()  // stop any currently playing demo TTS first
+
+  const binary = atob(base64)
+  const bytes  = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  const blob = new Blob([bytes], { type: 'audio/mpeg' })
+  const url  = URL.createObjectURL(blob)
+
+  _htmlAudioUrl = url
+  const audio   = new Audio(url)
+  _htmlAudioEl  = audio
+
+  console.log('[demo_html_audio_created]')
+
+  return new Promise<void>((resolve, reject) => {
+    _htmlAudioResolve = resolve
+
+    audio.onended = () => {
+      console.log('[demo_html_audio_ended]')
+      _htmlAudioEl      = null
+      _htmlAudioResolve = null
+      URL.revokeObjectURL(url)
+      if (_htmlAudioUrl === url) _htmlAudioUrl = null
+      resolve()
+    }
+
+    audio.onerror = () => {
+      console.log('[demo_html_audio_error]')
+      _htmlAudioEl      = null
+      _htmlAudioResolve = null
+      URL.revokeObjectURL(url)
+      if (_htmlAudioUrl === url) _htmlAudioUrl = null
+      resolve()  // resolve (not reject) on load error so lesson continues via text
+    }
+
+    console.log('[demo_html_audio_play_started]')
+    audio.play().catch((err: unknown) => {
+      const name = err instanceof Error ? err.name : String(err)
+      console.log(`[demo_html_audio_play_rejected] reason=${name}`)
+      _htmlAudioEl      = null
+      _htmlAudioResolve = null
+      URL.revokeObjectURL(url)
+      if (_htmlAudioUrl === url) _htmlAudioUrl = null
+      // Rethrow autoplay policy rejections so handlePlayAudio can show the unlock banner.
+      // All other errors resolve so the lesson continues via text.
+      const isPolicy = name === 'NotAllowedError' || name === 'AbortError'
+      if (isPolicy) reject(new Error(`html_audio_play_rejected: ${name}`))
+      else          resolve()
+    })
+  })
+}
+
 // ── Static audio (pre-recorded demo files served from /audio/demo/) ──────────
 
 let _staticEl:            HTMLAudioElement | null               = null
