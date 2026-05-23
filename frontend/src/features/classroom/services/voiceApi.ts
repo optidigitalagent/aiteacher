@@ -173,6 +173,45 @@ export function warmAudioContext(): void {
   }
 }
 
+// Phase 7.8: stronger mobile audio unlock — plays a real silent buffer synchronously
+// within the user gesture AND awaits resume(), then reports success/failure.
+//
+// Why this over warmAudioContext():
+//   iOS Safari requires actual audio playback (not only resume()) to permanently lift
+//   the autoplay restriction. Scheduling a silent 1-sample buffer synchronously inside
+//   the gesture activates the context; the subsequent resume() call confirms it running.
+//   Without the silent buffer, resume() may resolve but ctx.state remains 'suspended',
+//   causing every async TTS call to silently fail until the user taps again.
+//
+// Usage: call synchronously in the user-gesture handler; pass the returned Promise to
+// startLesson() so it can await the result before scheduling TTS.
+export async function primeAudioContext(): Promise<boolean> {
+  console.log('[demo_audio_prime_started]')
+  try {
+    const ctx = getPlayCtx()
+
+    // Schedule a 1-sample silent buffer synchronously — this is the iOS unlock trigger.
+    // Must happen before any await so the browser gesture-context is still active.
+    const silentBuf = ctx.createBuffer(1, 1, ctx.sampleRate)
+    const src = ctx.createBufferSource()
+    src.buffer = silentBuf
+    src.connect(ctx.destination)
+    src.start(0)
+
+    // Resume in case the context is still suspended after the silent play.
+    if (ctx.state !== 'running') {
+      try { await ctx.resume() } catch { /* non-fatal: silent buffer may have already unlocked */ }
+    }
+
+    const success = ctx.state === 'running'
+    console.log(success ? '[demo_audio_prime_success]' : `[demo_audio_prime_failed] state=${ctx.state}`)
+    return success
+  } catch (err) {
+    console.log(`[demo_audio_prime_failed] error=${err instanceof Error ? err.message : String(err)}`)
+    return false
+  }
+}
+
 /** Returns how many milliseconds of queued audio remain before playback ends. */
 export function getScheduledAudioEndMs(): number {
   if (!playCtx || playCtx.state === 'closed') return 0

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChatMessage, LessonStep } from '../types'
-import { playAudioChunk, stopAudioPlayback, warmAudioContext } from '../services/voiceApi'
+import { playAudioChunk, stopAudioPlayback, primeAudioContext } from '../services/voiceApi'
 
 function stripMarkdownForTts(text: string): string {
   return text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').trim()
@@ -55,7 +55,7 @@ export interface UseDemoSessionReturn {
   handleTextSubmit:       (answer: string) => void
   handleMcqSelect:        (i: number) => void
   handleHelpRequest:      (text: string) => void
-  startLesson:            () => void
+  startLesson:            (audioPrimedPromise?: Promise<boolean>) => void
   handleTranslateMessage: (messageId: string, text: string, lang: string) => Promise<string | null>
   showLeaveModal:         boolean
   setShowLeaveModal:      (v: boolean) => void
@@ -125,9 +125,11 @@ export function useDemoSession({
   const currentStepRef   = useRef<DemoStepContent | null>(null)
   const sessionIdRef     = useRef<string | null>(null)
   const mcqTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const voiceMutedRef    = useRef(false)
+  const voiceMutedRef      = useRef(false)
   const ttsLimitReachedRef = useRef(false)
   const voiceGenerationRef = useRef(0)
+  // Phase 7.8: tracks which AI message index is being voiced (0 = first/greeting)
+  const messageIndexRef    = useRef(0)
 
   useEffect(() => { submittingRef.current  = submitting  }, [submitting])
   useEffect(() => { currentStepRef.current = currentStep }, [currentStep])
@@ -178,6 +180,7 @@ export function useDemoSession({
         return
       }
       setVoiceStates(prev => ({ ...prev, [messageId]: 'playing' }))
+      console.log(`[demo_audio_play_started] id=${messageId} type=${messageType}`)
       await playAudioChunk(j.audio, true)
       setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
     } catch (err) {
@@ -194,7 +197,7 @@ export function useDemoSession({
           console.log(`[demo_audio_autoplay_blocked] id=${messageId}`)
           setAudioUnlockRequired(true)
         } else {
-          console.log(`[demo-voice] error id=${messageId} reason=${msg}`)
+          console.log(`[demo_audio_play_failed] id=${messageId} type=${messageType} reason=${msg}`)
         }
         setVoiceStates(prev => ({ ...prev, [messageId]: 'error' }))
       }
@@ -209,6 +212,10 @@ export function useDemoSession({
   // Text is always revealed immediately. TTS plays if not muted/exhausted.
   // Audio is enhancement only — if blocked or timed out, lesson continues via text.
   const showAiMessage = useCallback(async (text: string, ttsType?: string, ttsOverride?: string): Promise<string> => {
+    // Phase 7.8: track message index for early-playback diagnostics
+    const msgIndex = messageIndexRef.current
+    messageIndexRef.current += 1
+
     setChatMessages(prev => [...prev.filter(m => !m.isTyping), { id: 'typing', sender: 'ai', isTyping: true }])
     setIsSpeaking(true)
     await sleep(Math.min(500 + text.length * 6, 1200))
@@ -221,6 +228,9 @@ export function useDemoSession({
       setVoiceMessages(prev => ({ ...prev, [msgId]: { type: ttsType, text: ttsText } }))
 
       if (!voiceMutedRef.current && !ttsLimitReachedRef.current) {
+        if (msgIndex === 0) {
+          console.log(`[demo_audio_first_message_play_attempt] msgIndex=0 ttsType=${ttsType} id=${msgId}`)
+        }
         voiceGenerationRef.current += 1
         const t0 = Date.now()
         let timedOut = false
@@ -238,15 +248,18 @@ export function useDemoSession({
 
         const elapsed = Date.now() - t0
         if (timedOut) {
-          console.log(`[demo_audio_playback_timeout] id=${msgId} elapsedMs=${elapsed}`)
+          console.log(`[demo_audio_play_failed] msgIndex=${msgIndex} id=${msgId} reason=timeout elapsedMs=${elapsed}`)
           console.log('[demo_mic_unblocked_after_audio_skip]')
           await sleep(1200)
         } else if (elapsed < 600) {
-          // TTS returned instantly (blocked, error, or limit) — give student time to read
+          // TTS returned fast (blocked, error, or rate-limit) — give student time to read
+          console.log(`[demo_audio_play_failed] msgIndex=${msgIndex} id=${msgId} reason=fast_return elapsedMs=${elapsed}`)
           console.log('[demo_mic_unblocked_after_audio_skip]')
           await sleep(Math.min(1200 + ttsText.length * 40, 3500))
         }
       } else {
+        const skipReason = voiceMutedRef.current ? 'muted' : 'limit_reached'
+        console.log(`[demo_audio_skip_reason] msgIndex=${msgIndex} id=${msgId} reason=${skipReason}`)
         setVoiceStates(prev => ({ ...prev, [msgId]: 'done' }))
         await sleep(Math.min(1000 + text.length * 30, 4000))
       }
@@ -265,9 +278,11 @@ export function useDemoSession({
 
   // ── Audio unlock (mobile gesture) ─────────────────────────────────────────────
   // Called from a user tap so the AudioContext can resume under the autoplay policy.
+  // Phase 7.8: uses primeAudioContext (plays silent buffer + resume) rather than
+  // warmAudioContext so the tap fully unlocks iOS for all subsequent TTS messages.
   const unlockAudio = useCallback(() => {
     console.log('[demo_audio_unlocked]')
-    warmAudioContext()
+    void primeAudioContext()  // silent buffer plays synchronously in this gesture
     setAudioUnlockRequired(false)
   }, [])
 
@@ -483,10 +498,24 @@ export function useDemoSession({
   }, [enabled, demoId, token, onNotFound]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Start lesson (requires user gesture for audio) ────────────────────────────
-  const startLesson = useCallback(async () => {
+  // Phase 7.8: accepts the Promise returned by primeAudioContext() so we know before
+  // the first TTS fetch whether the AudioContext was successfully unlocked. If priming
+  // failed we show the "Tap to enable voice" banner immediately rather than waiting
+  // until the first TTS attempt times out (previously up to message 5–6).
+  const startLesson = useCallback(async (audioPrimedPromise?: Promise<boolean>) => {
     const pending = pendingLessonRef.current
     if (!pending) return
     pendingLessonRef.current = null
+
+    // Await priming result before starting lesson flow.
+    // primeAudioContext() resolves quickly (< 100 ms) — well before the typing animation.
+    if (audioPrimedPromise !== undefined) {
+      const primed = await audioPrimedPromise
+      if (!primed) {
+        console.log('[demo_audio_unlock_required] showing_banner_early reason=prime_failed')
+        setAudioUnlockRequired(true)
+      }
+    }
 
     try {
       console.log('[demo-phase] intro')

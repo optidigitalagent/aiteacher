@@ -25,7 +25,7 @@ import {
 } from '../services/classroomSocket'
 import TipsDrawer from './TipsDrawer'
 import { useAuth, getStoredToken }      from '../../../context/AuthContext'
-import { warmAudioContext, getScheduledAudioEndMs } from '../services/voiceApi'
+import { warmAudioContext, getScheduledAudioEndMs, primeAudioContext } from '../services/voiceApi'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -876,11 +876,14 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
                   </div>
                   <button
                     onClick={() => {
-                      // Warm the AudioContext synchronously inside the user gesture so iOS
-                      // autoplay policy allows TTS playback without a separate unlock step.
-                      console.log('[demo_audio_unlock_required] warming context on Begin Lesson')
-                      warmAudioContext()
-                      void demo.startLesson()
+                      // Phase 7.8: play a silent 1-sample buffer synchronously within the
+                      // gesture (iOS requires real audio play, not only resume(), to lift the
+                      // autoplay restriction). primeAudioContext() returns a Promise that
+                      // resolves once resume() confirms the context is running — we pass it to
+                      // startLesson so it can show the unlock banner early if priming failed,
+                      // rather than waiting until the first TTS times out (message 5–6 before).
+                      const primingPromise = primeAudioContext()
+                      void demo.startLesson(primingPromise)
                     }}
                     style={{
                       padding: '15px 44px',
