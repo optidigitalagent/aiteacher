@@ -73,6 +73,8 @@ export interface UseDemoSessionReturn {
   introSequenceActive:    boolean
   // Phase 7.13: count of successfully accepted steps — increments trigger dance
   completedStepCount:     number
+  // Phase 7.13B: true only when TTS audio.play() has actually resolved (real playback started)
+  characterAudioSpeaking: boolean
 }
 
 function uid() { return Math.random().toString(36).slice(2) }
@@ -118,12 +120,14 @@ export function useDemoSession({
   const [lessonStarted,  setLessonStarted]  = useState(false)
   const [sessionId,      setSessionId]      = useState<string | null>(null)
 
-  const [voiceMuted,           setVoiceMuted]           = useState(false)
-  const [voiceStates,          setVoiceStates]          = useState<Record<string, VoicePlayState>>({})
-  const [voiceMessages,        setVoiceMessages]        = useState<Record<string, { type: string; text: string }>>({})
-  const [audioUnlockRequired,  setAudioUnlockRequired]  = useState(false)
+  const [voiceMuted,             setVoiceMuted]             = useState(false)
+  const [voiceStates,            setVoiceStates]            = useState<Record<string, VoicePlayState>>({})
+  const [voiceMessages,          setVoiceMessages]          = useState<Record<string, { type: string; text: string }>>({})
+  const [audioUnlockRequired,    setAudioUnlockRequired]    = useState(false)
   // Phase 7.10B: true while greeting + first main_prompt are logically in progress
-  const [introSequenceActive,  setIntroSequenceActive]  = useState(false)
+  const [introSequenceActive,    setIntroSequenceActive]    = useState(false)
+  // Phase 7.13B: true only when TTS audio.play() has actually started (real playback signal)
+  const [characterAudioSpeaking, setCharacterAudioSpeaking] = useState(false)
 
   const pendingLessonRef = useRef<{
     introText:        string
@@ -271,14 +275,23 @@ export function useDemoSession({
           // Phase 7.12C: real HTMLAudio end-gating — intro must not advance until
           // audio.onended / onerror / play() rejection fires. 15 s timeout is last-resort
           // only; it must NOT fire during a normal-length greeting or prompt.
-          await playTeacherAudioAndWaitForRealEnd(j.audio, { jobId, maxSafetyMs: 15_000 })
+          // Phase 7.13B: onStart fires only when audio.play() resolves (real playback).
+          await playTeacherAudioAndWaitForRealEnd(j.audio, {
+            jobId,
+            maxSafetyMs: 15_000,
+            onStart: () => setCharacterAudioSpeaking(true),
+          })
         } else {
           // Normal post-answer turns: serial queue with 8 s cap keeps teacher turns
           // from overlapping while preserving the fast text-first UX.
-          await enqueueTeacherAudio(jobId, j.audio, 8_000)
+          // Phase 7.13B: onStart fires only when audio.play() resolves (real playback).
+          await enqueueTeacherAudio(jobId, j.audio, 8_000, {
+            onStart: () => setCharacterAudioSpeaking(true),
+          })
         }
       } finally {
         enqueuedJobIdsRef.current.delete(jobId)
+        setCharacterAudioSpeaking(false)  // reset once audio ends, errors, or is interrupted
       }
       setVoiceStates(prev => ({ ...prev, [messageId]: 'done' }))
     } catch (err) {
@@ -454,6 +467,7 @@ export function useDemoSession({
     console.log('[demo_teacher_chain_cancelled_by_mic]')
     clearTeacherAudioQueue()         // stops current playback + resolves all queued jobs
     setIsSpeaking(false)
+    setCharacterAudioSpeaking(false)
   }, [])
 
   // ── Audio unlock (mobile gesture) ─────────────────────────────────────────────
@@ -473,6 +487,7 @@ export function useDemoSession({
         chainGenerationRef.current += 1
         pendingChainKeysRef.current.clear()
         clearTeacherAudioQueue()
+        setCharacterAudioSpeaking(false)
       }
       return !prev
     })
@@ -493,6 +508,7 @@ export function useDemoSession({
     pendingChainKeysRef.current.clear()
     clearTeacherAudioQueue()         // stops current audio + drains queue (mic interrupt)
     setIsSpeaking(false)
+    setCharacterAudioSpeaking(false)
 
     setChatMessages(prev => [
       ...prev.filter(m => !m.isTyping),
@@ -874,5 +890,6 @@ export function useDemoSession({
     unlockAudio,
     introSequenceActive,
     completedStepCount: completedSteps.length,
+    characterAudioSpeaking,
   }
 }

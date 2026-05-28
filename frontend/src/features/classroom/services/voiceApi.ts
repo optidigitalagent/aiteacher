@@ -285,9 +285,9 @@ export function stopIntroAudio(): void {
 
 export async function playTeacherAudioAndWaitForRealEnd(
   base64:  string,
-  opts:    { jobId: string; maxSafetyMs: number },
+  opts:    { jobId: string; maxSafetyMs: number; onStart?: () => void },
 ): Promise<void> {
-  const { jobId, maxSafetyMs } = opts
+  const { jobId, maxSafetyMs, onStart } = opts
 
   stopIntroAudio()   // tear down any previous intro audio before creating new
 
@@ -345,7 +345,9 @@ export async function playTeacherAudioAndWaitForRealEnd(
     }
 
     console.log(`[demo_html_audio_play_started] jobId=${jobId}`)
-    audio.play().catch((err: unknown) => {
+    audio.play().then(() => {
+      onStart?.()
+    }).catch((err: unknown) => {
       const name = err instanceof Error ? err.name : String(err)
       console.log(`[demo_html_audio_play_rejected] reason=${name} jobId=${jobId}`)
       settle('play_rejected')
@@ -381,6 +383,7 @@ type _TJob = {
   maxMs:   number
   resolve: () => void
   reject:  (e: Error) => void
+  onEnd?:  () => void
 }
 
 let _tJobs: _TJob[] = []
@@ -401,6 +404,7 @@ function _tNext(): void {
     if (capId) { clearTimeout(capId); capId = null }
     _tBusy = false
     console.log(`[demo_audio_queue_end] id=${job.id}`)
+    job.onEnd?.()
     if (err) { job.reject(err) } else { job.resolve() }
     _tNext()
   }
@@ -417,12 +421,24 @@ function _tNext(): void {
     .catch((e: unknown) => finish(e instanceof Error ? e : new Error(String(e))))
 }
 
-export function enqueueTeacherAudio(jobId: string, base64: string, maxMs: number): Promise<void> {
+export function enqueueTeacherAudio(
+  jobId: string,
+  base64: string,
+  maxMs: number,
+  callbacks?: { onStart?: () => void; onEnd?: () => void },
+): Promise<void> {
   const waiting = _tBusy || _tJobs.length > 0
   console.log(`[demo_audio_queue_enqueue] id=${jobId} pending=${_tJobs.length}`)
   if (waiting) console.log('[demo_teacher_audio_waiting_for_previous]')
   return new Promise<void>((resolve, reject) => {
-    _tJobs.push({ id: jobId, playFn: () => _playBlobQueued(base64), maxMs, resolve, reject })
+    _tJobs.push({
+      id:      jobId,
+      playFn:  () => _playBlobQueued(base64, callbacks?.onStart),
+      maxMs,
+      resolve,
+      reject,
+      onEnd:   callbacks?.onEnd,
+    })
     _tNext()
   })
 }
@@ -439,7 +455,7 @@ export function clearTeacherAudioQueue(): void {
 
 // Internal: plays base64 MP3 via HTMLAudio without stopping current audio.
 // Queue guarantees at most one job plays at a time, so no stop-before-play needed.
-function _playBlobQueued(base64: string): Promise<void> {
+function _playBlobQueued(base64: string, onStart?: () => void): Promise<void> {
   const binary = atob(base64)
   const bytes  = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
@@ -464,7 +480,9 @@ function _playBlobQueued(base64: string): Promise<void> {
       resolve()
     }
     console.log('[demo_html_audio_play_started]')
-    audio.play().catch((err: unknown) => {
+    audio.play().then(() => {
+      onStart?.()
+    }).catch((err: unknown) => {
       const name = err instanceof Error ? err.name : String(err)
       console.log(`[demo_html_audio_play_rejected] reason=${name}`)
       _htmlAudioEl = null; _htmlAudioResolve = null

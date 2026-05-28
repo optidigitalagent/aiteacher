@@ -3,12 +3,12 @@ import { useState, useRef, useEffect } from 'react'
 export type CharacterState = 'listening' | 'speaking' | 'thinking' | 'celebrating'
 
 interface Params {
-  isSpeaking:         boolean
-  isListening:        boolean
-  isThinking:         boolean
-  completedStepCount: number
-  lessonStarted:      boolean
-  phase:              string
+  audioActuallySpeaking: boolean  // true only when TTS audio.play() has resolved
+  isListening:           boolean
+  isThinking:            boolean
+  completedStepCount:    number
+  lessonStarted:         boolean
+  phase:                 string
 }
 
 export interface CharacterVideoState {
@@ -17,12 +17,13 @@ export interface CharacterVideoState {
   onDanceEnded:   () => void
 }
 
-// Derives character avatar state from existing demo lesson signals.
-// Priority: celebrating > speaking > thinking > listening.
+// Derives character avatar state from demo lesson signals.
+// Priority: celebrating > audioActuallySpeaking > thinking > listening.
+// Speaking video triggers ONLY when real TTS audio has started playing, not on message render.
 // Dance rotation: 0→1→2→0 per successful step.
 // Mic always interrupts a running dance.
 export function useCharacterVideoState({
-  isSpeaking,
+  audioActuallySpeaking,
   isListening,
   isThinking,
   completedStepCount,
@@ -62,12 +63,12 @@ export function useCharacterVideoState({
     setIsCelebrating(false)
   }
 
-  // Priority: celebrating > speaking > thinking > listening
+  // Priority: celebrating > audioActuallySpeaking > thinking > listening
   let characterState: CharacterState
-  if (isCelebrating)   characterState = 'celebrating'
-  else if (isSpeaking) characterState = 'speaking'
-  else if (isThinking) characterState = 'thinking'
-  else                 characterState = 'listening'
+  if (isCelebrating)            characterState = 'celebrating'
+  else if (audioActuallySpeaking) characterState = 'speaking'
+  else if (isThinking)          characterState = 'thinking'
+  else                          characterState = 'listening'
 
   // Log state transitions (during render, using ref to avoid effect lag)
   if (prevStateRef.current !== characterState) {

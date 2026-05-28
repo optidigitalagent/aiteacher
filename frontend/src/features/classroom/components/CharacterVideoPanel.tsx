@@ -50,7 +50,7 @@ function vidStyle(active: boolean): React.CSSProperties {
     inset:       0,
     width:       '100%',
     height:      '100%',
-    objectFit:   'cover',
+    objectFit:   'contain',
     borderRadius: 'inherit',
     visibility:  active ? 'visible' : 'hidden',
     zIndex:      active ? 1 : 0,

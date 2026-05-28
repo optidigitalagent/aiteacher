@@ -132,18 +132,28 @@
     padding: 10px 12px !important;
     padding-bottom: 100px !important;
   }
-  /* TeacherPanel has width:170 inline — override to fill its 90px column */
-  .cls-classroom-grid > *:first-child {
+  /* Demo mode: no left column (character is floating), only center + progress */
+  .cls-classroom-grid.cls-demo-mode {
+    grid-template-columns: 1fr 90px !important;
+  }
+  /* TeacherPanel (paid mode only) — override to fill its 90px column */
+  .cls-classroom-grid:not(.cls-demo-mode) > *:first-child {
     width: 100% !important;
     min-width: 0 !important;
     overflow: hidden !important;
     padding-left: 8px !important;
     padding-right: 8px !important;
   }
-  /* SectionProgressPanel — reduce horizontal padding for 110px column */
+  /* SectionProgressPanel — reduce horizontal padding for narrower column */
   .cls-classroom-grid > *:last-child {
     padding-left: 8px !important;
     padding-right: 8px !important;
+  }
+  /* Smaller character float on tablet */
+  .cls-character-float {
+    width: 190px !important;
+    height: calc(190px * 16 / 9) !important;
+    max-height: 52vh !important;
   }
 }
 
@@ -156,8 +166,8 @@
     padding: 8px 10px 100px !important;
     overflow: hidden !important;
   }
-  /* Hide TeacherPanel (first child) and SectionProgressPanel (last child) */
-  .cls-classroom-grid > *:first-child,
+  /* Paid mode: hide TeacherPanel (first child). All modes: hide SectionProgressPanel (last child). */
+  .cls-classroom-grid:not(.cls-demo-mode) > *:first-child,
   .cls-classroom-grid > *:last-child {
     display: none !important;
   }
@@ -167,22 +177,41 @@
     min-height: 0 !important;
     padding: 4px !important;
   }
+  /* Demo mode: push content below the fixed character panel at the top */
+  .cls-classroom-grid.cls-demo-mode {
+    padding-top: calc(30vh + 10px) !important;
+  }
 }
 
-/* ── PHASE 7.13: Demo character panel — visible on mobile ── */
-/* Overrides the first-child hide rule for demo mode: character video appears
-   at the top of the flex column on phones (<600px). The demo mode grid gets
-   the cls-demo-mode class; higher specificity wins over the generic hide rule. */
+/* ── PHASE 7.13B: Floating character video panel (demo mode) ── */
+
+/* Desktop default: portrait panel, bottom-left, above BottomControls */
+.cls-character-float {
+  position: fixed;
+  left: 20px;
+  bottom: 120px;
+  width: 260px;
+  height: calc(260px * 16 / 9); /* ~462px portrait — full character body visible */
+  max-height: 58vh;
+  z-index: 10;
+  border-radius: 22px;
+  overflow: hidden;
+  /* Subtle drop shadow so panel lifts off background */
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(110, 124, 251, 0.10);
+}
+
+/* Mobile (<600px): full-width strip at top, below header */
 @media (max-width: 600px) {
-  .cls-classroom-grid.cls-demo-mode > *:first-child {
-    display: flex !important;
-    height: 220px !important;
-    width: 100% !important;
-    flex-shrink: 0 !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-    border-radius: 18px !important;
-    margin-bottom: 6px;
+  .cls-character-float {
+    left: 0;
+    right: 0;
+    bottom: auto;
+    top: 56px; /* just below ClassroomHeader */
+    width: 100%;
+    height: 30vh;
+    max-height: 30vh;
+    border-radius: 0 0 18px 18px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.10);
   }
 }
 

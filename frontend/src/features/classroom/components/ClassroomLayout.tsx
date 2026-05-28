@@ -233,15 +233,16 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     onNotFound: onDemoNotFound,
   })
 
-  // Phase 7.13: character video state — derived from demo signals, always called (rules of hooks).
+  // Phase 7.13B: character video state — derived from demo signals, always called (rules of hooks).
   // Only meaningful in demo mode; in paid mode these values are unused (no CharacterVideoPanel rendered).
+  // audioActuallySpeaking: fires only when TTS audio.play() resolves, not on message render.
   const { characterState, danceIndex, onDanceEnded } = useCharacterVideoState({
-    isSpeaking:         demo.isSpeaking,
-    isListening:        demoListening,
-    isThinking:         demo.submitting,
-    completedStepCount: demo.completedStepCount,
-    lessonStarted:      demo.lessonStarted,
-    phase:              demo.phase,
+    audioActuallySpeaking: demo.characterAudioSpeaking,
+    isListening:           demoListening,
+    isThinking:            demo.submitting,
+    completedStepCount:    demo.completedStepCount,
+    lessonStarted:         demo.lessonStarted,
+    phase:                 demo.phase,
   })
 
   // Wire demoSubmitRef now that demo is available
@@ -912,12 +913,29 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           }
         />
 
+        {/* Phase 7.13B: floating character video panel — demo mode only.
+            Position: fixed bottom-left on desktop, top-full-width on mobile (see index.css).
+            Sits outside the grid so it doesn't consume a grid column. */}
+        {isDemoMode && (
+          <div className="cls-character-float">
+            <CharacterVideoPanel
+              state={characterState}
+              danceIndex={danceIndex}
+              onDanceEnded={onDanceEnded}
+            />
+          </div>
+        )}
+
         <div
           className={`cls-classroom-grid${isDemoMode ? ' cls-demo-mode' : ''}`}
           style={{
             flex: 1, minHeight: 0,
             display: 'grid',
-            gridTemplateColumns: chatOpen ? '160px 1fr 265px 148px' : '160px 1fr 148px',
+            // Demo mode: no left column — character panel floats (cls-character-float).
+            // Paid mode: retain 160px TeacherPanel column on the left.
+            gridTemplateColumns: isDemoMode
+              ? (chatOpen ? '1fr 265px 148px' : '1fr 148px')
+              : (chatOpen ? '160px 1fr 265px 148px' : '160px 1fr 148px'),
             alignItems: 'stretch',
             gap: 14,
             padding: '16px 20px',
@@ -926,14 +944,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
             transition: 'grid-template-columns 0.32s cubic-bezier(0.4,0,0.2,1)',
           }}
         >
-          {/* Left — Phase 7.13: character video panel (demo) or static teacher panel (paid) */}
-          {isDemoMode ? (
-            <CharacterVideoPanel
-              state={characterState}
-              danceIndex={danceIndex}
-              onDanceEnded={onDanceEnded}
-            />
-          ) : (
+          {/* Left — TeacherPanel (paid only). Demo mode uses floating cls-character-float instead. */}
+          {!isDemoMode && (
             <TeacherPanel
               voiceState={{
                 isListening:         isListening,
