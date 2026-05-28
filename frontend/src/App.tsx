@@ -12,6 +12,7 @@ import AuthCallbackPage from './pages/AuthCallbackPage'
 import TelegramConnectPage from './pages/TelegramConnectPage'
 import ClassroomLayout from './features/classroom/components/ClassroomLayout'
 import DemoSetup from './components/demo/DemoSetup'
+import KidsPrototypePage from './pages/KidsPrototypePage'
 
 export default function App() {
   return (
@@ -43,6 +44,9 @@ export default function App() {
           {/* Demo flow — full-screen, no Header/Footer */}
           <Route path="/demo/setup" element={<DemoSetup />} />
           <Route path="/demo/classroom/:demoId" element={<ClassroomLayout mode="demo" />} />
+
+          {/* Mentium Kids prototype — experimental authenticated mode */}
+          <Route path="/kids" element={<KidsPrototypePage />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
