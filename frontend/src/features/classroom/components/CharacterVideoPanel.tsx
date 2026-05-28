@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import type { CharacterState } from '../hooks/useCharacterVideoState'
 
 // ── Asset paths ───────────────────────────────────────────────────────────────
-// Dance videos are muted — teacher TTS is gated by dance completion (Phase 7.13C),
-// so no TTS overlap is possible even if unmuted. Muted avoids autoplay policy issues.
+// Dance videos play with audio (Phase 7.13D). Teacher TTS is gated behind dance
+// completion (Phase 7.13C), so no TTS overlap is possible. If autoplay policy
+// blocks unmuted playback, the effect retries muted so the dance gate still fires.
 const ASSETS = {
   listening: '/character/listening.mp4',
   speaking:  '/character/speaking.mp4',
@@ -105,20 +106,40 @@ export default function CharacterVideoPanel({ state, danceIndex, onDanceEnded }:
 
     if (!activeEl) return
 
-    // Dance: always restart from the beginning for a clean one-shot
-    if (isDance) {
-      activeEl.currentTime = 0
-    }
-
     console.log(`[character_video_play_started] state=${state}`)
-    activeEl.play().then(() => {
-      console.log(`[character_video_transition_ready] state=${state}`)
-    }).catch((err: unknown) => {
-      const reason = err instanceof Error ? err.name : String(err)
-      console.log(`[character_video_play_failed] state=${state} reason=${reason}`)
-      // Phase 7.13C: dance play failure resolves gate — prevents teacher TTS deadlock.
-      if (isDance) onDanceEndedRef.current()
-    })
+
+    if (isDance) {
+      // Phase 7.13D: dance plays with sound. Muted fallback keeps gate alive if
+      // autoplay policy blocks unmuted playback (e.g. iOS before user gesture).
+      activeEl.currentTime = 0
+      activeEl.muted = false
+      activeEl.volume = 1
+      console.log(`[character_dance_audio_enabled] danceIndex=${danceIndex}`)
+      activeEl.play().then(() => {
+        console.log(`[character_video_transition_ready] state=${state}`)
+      }).catch((err: unknown) => {
+        const reason = err instanceof Error ? err.name : String(err)
+        console.log(`[character_dance_audio_play_rejected] reason=${reason}`)
+        // Autoplay policy blocked unmuted — retry muted so dance gate still fires.
+        activeEl!.muted = true
+        console.log(`[character_dance_audio_fallback_muted] danceIndex=${danceIndex}`)
+        activeEl!.play().then(() => {
+          console.log(`[character_video_transition_ready] state=${state} muted=fallback`)
+        }).catch((err2: unknown) => {
+          const reason2 = err2 instanceof Error ? err2.name : String(err2)
+          console.log(`[character_video_play_failed] state=${state} reason=${reason2}`)
+          // Phase 7.13C: resolves gate to prevent teacher TTS deadlock.
+          onDanceEndedRef.current()
+        })
+      })
+    } else {
+      activeEl.play().then(() => {
+        console.log(`[character_video_transition_ready] state=${state}`)
+      }).catch((err: unknown) => {
+        const reason = err instanceof Error ? err.name : String(err)
+        console.log(`[character_video_play_failed] state=${state} reason=${reason}`)
+      })
+    }
   }, [state, danceIndex, thinkingFailed]) // eslint-disable-line react-hooks/exhaustive-deps
   // (refs are stable — intentionally omitted from deps)
 
@@ -173,11 +194,11 @@ export default function CharacterVideoPanel({ state, danceIndex, onDanceEnded }:
         style={vidStyle(!isDance && state === 'thinking' && !thinkingFailed)}
       />
 
-      {/* Dance 1 — one-shot, muted; onError resolves gate to prevent deadlock */}
+      {/* Dance 1 — one-shot, audio enabled (Phase 7.13D); muted controlled imperatively */}
       <video
         ref={dance0Ref}
         src={ASSETS.dance[0]}
-        muted playsInline preload="auto"
+        playsInline preload="auto"
         onLoadedData={() => console.log('[character_video_loaded] state=dance1')}
         onError={() => {
           console.log('[character_video_play_failed] state=dance1 reason=load_error')
@@ -190,7 +211,7 @@ export default function CharacterVideoPanel({ state, danceIndex, onDanceEnded }:
       <video
         ref={dance1Ref}
         src={ASSETS.dance[1]}
-        muted playsInline preload="auto"
+        playsInline preload="auto"
         onLoadedData={() => console.log('[character_video_loaded] state=dance2')}
         onError={() => {
           console.log('[character_video_play_failed] state=dance2 reason=load_error')
@@ -203,7 +224,7 @@ export default function CharacterVideoPanel({ state, danceIndex, onDanceEnded }:
       <video
         ref={dance2Ref}
         src={ASSETS.dance[2]}
-        muted playsInline preload="auto"
+        playsInline preload="auto"
         onLoadedData={() => console.log('[character_video_loaded] state=dance3')}
         onError={() => {
           console.log('[character_video_play_failed] state=dance3 reason=load_error')
