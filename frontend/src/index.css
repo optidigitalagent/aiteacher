@@ -169,6 +169,23 @@
   }
 }
 
+/* ── PHASE 7.13: Demo character panel — visible on mobile ── */
+/* Overrides the first-child hide rule for demo mode: character video appears
+   at the top of the flex column on phones (<600px). The demo mode grid gets
+   the cls-demo-mode class; higher specificity wins over the generic hide rule. */
+@media (max-width: 600px) {
+  .cls-classroom-grid.cls-demo-mode > *:first-child {
+    display: flex !important;
+    height: 220px !important;
+    width: 100% !important;
+    flex-shrink: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border-radius: 18px !important;
+    margin-bottom: 6px;
+  }
+}
+
 /* ── CLASSROOM HEADER RESPONSIVE ── */
 @media (max-width: 480px) {
   .cls-hdr-logo-text    { display: none; }

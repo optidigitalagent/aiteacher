@@ -71,6 +71,8 @@ export interface UseDemoSessionReturn {
   unlockAudio:            () => void
   // Phase 7.10B: true while greeting + first main_prompt are playing (mic/input locked)
   introSequenceActive:    boolean
+  // Phase 7.13: count of successfully accepted steps — increments trigger dance
+  completedStepCount:     number
 }
 
 function uid() { return Math.random().toString(36).slice(2) }
@@ -871,5 +873,6 @@ export function useDemoSession({
     audioUnlockRequired,
     unlockAudio,
     introSequenceActive,
+    completedStepCount: completedSteps.length,
   }
 }

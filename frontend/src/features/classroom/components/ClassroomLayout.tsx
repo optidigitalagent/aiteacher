@@ -5,8 +5,10 @@ import type { LessonSessionMetadata } from '../../../types/lessonTypes'
 import { useLessonSession }  from '../hooks/useLessonSession'
 import { useClassroomChat }  from '../hooks/useClassroomChat'
 import { useVoiceSession }   from '../hooks/useVoiceSession'
-import { useDemoSession }    from '../hooks/useDemoSession'
-import ClassroomHeader       from './ClassroomHeader'
+import { useDemoSession }         from '../hooks/useDemoSession'
+import { useCharacterVideoState } from '../hooks/useCharacterVideoState'
+import CharacterVideoPanel        from './CharacterVideoPanel'
+import ClassroomHeader            from './ClassroomHeader'
 import TeacherPanel          from './TeacherPanel'
 import ExercisePanel         from './ExercisePanel'
 import PaidExerciseCard      from './PaidExerciseCard'
@@ -229,6 +231,17 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     token:      storedToken ?? '',
     enabled:    demoEnabled,
     onNotFound: onDemoNotFound,
+  })
+
+  // Phase 7.13: character video state — derived from demo signals, always called (rules of hooks).
+  // Only meaningful in demo mode; in paid mode these values are unused (no CharacterVideoPanel rendered).
+  const { characterState, danceIndex, onDanceEnded } = useCharacterVideoState({
+    isSpeaking:         demo.isSpeaking,
+    isListening:        demoListening,
+    isThinking:         demo.submitting,
+    completedStepCount: demo.completedStepCount,
+    lessonStarted:      demo.lessonStarted,
+    phase:              demo.phase,
   })
 
   // Wire demoSubmitRef now that demo is available
@@ -900,7 +913,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         />
 
         <div
-          className="cls-classroom-grid"
+          className={`cls-classroom-grid${isDemoMode ? ' cls-demo-mode' : ''}`}
           style={{
             flex: 1, minHeight: 0,
             display: 'grid',
@@ -913,20 +926,28 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
             transition: 'grid-template-columns 0.32s cubic-bezier(0.4,0,0.2,1)',
           }}
         >
-          {/* Left — teacher avatar + voice state */}
-          <TeacherPanel
-            voiceState={{
-              isListening:         isDemoMode ? demoListening : isListening,
-              isSpeaking:          isDemoMode ? demo.isSpeaking : isSpeaking,
-              transcript:          isDemoMode ? '' : transcript,
-              voiceTurnState:      isDemoMode ? 'idle' : (isListening ? 'listening' : 'idle'),
-              isPartialTranscript: !isDemoMode && isPartialTranscript,
-            }}
-            onExplain={handleExplain}
-            teacherName={sessionMeta?.teacherName}
-            teacherAvatarUrl={sessionMeta?.teacherAvatarUrl}
-            isDemo={isDemoMode}
-          />
+          {/* Left — Phase 7.13: character video panel (demo) or static teacher panel (paid) */}
+          {isDemoMode ? (
+            <CharacterVideoPanel
+              state={characterState}
+              danceIndex={danceIndex}
+              onDanceEnded={onDanceEnded}
+            />
+          ) : (
+            <TeacherPanel
+              voiceState={{
+                isListening:         isListening,
+                isSpeaking:          isSpeaking,
+                transcript:          transcript,
+                voiceTurnState:      isListening ? 'listening' : 'idle',
+                isPartialTranscript: isPartialTranscript,
+              }}
+              onExplain={handleExplain}
+              teacherName={sessionMeta?.teacherName}
+              teacherAvatarUrl={sessionMeta?.teacherAvatarUrl}
+              isDemo={false}
+            />
+          )}
 
           {/* Center — exercise, demo step, teaching overlay, or waiting state */}
           <div className="cls-classroom-center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', minWidth: 0 }}>
