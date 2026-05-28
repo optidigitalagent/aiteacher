@@ -75,6 +75,8 @@ export interface UseDemoSessionReturn {
   completedStepCount:     number
   // Phase 7.13B: true only when TTS audio.play() has actually resolved (real playback started)
   characterAudioSpeaking: boolean
+  // Phase 7.13C: called by useCharacterVideoState when dance video ends/errors/is mic-interrupted
+  notifyDanceEnded:       () => void
 }
 
 function uid() { return Math.random().toString(36).slice(2) }
@@ -163,6 +165,15 @@ export function useDemoSession({
   const teacherMessageChainRef = useRef<Promise<void>>(Promise.resolve())
   const chainGenerationRef     = useRef(0)
   const pendingChainKeysRef    = useRef<Set<string>>(new Set())
+
+  // Phase 7.13C: dance gate — blocks next teacher prompt until dance animation completes.
+  // Created just before setCompletedSteps (which triggers dance); resolved by notifyDanceEnded.
+  // Safety timeout (10 s) prevents deadlock if video never fires ended/error.
+  const danceGateRef = useRef<{
+    promise: Promise<void>
+    resolve: () => void
+    active:  boolean
+  } | null>(null)
 
   // Phase 7.10: client-side TTS fetch cache — deduplicates pre-warm + on-demand calls for same text
   type TtsCachedResult = {
@@ -458,8 +469,24 @@ export function useDemoSession({
     return resultPromise
   }, [])
 
+  // Phase 7.13C: notified by useCharacterVideoState when dance video ends, errors, or is
+  // interrupted by mic. Resolves the dance gate so the teacher chain may proceed.
+  const notifyDanceEnded = useCallback(() => {
+    if (danceGateRef.current?.active) {
+      console.log('[character_dance_gate_resolved] reason=ended')
+      danceGateRef.current.resolve()
+      danceGateRef.current.active = false
+    }
+  }, [])
+
   // ── Interrupt all audio + cancel any running showAiMessage TTS ────────────────
   const interruptAudio = useCallback(() => {
+    // Phase 7.13C: resolve dance gate immediately — mic always wins over dance
+    if (danceGateRef.current?.active) {
+      console.log('[character_dance_gate_resolved] reason=mic_interrupt')
+      danceGateRef.current.resolve()
+      danceGateRef.current.active = false
+    }
     voiceGenerationRef.current += 1  // marks all in-flight handlePlayAudio calls as stale
     chainGenerationRef.current += 1  // marks all queued chain slots as cancelled
     pendingChainKeysRef.current.clear()
@@ -503,6 +530,11 @@ export function useDemoSession({
     }
 
     console.log(`[demo_answer_submit_started] chars=${answerStr.length} step=${step.key}`)
+    // Phase 7.13C: resolve any stale dance gate from a previous step before proceeding
+    if (danceGateRef.current?.active) {
+      danceGateRef.current.resolve()
+      danceGateRef.current.active = false
+    }
     voiceGenerationRef.current += 1  // marks all in-flight TTS calls as stale
     chainGenerationRef.current += 1  // cancels any queued chain slots from previous turn
     pendingChainKeysRef.current.clear()
@@ -592,8 +624,28 @@ export function useDemoSession({
       await enqueueTeacherMessage(effectiveTtsType, feedbackText, () =>
         showAiMessage(feedbackText, effectiveTtsType, spokenFeedback))
 
+      // Phase 7.13C: create dance gate BEFORE setCompletedSteps (which triggers dance).
+      // Gate blocks next teacher prompt (main_prompt) until dance animation completes.
+      // Only needed when there is a next step intro to play in transition_ready/closing mode.
+      const canShowIntroForGate = convMode === 'transition_ready' || convMode === 'closing'
+      const willGateDance = !j.isComplete && !!j.nextStep && canShowIntroForGate && !!j.nextStepIntro
+      if (willGateDance) {
+        let danceResolve!: () => void
+        const dancePromise = new Promise<void>((r) => { danceResolve = r })
+        danceGateRef.current = { promise: dancePromise, resolve: danceResolve, active: true }
+        console.log('[character_dance_gate_started]')
+        // Safety: auto-resolve after 10 s — dance videos are typically 3–8 s
+        setTimeout(() => {
+          if (danceGateRef.current?.active) {
+            console.log('[character_dance_gate_resolved] reason=safety_timeout')
+            danceGateRef.current.resolve()
+            danceGateRef.current.active = false
+          }
+        }, 10_000)
+      }
+
       setSelectedOption(null)
-      setCompletedSteps(prev => [...prev, step.key])
+      setCompletedSteps(prev => [...prev, step.key])  // triggers dance via completedStepCount
 
       // ── Final step: show results overlay ──────────────────────────────────
       if (j.isComplete && j.finalResult) {
@@ -620,6 +672,21 @@ export function useDemoSession({
           if (j.nextStepIntro) {
             console.log(`[demo-advance] nextStep=${j.nextStep.key} mode=${convMode}`)
             await sleep(500)
+
+            // Phase 7.13C: wait for dance to finish before teacher speaks the next prompt.
+            // interruptAudio() (mic tap) resolves the gate early — no deadlock possible.
+            if (danceGateRef.current?.active) {
+              console.log('[demo_teacher_waiting_for_dance]')
+              const genBeforeGate = chainGenerationRef.current
+              await danceGateRef.current.promise
+              // If mic interrupted during the gate wait, cancel the next teacher prompt
+              if (chainGenerationRef.current !== genBeforeGate) {
+                console.log('[demo_teacher_aborted_after_dance_mic_interrupt]')
+                return
+              }
+              console.log('[demo_teacher_resumed_after_dance]')
+            }
+
             await enqueueTeacherMessage('main_prompt', j.nextStepIntro, () =>
               showAiMessage(j.nextStepIntro!, 'main_prompt'))
           } else {
@@ -891,5 +958,6 @@ export function useDemoSession({
     introSequenceActive,
     completedStepCount: completedSteps.length,
     characterAudioSpeaking,
+    notifyDanceEnded,
   }
 }

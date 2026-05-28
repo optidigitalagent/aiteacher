@@ -233,16 +233,18 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     onNotFound: onDemoNotFound,
   })
 
-  // Phase 7.13B: character video state — derived from demo signals, always called (rules of hooks).
+  // Phase 7.13B/C: character video state — derived from demo signals, always called (rules of hooks).
   // Only meaningful in demo mode; in paid mode these values are unused (no CharacterVideoPanel rendered).
   // audioActuallySpeaking: fires only when TTS audio.play() resolves, not on message render.
+  // onDanceEndedCallback: notifies useDemoSession dance gate so next teacher prompt may play.
   const { characterState, danceIndex, onDanceEnded } = useCharacterVideoState({
-    audioActuallySpeaking: demo.characterAudioSpeaking,
-    isListening:           demoListening,
-    isThinking:            demo.submitting,
-    completedStepCount:    demo.completedStepCount,
-    lessonStarted:         demo.lessonStarted,
-    phase:                 demo.phase,
+    audioActuallySpeaking:  demo.characterAudioSpeaking,
+    isListening:            demoListening,
+    isThinking:             demo.submitting,
+    completedStepCount:     demo.completedStepCount,
+    lessonStarted:          demo.lessonStarted,
+    phase:                  demo.phase,
+    onDanceEndedCallback:   demo.notifyDanceEnded,
   })
 
   // Wire demoSubmitRef now that demo is available
