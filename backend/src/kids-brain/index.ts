@@ -41,6 +41,10 @@ export {
   isCoreTeacherWordAllowed,
 } from './teacher-response/core-teacher-vocabulary.js';
 
+// Classification engine (Phase 3)
+export type { ResponseClassificationResult, ClassificationSource, ClassificationInput, ActivityContext, ItemVocabularyContext, LLMClassifier, LLMClassificationInput, LLMClassificationResult } from './classification/index.js';
+export { classifyResponse, runDeterministicClassifier, computeTimeoutFallback, normalizeText, editDistance, isNearMatch, isExactMatch, isWrongButRelated, containsTargetWord, phoneticKey, isPhoneticMatch, phoneticSimilarity, LABEL_TO_ACTION, LLM_ELIGIBLE_LABELS, UNSAFE_KEYWORDS, I_DONT_KNOW_PHRASES, REFUSAL_PHRASES } from './classification/index.js';
+
 // Perception layer (Phase 2)
 export type { PerceptionBundle, PerceptionInput, PromptContext, ChildStateSnapshot, UncertaintyReason, L1DetectionResult, NormalizedStt, LatencyAnalysis, SilenceAnalysis } from './perception/index.js';
 export { buildPerceptionBundle, detectL1, L1_KEYWORD_MAP, normalizeSTT, analyzeLatency, analyzeSilence, computeInputQuality, InputQuality, PERCEPTION_UNCERTAINTY_THRESHOLD } from './perception/index.js';

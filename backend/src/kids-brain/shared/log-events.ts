@@ -28,6 +28,11 @@ export const LOG_EVENTS = {
   SESSION_COMPLETED: 'session_completed',
   SAFETY_EVENT_CREATED: 'safety_event_created',
 
+  // Classification events (Phase 3 additions)
+  CLASSIFICATION_STARTED: 'classification_started',
+  LLM_CLASSIFIER_REQUESTED: 'llm_classifier_requested',
+  SAFETY_CLASSIFICATION_OVERRIDE: 'safety_classification_override',
+
   // Classification events
   CLASSIFICATION_FAST_PATH: 'CLASSIFICATION_FAST_PATH',
   CLASSIFICATION_LLM_PATH: 'CLASSIFICATION_LLM_PATH',

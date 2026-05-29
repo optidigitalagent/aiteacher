@@ -71,6 +71,14 @@ export enum ClassificationLabel {
 
   // Safety group (hard deterministic override)
   UNSAFE_OR_SENSITIVE = 'unsafe_or_sensitive',
+
+  // Engagement / state labels (Phase 3)
+  OVEREXCITED = 'overexcited',
+  EMOTIONAL_SHUTDOWN = 'emotional_shutdown',
+  TEST_THE_AI = 'test_the_ai',
+
+  // Fallback
+  UNKNOWN_UNCERTAIN = 'unknown_uncertain',
 }
 
 /** Closed enum for teacher action codes emitted in ActionPacket (Patch 12). */
