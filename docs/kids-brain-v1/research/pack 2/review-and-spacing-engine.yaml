@@ -1,0 +1,185 @@
+# review-and-spacing-engine.yaml
+# Defines memory reinforcement scheduling for ages 6–9 ESL learners.
+#
+# DESIGN NOTE:
+# Standard adult SRS (e.g., Anki/SM-2) is NOT used directly.
+# Adult SRS assumes:
+#   - high metacognitive awareness
+#   - self-paced review
+#   - explicit difficulty rating
+#   - long retention windows
+#
+# Children ages 6–9 require:
+#   - implicit review built into lessons
+#   - shorter review intervals
+#   - success-weighted review (not failure-weighted)
+#   - teacher-scaffolded retrieval events
+#   - variety in review format to prevent habituation [A][B]
+
+meta:
+  evidence:
+    A: Strong evidence — retrieval practice improves long-term retention in children
+    B: Expert consensus — spacing intervals must be adapted for young learners
+    C: Hypothesis — specific intervals below require empirical calibration
+
+# ─────────────────────────────────────────
+# REVIEW TYPES
+# ─────────────────────────────────────────
+
+review_types:
+
+  same_session_review:
+    description: >
+      Review of an item within the same lesson it was introduced.
+      Occurs in the Consolidation phase.
+    mandatory: true
+    timing: after all target words introduced in a session
+    minimum_gap_from_introduction_minutes: 10
+    format:
+      - forced_choice_4
+      - supported_production
+      - sentence_frame_production
+    max_items_reviewed: equal to items introduced this session
+    note: >
+      Even a 10-minute gap between introduction and review
+      forces genuine retrieval rather than recency recall. [A]
+
+  next_lesson_review:
+    description: >
+      Review at the start of the immediately following lesson.
+      Warm-up phase. Items from the previous lesson.
+    mandatory: true
+    timing: first 5 minutes of next lesson (warm_up phase)
+    minimum_gap_from_introduction_hours: 18   # overnight gap preferred [B]
+    format:
+      - forced_choice_4
+      - sentence_frame_production
+      - supported_production
+    max_items_reviewed: 4
+    success_threshold_to_skip: 0.85   # if child gets >85% correct, brief review only
+    note: >
+      Overnight consolidation significantly improves next-day recall in children. [B]
+
+  weekly_review:
+    description: >
+      Dedicated review session (or review block within lesson)
+      for items seen in past 5–7 days.
+    mandatory: true
+    frequency: once per 5 lessons or 7 days, whichever comes first
+    format:
+      - sentence_production
+      - sentence_frame_production
+      - forced_choice_4
+    max_items_reviewed: 8
+    duration_minutes_max: 10
+    selection_algorithm: review_due_priority  # see below
+    note: >
+      Weekly review prevents the majority of forgetting for young learners. [B]
+
+  spaced_long_review:
+    description: >
+      Items at `secure` or `automatic` mastery reviewed at
+      increasingly spaced intervals to maintain long-term retention.
+    mandatory: false     # triggered by mastery model, not lesson structure
+    intervals_days:
+      secure: [7, 14, 30]
+      automatic: [14, 30, 60]
+    format:
+      - sentence_production
+      - review_production
+    max_items_per_review: 4
+    note: >
+      Long-interval review is appropriate only after `secure` mastery is established.
+      Do not use spaced repetition intervals before that point. [B]
+      Specific day intervals are provisional and require calibration. [C]
+
+# ─────────────────────────────────────────
+# REVIEW ITEM SELECTION ALGORITHM
+# ─────────────────────────────────────────
+
+review_selection:
+  priority_order:
+    1:
+      name: overdue_items
+      description: Items past their review_due timestamp
+      max_items: 4
+    2:
+      name: recent_errors
+      description: Items with wrong responses in last 2 sessions
+      max_items: 2
+    3:
+      name: newly_secured
+      description: Items that just advanced to `secure` this week
+      max_items: 2
+    4:
+      name: scheduled_spaced
+      description: Items due for spaced_long_review
+      max_items: 2
+
+  total_max_per_review_block: 8
+  note: >
+    Review blocks must not overwhelm the lesson.
+    Never sacrifice introduction time for excessive review. [B]
+
+# ─────────────────────────────────────────
+# REVIEW SCHEDULING ALGORITHM
+# ─────────────────────────────────────────
+
+review_scheduling:
+  description: >
+    After each successful retrieval, the next review timestamp is set.
+    After a failed retrieval, interval is shortened.
+
+  on_correct_retrieval:
+    emerging:
+      next_review_hours: 4      # same day if possible
+    developing:
+      next_review_hours: 24     # next session (next day)
+    secure:
+      next_review_days: 7
+    automatic:
+      next_review_days: 14
+
+  on_failed_retrieval:
+    emerging:
+      next_review_hours: 1      # retry in same session if possible
+    developing:
+      next_review_hours: 4      # retry in same session or next session
+    secure:
+      next_review_days: 2       # shorten interval; item may be slipping
+      mastery_check: true       # flag for mastery decay evaluation
+    automatic:
+      next_review_days: 7
+      mastery_check: true
+
+  note: >
+    Interval values are adapted from child L2 vocabulary research.
+    Adult SRS intervals (weeks/months) are inappropriate for this age. [B]
+    Specific hours/days are provisional. [C]
+
+# ─────────────────────────────────────────
+# REVIEW FORMAT RULES
+# ─────────────────────────────────────────
+
+review_format_rules:
+  - rule: never_repeat_same_format_twice_in_same_review_block
+    note: >
+      Format variety in retrieval practice increases retention
+      beyond repetition in a single format. [A]
+
+  - rule: match_review_demand_to_mastery_level
+    mapping:
+      emerging: forced_choice_2 or forced_choice_4
+      developing: forced_choice_4 or supported_production
+      secure: sentence_frame_production or sentence_production
+      automatic: sentence_production or review_production
+
+  - rule: never_review_more_than_8_items_per_lesson
+    note: >
+      Review fatigue is real in young learners.
+      Limit review to protect motivation. [B]
+
+  - rule: never_use_review_as_assessment
+    note: >
+      Review is a learning event, not a test.
+      Teacher continues to scaffold when child struggles. [B]

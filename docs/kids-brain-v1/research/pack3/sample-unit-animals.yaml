@@ -1,0 +1,451 @@
+---
+# Mentium Kids — Sample Unit: Animals
+# Unit number: 6 (maps to curriculum backbone position — after Family, Body)
+# This unit is ORIGINAL CONTENT inspired by Kid's Box curriculum structure
+# No textbook content reproduced
+
+unit:
+  id: "unit-06-animals"
+  title: "Animals!"
+  subtitle: "Mia meets the animals at the zoo"
+  character: "Mia the monkey"
+  character_voice_style: "cheerful, curious, slightly worried"
+  target_age: [6, 7, 8]
+  cefr_level: "Pre-A1"
+  curriculum_position: 6  # After: Hello, Colours, Toys, Family, Body
+  lesson_count: 3
+  review_lesson: true  # Unit review lesson = lesson 4
+
+# ─────────────────────────────────────────────
+# VOCABULARY
+# ─────────────────────────────────────────────
+
+vocabulary:
+  target_words:
+    # New words introduced in this unit
+    - word: "dog"
+      phonetic: "/dɒɡ/"
+      gesture: "hands above head like floppy ears, panting"
+      sound_cue: "woof!"
+      chunk_1: "It's a dog!"
+      chunk_2: "A big dog!"
+      introduced_in_lesson: 1
+
+    - word: "cat"
+      phonetic: "/kæt/"
+      gesture: "draw whiskers on your cheeks with two fingers each side"
+      sound_cue: "meow!"
+      chunk_1: "It's a cat!"
+      chunk_2: "A little cat!"
+      introduced_in_lesson: 1
+
+    - word: "bird"
+      phonetic: "/bɜːd/"
+      gesture: "flap arms like wings"
+      sound_cue: "tweet tweet!"
+      chunk_1: "It's a bird!"
+      chunk_2: "The bird flies!"
+      introduced_in_lesson: 1
+
+    - word: "fish"
+      phonetic: "/fɪʃ/"
+      gesture: "hands together, wave like swimming fish"
+      sound_cue: "blub blub! (bubbling sound)"
+      chunk_1: "It's a fish!"
+      chunk_2: "A little fish!"
+      introduced_in_lesson: 2
+
+    - word: "elephant"
+      phonetic: "/ˈelɪfənt/"
+      gesture: "one arm swings down from nose like a trunk"
+      sound_cue: "trumpet sound / paaarp!"
+      chunk_1: "It's an elephant!"
+      chunk_2: "A BIG elephant!"
+      introduced_in_lesson: 2
+      difficulty_note: "3 syllables — expect approximation from age 6. 'Elefant' is acceptable."
+
+    - word: "rabbit"
+      phonetic: "/ˈræbɪt/"
+      gesture: "both hands up like tall rabbit ears"
+      sound_cue: "nose wiggle sound (squeak)"
+      chunk_1: "It's a rabbit!"
+      chunk_2: "A fluffy rabbit!"
+      introduced_in_lesson: 3
+
+  review_words:
+    # From Unit 5 (Body) — recycled in this unit
+    - word: "big"
+      review_context: "big elephant, big dog"
+    - word: "small"
+      review_context: "small bird, small fish"
+    # From Unit 4 (Family) — recycled lightly
+    - word: "my"
+      review_context: "my dog, my cat"
+    # From Unit 1 (Hello/Numbers) — recycled in counting activity
+    - word: "one"
+      review_context: "one dog, one cat"
+    - word: "two"
+      review_context: "two birds"
+
+  sentence_patterns:
+    primary:
+      pattern: "It's a [animal]!"
+      notes: "Main production target — every child should produce this by end of unit"
+      first_appears: "lesson 1, phase 5"
+
+    secondary:
+      pattern: "A big/small [animal]!"
+      notes: "Extends primary pattern with known adjective recycling"
+      first_appears: "lesson 1, phase 6"
+
+    stretch:
+      pattern: "I see a [animal]!"
+      notes: "For age 7–8 who master primary pattern quickly"
+      first_appears: "lesson 2, phase 6"
+
+    review_integration:
+      pattern: "It's a big [animal]! / It's a small [animal]!"
+      notes: "Combines current target with Unit 5 review words"
+      first_appears: "lesson 2, phase 7"
+
+# ─────────────────────────────────────────────
+# LESSON SEQUENCE
+# ─────────────────────────────────────────────
+
+lessons:
+
+  - lesson_id: "unit-06-lesson-01"
+    lesson_type: "new_unit_opener"
+    title: "The Zoo! Dog, Cat, Bird"
+    target_new_words: ["dog", "cat", "bird"]
+    review_words: ["big", "small"]
+    sentence_pattern: "It's a [animal]!"
+
+    story_hook: >
+      Mia the monkey went to the ZOO today! She saw lots of animals.
+      But Mia doesn't know the names! She needs YOUR help.
+      Can you teach Mia the animal names? Say: YES!
+
+    activity_sequence:
+      - phase: 0
+        activity: warm_greeting
+        duration_sec: 30
+      - phase: 1
+        activity: mini_story_hook
+        content: "Mia at the zoo story"
+        duration_sec: 60
+      - phase: 2
+        activity: tpr_action
+        words: ["dog", "cat", "bird"]
+        note: "Each word: hear × 3 + gesture + chunk. ~25 sec each."
+        duration_sec: 75
+      - phase: 2b
+        activity: listen_and_point
+        words: ["dog", "cat", "bird"]
+        note: "Recognition check after all 3 words introduced"
+        duration_sec: 45
+      - phase: 3
+        activity: forced_choice
+        word_pairs: [["dog", "cat"], ["cat", "bird"], ["dog", "bird"]]
+        duration_sec: 60
+      - phase: 4
+        activity: chant_repeat
+        chant_text: |
+          Dog dog dog! [clap clap]
+          Cat cat cat! [clap clap]
+          Bird bird bird! [clap clap]
+          Mia loves animals! [clap clap clap]
+        duration_sec: 45
+      - phase: 5
+        activity: say_sentence
+        frame: "It's a ___!"
+        words: ["dog", "cat", "bird"]
+        duration_sec: 90
+      - phase: 6
+        activity: mini_story_choice
+        setup: "Mia sees an animal! Is it big or small?"
+        choice_A: "big dog"
+        choice_B: "small cat"
+        duration_sec: 60
+      - phase: 7
+        activity: review_loop
+        review_words: ["big", "small"]
+        game_frame: "Show Mia big and small! Do the actions!"
+        duration_sec: 60
+      - phase: 8
+        activity: celebration
+        text: "Mia says THANK YOU! You taught her THREE animal names! Dog, cat, bird — YOU know them all!"
+        duration_sec: 20
+      - phase: 9
+        activity: open_loop
+        text: "Next time... Mia is going to meet a VERY big animal. Much bigger than a dog! I wonder what it is... Come back and find out!"
+        duration_sec: 30
+
+  - lesson_id: "unit-06-lesson-02"
+    lesson_type: "mid_unit_consolidation"
+    title: "Fish and Elephant!"
+    target_new_words: ["fish", "elephant"]
+    review_words: ["dog", "cat", "bird", "big", "small"]
+    sentence_pattern: "It's a [animal]! / A big [animal]!"
+
+    story_hook: >
+      Mia is back at the zoo! She remembered dog, cat, bird — do YOU remember?
+      But today... she found MORE animals! Something VERY big. And something VERY small.
+      Can you help her again?
+
+    activity_sequence:
+      - phase: 0
+        activity: warm_greeting
+        callback_note: "Reference lesson 1: 'Do you remember the animals from last time?'"
+        duration_sec: 30
+      - phase: 1
+        activity: review_loop
+        words: ["dog", "cat", "bird"]
+        game_frame: "Can you remember? What animals did we find?"
+        note: "Quick review of lesson 1 words BEFORE new input"
+        duration_sec: 60
+      - phase: 2
+        activity: tpr_action
+        words: ["fish", "elephant"]
+        note: "Longer per word than lesson 1 — elephant is hard (3 syllables)"
+        duration_sec: 90
+      - phase: 3
+        activity: forced_choice
+        word_pairs: [["fish", "elephant"], ["dog", "elephant"], ["fish", "cat"]]
+        note: "Mix old and new words in forced choice"
+        duration_sec: 75
+      - phase: 4
+        activity: chant_repeat
+        chant_text: |
+          Fish fish fish! [swim hands]
+          Elephant elephant! [trunk swing]
+          BIG elephant! [arms wide]
+          Small fish! [fingers close]
+        duration_sec: 45
+      - phase: 5
+        activity: say_sentence
+        frames: ["It's a ___!", "A big ___!", "A small ___!"]
+        words: ["fish", "elephant", "dog", "cat"]
+        duration_sec: 120
+      - phase: 6
+        activity: spotting
+        target_words: ["elephant", "fish"]
+        stream: ["dog", "elephant", "cat", "fish", "bird", "elephant", "fish", "dog"]
+        signal_action: "CLAP"
+        duration_sec: 60
+      - phase: 7
+        activity: review_loop
+        review_words: ["big", "small"]
+        game_frame: "Point! Big elephant or small fish? Big or small?"
+        duration_sec: 60
+      - phase: 8
+        activity: celebration
+        text: "FIVE animals! Dog, cat, bird, fish, ELEPHANT! Mia is so happy! YOU are amazing!"
+        duration_sec: 20
+      - phase: 9
+        activity: open_loop
+        text: "Next time... Mia finds one MORE animal. It has big ears. And it hops! What IS it? Come back!"
+        duration_sec: 30
+
+  - lesson_id: "unit-06-lesson-03"
+    lesson_type: "consolidation_production"
+    title: "Rabbit! All the Animals!"
+    target_new_words: ["rabbit"]
+    review_words: ["dog", "cat", "bird", "fish", "elephant"]
+    sentence_pattern: "It's a [animal]! / I see a [animal]!"
+
+    story_hook: >
+      It's the LAST day at the zoo! Mia saw one more animal — with BIG ears.
+      And then... she has to go home. But first — can you help her remember ALL the animals?
+
+    activity_sequence:
+      - phase: 0
+        activity: warm_greeting
+        duration_sec: 30
+      - phase: 1
+        activity: mini_story_hook
+        content: "Mia's last day at the zoo — needs to remember everything"
+        duration_sec: 60
+      - phase: 2
+        activity: tpr_action
+        words: ["rabbit"]
+        note: "Only 1 new word — spend more time in production phases"
+        duration_sec: 45
+      - phase: 3
+        activity: spotting
+        target_word: "rabbit"
+        stream: ["dog", "cat", "rabbit", "fish", "rabbit", "elephant", "rabbit"]
+        signal_action: "Say RABBIT!"
+        duration_sec: 45
+      - phase: 4
+        activity: chant_repeat
+        chant_text: |
+          Rabbit rabbit hop hop hop! [hop motion]
+          Dog cat bird — stop stop stop! [freeze]
+          Fish elephant rabbit too! [each gesture]
+          All the animals — ME and YOU! [point to self, point out]
+        duration_sec: 45
+      - phase: 5
+        activity: say_sentence
+        frame: "It's a ___!"
+        words: ["rabbit", "elephant", "fish", "dog", "cat", "bird"]
+        note: "All 6 words — this is the big production moment"
+        duration_sec: 120
+      - phase: 6
+        activity: mini_story_choice
+        setup: "Mia wants to say goodbye to one animal. Which one?"
+        choice_A: "rabbit"
+        choice_B: "elephant"
+        note: "Both choices use target words — no wrong answer"
+        duration_sec: 60
+      - phase: 7
+        activity: review_loop
+        review_words: ["dog", "cat", "bird", "fish", "elephant"]
+        game_frame: "Can you say ALL the animals? Let's help Mia remember!"
+        note: "Full unit review — all words"
+        duration_sec: 90
+      - phase: 8
+        activity: celebration
+        text: "SIX animals! DOG, CAT, BIRD, FISH, ELEPHANT, RABBIT! Mia knows them all — because of YOU! You are an amazing animal teacher!"
+        duration_sec: 20
+      - phase: 9
+        activity: open_loop
+        text: "Next time... we're going to meet Mia's family. She has a mum, a dad... and a baby brother! I wonder what their names are? See you next time!"
+        duration_sec: 30
+
+# ─────────────────────────────────────────────
+# REPETITION PLAN
+# ─────────────────────────────────────────────
+
+repetition_plan:
+  target: "Each word encountered minimum 7 times before unit ends"
+  encounters_per_word:
+    lesson_1:
+      dog: 6    # intro × 3 + chant × 2 + production × 1
+      cat: 6
+      bird: 6
+    lesson_2:
+      dog: 4    # review loop + forced choice + production + spotting stream
+      cat: 4
+      bird: 4
+      fish: 7   # intro × 3 + chant × 2 + spotting × 2
+      elephant: 7
+    lesson_3:
+      dog: 5    # all-unit review
+      cat: 5
+      bird: 5
+      fish: 5
+      elephant: 5
+      rabbit: 8  # new word but only word — high encounter count
+  total_encounters_per_word:
+    dog: 15
+    cat: 15
+    bird: 15
+    fish: 12
+    elephant: 12
+    rabbit: 8
+
+# ─────────────────────────────────────────────
+# ASSESSMENT SIGNALS
+# ─────────────────────────────────────────────
+
+assessment_signals:
+  # These are backend signals only — never shown to child as "assessment"
+  # All are behavioral, not test-based
+
+  mastery_signal:
+    definition: "Child produces word correctly in say_sentence without prompt within 3 seconds"
+    threshold: "3 consecutive correct productions across different activities"
+    action: "Mark word as MASTERED — reduce input, increase production demand"
+
+  partial_knowledge_signal:
+    definition: "Child produces correctly in forced_choice but not in say_sentence"
+    action: "Keep in production activities — not ready for stretch patterns"
+
+  recognition_only_signal:
+    definition: "Child responds correctly to yes_no and forced_choice but fails say_sentence"
+    action: "More repeat_after_me + chant before production demand"
+
+  unknown_signal:
+    definition: "Child fails forced_choice or yes_no consistently (< 50% correct)"
+    action: "Return to input phase — re-introduce word. Add L1 rescue if needed."
+
+  needs_review_flag:
+    definition: "Word mastered in unit but not produced in subsequent unit's review_loop"
+    action: "Include in next lesson's review_words — do not skip"
+
+  unit_completion_signal:
+    definition: "Child produces all 6 unit words in say_sentence across 2+ lessons"
+    action: "Unlock next unit. Generate parent completion notification."
+
+# ─────────────────────────────────────────────
+# RECOVERY PLAN
+# ─────────────────────────────────────────────
+
+recovery_plan:
+  word_specific_recovery:
+    elephant:
+      risk: "3 syllables — high failure rate at age 6"
+      strategy: "Break into syllables in chant: EL-e-PHANT! EL-e-PHANT!"
+      accept: "Elefan, Eleant, Elephan"
+      do_not_accept: "Completely different word"
+
+    fish:
+      risk: "Final /ʃ/ cluster unfamiliar in many L1s"
+      strategy: "Emphasize the /ʃ/ in input: fiSHHHH!"
+      accept: "Fis, Fish (any approximation)"
+
+    rabbit:
+      risk: "Initial /r/ difficult for Russian/Ukrainian speakers"
+      strategy: "Accept /w/ or /v/ substitution — do not correct explicitly"
+      accept: "Wabbit, Vabit"
+
+  lesson_failure_recovery:
+    trigger: "Child completes < 5 speaking turns in a lesson"
+    action: "Rebuild next lesson from recognition activities only — no production demand until engagement restored"
+
+  session_abandonment_recovery:
+    trigger: "Child refuses to continue or leaves mid-session"
+    next_session_plan: "Start with child's last SUCCESSFUL activity from previous session — guaranteed win first"
+
+# ─────────────────────────────────────────────
+# OPTIONAL MEDIA NEEDED (FUTURE PRODUCTION)
+# ─────────────────────────────────────────────
+
+optional_media:
+  audio:
+    - id: "animal-sounds-set-01"
+      description: "High-quality recordings of dog bark, cat meow, bird tweet, fish bubbling, elephant trumpet, rabbit squeak"
+      usage: "sound_cues in input phase and spotting activity"
+      priority: HIGH
+
+    - id: "unit-06-chant-01"
+      description: "Professionally recorded chant track with clear beat (60–80 BPM) for lesson 1 chant"
+      usage: "phase 4 chant_repeat activity"
+      priority: HIGH
+
+    - id: "unit-06-chant-02"
+      description: "Recorded chant for lesson 2 (big/small animals)"
+      priority: HIGH
+
+    - id: "unit-06-chant-03"
+      description: "Full-unit celebration chant for lesson 3"
+      priority: MEDIUM
+
+  visuals:
+    # Voice-first: visuals are supplementary, not required
+    # If visual layer added later, these are the target assets
+    - id: "mia-monkey-character"
+      description: "Animated Mia character — 3 states: happy, worried, excited"
+      usage: "Character reactions in story phases"
+      priority: MEDIUM_FUTURE
+
+    - id: "zoo-background"
+      description: "Simple illustrated zoo setting — static"
+      usage: "Background for visual layer (not voice-first required)"
+      priority: LOW_FUTURE
+
+    - id: "animal-illustrations-set"
+      description: "6 clear, simple animal illustrations: dog, cat, bird, fish, elephant, rabbit"
+      style_note: "Friendly, slightly cartoonish. Clear silhouettes. No background detail."
+      priority: MEDIUM_FUTURE

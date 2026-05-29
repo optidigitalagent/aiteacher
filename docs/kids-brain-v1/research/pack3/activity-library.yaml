@@ -1,0 +1,444 @@
+---
+# Mentium Kids — Activity Library
+# Version: 1.0
+# All activities are primitives: atomic, composable, sequenceable
+# Each activity must be executable by AI teacher runtime without human judgment
+
+activities:
+
+  # ─────────────────────────────────────────────
+  - id: repeat_after_me
+    label: "Repeat After Me"
+    purpose: >
+      Elicit choral or solo production of a target word or chunk immediately after
+      teacher models it. Provides safe, low-stakes first production experience.
+    when_to_use:
+      - After first or second exposure to a new word
+      - When child has been silent and needs a guaranteed success
+      - To break silence after a failed open question
+      - As "warm up" production before forced_choice
+    required_inputs:
+      - target_word: string  # The word or chunk to be modeled
+      - context_chunk: string  # e.g., "It's a dog!" — word in a phrase
+    teacher_script_pattern: |
+      "Listen — [target_word]. [context_chunk].
+      Say it with me — [target_word]!"
+    expected_child_response:
+      - Correct or approximate production of target_word
+    success_response: |
+      "[target_word]! Yes! You said it! [specific praise — name the word back]"
+    wrong_response: |
+      "[correct form]! Yes, [correct form]! One more time — [target_word]!"
+      # Do NOT say "No" or "Try again" — recast and re-invite
+    silence_response: |
+      "Hmm, listen — [target_word]. [say it slower, add gesture instruction]
+      Together — [target_word]! [drop voice to just above whisper — invites echo]"
+    L1_response: |
+      "Yes! [nod warmly] — [target_word]! Say it — [target_word]!"
+      # Treat as comprehension success, bridge to English form immediately
+    max_duration_seconds: 30
+    difficulty_level: 1  # Lowest difficulty — always succeeds if child engages
+    allowed_age_range: [6, 7, 8]
+    what_not_to_do:
+      - Ask child to repeat more than 3 times in a row
+      - Repeat the wrong form back ("no, not 'dat'")
+      - Pause without teacher voice filling the silence beyond 4 seconds
+      - Use as sole activity for an entire phase — always combine with others
+
+  # ─────────────────────────────────────────────
+  - id: listen_and_point
+    label: "Listen and Point"
+    purpose: >
+      Pure receptive recognition. Child identifies the correct referent from
+      a set of 2–4 options without producing language. Confirms comprehension
+      before production is demanded.
+    when_to_use:
+      - Phase 2 (input phase) — after modeling, before production
+      - Phase 3 (recognition loop)
+      - Recovery path — when child fails a production task
+      - After introducing each pair of words
+    required_inputs:
+      - target_word: string
+      - distractors: list  # 1–3 other words from the lesson (not random)
+      - audio_cues: boolean  # are distinct sounds used to differentiate options?
+    teacher_script_pattern: |
+      "Listen! Which one is the [target_word]?
+      Is it [option_A]... or [option_B]?
+      Point to the [target_word]! [or: 'Say A or B!']"
+    expected_child_response:
+      - Points (if visual available) OR says "A/B" OR says the word itself
+    success_response: |
+      "YES! [target_word]! You found it! [target_word]! Brilliant!"
+    wrong_response: |
+      "Hmm! This one — [target_word]! [model again]
+      Can you say it? [target_word]!"
+      # Do not elaborate. Model and move on.
+    silence_response: |
+      "Look — [target_word]! THIS one is the [target_word].
+      Can you say it? [target_word]!"
+    L1_response: |
+      "Yes! [nod] — we say [target_word]! [target_word]! Good!"
+    max_duration_seconds: 20  # Per item. Max 6 items per cycle = 2 min total.
+    difficulty_level: 2
+    allowed_age_range: [6, 7, 8]
+    what_not_to_do:
+      - Use more than 4 options for age 6
+      - Use visually similar distractors without audio differentiation
+      - Demand verbal production — this is recognition only
+      - Run more than 8 consecutive items without a break
+
+  # ─────────────────────────────────────────────
+  - id: forced_choice
+    label: "Forced Choice"
+    purpose: >
+      Child selects one of exactly 2 options by saying the word or pointing.
+      Removes open-ended cognitive load while still requiring active engagement
+      and verbal output. Primary production activity for age 6.
+    when_to_use:
+      - Phase 3 (recognition to production bridge)
+      - Phase 5 (supported production)
+      - Recovery from silent or wrong response on harder task
+      - Any time open question fails twice
+    required_inputs:
+      - option_A: string  # target word
+      - option_B: string  # known word (contrast), not a random distractor
+      - context: string   # brief story or situation framing the choice
+    teacher_script_pattern: |
+      "[context — 1 sentence]
+      Is it a [option_A] or a [option_B]?
+      [option_A]? Or [option_B]?"
+      # Always say both options clearly. Never assume child remembers.
+    expected_child_response:
+      - Child says one of the two words
+    success_response: |
+      "[correct option]! Yes! It's a [correct option]! Great choice!"
+    wrong_response: |
+      "Ohhh — it's a [correct option]! [option_A]! 
+      Can you say [correct option]?"
+      # Never: "No, that's wrong." Just recast.
+    silence_response: |
+      "[option_A]? [pause 2 sec]
+      Or [option_B]? [pause 2 sec]
+      Hmm — I think it's a [correct option]! 
+      [correct option] — can you say it?"
+    L1_response: |
+      "Yes! [nod] — [correct option in English]! Say it — [option]!"
+    max_duration_seconds: 25
+    difficulty_level: 2
+    allowed_age_range: [6, 7, 8]
+    what_not_to_do:
+      - Offer 3+ options to age 6 (max 2 for 6-year-olds)
+      - Use two unknown words — always pair target with known word
+      - Correct before the child has a chance to try
+      - Move on without having child say the correct word aloud
+
+  # ─────────────────────────────────────────────
+  - id: spotting
+    label: "Spotting"
+    purpose: >
+      Child must identify the target word within a stream of teacher speech
+      (or sounds) and signal recognition. Trains selective attention and
+      auditory discrimination — critical for phonics and listening development.
+    when_to_use:
+      - Phase 3 (recognition loop) — with known words
+      - As transition activity between input and production
+      - As energizer when lesson pace drops
+      - Review loop with previous unit words
+    required_inputs:
+      - target_word: string
+      - stream: list  # list of 5–10 words, target appears 2–3 times
+      - signal_action: string  # "clap", "say STOP", "say YES", "jump"
+    teacher_script_pattern: |
+      "Listen carefully! When you hear [target_word] — [signal_action]!
+      Ready? [builds tension]
+      [word1]... [word2]... [target_word — child should signal] ...
+      [word3]... [target_word — child should signal] ..."
+    expected_child_response:
+      - Child signals on each occurrence of target_word
+    success_response: |
+      "YES! You heard it! [target_word]! You're so fast!"
+    wrong_response: |
+      "Oh! Listen — [target_word]! That's the one! 
+      Let's try again — when you hear [target_word] — [signal_action]!"
+    silence_response: |
+      "Did you hear it? [target_word]! [repeat the stream segment]
+      When you hear [target_word] — [signal_action]! Try it!"
+    L1_response: |
+      "[nod warmly] Yes! [target_word] — that's right! 
+      Say it — [target_word]! And [signal_action] when you hear it!"
+    max_duration_seconds: 60
+    difficulty_level: 3
+    allowed_age_range: [6, 7, 8]
+    what_not_to_do:
+      - Include phonetically similar distractors for age 6 (too hard)
+      - Run stream faster than 1 word per 2 seconds
+      - Use this as first exposure to a word — only for known words
+      - Expect child to catch all occurrences on first attempt
+
+  # ─────────────────────────────────────────────
+  - id: tpr_action
+    label: "TPR Action"
+    purpose: >
+      Teacher instructs a physical action. Child performs the action.
+      Encodes vocabulary through motor memory. Used for actions, adjectives,
+      and spatial prepositions. Also provides physical release in session.
+    when_to_use:
+      - Phase 2 (input) — alongside new action words
+      - Phase 4 (chant/rhythm) — physical activation
+      - Whenever session energy drops (wake-up moment)
+      - For adjectives (big/small, fast/slow) and prepositions (in/on/under)
+    required_inputs:
+      - target_word: string
+      - action_instruction: string  # clear physical instruction
+      - example_action: string      # teacher narrates their own action first
+    teacher_script_pattern: |
+      "[target_word]! Watch me — [teacher does action, narrates]
+      Now YOU do it! [target_word]! [action_instruction]!
+      [target_word]! [action again]!"
+    expected_child_response:
+      - Child performs action
+    success_response: |
+      "YES! [target_word]! You're doing it! Amazing!"
+    wrong_response: |
+      "Hmm — [target_word] is like this! [re-narrate action]
+      Try it — [action_instruction]! [target_word]!"
+    silence_response: |
+      "Listen — [target_word]! Do this with me!
+      [slow, clear action instruction — pause between each step]
+      [target_word]! Together!"
+    L1_response: |
+      "Yes! [nod] — [target_word]! And do this! [action_instruction]"
+    max_duration_seconds: 45
+    difficulty_level: 1
+    allowed_age_range: [6, 7, 8]
+    what_not_to_do:
+      - Require complex multi-step physical sequences for age 6
+      - Use for abstract nouns where no physical representation is possible
+      - Skip narrating the action — always describe the physical movement in words
+      - Use without connecting the action to the word every time
+
+  # ─────────────────────────────────────────────
+  - id: say_sentence
+    label: "Say the Sentence"
+    purpose: >
+      Child produces a complete target sentence or chunk, using a provided
+      sentence frame with one or more blanks. The frame reduces cognitive load
+      so child can focus on the target form.
+    when_to_use:
+      - Phase 5 (supported production) — after successful recognition
+      - Phase 6 (tiny challenge) — with frame partially removed
+      - When child has shown solid recognition of all target words
+    required_inputs:
+      - sentence_frame: string   # e.g., "It's a ___!" or "I see a big ___!"
+      - target_slot: string      # the word the child needs to produce
+      - context: string          # situational prompt
+    teacher_script_pattern: |
+      "[context — 1 sentence]
+      Can you tell [character]? Say: [sentence_frame]!
+      [repeat frame if no response in 3 seconds]"
+    expected_child_response:
+      - Complete or near-complete production of sentence_frame with target_slot filled
+    success_response: |
+      "[full sentence repeated back] — YES! You said it!
+      [character] is SO happy! [specific praise for production]"
+    wrong_response: |
+      "[sentence_frame with correct target — full model]
+      Say it with me — [sentence_frame]!"
+      # Model first, then invite — never demand without modeling
+    silence_response: |
+      "Hmm. Let me help — say: [sentence_frame]!
+      [pause 2 sec — wait]
+      [sentence_frame]! Go!"
+    L1_response: |
+      "Yes! [nod] — in English: [sentence_frame]!
+      Can you say: [sentence_frame]?"
+    max_duration_seconds: 40
+    difficulty_level: 4
+    allowed_age_range: [6, 7, 8]
+    age_notes:
+      "6": "Frame must be 2–3 words max. One blank only."
+      "7": "Frame can be 4–5 words. One blank."
+      "8": "Frame can be 5–6 words. Up to two blanks."
+    what_not_to_do:
+      - Ask child to produce a sentence they haven't heard yet
+      - Use open frame without modelling — always model the full sentence first
+      - Demand accuracy on every phoneme — approximation is acceptable
+      - Repeat more than twice — model and move on if still failing
+
+  # ─────────────────────────────────────────────
+  - id: yes_no_comprehension
+    label: "Yes / No Comprehension"
+    purpose: >
+      Lowest-output recognition task. Child confirms or denies a statement
+      by saying "yes" or "no" (or shaking head). Used for pure comprehension
+      check and as recovery path from harder tasks.
+    when_to_use:
+      - Immediate recovery from silence or multiple wrong answers
+      - Age 6: after every new word introduction
+      - Post-story comprehension check
+      - When pacing needs to slow down
+    required_inputs:
+      - statement: string  # true or false statement about the lesson content
+      - correct_answer: "yes" | "no"
+    teacher_script_pattern: |
+      "[statement — delivered with rising intonation]
+      Yes or no? [pause 3 sec]"
+    expected_child_response:
+      - "yes" or "no" (or head nod/shake if visual)
+    success_response: |
+      "[correct_answer]! That's right! [rephrase the true fact]"
+    wrong_response: |
+      "Hmm — [correct rephrase of true fact]! 
+      [correct_answer]! It's [correct_answer]!"
+    silence_response: |
+      "[statement — slower]
+      Is it yes? Or no? 
+      [pause]
+      I think it's [correct_answer]! [correct_answer]!"
+    L1_response: |
+      "[nod] Yes — [correct_answer]! [correct_answer]!"
+    max_duration_seconds: 20
+    difficulty_level: 1
+    allowed_age_range: [6, 7, 8]
+    what_not_to_do:
+      - Use ambiguous statements where both yes and no could be argued
+      - Ask more than 4 yes/no questions in a row without a different activity type
+      - Use as primary activity for extended period — only as scaffold or recovery
+
+  # ─────────────────────────────────────────────
+  - id: mini_story_choice
+    label: "Mini Story Choice"
+    purpose: >
+      Teacher tells a micro-story with a decision point. Child makes a choice
+      that determines the story outcome. Increases engagement through agency.
+      Requires child to produce one word or short phrase to steer the story.
+    when_to_use:
+      - Phase 1 (story hook variant)
+      - Phase 6 (tiny challenge — narrative production)
+      - When sustained engagement is needed mid-lesson
+      - As an alternative to forced_choice when motivation drops
+    required_inputs:
+      - story_setup: string        # 2–3 sentence setup
+      - decision_point: string     # the question posed to child
+      - option_A: string           # one path (target word/phrase)
+      - option_B: string           # another path (different target word/phrase)
+      - outcome_A: string          # brief story continuation for option A
+      - outcome_B: string          # brief story continuation for option B
+    teacher_script_pattern: |
+      "[story_setup]
+      Oh no — [character] has to choose!
+      [decision_point]?
+      [option_A] — or — [option_B]?
+      YOU decide — which one?"
+    expected_child_response:
+      - Child says one of the two options
+    success_response: |
+      "[chosen option]! OK! [outcome for chosen option]!
+      Good choice — you helped [character]!"
+    wrong_response: |
+      # Both options are valid — there is no "wrong" choice in mini_story_choice
+      # If child says something unintelligible: teacher picks an option and continues
+      "[chosen option — teacher picks] OK! [outcome]! Let's go!"
+    silence_response: |
+      "[option_A]? [pause 2 sec]
+      [option_B]? [pause 2 sec]
+      I think... [option_A]! Let's go with [option_A]!"
+      # Teacher makes the choice and continues — story must not stall
+    L1_response: |
+      "[nod] Yes! [English equivalent]! OK — [outcome]!"
+    max_duration_seconds: 90
+    difficulty_level: 3
+    allowed_age_range: [6, 7, 8]
+    what_not_to_do:
+      - Make story setup longer than 3 sentences
+      - Offer more than 2 choices
+      - Stall if child doesn't respond — always continue the story
+      - Use unknown vocabulary in the story setup
+      - Make either outcome feel "wrong" or punishing
+
+  # ─────────────────────────────────────────────
+  - id: review_loop
+    label: "Review Loop"
+    purpose: >
+      Rapid-fire retrieval of previously learned vocabulary. Used for spaced
+      repetition of words from the previous lesson or unit. Always feels like
+      a game or competition against time, never a test.
+    when_to_use:
+      - Phase 7 (review loop — always)
+      - Lesson Type C (review lesson — expanded)
+      - Whenever a word from a previous lesson appears in current context
+    required_inputs:
+      - review_words: list     # 3–5 words from previous unit/lesson
+      - game_frame: string     # the game context (e.g., "help Mia pack her bag!")
+    teacher_script_pattern: |
+      "[game_frame]
+      Do you remember? What's this? [cue for word 1]...
+      And this? [cue for word 2]...
+      [continue rapidly — keep energy high]"
+    expected_child_response:
+      - Child produces each word (approximately)
+    success_response: |
+      "[word]! Yes! You remember! Good memory!"
+    wrong_response: |
+      "[correct word]! [correct word]! Remember? [give context from previous lesson]"
+    silence_response: |
+      "Hmm — this one... [give a strong context clue]
+      [word]! Yes! [word]!"
+    L1_response: |
+      "Yes! [nod] — [English word]! [English word]! Good memory!"
+    max_duration_seconds: 90  # Total for all review words
+    difficulty_level: 3
+    allowed_age_range: [6, 7, 8]
+    what_not_to_do:
+      - Include more than 5 review words
+      - Slow down between words — review loop must feel fast
+      - Re-teach during review — this is retrieval only
+      - Include words from more than 2 lessons ago (working memory limit)
+
+  # ─────────────────────────────────────────────
+  - id: recovery_easiest_win
+    label: "Recovery: Easiest Win"
+    purpose: >
+      Emergency recovery activity. Delivers a guaranteed success experience
+      immediately after multiple failures. Resets child's emotional state.
+      Must be the easiest possible task in the current word set.
+    when_to_use:
+      - After 2+ consecutive wrong answers on any activity
+      - After extended silence (>7 seconds)
+      - When child says "I don't know" twice in a row
+      - After "I don't want to" or refusal
+      - Whenever emotional safety appears compromised
+    required_inputs:
+      - easiest_word: string  # word child has already successfully produced this lesson
+      - reframe: string       # new micro-context that makes it feel like a new question
+    teacher_script_pattern: |
+      "[reframe — completely new framing, no reference to the failure]
+      Oh! Quick — can you help me? 
+      What does [character] see? Is it a [easiest_word]? 
+      Say yes or no!"
+      # Or: "Say it with me — [easiest_word]!"
+    expected_child_response:
+      - Any response (yes/no, the word, a nod)
+    success_response: |
+      "YES! [word]! You KNOW this! See? You're amazing!
+      [pivot immediately to next planned activity]"
+    wrong_response: |
+      # Should not happen — if it does, provide answer and pivot
+      "[word]! Yes! [word]! 
+      [immediately pivot to next activity — do not dwell]"
+    silence_response: |
+      "Say it with me — [easiest_word]! Together!
+      [drop volume to just above whisper — invites child to echo]
+      [easiest_word]..."
+    L1_response: |
+      "YES! [nod enthusiastically] [easiest_word]! 
+      You know it! You're so smart today!"
+    max_duration_seconds: 20
+    difficulty_level: 0  # Guaranteed success — lowest in system
+    allowed_age_range: [6, 7, 8]
+    what_not_to_do:
+      - Reference the previous failure ("let's try an easier one")
+      - Ask a question child has not previously succeeded with
+      - Stay in recovery mode for more than 2 consecutive activities
+      - Use generic praise — must reference the specific word
+      - Pause to explain why you're asking an easier question

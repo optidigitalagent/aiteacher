@@ -1,0 +1,271 @@
+# activity-selection-engine.yaml
+# Defines how activities are sequenced based on child state and progression decisions.
+# The Activity Library provides the actual activities.
+# This engine selects which one runs next.
+
+meta:
+  principle: >
+    Activity progression moves from low-demand (reception/imitation)
+    to high-demand (free production). Regression is always available. [A]
+  age_range: 6–9
+
+# ─────────────────────────────────────────
+# ACTIVITY DEMAND LADDER
+# ─────────────────────────────────────────
+# Ordered from lowest to highest production demand.
+# Activities higher on the ladder require more independent retrieval.
+
+activity_demand_ladder:
+  level_1:
+    activity_id: listen_and_point
+    demand: reception_only
+    description: Child hears word, points to image. No production.
+    use_when:
+      - comprehension_confidence < 35
+      - first_introduction_of_item: true
+      - frustration > 70
+
+  level_2:
+    activity_id: repeat_after_me
+    demand: imitation
+    description: Child repeats word immediately after teacher model.
+    use_when:
+      - comprehension_confidence >= 30
+      - production_confidence < 45
+      - item in [emerging, early_developing]
+
+  level_3:
+    activity_id: forced_choice_2
+    demand: recognition_from_2
+    description: Teacher names item; child selects from 2 image options.
+    use_when:
+      - comprehension_confidence >= 40
+      - production not yet required
+    note: "Two-choice forced recognition is highly accessible. [A]"
+
+  level_4:
+    activity_id: forced_choice_4
+    demand: recognition_from_4
+    description: Teacher names item; child selects from 4 image options.
+    use_when:
+      - comprehension_confidence >= 55
+      - production_confidence < 55
+
+  level_5:
+    activity_id: supported_production
+    demand: cued_production
+    description: >
+      Child produces word with visual or partial phoneme cue.
+      E.g., image shown, first sound given: "It starts with /k/..."
+    use_when:
+      - production_confidence >= 45
+      - comprehension_confidence >= 60
+    promotion_to: sentence_frame_production
+
+  level_6:
+    activity_id: sentence_frame_production
+    demand: production_in_frame
+    description: >
+      Child produces word in a fixed sentence frame.
+      E.g., "This is a ___." Target word fills slot.
+    use_when:
+      - production_confidence >= 60
+      - comprehension_confidence >= 65
+      - mastery_level: developing or higher
+    promotion_to: sentence_production
+
+  level_7:
+    activity_id: sentence_production
+    demand: free_production_in_sentence
+    description: >
+      Child produces a full sentence with the target word,
+      without a cue frame.
+    use_when:
+      - production_confidence >= 70
+      - comprehension_confidence >= 70
+      - mastery_level: secure or higher
+    promotion_to: review_production
+
+  level_8:
+    activity_id: review_production
+    demand: delayed_free_production
+    description: >
+      Child produces target word in a review context —
+      same demand as sentence_production but item
+      was not seen in the current session phase.
+    use_when:
+      - mastery_level: secure or automatic
+      - review_due: true
+
+# ─────────────────────────────────────────
+# ACTIVITY TRANSITIONS
+# ─────────────────────────────────────────
+
+activity_transitions:
+
+  listen_and_point:
+    allowed_next:
+      - repeat_after_me
+      - forced_choice_2
+    forbidden_next:
+      - sentence_production
+      - review_production
+      - sentence_frame_production
+    promotion_rule:
+      condition: correct_confident x2
+      advance_to: repeat_after_me
+    fallback_rule:
+      condition: no_response x2
+      action: stay
+      teacher_action: point_and_label  # teacher models without demanding response
+
+  repeat_after_me:
+    allowed_next:
+      - repeat_after_me
+      - forced_choice_2
+      - forced_choice_4
+      - supported_production
+      - listen_and_point      # fallback
+    forbidden_next:
+      - sentence_production
+      - review_production
+    promotion_rule:
+      condition: correct_confident x2 AND production_confidence >= 40
+      advance_to: forced_choice_2
+    fallback_rule:
+      condition: imitation_only x3
+      action: scaffold
+      advance_to: listen_and_point
+    stay_rule:
+      condition: correct_hesitant
+      action: repeat  # with variation (different modality, teacher exaggerates prosody)
+    max_consecutive: 4
+    after_max: forced_choice_2
+
+  forced_choice_2:
+    allowed_next:
+      - forced_choice_2
+      - forced_choice_4
+      - repeat_after_me       # fallback
+      - supported_production
+    forbidden_next:
+      - sentence_production
+    promotion_rule:
+      condition: correct_confident x2 AND comprehension_confidence >= 55
+      advance_to: forced_choice_4
+    fallback_rule:
+      condition: wrong_random x2
+      action: lower_difficulty
+      advance_to: repeat_after_me
+    note: "Two-choice is rarely needed for more than 3 attempts per item. [B]"
+
+  forced_choice_4:
+    allowed_next:
+      - forced_choice_4
+      - supported_production
+      - forced_choice_2       # fallback
+    forbidden_next:
+      - sentence_production
+    promotion_rule:
+      condition: correct_confident x2 AND production_confidence >= 50
+      advance_to: supported_production
+    fallback_rule:
+      condition: wrong_semantic x2
+      action: scaffold
+      advance_to: forced_choice_2
+
+  supported_production:
+    allowed_next:
+      - supported_production
+      - sentence_frame_production
+      - forced_choice_4       # fallback
+    forbidden_next:
+      - review_production
+    promotion_rule:
+      condition: correct_confident x2 AND production_confidence >= 60
+      advance_to: sentence_frame_production
+    fallback_rule:
+      condition: no_response OR wrong_random x2
+      action: lower_difficulty
+      advance_to: forced_choice_4
+
+  sentence_frame_production:
+    allowed_next:
+      - sentence_frame_production
+      - sentence_production
+      - supported_production  # fallback
+    forbidden_next:
+      - listen_and_point
+      - repeat_after_me
+    promotion_rule:
+      condition: correct_confident x3 AND production_confidence >= 70
+      advance_to: sentence_production
+    fallback_rule:
+      condition: wrong_semantic OR no_response x2
+      action: scaffold
+      advance_to: supported_production
+
+  sentence_production:
+    allowed_next:
+      - sentence_production
+      - review_production
+      - sentence_frame_production  # fallback
+    forbidden_next:
+      - listen_and_point
+      - repeat_after_me
+      - forced_choice_2
+      - forced_choice_4
+    promotion_rule:
+      condition: correct_confident x2 AND production_confidence >= 75
+      advance_to: review_production
+    fallback_rule:
+      condition: wrong_random OR no_response x2
+      action: scaffold
+      advance_to: sentence_frame_production
+
+  review_production:
+    allowed_next:
+      - review_production
+      - sentence_production  # if failing review
+    forbidden_next:
+      - listen_and_point
+      - forced_choice_2
+      - forced_choice_4
+      - repeat_after_me
+    fallback_rule:
+      condition: wrong x2
+      action: scaffold
+      advance_to: sentence_production
+      note: "Review failure is meaningful — schedule earlier next review. [A]"
+
+# ─────────────────────────────────────────
+# EASIEST WIN PROTOCOL
+# ─────────────────────────────────────────
+
+easiest_win:
+  description: >
+    A structured fallback to restore child confidence.
+    Used when frustration is high or lesson must close.
+  definition:
+    - Select a word with mastery_level = secure or automatic
+    - Use forced_choice_2 or repeat_after_me
+    - Guarantee success before proceeding
+  triggers:
+    - frustration > 75
+    - pre_lesson_close: true
+    - consecutive_wrong >= 3
+  count_toward_mastery: false
+  note: "Easiest win is a confidence intervention, not a learning event. [B]"
+
+# ─────────────────────────────────────────
+# ACTIVITY VARIETY RULE
+# ─────────────────────────────────────────
+
+variety_rule:
+  max_consecutive_same_activity: 3
+  after_max:
+    action: switch_to_adjacent_demand_level
+    direction: determined_by_performance
+  note: >
+    Repetitive activity reduces engagement and may suppress
+    genuine retrieval effort in young learners. [B]

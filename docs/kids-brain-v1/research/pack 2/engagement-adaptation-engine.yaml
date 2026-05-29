@@ -1,0 +1,241 @@
+# engagement-adaptation-engine.yaml
+# Defines engagement modeling and adaptation for ages 6–9 ESL learners.
+#
+# DESIGN NOTE:
+# Engagement ≠ excitement.
+# A child can be highly engaged (attending, processing, responding) without
+# showing visible excitement. A child can appear excited but be off-task.
+#
+# This engine models LEARNING ENGAGEMENT:
+#   - Attending to stimuli
+#   - Actively processing
+#   - Attempting responses
+#   - Sustaining effort
+#
+# Not: energy level, animation response speed, or verbal expressiveness.
+
+meta:
+  evidence:
+    A: Strong evidence
+    B: Expert consensus
+    C: Hypothesis requiring validation
+
+# ─────────────────────────────────────────
+# ENGAGEMENT SIGNAL MODEL
+# ─────────────────────────────────────────
+
+engagement_signals:
+  description: >
+    Engagement is estimated from observable behavioral signals,
+    not from physiological measurement. All signals are indirect
+    proxies and carry uncertainty. [C]
+
+  positive_signals:
+    - response_speed_normal_for_activity:
+        weight: +3
+        definition: >
+          Response arrives within expected window for activity type.
+          Not too fast (guessing) and not too slow (disengaged).
+
+    - self_initiated_attempt:
+        weight: +5
+        definition: Child responds before maximum wait time expires.
+
+    - correct_production_unprompted:
+        weight: +4
+
+    - partial_correct_with_effort:
+        weight: +2
+        definition: Wrong answer but in the right form class / semantic field.
+
+    - consistent_response_pattern:
+        weight: +3
+        definition: Child responds to every prompt within session.
+
+  negative_signals:
+    - no_response_within_wait_window:
+        weight: -8
+
+    - off_task_response:
+        weight: -6
+
+    - response_too_fast:
+        weight: -4
+        definition: Response faster than minimum plausible processing time (guessing).
+
+    - consistent_wrong_random:
+        weight: -7
+        definition: Multiple wrong_random in sequence.
+
+    - same_answer_repeated:
+        weight: -5
+        definition: Child gives same response regardless of stimulus.
+
+  engagement_score_update:
+    formula: >
+      engagement = clamp(
+        engagement + sum(active_signal_weights) * 0.5,
+        min=0, max=100
+      )
+    note: Smoothed update to avoid overreaction to single events. [C]
+
+# ─────────────────────────────────────────
+# ENGAGEMENT LEVELS
+# ─────────────────────────────────────────
+
+engagement_levels:
+
+  high:
+    range: 70–100
+    interpretation: Child is actively processing and responding.
+    action: allow challenge to increase per progression rules
+    note: Do not reward engagement itself — reward learning. [B]
+
+  medium:
+    range: 40–69
+    interpretation: Child is participating but shows signs of drift.
+    action: maintain variety; consider novelty insertion at next switch
+    note: Medium engagement is acceptable for sustained learning. [B]
+
+  low:
+    range: 20–39
+    interpretation: >
+      Child is present but disengaged. Responses may be mechanical.
+    action: switch activity; insert novelty; reduce demand
+    override: suppress any advance progressions
+
+  critical:
+    range: 0–19
+    interpretation: Child is not engaged. Learning is unlikely.
+    action: insert easiest_win; if no improvement → trigger close consideration
+    note: >
+      Critical engagement for >3 activity events = lesson stop consideration. [B]
+
+# ─────────────────────────────────────────
+# ENGAGEMENT ADAPTATION ACTIONS
+# ─────────────────────────────────────────
+
+adaptation_actions:
+
+  increase_novelty:
+    description: >
+      Switch to a different format or activity variant.
+      Newness increases attention. [B]
+    triggers:
+      - engagement < 50 AND consecutive_same_activity >= 2
+      - session_time_elapsed_seconds >= 600 AND engagement < 55
+    implementation:
+      - switch to next activity type on demand ladder
+      - or: switch to same activity with different sensory modality
+      - example: forced_choice_4 (visual) → repeat_after_me (auditory production)
+    forbidden: do not increase novelty by reducing demand if progression allows higher
+
+  increase_challenge:
+    description: >
+      Move to a more demanding activity when engagement is high
+      and performance warrants it.
+    triggers:
+      - engagement >= 70
+      - production_confidence >= 65
+      - consecutive_correct >= 2
+    implementation:
+      - follow normal advance progression rules
+    note: >
+      Challenge is its own engagement driver for children who are ready. [B]
+
+  decrease_challenge:
+    description: >
+      Reduce demand to restore a sense of competence.
+    triggers:
+      - engagement < 40
+      - frustration >= 50
+      - consecutive_wrong >= 2
+    implementation:
+      - move one level down on activity demand ladder
+      - select item from known-mastered set if possible
+    note: >
+      Competence is more motivating than novelty for this age group. [A]
+
+  switch_activity:
+    description: >
+      Move to a different activity type without changing demand level.
+    triggers:
+      - consecutive_same_activity >= 3
+      - engagement < 45 AND session_time_elapsed_seconds >= 300
+      - current_activity_duration_seconds >= 180
+    implementation:
+      - switch to activity at same demand level (different format)
+      - or move one step on ladder (direction based on performance)
+    forbidden: do not switch activity type more than once per 60 seconds
+
+  insert_easiest_win:
+    description: >
+      Give child a guaranteed success using a known-mastered item.
+    triggers:
+      - frustration >= 75
+      - engagement < 20 AND consecutive_wrong >= 2
+      - pre_lesson_close: true
+    implementation:
+      - select word with mastery_level = secure or automatic
+      - use forced_choice_2 or repeat_after_me
+      - guarantee success before continuing or closing
+    count_toward_mastery: false
+    count_toward_progression: false
+    evidence: B
+
+  insert_reward:
+    description: >
+      Trigger a reward event in the Teacher Activity Layer.
+    triggers:
+      - correct_confident x2 (age 6–7) or x3 (age 8–9)
+      - item mastery level advance
+      - lesson phase completion
+    rules:
+      - do NOT reward every correct answer (undermines intrinsic motivation) [A]
+      - reward LEARNING milestones, not effort alone
+      - vary reward presentation to avoid habituation [C]
+      - do NOT insert reward during frustration state
+    evidence: A
+
+# ─────────────────────────────────────────
+# OVER-EXCITEMENT MODEL
+# ─────────────────────────────────────────
+
+over_excitement:
+  description: >
+    High visible energy ≠ high engagement.
+    Over-excitement can produce random responses, reduced listening,
+    and guessing behavior. Must be distinguished from productive engagement.
+  signals:
+    - response_too_fast x3
+    - wrong_random despite high recent correct rate
+    - off_task interjections without corresponding production errors
+  action:
+    - slow activity pacing (increase wait time expectation)
+    - switch to quieter, more focused activity type
+    - do not increase reward frequency (adds to excitement)
+    - example switch: high-energy repeat_after_me → focused listen_and_point + forced_choice
+  note: >
+    Over-excitement is a classroom management concern, not a
+    learning emergency. Respond with structure, not reduction. [B]
+
+# ─────────────────────────────────────────
+# ENGAGEMENT VS LEARNING PRIORITY RULE
+# ─────────────────────────────────────────
+
+engagement_vs_learning_priority:
+  rule: >
+    When engagement and learning progression conflict,
+    learning progression takes precedence — UNLESS engagement drops
+    to `critical` level (0–19), in which case engagement recovery
+    supersedes learning progression.
+  rationale: >
+    A disengaged child cannot learn. But reducing challenge to
+    maintain medium engagement at the cost of never advancing
+    produces minimal long-term outcomes. [B]
+  decision_tree:
+    - if engagement == critical: engagement_recovery_first
+    - if engagement == low AND frustration >= 60: engagement_recovery_first
+    - if engagement == low AND performance_strong: maintain_progression
+    - if engagement == medium: follow_normal_progression_rules
+    - if engagement == high: follow_normal_progression_rules

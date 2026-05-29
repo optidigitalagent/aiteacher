@@ -1,0 +1,233 @@
+# session-completion-engine.yaml
+# Defines all conditions under which a lesson ends, extends, pauses,
+# or transitions to review, including emotional stop conditions.
+
+meta:
+  core_rule: >
+    A session must NEVER end immediately after a failure event.
+    If a stop condition is triggered after failure, insert an easiest_win
+    before executing the stop. [B]
+  evidence:
+    A: Strong evidence
+    B: Expert consensus
+    C: Hypothesis requiring validation
+
+# ─────────────────────────────────────────
+# NORMAL LESSON COMPLETION
+# ─────────────────────────────────────────
+
+normal_completion:
+  description: >
+    Lesson completes when all phases have been traversed
+    and the close phase has been successfully executed.
+  conditions:
+    - lesson_phase == close
+    - last_response_was_success: true
+    - consolidation_coverage: 100%    # every introduced item reviewed
+    - easiest_win_inserted_if_needed: true
+  actions:
+    - save_mastery_updates
+    - save_session_record
+    - schedule_review_for_all_introduced_items
+    - unlock_next_lesson (if unit progression criteria met)
+    - trigger_lesson_completion_event (Teacher Activity Layer)
+  note: >
+    Normal completion is the only path to unlocking the next lesson.
+    Emotional or timeout stops do not unlock progression. [B]
+
+# ─────────────────────────────────────────
+# LESSON EXTENSION
+# ─────────────────────────────────────────
+
+lesson_extension:
+  description: >
+    Lesson extends beyond planned duration if consolidation is incomplete
+    or a child's performance warrants additional practice.
+  extension_conditions:
+    - condition: consolidation_success_rate < 70%
+      action: extend consolidation by one additional pass
+      max_extension_passes: 1
+      note: >
+        Do not extend more than once. Fatigue increases beyond that point. [B]
+
+    - condition: all items mastered before time limit AND engagement >= 60
+      action: introduce one bonus item (if available in lesson's optional bank)
+      max_bonus_items: 1
+      note: >
+        Bonus items are optional. Only introduced if child shows genuine readiness.
+        Not introduced to fill time. [C]
+
+  forbidden_extensions:
+    - extending to introduce a 2nd bonus item
+    - extending if fatigue >= 70
+    - extending if engagement <= 30
+    - extending if session_time_elapsed_seconds >= max_session_seconds
+
+  max_session_seconds:
+    age_6_7: 1500    # 25 minutes
+    age_8_9: 2100    # 35 minutes
+
+# ─────────────────────────────────────────
+# EMOTIONAL STOP CONDITIONS
+# ─────────────────────────────────────────
+
+emotional_stop:
+  description: >
+    Lesson stops early due to child emotional state.
+    This is not a failure — it is a protective intervention.
+  conditions:
+
+    - id: ES01
+      name: extreme_frustration
+      trigger:
+        frustration: ">= 90"
+      action:
+        before_stop: insert_easiest_win
+        stop_type: emotional_stop
+        teacher_action: comfort_and_close
+        progress_saved: partial  # save what was completed
+        next_lesson_adjustment: reduce_target_words_by_1
+      note: >
+        A frustrated child cannot form durable memories.
+        Continuing after extreme frustration produces negative associations. [B]
+
+    - id: ES02
+      name: sustained_non_response
+      trigger:
+        no_response_events_last_5: ">= 4"
+      action:
+        before_stop: insert_easiest_win_at_lowest_demand
+        stop_type: emotional_stop
+        teacher_action: gentle_close_with_strong_praise
+        progress_saved: partial
+      note: >
+        Sustained silence may indicate anxiety, fatigue, or distress.
+        Do not probe — close warmly. [B]
+
+    - id: ES03
+      name: escalating_wrong_random
+      trigger:
+        wrong_random_last_5: ">= 4"
+        engagement: "< 25"
+      action:
+        before_stop: insert_easiest_win
+        stop_type: behavioral_stop
+        teacher_action: cheerful_early_close
+        progress_saved: partial
+      note: >
+        Random responses + low engagement = child is not in a learning state. [B]
+
+    - id: ES04
+      name: critical_engagement_sustained
+      trigger:
+        engagement: "< 15"
+        engagement_below_20_events: ">= 5"
+      action:
+        before_stop: insert_easiest_win
+        stop_type: engagement_stop
+        teacher_action: exciting_close_with_reward
+        progress_saved: partial
+      note: >
+        Sustained disengagement is not addressable within the lesson. [C]
+
+# ─────────────────────────────────────────
+# TIMEOUT STOP
+# ─────────────────────────────────────────
+
+timeout_stop:
+  description: >
+    Lesson stops when maximum session time is reached,
+    regardless of phase completion.
+  conditions:
+    - session_time_elapsed_seconds >= max_session_seconds
+  actions:
+    before_stop: >
+      If current phase is not close:
+        - complete current activity event
+        - insert easiest_win (1 event)
+        - execute abbreviated close
+    stop_type: timeout
+    progress_saved: full (all mastery updates up to timeout)
+    next_lesson_adjustment: resume_from_consolidation_if_incomplete
+  note: >
+    Hard time limits protect young children from cognitive overload.
+    The lesson engine must plan lesson pacing to avoid timeout during
+    introduction or practice. If timeout is frequently triggered mid-lesson,
+    reduce target_words_per_lesson. [B]
+
+# ─────────────────────────────────────────
+# REVIEW-ONLY TRIGGER
+# ─────────────────────────────────────────
+
+review_only_session:
+  description: >
+    Some sessions are designated as review-only (no new items).
+    This occurs automatically when review debt is high.
+  trigger_conditions:
+    - overdue_review_items >= 8
+    - days_since_last_review >= 7
+    - unit_transition: true   # first session of a new unit begins with full unit review
+  structure:
+    phase_sequence: [warm_up, consolidation, close]
+    introduction_phase: skipped
+    practice_phase: review_only items
+    max_review_items: 8
+  note: >
+    Review-only sessions are legitimate learning sessions.
+    Do not treat them as remedial or mark as incomplete. [A]
+
+# ─────────────────────────────────────────
+# PROGRESSION SAVE RULES
+# ─────────────────────────────────────────
+
+progression_save:
+  description: >
+    Defines what is saved and when.
+  on_normal_completion:
+    save:
+      - all mastery updates
+      - review schedules
+      - session duration
+      - items introduced
+      - lesson phase completed
+      - next lesson unlocked (if applicable)
+    timing: immediately on close phase completion
+
+  on_emotional_stop:
+    save:
+      - mastery updates for completed items only
+      - session duration
+      - stop reason
+      - next_lesson_adjustment note
+    not_saved:
+      - mastery updates for items in progress at stop time
+      - lesson phase advance (lesson marked as incomplete)
+
+  on_timeout_stop:
+    save:
+      - all mastery updates up to timeout event
+      - lesson marked as partially complete
+      - consolidation_status: incomplete (if not reached)
+      - next session priority: complete consolidation first
+
+  autosave_interval_seconds: 30
+  note: >
+    Autosave runs every 30 seconds to protect against crashes.
+    Autosaved state is resume-ready. [B]
+
+# ─────────────────────────────────────────
+# DAILY LIMIT
+# ─────────────────────────────────────────
+
+daily_limit:
+  description: >
+    System tracks total daily learning time and may recommend stopping.
+  max_daily_minutes:
+    age_6_7: 25
+    age_8_9: 35
+  over_limit_action: >
+    Do not hard-stop. Display "Come back tomorrow" prompt after
+    normal lesson completion. Do not start a new lesson.
+  note: >
+    Daily limits are recommendations aligned with attention research
+    for this age group. [B] Hard enforcement should be parental/product decision.

@@ -1,0 +1,94 @@
+// Session length hard limits (seconds) — §14.5
+export const MAX_SESSION_SECONDS_6_7 = 1500;
+export const MAX_SESSION_SECONDS_8_9 = 2100;
+export const MAX_DAILY_MINUTES_6_7 = 25;
+export const MAX_DAILY_MINUTES_8_9 = 35;
+
+// STT reliability adjustment multipliers — all [C]; see §17.1 (Patch 2)
+export const STT_CHILD_SPEECH_PRIOR_6_7 = 0.85;
+export const STT_CHILD_SPEECH_PRIOR_8_9 = 0.90;
+export const STT_SHORT_UTTERANCE_PENALTY = 0.70;
+export const STT_RESPONSE_LENGTH_1_WORD = 0.85;
+export const STT_RESPONSE_LENGTH_2_WORD = 0.92;
+export const STT_CONFIDENCE_NULL_DEFAULT = 0.50;
+export const STT_SHORT_UTTERANCE_THRESHOLD_MS = 400;
+export const STT_TIMEOUT_MS = 2000;
+
+// Silence thresholds (ms) — §5.5
+export const SILENCE_THRESHOLD_SHORT_MS = 3000;
+export const SILENCE_THRESHOLD_MEDIUM_MS = 6000;
+export const SILENCE_THRESHOLD_LONG_MS = 10000;
+export const SILENCE_AGE_ADJUSTMENT_6_7_MS = 500;
+
+// Latency thresholds (ms) — §5.5, §14.4
+export const LATENCY_VERY_FAST_MS = 600;
+export const LATENCY_HESITANT_MS = 2500;
+export const LATENCY_SILENCE_MS = 8000;
+export const TEACHER_RESPONSE_TARGET_LATENCY_MS = 800;
+export const TEACHER_RESPONSE_MAX_LATENCY_MS = 1500;
+export const LLM_CLASSIFICATION_TARGET_MS = 200;
+export const LLM_CLASSIFICATION_HARD_CAP_MS = 400;
+
+// Token budgets — §10.3, §14.3
+export const SESSION_TOKEN_BUDGET = 1200;
+export const SESSION_TOKEN_BUDGET_WARNING = 1000;
+export const TURN_TOKEN_HARD_LIMIT = 80;
+export const TURN_TOKEN_DEFAULT_MAX = 40;
+export const TURN_TOKEN_EXTENDED_MAX = 60;
+
+// Session memory
+export const RECENT_TURNS_BUFFER_SIZE = 5;
+export const ACTIVITY_HISTORY_BUFFER_SIZE = 10;
+export const RECENT_PRAISE_PHRASES_BUFFER_SIZE = 3;
+export const AUTOSAVE_INTERVAL_SECONDS = 30;
+export const SESSION_TTL_GRACE_MINUTES = 15;
+
+// Recovery thresholds (session-layer 0–1 scale) — §7.1, §11
+export const FRUSTRATION_EASIEST_WIN_THRESHOLD = 0.75;
+export const FRUSTRATION_FORBID_ADVANCE_THRESHOLD = 0.70;
+export const FRUSTRATION_RISK_ENTRY_THRESHOLD = 0.50;
+export const EMOTIONAL_SAFETY_MIN = 0.35;
+export const EMOTIONAL_SAFETY_LOW = 0.50;
+export const ENGAGEMENT_SWITCH_THRESHOLD = 0.30;
+export const ENGAGEMENT_FAST_PACE_THRESHOLD = 0.75;
+export const SESSION_STAMINA_CLOSE_THRESHOLD = 0.15;
+export const SESSION_STAMINA_NO_NEW_ITEMS_THRESHOLD = 0.25;
+export const ACTIVITY_FATIGUE_SWITCH_THRESHOLD = 0.70;
+export const MAX_CONSECUTIVE_SAME_ACTIVITY = 3;
+export const RECENT_FAILURE_MILD_CONFUSION_THRESHOLD = 2;
+export const RECENT_FAILURE_REPEATED_FAILURE_THRESHOLD = 3;
+export const RECENT_FAILURE_REPEATED_FAILURE_ENTRY_THRESHOLD = 4;
+export const RECENT_SUCCESS_ADVANCE_CANDIDATE = 4;
+
+// Mastery thresholds (0–100 Learning Engine scale) — §8, §13
+export const ITEM_MASTERY_LEARNED_THRESHOLD = 0.70;
+export const PRODUCTION_CONFIDENCE_SENTENCE_ELIGIBLE = 70;
+export const COMPREHENSION_CONFIDENCE_PRODUCTION_MIN = 35;
+export const FORCED_CHOICE_LATENCY_POSSIBLE_GUESS_MS = 700;
+
+// LLM circuit breaker — Patch 4
+export const LLM_CIRCUIT_BREAKER_TIMEOUT_COUNT = 5;
+export const LLM_CIRCUIT_BREAKER_WINDOW_SECONDS = 60;
+export const LLM_CIRCUIT_BREAKER_WARN_THRESHOLD = 3;
+
+// Vocabulary guard
+export const VOCAB_GUARD_BLOCK_WARN_THRESHOLD = 2;
+export const VOCAB_GUARD_BLOCK_ERROR_THRESHOLD = 5;
+
+// Observability — Patch 13
+export const PIPELINE_LATENCY_WARN_DETERMINISTIC_MS = 800;
+export const PIPELINE_LATENCY_ERROR_DETERMINISTIC_MS = 1500;
+export const PIPELINE_LATENCY_WARN_LLM_MS = 1500;
+export const PIPELINE_LATENCY_ERROR_LLM_MS = 3000;
+export const STT_LATENCY_WARN_MS = 500;
+export const STT_LATENCY_ERROR_MS = 1500;
+export const REDIS_WRITE_WARN_MS = 50;
+export const REDIS_WRITE_ERROR_MS = 200;
+
+// Praise policy — §10.8
+export const PRAISE_MIN_FREQUENCY_SECONDS = 60;
+export const PRAISE_MIN_VARIANTS = 15;
+export const PRAISE_REPEAT_COOLDOWN_TURNS = 3;
+
+// L1 policy — §10.10, Patch 9
+export const L1_MAX_WORDS_PER_SESSION = 1;

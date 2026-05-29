@@ -1,0 +1,399 @@
+# progression-rules.yaml
+# Explicit IF/THEN rules for the progression engine.
+# Rules are evaluated in priority order (1 = highest priority).
+# First matching rule wins per response event.
+# All rules are deterministic. No LLM inference involved.
+
+meta:
+  evaluation_order: priority_ascending (1 evaluated first)
+  tie_breaking: lower rule number wins
+  state_source: child_state_vector + activity_history + memory_state
+
+# ─────────────────────────────────────────
+# PRIORITY 1: SAFETY / EMOTIONAL STOP RULES
+# ─────────────────────────────────────────
+
+rules_priority_1_safety:
+
+  - id: R01
+    name: extreme_frustration_stop
+    priority: 1
+    condition:
+      frustration: ">= 90"
+    action:
+      progression: stop_lesson
+      session_stop_reason: emotional_overload
+      teacher_action: comfort_and_close
+    evidence: B
+
+  - id: R02
+    name: extreme_disengagement_stop
+    priority: 2
+    condition:
+      engagement: "<= 10"
+      session_time_elapsed_seconds: ">= 300"  # at least 5 min in
+    action:
+      progression: stop_lesson
+      session_stop_reason: disengagement
+      teacher_action: cheerful_close
+    evidence: C
+
+  - id: R03
+    name: no_response_repeated_stop
+    priority: 3
+    condition:
+      classification_last_3: "[no_response, no_response, no_response]"
+    action:
+      progression: stop_lesson
+      session_stop_reason: non_responsive
+      teacher_action: gentle_close_with_praise
+    evidence: B
+
+# ─────────────────────────────────────────
+# PRIORITY 2: HIGH FRUSTRATION INTERVENTION
+# ─────────────────────────────────────────
+
+rules_priority_2_frustration:
+
+  - id: R10
+    name: frustration_easiest_win
+    priority: 10
+    condition:
+      frustration: ">= 75"
+      lesson_phase: "[practice, consolidation]"
+    action:
+      progression: lower_difficulty
+      next_activity: easiest_win
+      teacher_action: warm_encouragement
+    note: Overrides any advance logic.
+    evidence: B
+
+  - id: R11
+    name: frustration_scaffold_before_advance
+    priority: 11
+    condition:
+      frustration: ">= 60"
+    action:
+      forbidden_progressions: [advance]
+      required_progression: scaffold
+    evidence: B
+
+# ─────────────────────────────────────────
+# PRIORITY 3: ADVANCE RULES
+# ─────────────────────────────────────────
+
+rules_priority_3_advance:
+
+  - id: R20
+    name: advance_on_triple_confident
+    priority: 20
+    condition:
+      classification_last_3: "[correct_confident, correct_confident, correct_confident]"
+      production_confidence: ">= 65"
+      comprehension_confidence: ">= 65"
+      frustration: "< 60"
+    action:
+      progression: advance
+      next_activity: next_demand_level
+      mastery_delta: +6
+      teacher_action: calibrated_celebration
+    evidence: A
+
+  - id: R21
+    name: advance_on_double_confident_high_confidence
+    priority: 21
+    condition:
+      classification_last_2: "[correct_confident, correct_confident]"
+      production_confidence: ">= 75"
+      comprehension_confidence: ">= 75"
+      frustration: "< 50"
+    action:
+      progression: advance
+      next_activity: next_demand_level
+      mastery_delta: +4
+      teacher_action: positive_acknowledgment
+    evidence: A
+
+  - id: R22
+    name: advance_to_next_item_after_sentence_production_mastery
+    priority: 22
+    condition:
+      current_activity: sentence_production
+      classification_last_2: "[correct_confident, correct_confident]"
+      production_confidence: ">= 75"
+      mastery_level: "[developing, secure]"
+    action:
+      progression: advance
+      next_item: next_unmastered_item
+      next_activity: reset_to_introduction_demand
+      mastery_delta: +8
+      teacher_action: celebratory_transition
+    evidence: B
+
+# ─────────────────────────────────────────
+# PRIORITY 4: STAY / REPEAT RULES
+# ─────────────────────────────────────────
+
+rules_priority_4_stay:
+
+  - id: R30
+    name: stay_on_correct_hesitant
+    priority: 30
+    condition:
+      classification: correct_hesitant
+      consecutive_correct: "< 3"
+    action:
+      progression: stay
+      next_activity: same
+      mastery_delta: +2
+      teacher_action: gentle_encouragement
+    note: Hesitation means retrieval is effortful — do not advance yet.
+    evidence: B
+
+  - id: R31
+    name: stay_on_correct_prompted
+    priority: 31
+    condition:
+      classification: correct_prompted
+    action:
+      progression: stay
+      next_activity: same
+      mastery_delta: +1
+      teacher_action: acknowledge_without_over_praise
+    note: Prompted correct does not count toward advance criteria.
+    evidence: A
+
+  - id: R32
+    name: repeat_after_partial_correct
+    priority: 32
+    condition:
+      classification: partial_correct
+      current_activity: "[sentence_frame_production, sentence_production]"
+    action:
+      progression: repeat
+      next_activity: same
+      mastery_delta: +1
+      teacher_action: targeted_correction_warm
+    evidence: B
+
+# ─────────────────────────────────────────
+# PRIORITY 5: SCAFFOLD RULES
+# ─────────────────────────────────────────
+
+rules_priority_5_scaffold:
+
+  - id: R40
+    name: scaffold_on_wrong_semantic
+    priority: 40
+    condition:
+      classification: wrong_semantic
+    action:
+      progression: scaffold
+      next_activity: one_level_down
+      mastery_delta: -2
+      teacher_action: meaning_clarification
+    note: Semantic confusion requires form-meaning re-linking. [A]
+    evidence: A
+
+  - id: R41
+    name: scaffold_on_double_wrong
+    priority: 41
+    condition:
+      consecutive_wrong: ">= 2"
+    action:
+      progression: scaffold
+      next_activity: one_level_down
+      mastery_delta: -4
+      teacher_action: scaffolded_support
+    evidence: B
+
+  - id: R42
+    name: scaffold_on_comprehension_below_threshold
+    priority: 42
+    condition:
+      current_activity: "[supported_production, sentence_frame_production, sentence_production]"
+      comprehension_confidence: "< 40"
+    action:
+      progression: scaffold
+      next_activity: forced_choice_4
+      mastery_delta: 0
+      teacher_action: return_to_input
+    note: Cannot produce reliably without comprehension. [A]
+    evidence: A
+
+  - id: R43
+    name: scaffold_on_max_repeats
+    priority: 43
+    condition:
+      consecutive_repeats: ">= 3"
+    action:
+      progression: scaffold
+      next_activity: one_level_down
+      mastery_delta: 0
+      teacher_action: try_different_approach
+    note: >
+      Repeating the same activity 3+ times without progress
+      indicates the demand level is too high. [B]
+    evidence: B
+
+# ─────────────────────────────────────────
+# PRIORITY 6: LOWER DIFFICULTY RULES
+# ─────────────────────────────────────────
+
+rules_priority_6_lower:
+
+  - id: R50
+    name: lower_on_no_response
+    priority: 50
+    condition:
+      classification: no_response
+    action:
+      progression: lower_difficulty
+      next_activity: two_levels_down
+      mastery_delta: -3
+      teacher_action: model_and_invite
+    note: Silence = demand too high. Always step down two levels.
+    evidence: B
+
+  - id: R51
+    name: lower_on_random_wrong
+    priority: 51
+    condition:
+      classification: wrong_random
+    action:
+      progression: lower_difficulty
+      next_activity: one_level_down
+      mastery_delta: -5
+      teacher_action: re_present_with_support
+    evidence: B
+
+  - id: R52
+    name: lower_on_triple_wrong
+    priority: 52
+    condition:
+      consecutive_wrong: ">= 3"
+    action:
+      progression: lower_difficulty
+      next_activity: listen_and_point
+      mastery_delta: -8
+      teacher_action: full_reset_warm
+    note: Three consecutive failures require returning to reception.
+    evidence: B
+
+# ─────────────────────────────────────────
+# PRIORITY 7: REVIEW TRIGGER RULES
+# ─────────────────────────────────────────
+
+rules_priority_7_review:
+
+  - id: R60
+    name: trigger_consolidation_review
+    priority: 60
+    condition:
+      lesson_phase: practice
+      items_introduced_this_session: ">= all_target_items"
+      time_since_first_item_introduced_minutes: ">= 10"
+    action:
+      progression: advance_phase
+      next_phase: consolidation
+    evidence: A
+
+  - id: R61
+    name: review_overdue_item
+    priority: 61
+    condition:
+      review_due_item_exists: true
+      lesson_phase: "[warm_up, consolidation]"
+    action:
+      progression: insert_review
+      next_item: highest_priority_overdue_item
+    evidence: A
+
+# ─────────────────────────────────────────
+# PRIORITY 8: ENGAGEMENT RULES
+# ─────────────────────────────────────────
+
+rules_priority_8_engagement:
+
+  - id: R70
+    name: switch_on_low_engagement
+    priority: 70
+    condition:
+      engagement: "< 35"
+      consecutive_same_activity: ">= 3"
+    action:
+      progression: switch_activity
+      next_activity: adjacent_activity_type
+      teacher_action: novelty_introduction
+    evidence: B
+
+  - id: R71
+    name: insert_novelty_on_medium_low_engagement
+    priority: 71
+    condition:
+      engagement: "< 50"
+      session_time_elapsed_seconds: ">= 600"
+    action:
+      progression: stay
+      insert_novelty: true
+      teacher_action: engagement_boost
+    evidence: C
+
+  - id: R72
+    name: reduce_challenge_on_high_fatigue
+    priority: 72
+    condition:
+      fatigue: ">= 70"
+    action:
+      progression: lower_difficulty
+      next_activity: one_level_down
+      teacher_action: gentle_down_shift
+    evidence: B
+
+# ─────────────────────────────────────────
+# PRIORITY 9: OFF-TASK / SPECIAL RULES
+# ─────────────────────────────────────────
+
+rules_priority_9_special:
+
+  - id: R80
+    name: off_task_no_mastery_update
+    priority: 80
+    condition:
+      classification: off_task
+    action:
+      progression: stay
+      mastery_delta: 0
+      teacher_action: gentle_refocus
+    note: Off-task responses must not update mastery.
+    evidence: B
+
+  - id: R81
+    name: imitation_only_scaffold
+    priority: 81
+    condition:
+      classification: imitation_only
+      consecutive_imitation_only: ">= 3"
+    action:
+      progression: scaffold
+      next_activity: forced_choice_2
+      mastery_delta: 0
+      teacher_action: comprehension_check
+    note: >
+      Repeated imitation without comprehension evidence
+      requires a check activity. [B]
+    evidence: B
+
+  - id: R82
+    name: activity_max_duration_switch
+    priority: 82
+    condition:
+      current_activity_duration_seconds: ">= 180"   # 3 minutes on one activity
+    action:
+      progression: switch_activity
+      next_activity: adjacent_demand_level
+      teacher_action: smooth_transition
+    note: >
+      No activity should run more than 3 minutes without a switch.
+      Young learner attention requires variety. [B]
+    evidence: B

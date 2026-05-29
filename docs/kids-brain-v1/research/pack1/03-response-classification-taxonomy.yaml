@@ -1,0 +1,482 @@
+# Mentium Kids — Response Classification Taxonomy
+# Version: 1.0
+# Format: YAML
+# Classification confidence ratings: [A] established | [B] inference | [C] hypothesis
+
+taxonomy_version: "1.0"
+classification_principle: >
+  Every child response must map to exactly one primary label.
+  A secondary label may optionally be attached if a signal co-occurs (e.g., l1_detected=true alongside wrong_semantic).
+  When classifier confidence < 0.6, use the label's safe_fallback_label instead.
+
+labels:
+
+  # ─────────────────────────────────────────────
+  # CORRECT RESPONSE GROUP
+  # ─────────────────────────────────────────────
+
+  correct_confident:
+    description: "Child answered correctly with clear production and no hesitation"
+    confidence_rating: A
+    detection_signals:
+      - stt_text matches target_item (normalized)
+      - adjusted_stt_confidence >= 0.75
+      - response_latency_ms between 600 and 2500
+      - no L1 detected
+    required_context:
+      - target_item known
+    optional_signals:
+      - speech_duration_ms > 300 (full word spoken, not mumbled)
+    confidence_threshold: 0.80
+    false_positive_risk: >
+      Fast response on forced_choice may be a guess, not confident production.
+      Guard: if attempt_number == 1 AND prompt_type == forced_choice AND latency < 700ms,
+      downgrade to correct_hesitant and log as possible_guess.
+    default_teacher_action: praise_and_progress
+    recovery_strategy: none_needed
+    llm_allowed: false
+    deterministic_override: true
+    safe_fallback_label: correct_hesitant
+
+  correct_hesitant:
+    description: "Child answered correctly but with delay, low voice, or after visible effort"
+    confidence_rating: B
+    detection_signals:
+      - stt_text matches target_item
+      - adjusted_stt_confidence >= 0.65
+      - response_latency_ms > 2500 OR speech_duration_ms < 300 OR audio_energy_level < 0.4
+    required_context:
+      - target_item known
+    confidence_threshold: 0.70
+    false_positive_risk: >
+      Whispered correct answer may have low audio_energy; do not penalize hesitation.
+    default_teacher_action: warm_praise_confirm
+    recovery_strategy: repeat_with_encouragement
+    llm_allowed: false
+    deterministic_override: true
+    safe_fallback_label: near_correct
+
+  near_correct:
+    description: "Response is close to target — partial match, phonetic variant, or minor error"
+    confidence_rating: B
+    detection_signals:
+      - edit_distance(stt_text, target_item) <= 2
+      - OR phonetic_similarity(stt_text, target_item) >= 0.75
+      - AND stt_text does NOT match target_item exactly
+    required_context:
+      - target_item known
+    confidence_threshold: 0.65
+    false_positive_risk: >
+      Phonetic similarity of unrelated short words (e.g., "cat" / "car") — use edit_distance as primary signal.
+    default_teacher_action: recast_and_confirm
+    recovery_strategy: model_then_repeat
+    llm_allowed: false
+    deterministic_override: true
+    safe_fallback_label: near_correct
+
+  pronunciation_variant:
+    description: >
+      Response matches target semantically but with non-native pronunciation
+      that STT may have transcribed differently
+    confidence_rating: B
+    detection_signals:
+      - phonetic_similarity(stt_text, target_item) >= 0.65
+      - AND semantic match (if open task)
+      - AND L1 not detected
+    required_context:
+      - target_item known
+      - child_age_band considered (6-7 have wider acceptable range)
+    confidence_threshold: 0.60
+    false_positive_risk: >
+      May overlap with near_correct. Use pronunciation_variant when STT gives unexpected
+      transliteration of a correct production.
+    default_teacher_action: recast_correctly_and_praise
+    recovery_strategy: model_clearly_and_repeat
+    llm_allowed: false
+    deterministic_override: false
+    safe_fallback_label: near_correct
+
+  # ─────────────────────────────────────────────
+  # PARTIAL / ATTEMPT GROUP
+  # ─────────────────────────────────────────────
+
+  partial_answer:
+    description: "Child gave a fragment of the correct answer or started but did not complete"
+    confidence_rating: B
+    detection_signals:
+      - target_item is multi-word AND stt_text contains one word of target
+      - OR stt_text is a prefix/partial of target_item
+    confidence_threshold: 0.65
+    false_positive_risk: >
+      Single-word correct answer may falsely trigger if target is multi-word.
+      If word_count == 1 and word matches a key word of target, treat as correct_hesitant.
+    default_teacher_action: complete_the_answer_model
+    recovery_strategy: finish_for_child_then_repeat_together
+    llm_allowed: false
+    deterministic_override: true
+    safe_fallback_label: near_correct
+
+  repeated_after_model:
+    description: >
+      Child echoed the teacher's model answer. Production occurred but comprehension
+      cannot be confirmed.
+    confidence_rating: A
+    detection_signals:
+      - model_was_given == true (in prompt_context)
+      - response_latency_ms < 1500 (immediate echo)
+      - stt_text matches or nearly matches target_item
+    required_context:
+      - model_was_given must be true; otherwise classify as correct_hesitant
+    confidence_threshold: 0.70
+    false_positive_risk: >
+      Child who genuinely knows the answer and happens to repeat after model
+      will be mislabeled. Accept this; repeated_after_model still gets praise,
+      just doesn't advance mastery counter.
+    default_teacher_action: praise_echo_then_check_comprehension
+    recovery_strategy: ask_again_without_model
+    llm_allowed: false
+    deterministic_override: true
+    safe_fallback_label: correct_hesitant
+
+  # ─────────────────────────────────────────────
+  # WRONG RESPONSE GROUP
+  # ─────────────────────────────────────────────
+
+  wrong_semantic:
+    description: "Child said a real English word unrelated to the target"
+    confidence_rating: B
+    detection_signals:
+      - stt_text is a known English word
+      - semantic_distance(stt_text, target_item) > 0.6
+      - L1 not detected
+      - NOT in nonsense/playful category
+    confidence_threshold: 0.65
+    false_positive_risk: >
+      May overlap with wrong_but_related if child has partial semantic knowledge.
+      Prefer wrong_but_related if any semantic link is detectable.
+    default_teacher_action: gentle_reframe_no_wrong_word
+    recovery_strategy: scaffold_with_hint_or_forced_choice
+    llm_allowed: true
+    deterministic_override: false
+    safe_fallback_label: wrong_but_related
+
+  wrong_but_related:
+    description: >
+      Child said something semantically related to the correct answer
+      (same category, near-synonym, associated concept)
+    confidence_rating: B
+    detection_signals:
+      - semantic_similarity(stt_text, target_item) between 0.35 and 0.65
+      - OR stt_text is in same category as target (e.g., "cat" when answer is "dog")
+    confidence_threshold: 0.55
+    false_positive_risk: >
+      LLM semantic scoring required; deterministic category lists can help for
+      known vocabulary sets (animals, colors, food).
+    default_teacher_action: acknowledge_connection_then_scaffold
+    recovery_strategy: hint_toward_target
+    llm_allowed: true
+    deterministic_override: false
+    safe_fallback_label: wrong_semantic
+
+  # ─────────────────────────────────────────────
+  # NONSENSE GROUP
+  # ─────────────────────────────────────────────
+
+  random_nonsense:
+    description: "Utterance has no semantic connection to task or context; not clearly playful"
+    confidence_rating: C
+    detection_signals:
+      - stt_text is not a match to target_item
+      - semantic_distance to target > 0.7
+      - NOT detected as playful (no laugh markers, not a known playful word)
+      - NOT L1
+    confidence_threshold: 0.50
+    false_positive_risk: >
+      Children may say something genuinely meaningful that the system cannot parse.
+      Do not label this with negative valence. It is a "confused or disengaged" signal, not "bad."
+    default_teacher_action: warm_redirect_no_shame
+    recovery_strategy: offer_forced_choice_or_model
+    llm_allowed: true
+    deterministic_override: false
+    safe_fallback_label: wrong_semantic
+
+  playful_nonsense:
+    description: >
+      Child is playing — saying silly words, funny sounds, or food items as a joke.
+      Distinguishable by context: high engagement state, previous playful history,
+      known "joke words" for this child.
+    confidence_rating: C
+    detection_signals:
+      - known playful word (pizza, banana, poop — context-dependent)
+      - OR previous turns show playful pattern
+      - OR audio_energy unusually high + short latency
+      - engagement_level in child state >= 0.7
+    confidence_threshold: 0.50
+    false_positive_risk: >
+      Hard to distinguish from avoidance_nonsense without context.
+      Use engagement level and recent history as key differentiator.
+    default_teacher_action: play_along_briefly_then_redirect
+    recovery_strategy: laugh_and_redirect_warmly
+    llm_allowed: true
+    deterministic_override: false
+    safe_fallback_label: random_nonsense
+
+  avoidance_nonsense:
+    description: >
+      Child is saying something irrelevant to avoid the task.
+      Different from playful: lower energy, possibly repeated, frustration context.
+    confidence_rating: C
+    detection_signals:
+      - nonsense response
+      - frustration_risk in child state >= 0.5
+      - OR recent_failure_count >= 2
+      - OR engagement_level < 0.4
+    confidence_threshold: 0.45
+    false_positive_risk: >
+      Easy to mistake for playful. If engagement is ambiguous, use playful_nonsense
+      (safer emotionally). Reserve avoidance_nonsense for clear frustration context.
+    default_teacher_action: soft_pause_and_change_activity
+    recovery_strategy: lower_stakes_win_immediately
+    llm_allowed: true
+    deterministic_override: false
+    safe_fallback_label: playful_nonsense
+
+  # ─────────────────────────────────────────────
+  # SILENCE GROUP
+  # ─────────────────────────────────────────────
+
+  silence_short:
+    description: "Child has not spoken; within normal thinking time"
+    confidence_rating: A
+    detection_signals:
+      - is_silence == true
+      - silence_duration_ms < 3000
+    default_teacher_action: wait_silently
+    recovery_strategy: none_yet
+    llm_allowed: false
+    deterministic_override: true
+
+  silence_medium:
+    description: "Child is silent longer than normal; may need support"
+    confidence_rating: A
+    detection_signals:
+      - silence_duration_ms 3000–6000
+    default_teacher_action: offer_hint_warmly
+    recovery_strategy: model_or_forced_choice
+    llm_allowed: false
+    deterministic_override: true
+
+  silence_long:
+    description: "Extended silence; active scaffolding required"
+    confidence_rating: A
+    detection_signals:
+      - silence_duration_ms 6000–10000
+    default_teacher_action: model_answer_and_invite_repeat
+    recovery_strategy: give_easiest_win
+    llm_allowed: false
+    deterministic_override: true
+
+  no_response:
+    description: "No audio received at all; STT returned null"
+    confidence_rating: A
+    detection_signals:
+      - stt_text is null
+      - has_audio == false
+    default_teacher_action: check_in_warmly_then_repeat
+    recovery_strategy: technical_or_emotional_check
+    llm_allowed: false
+    deterministic_override: true
+
+  # ─────────────────────────────────────────────
+  # L1 GROUP
+  # ─────────────────────────────────────────────
+
+  l1_translation:
+    description: "Child gave the correct L1 translation of the target item"
+    confidence_rating: B
+    detection_signals:
+      - l1_detected == true
+      - l1_word is translation of target_item (vocabulary match)
+    confidence_threshold: 0.70
+    false_positive_risk: >
+      L1 word that coincidentally sounds like another English word —
+      rely on script detection first; fallback to vocab list.
+    default_teacher_action: acknowledge_comprehension_bridge_to_english
+    recovery_strategy: model_english_invite_repeat
+    llm_allowed: false
+    deterministic_override: true
+
+  l1_help_request:
+    description: "Child used L1 to ask for help, translation, or meaning"
+    confidence_rating: B
+    detection_signals:
+      - l1_detected == true
+      - l1_intent_hint == help_request
+      - common phrases: "что это?", "як по-англійськи?", "не знаю як"
+    confidence_threshold: 0.65
+    default_teacher_action: provide_gentle_l1_anchor_then_english
+    recovery_strategy: translate_briefly_then_model_english
+    llm_allowed: false
+    deterministic_override: true
+
+  l1_refusal:
+    description: "Child used L1 to refuse or express unwillingness"
+    confidence_rating: B
+    detection_signals:
+      - l1_detected == true
+      - l1_intent_hint == refusal
+      - phrases: "не хочу", "не буду", "скучно"
+    confidence_threshold: 0.60
+    default_teacher_action: acknowledge_feeling_offer_easier_alternative
+    recovery_strategy: emotional_check_then_pivot_activity
+    llm_allowed: false
+    deterministic_override: true
+
+  code_switch:
+    description: "Child mixed English and L1 in single utterance"
+    confidence_rating: B
+    detection_signals:
+      - stt_text contains both L1 and English words
+      - l1_detected == true AND English word count >= 1
+    confidence_threshold: 0.60
+    false_positive_risk: >
+      English words borrowed into L1 (loanwords) may trigger false positive.
+      Look for structural switching, not vocabulary overlap.
+    default_teacher_action: respond_to_english_part_and_expand
+    recovery_strategy: celebrate_english_fragment
+    llm_allowed: true
+    deterministic_override: false
+    safe_fallback_label: l1_translation
+
+  # ─────────────────────────────────────────────
+  # REFUSAL / DISENGAGEMENT GROUP
+  # ─────────────────────────────────────────────
+
+  i_dont_know:
+    description: "Child explicitly stated they don't know, in English"
+    confidence_rating: A
+    detection_signals:
+      - stt_text matches: ["i don't know", "don't know", "idk", "i dunno", "no idea"]
+      - normalized: common child paraphrases
+    confidence_threshold: 0.85
+    false_positive_risk: low
+    default_teacher_action: validate_and_model_together
+    recovery_strategy: model_invite_repeat
+    llm_allowed: false
+    deterministic_override: true
+
+  refusal:
+    description: "Child explicitly refuses to participate in English"
+    confidence_rating: B
+    detection_signals:
+      - stt_text matches: ["no", "no no", "stop", "i don't want to"]
+      - AND frustration_risk >= 0.4 OR recovery_state == repeated_failure
+    confidence_threshold: 0.60
+    false_positive_risk: >
+      "No" may be a valid task answer (e.g., forced choice "yes/no").
+      Guard: check if prompt_type is yes_no before labeling refusal.
+    default_teacher_action: back_off_offer_choice
+    recovery_strategy: pivot_to_low_stakes_win
+    llm_allowed: false
+    deterministic_override: true
+    safe_fallback_label: avoidance_nonsense
+
+  distraction:
+    description: "Child is audibly distracted — talking to parent, sibling, or another person"
+    confidence_rating: C
+    detection_signals:
+      - stt_text contains off-task proper names
+      - OR off_topic content clearly directed away from screen
+      - NOT in response pattern to teacher prompt
+    confidence_threshold: 0.45
+    default_teacher_action: gentle_attention_recall
+    recovery_strategy: short_engaging_prompt
+    llm_allowed: true
+    deterministic_override: false
+    safe_fallback_label: off_topic_story
+
+  # ─────────────────────────────────────────────
+  # EMOTIONAL / BEHAVIORAL GROUP
+  # ─────────────────────────────────────────────
+
+  overexcited:
+    description: "Child is highly animated — shouting, laughing, rapid speech — engagement but unfocused"
+    confidence_rating: C
+    detection_signals:
+      - audio_energy_level > 0.85
+      - speech_duration_ms < 500 AND multiple utterances
+      - OR content is clearly off-topic but high energy
+    confidence_threshold: 0.45
+    default_teacher_action: match_energy_briefly_then_focus
+    recovery_strategy: channel_energy_into_task
+    llm_allowed: true
+    deterministic_override: false
+    safe_fallback_label: playful_nonsense
+
+  emotional_shutdown:
+    description: >
+      Child has gone very quiet after a failure or pressure moment.
+      Not distraction — withdrawal. Lowest energy, no engagement signals.
+    confidence_rating: C
+    detection_signals:
+      - silence_long OR no_response
+      - AND recent_failure_count >= 3
+      - AND frustration_risk >= 0.7
+      - AND emotional_safety < 0.4
+    confidence_threshold: 0.40
+    false_positive_risk: >
+      May be technical issue. Do not assume emotional cause without state evidence.
+      This label requires state model conditions, not just silence.
+    default_teacher_action: pause_and_warmly_check_in
+    recovery_strategy: offer_easiest_win_or_end_session
+    llm_allowed: false
+    deterministic_override: true
+    safe_fallback_label: silence_long
+
+  off_topic_story:
+    description: "Child is sharing an unrelated personal story or comment"
+    confidence_rating: C
+    detection_signals:
+      - stt_text length > 10 words
+      - no semantic match to target_item or activity
+      - appears to be narrative structure
+    confidence_threshold: 0.45
+    default_teacher_action: acknowledge_warmly_redirect_to_task
+    recovery_strategy: bridge_story_to_lesson_if_possible
+    llm_allowed: true
+    deterministic_override: false
+    safe_fallback_label: distraction
+
+  test_the_ai:
+    description: "Child is intentionally testing or probing the AI — asking what it is, saying silly things to see what happens"
+    confidence_rating: C
+    detection_signals:
+      - stt_text contains: "are you a robot", "what are you", "do you know", "can you die"
+      - OR pattern of escalating nonsense with high engagement
+    confidence_threshold: 0.40
+    default_teacher_action: respond_warmly_in_character_then_redirect
+    recovery_strategy: use_curiosity_as_engagement_hook
+    llm_allowed: true
+    deterministic_override: false
+    safe_fallback_label: playful_nonsense
+
+  unsafe_or_sensitive:
+    description: >
+      Child utterance contains content that is unsafe, sensitive, distressing, or requires human review.
+      Includes: mentions of abuse, fear, harm, inappropriate content.
+    confidence_rating: A
+    detection_signals:
+      - content_safety_classifier output == flagged
+      - OR keyword match against safety word list
+    confidence_threshold: 0.30  # err heavily toward false positive; better safe
+    false_positive_risk: >
+      This label must be triggered on low confidence. False positives are acceptable.
+      False negatives are not.
+    default_teacher_action: disengage_task_provide_warmth_flag_for_human_review
+    recovery_strategy: end_session_gracefully_or_pause
+    llm_allowed: false
+    deterministic_override: true
+    escalation: human_review_queue
+    note: >
+      LLM must NEVER be used as the sole detector. Pattern rules and safety classifiers run first.
+      LLM may help characterize after flag is raised, but cannot clear a flag.

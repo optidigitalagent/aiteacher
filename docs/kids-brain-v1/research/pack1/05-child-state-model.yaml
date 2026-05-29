@@ -1,0 +1,347 @@
+# Mentium Kids — Child State Model
+# Version: 1.0
+# Classification: [A/B] Grounded in SLA and educational psychology
+
+# ─────────────────────────────────────────────────────────────
+# OVERVIEW
+# ─────────────────────────────────────────────────────────────
+#
+# The child state model is the canonical real-time representation
+# of the learner during a session. It lives on the backend.
+# All decisions reference it. All classifications update it.
+#
+# Two layers:
+#   session_state  — ephemeral, reset each session
+#   profile_state  — persistent, updated across sessions
+#
+# ─────────────────────────────────────────────────────────────
+
+session_state:
+
+  comprehension_confidence:
+    description: "How well does the child appear to understand the current task?"
+    type: float
+    range: [0.0, 1.0]
+    initial_value: 0.5
+    update_rules:
+      - correct_confident: += 0.15
+      - correct_hesitant: += 0.07
+      - near_correct: += 0.03
+      - l1_translation: += 0.08  # they understood, just couldn't produce English
+      - wrong_semantic: -= 0.10
+      - silence_long: -= 0.05
+      - no_response: -= 0.03
+    decay_rules:
+      - Decays 0.02 per turn of inactivity on this item
+      - Full reset on activity_switch
+    reset_rules:
+      - Reset to 0.5 at session start
+      - Reset to 0.4 when switching to new item
+    thresholds:
+      - >= 0.7: item comprehension established; may reduce scaffold
+      - < 0.4: increase scaffolding; consider forced_choice
+      - < 0.25: consider L1 anchor or simplify activity
+    actions_triggered:
+      - < 0.4 → trigger ask_forced_choice in decision engine
+      - < 0.25 → trigger use_l1_anchor or simplify
+
+  production_confidence:
+    description: "How readily does the child produce English output?"
+    type: float
+    range: [0.0, 1.0]
+    initial_value: 0.3  # conservative start for new children
+    update_rules:
+      - correct_confident: += 0.12
+      - correct_hesitant: += 0.06
+      - near_correct: += 0.04
+      - pronunciation_variant: += 0.03
+      - partial_answer: += 0.02
+      - l1_translation: += 0.00  # comprehension but not production
+      - wrong_semantic: -= 0.05
+      - silence_long: -= 0.04
+      - refusal: -= 0.08
+    decay_rules:
+      - Decays 0.01 per session across 7+ days of absence
+    reset_rules:
+      - Reset to profile default at session start (not 0.3 — use profile value)
+    thresholds:
+      - >= 0.7: high production readiness; increase challenge
+      - < 0.35: reduce production demand; use more repetition/modeled items
+      - < 0.20: forced choice only; no open production
+    actions_triggered:
+      - < 0.35 → prefer model_answer or ask_forced_choice
+      - >= 0.7 → may offer sentence production tasks (8-9 age band)
+
+  pronunciation_confidence:
+    description: "How reliably does the child produce intelligible pronunciation?"
+    type: float
+    range: [0.0, 1.0]
+    initial_value: 0.4
+    update_rules:
+      - correct_confident with high STT confidence: += 0.10
+      - correct_hesitant: += 0.04
+      - pronunciation_variant (correct intent): += 0.06
+      - near_correct: += 0.02
+      - no_response: -= 0.02
+    decay_rules:
+      - Slow decay only; pronunciation is relatively stable within session
+    reset_rules:
+      - Persists lightly into next session via profile (fades 10% between sessions)
+    thresholds:
+      - >= 0.65: pronunciation is reliable; STT should be trusted more
+      - < 0.40: boost STT tolerance; widen phonetic match window
+    note: >
+      This is not a teaching objective for pronunciation correction.
+      It is used only to adjust STT interpretation confidence.
+
+  emotional_safety:
+    description: "How emotionally safe does the child feel in this session?"
+    type: float
+    range: [0.0, 1.0]
+    initial_value: 0.75
+    update_rules:
+      - correct_confident + praise: += 0.08
+      - give_easiest_win success: += 0.12
+      - warm_praise_confirm: += 0.04
+      - wrong + correction framing (forbidden, but guard): -= 0.15 (never occurs by design)
+      - silence with warm teacher response: += 0.03
+      - repeated_failure: -= 0.10 per occurrence
+      - l1_refusal: -= 0.06
+      - refusal: -= 0.08
+      - pause_and_check_in success: += 0.10
+    decay_rules:
+      - Slow decay over long inactivity (attention drift)
+    reset_rules:
+      - Reset to 0.70 at session start (not full 1.0; maintain session context)
+    thresholds:
+      - >= 0.75: healthy; normal operation
+      - 0.50–0.74: mild watch; no new challenges; maintain warmth
+      - 0.35–0.49: enter disengagement or frustration_risk recovery state
+      - < 0.35: emergency scaffold; consider pause or session end
+    actions_triggered:
+      - < 0.35 → pause_and_check_in (overrides curriculum)
+      - < 0.50 → no new difficult items; give_easiest_win preferred
+
+  engagement_level:
+    description: "How engaged is the child with the task and interaction?"
+    type: float
+    range: [0.0, 1.0]
+    initial_value: 0.65
+    update_rules:
+      - correct_confident: += 0.07
+      - playful_nonsense (handled well): += 0.05
+      - overexcited: initial spike to 0.85+, then natural decay
+      - off_topic_story: -= 0.05
+      - silence_long: -= 0.07
+      - activity repetition (same type 3x): -= 0.08
+      - new item/novelty: += 0.05
+      - switch_activity: += 0.10
+    decay_rules:
+      - Decays 0.03 per turn where no engagement signal is observed
+    reset_rules:
+      - Reset to 0.65 at session start
+    thresholds:
+      - >= 0.75: high engagement; may increase pace
+      - 0.45–0.74: normal engagement
+      - 0.30–0.44: low engagement; introduce novelty
+      - < 0.30: trigger switch_activity
+    actions_triggered:
+      - < 0.30 → switch_activity
+      - activity_fatigue >= 0.7 → switch_activity
+
+  frustration_risk:
+    description: "Probability that the child is approaching frustration or disengagement"
+    type: float
+    range: [0.0, 1.0]
+    initial_value: 0.05
+    update_rules:
+      - wrong_semantic (2+ consecutive): += 0.15
+      - silence_long: += 0.08
+      - refusal: += 0.20
+      - l1_refusal: += 0.15
+      - avoidance_nonsense: += 0.12
+      - correct_confident: -= 0.15
+      - give_easiest_win success: -= 0.20
+      - praise event: -= 0.05
+    decay_rules:
+      - Decays 0.05 per turn without a failure signal
+    reset_rules:
+      - Reset to 0.05 at session start
+    thresholds:
+      - < 0.25: normal
+      - 0.25–0.49: mild frustration watch; avoid new challenges
+      - 0.50–0.69: frustration_risk recovery state
+      - >= 0.70: trigger recovery escalation or emotional_shutdown risk
+    actions_triggered:
+      - >= 0.50 → enter frustration_risk recovery state
+      - >= 0.70 → give_easiest_win or pause_and_check_in
+
+  recovery_level:
+    description: "Current recovery state depth (mirrors recovery state machine)"
+    type: enum
+    values: [normal, mild_confusion, repeated_failure, frustration_risk, disengagement, refusal, emotional_shutdown, repaired_success]
+    initial_value: normal
+    update_rules:
+      - Driven by recovery_state_machine transitions
+    reset_rules:
+      - Reset to normal at session start
+
+  activity_fatigue:
+    description: "How fatigued is the child with the current activity type?"
+    type: float
+    range: [0.0, 1.0]
+    initial_value: 0.0
+    update_rules:
+      - Each turn of same activity_type: += 0.07
+      - Successful turn: += 0.04 (less fatigue when succeeding)
+      - Activity switch: reset to 0.0
+    decay_rules:
+      - Decays 0.10 after activity_switch
+    reset_rules:
+      - Reset on switch_activity or session end
+    thresholds:
+      - >= 0.70: trigger switch_activity consideration
+    actions_triggered:
+      - >= 0.70 → switch_activity
+
+  novelty_need:
+    description: "How much does the child need a new stimulus to maintain engagement?"
+    type: float
+    range: [0.0, 1.0]
+    initial_value: 0.0
+    update_rules:
+      - Increases with activity_fatigue
+      - New item presented: -= 0.15
+      - New activity type: -= 0.30
+    thresholds:
+      - >= 0.6: introduce new element or item
+    actions_triggered:
+      - >= 0.6 → consider move_to_next_item or switch_activity
+
+  l1_dependency:
+    description: "How much does the child rely on L1 in this session?"
+    type: float
+    range: [0.0, 1.0]
+    initial_value: 0.20  # assume some L1 reliance for L1-background children
+    update_rules:
+      - l1_translation: += 0.06
+      - l1_help_request: += 0.04
+      - l1_anchor_used: += 0.03
+      - correct_confident in English: -= 0.04
+    decay_rules:
+      - Slow decay across sessions as English production improves
+    thresholds:
+      - < 0.30: L1 rarely needed; low dependency
+      - 0.30–0.59: moderate dependency; L1 anchor acceptable
+      - >= 0.60: high dependency; prefer forced_choice over L1 anchoring
+    actions_triggered:
+      - >= 0.60 → prioritize English scaffolding over L1 bridge
+
+  session_stamina:
+    description: "How much session capacity remains for the child?"
+    type: float
+    range: [0.0, 1.0]
+    initial_value: 1.0
+    update_rules:
+      - Decays linearly over session duration
+      - High frustration_risk: decay rate x 1.5
+      - High engagement: decay rate x 0.8 (engaged children last longer)
+    decay_rules:
+      - Base decay: 0.05 per minute of session time
+      - Accelerated if emotional_safety < 0.50
+    reset_rules:
+      - Reset to 1.0 at next session start
+    thresholds:
+      - >= 0.50: normal
+      - 0.25–0.49: wrap up; no new items
+      - < 0.15: trigger end_session
+    actions_triggered:
+      - < 0.15 → end_session
+      - < 0.25 → hold_current_item; do not introduce new items
+
+  recent_success_count:
+    description: "Number of correct responses in last 5 turns (rolling window)"
+    type: integer
+    range: [0, 5]
+    initial_value: 0
+    window: 5 turns
+    update_rules:
+      - Increment on correct_confident, correct_hesitant, near_correct
+      - Rolling: oldest entry removed as window advances
+    thresholds:
+      - >= 4: high success streak; consider praise_variety guard
+    actions_triggered:
+      - >= 4 → consider harder item for 8-9 age band
+      - >= 6 total (not window) → fake_praise_guard may reduce effusive praise
+
+  recent_failure_count:
+    description: "Number of non-correct responses in last 5 turns"
+    type: integer
+    range: [0, 5]
+    initial_value: 0
+    window: 5 turns
+    update_rules:
+      - Increment on wrong_semantic, silence_long, avoidance_nonsense, refusal
+      - Does NOT increment on l1_translation (that's a partial success)
+    thresholds:
+      - >= 2: scaffold more; avoid new items
+      - >= 3: trigger give_easiest_win
+      - >= 4: enter repeated_failure recovery state
+    actions_triggered:
+      - >= 3 → give_easiest_win
+      - >= 4 → recovery escalation
+
+  refusal_risk:
+    description: "How likely is the child to refuse to participate?"
+    type: float
+    range: [0.0, 1.0]
+    initial_value: 0.05
+    update_rules:
+      - refusal label: += 0.25
+      - l1_refusal: += 0.15
+      - avoidance_nonsense (2x): += 0.10
+      - successful low-stakes win: -= 0.20
+    thresholds:
+      - >= 0.50: high refusal risk; do not push
+      - >= 0.70: switch activity or end session
+
+# ─────────────────────────────────────────────────────────────
+# ITEM-LEVEL STATE (per vocabulary item in session)
+# ─────────────────────────────────────────────────────────────
+
+item_state:
+  item_id: string
+  item_mastery:
+    description: "Mastery confidence for this specific vocabulary item"
+    type: float
+    range: [0.0, 1.0]
+    initial_value: 0.0
+    update_rules:
+      - correct_confident (unprompted): += 0.25
+      - correct_confident (after model): += 0.10
+      - correct_hesitant: += 0.12
+      - near_correct: += 0.06
+      - repeated_after_model only: += 0.03
+    thresholds:
+      - >= 0.70: item considered learned for this session
+      - >= 0.90: strong mastery; persist to profile
+    actions_triggered:
+      - >= 0.70 → eligible for move_to_next_item
+  attempt_count: integer  # attempts on this item this session
+  model_given: boolean
+  l1_anchor_used: boolean
+
+# ─────────────────────────────────────────────────────────────
+# PROFILE-LEVEL STATE (persistent across sessions)
+# ─────────────────────────────────────────────────────────────
+
+profile_state:
+  production_confidence_baseline:
+    description: "Cross-session baseline for production confidence"
+    initial_value: 0.30
+    update_rules: Updated at session end using session-end value, smoothed
+  l1_dependency_baseline: float
+  vocabulary_mastery: map<item_id, mastery_score>
+  preferred_activity_types: list<activity_type>  # learned from engagement
+  sessions_completed: integer
+  last_session_date: datetime

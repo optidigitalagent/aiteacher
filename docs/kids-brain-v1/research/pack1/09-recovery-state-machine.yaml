@@ -1,0 +1,378 @@
+# Mentium Kids — Recovery State Machine
+# Version: 1.0
+# Classification: [A/B] Grounded in emotional safety and SLA recovery patterns
+
+# ─────────────────────────────────────────────────────────────
+# OVERVIEW
+# ─────────────────────────────────────────────────────────────
+overview: >
+  The recovery state machine tracks the child's resilience and distress level
+  across a session. It operates in parallel with all other state variables and
+  has veto power over curriculum decisions.
+  
+  States are ordered by severity. Transitions are both upward (recovery)
+  and downward (escalation). The machine is deterministic — no LLM involvement.
+  
+  Core invariant: The system must always provide a valid warm response.
+  There is no state that produces silence, shame, or abandonment.
+
+states:
+
+  # ─────────────────────────────────────────────────────────────
+  normal:
+    description: "Default operating state; child is engaged and responsive"
+    entry_conditions:
+      - session start
+      - repaired_success persists for 2+ turns
+      - give_easiest_win succeeded AND emotional_safety >= 0.70
+    exit_conditions:
+      - recent_failure_count >= 2 → mild_confusion
+      - frustration_risk >= 0.50 → frustration_risk state
+      - refusal detected → refusal state
+      - emotional_safety < 0.35 → emotional_shutdown
+    allowed_teacher_actions:
+      - all actions
+    forbidden_teacher_actions: []
+    escalation_path: mild_confusion
+    de_escalation_path: none (already at top)
+    max_time_in_state: unlimited
+    logging_events:
+      - NORMAL_OPERATION
+
+  # ─────────────────────────────────────────────────────────────
+  mild_confusion:
+    description: "Child is having difficulty with current item; has not yet shown frustration"
+    entry_conditions:
+      - recent_failure_count >= 2
+      - OR wrong_semantic on same item 2 consecutive turns
+      - OR silence_medium on new item
+    exit_conditions:
+      - correct response → repaired_success → normal
+      - frustration_risk >= 0.50 → frustration_risk state
+      - emotional_safety < 0.45 → disengagement
+    allowed_teacher_actions:
+      - model_answer
+      - ask_forced_choice
+      - recast_and_confirm
+      - warm_praise_confirm
+      - hold_current_item
+      - use_l1_anchor (if l1_dependency < 0.60)
+    forbidden_teacher_actions:
+      - move_to_next_item (do not advance while confused)
+      - switch_activity (not yet — try scaffold first)
+      - increase difficulty
+    escalation_path: frustration_risk
+    de_escalation_path: normal (via repaired_success)
+    max_time_in_state: 3 turns
+    auto_escalation: >
+      If still in mild_confusion after 3 turns without success → escalate to repeated_failure
+    logging_events:
+      - MILD_CONFUSION_ENTERED
+      - CONFUSION_RESOLVED (on exit to normal)
+      - CONFUSION_ESCALATED (on exit to frustration_risk)
+    
+    # ── Special handling ──────────────────────────────────────
+    special_handling:
+      silence:
+        response: model_answer
+        reasoning: >
+          Silence in confusion state most likely means the child doesn't know.
+          Model the answer immediately; do not extend wait time.
+      repeated_wrong_answer:
+        response: ask_forced_choice
+        reasoning: >
+          After 2 wrong answers, reduce production demand to comprehension-only.
+      i_dont_know:
+        response: validate_and_model_together
+        reasoning: >
+          "I don't know" is honest and valuable. Never treat it as failure.
+          Respond: "That's okay! Let me show you — [target_item]!"
+
+  # ─────────────────────────────────────────────────────────────
+  repeated_failure:
+    description: "Child has failed multiple times; emotional safety is at risk"
+    entry_conditions:
+      - recent_failure_count >= 3 on same item
+      - OR mild_confusion persisted 3 turns without success
+      - OR frustration_risk >= 0.50 AND recent_failure_count >= 2
+    exit_conditions:
+      - give_easiest_win succeeds → repaired_success
+      - emotional_safety drops below 0.40 → disengagement
+      - refusal detected → refusal
+    allowed_teacher_actions:
+      - give_easiest_win
+      - model_answer
+      - ask_forced_choice (easiest version: already-known item)
+      - warm_redirect
+      - switch_activity
+    forbidden_teacher_actions:
+      - any new item introduction
+      - any question that could produce wrong answer
+      - hold_current_item (abandoning the current item is correct here)
+      - any action that increases cognitive load
+    escalation_path: disengagement
+    de_escalation_path: repaired_success → normal
+    max_time_in_state: 4 turns
+    auto_action: >
+      On entry to repeated_failure: immediately trigger give_easiest_win
+      on a previously mastered item. Do not wait for another wrong answer.
+    logging_events:
+      - REPEATED_FAILURE_ENTERED
+      - EASY_WIN_ATTEMPTED
+      - EASY_WIN_SUCCEEDED / EASY_WIN_FAILED
+
+    special_handling:
+      nonsense_response:
+        response: warm_redirect_no_shame
+        reasoning: >
+          Nonsense in this state is likely avoidance under pressure.
+          Do not treat as playful. Reduce stakes immediately.
+      l1_response:
+        response: acknowledge_comprehension_bridge_to_english
+        reasoning: >
+          L1 in this state signals the child knows the answer but can't produce English.
+          This is NOT failure. Celebrate the comprehension, bridge to English gently.
+      refusal:
+        response: acknowledge_feeling_offer_easier_alternative
+        action: transition to refusal state
+
+  # ─────────────────────────────────────────────────────────────
+  frustration_risk:
+    description: "Child is showing clear frustration signals; one wrong move could cause shutdown"
+    entry_conditions:
+      - frustration_risk >= 0.50
+      - OR l1_refusal detected AND recent_failure_count >= 2
+      - OR avoidance_nonsense 3 times in session
+    exit_conditions:
+      - give_easiest_win + praise succeeds → repaired_success
+      - emotional_safety < 0.35 → emotional_shutdown
+      - explicit refusal → refusal
+    allowed_teacher_actions:
+      - give_easiest_win
+      - switch_activity
+      - pause_and_check_in
+      - warm_redirect
+    forbidden_teacher_actions:
+      - any correction framing
+      - any new item
+      - repeat the failing item
+      - any question with wrong-answer risk
+      - play_along_briefly (misreads avoidance as play)
+    escalation_path: emotional_shutdown or refusal
+    de_escalation_path: repaired_success → normal
+    max_time_in_state: 3 turns before forced switch_activity or check_in
+    auto_action: >
+      On entry: suppress ALL curriculum progression.
+      Execute give_easiest_win or switch_activity within 1 turn.
+    logging_events:
+      - FRUSTRATION_RISK_ENTERED
+      - FRUSTRATION_RESOLVED
+      - FRUSTRATION_ESCALATED
+
+    special_handling:
+      overexcitement_in_this_state:
+        note: >
+          If child was overexcited BEFORE entering frustration_risk, do not confuse
+          excited energy with frustrated energy. overexcited → frustration_risk transition
+          requires falling energy + failure signals, not just excitement.
+      silence:
+        response: warm_brief_pause_then_easiest_win
+        do_not_do: extend wait time (pressure increases)
+
+  # ─────────────────────────────────────────────────────────────
+  disengagement:
+    description: "Child has withdrawn from the task; not actively refusing but not participating"
+    entry_conditions:
+      - engagement_level < 0.30
+      - OR activity_fatigue >= 0.80 AND emotional_safety < 0.50
+      - OR 3+ consecutive silence_medium/long events
+      - OR distraction classification repeated 3 times
+    exit_conditions:
+      - new engaging activity produces response → repaired_success track
+      - switch_activity succeeds → mild_confusion or normal
+      - emotional_safety drops further → emotional_shutdown
+    allowed_teacher_actions:
+      - switch_activity
+      - give_easiest_win
+      - short_engaging_prompt (novel stimulus)
+      - character_surprise_moment
+    forbidden_teacher_actions:
+      - continue current activity
+      - increase difficulty
+      - ask open production questions
+      - long teacher turns (more talking from teacher → more disengagement)
+    escalation_path: emotional_shutdown
+    de_escalation_path: repaired_success
+    max_time_in_state: 3 turns
+    auto_action: >
+      After 3 turns without engagement signal → offer session end warmly.
+      "Shall we take a break? We did great today!"
+    logging_events:
+      - DISENGAGEMENT_ENTERED
+      - REENGAGEMENT_ATTEMPT
+      - SESSION_END_OFFERED
+
+    special_handling:
+      off_topic_story:
+        response: acknowledge_warmly_redirect
+        note: >
+          Off-topic story in disengagement state may be child seeking connection, not avoidance.
+          Brief acknowledgement + redirect is correct. Do not rush past it.
+      distraction:
+        response: gentle_attention_recall_no_shame
+        max_attempts: 2
+        after_2nd_failure: switch_activity or offer break
+
+  # ─────────────────────────────────────────────────────────────
+  refusal:
+    description: "Child is explicitly refusing to participate"
+    entry_conditions:
+      - refusal classification
+      - OR l1_refusal with frustration_risk >= 0.50
+      - OR repeated no/stop/I don't want to (3 in session)
+    exit_conditions:
+      - child accepts alternative activity → disengagement or repaired_success
+      - emotional safety stabilized → disengagement track
+      - continues refusing → emotional_shutdown or session end
+    allowed_teacher_actions:
+      - back_off_offer_choice
+      - pivot_to_low_stakes_win
+      - switch_activity
+      - offer_break
+      - end_session (if refusal persists)
+    forbidden_teacher_actions:
+      - repeat the refused task
+      - increase pressure
+      - direct questions (use statements and invitations only)
+      - effusive praise (hollow if they refused)
+    escalation_path: emotional_shutdown or session_end
+    de_escalation_path: disengagement → repaired_success
+    max_time_in_state: 2 turns
+    auto_action: >
+      After 2 turns of refusal without recovery: offer session end gracefully.
+      Never force continuation. The relationship matters more than the lesson.
+    logging_events:
+      - REFUSAL_ENTERED
+      - REFUSAL_RESOLVED
+      - SESSION_END_FROM_REFUSAL
+
+    special_handling:
+      child_testing_ai:
+        note: >
+          "I refuse to answer" as a test_the_ai behavior (high engagement, playful)
+          should NOT enter refusal state. Check engagement_level and recent history.
+          If engagement_level > 0.6 → classify as test_the_ai, not refusal.
+      l1_refusal_only:
+        note: >
+          Pure l1_refusal without English refusal = lower severity.
+          Try L1 anchor acknowledgement first before escalating to full refusal state.
+
+  # ─────────────────────────────────────────────────────────────
+  emotional_shutdown:
+    description: "Child has fully withdrawn; no engagement, possible distress"
+    entry_conditions:
+      - emotional_safety < 0.35
+      - AND (silence_long OR no_response OR refusal)
+      - AND recent_failure_count >= 3
+    exit_conditions:
+      - warm check-in produces response → disengagement (not normal directly)
+      - session ends
+    allowed_teacher_actions:
+      - pause_and_check_in
+      - offer_break
+      - end_session_warmly
+      - offer_easiest_win_if_child_shows_any_signal
+    forbidden_teacher_actions:
+      - ALL curriculum actions
+      - Any task question
+      - Praise (feels hollow; child is not in a place to receive it)
+      - Long teacher speech
+    escalation_path: session_end (or human_escalation if safety concern)
+    de_escalation_path: disengagement (slow)
+    max_time_in_state: 2 turns
+    auto_action: >
+      After 2 turns without response: end session warmly.
+      "That's okay. We'll play again soon. Bye-bye!"
+    logging_events:
+      - EMOTIONAL_SHUTDOWN_ENTERED
+      - SHUTDOWN_RECOVERY_ATTEMPTED
+      - SESSION_END_COMPASSIONATE
+
+    special_handling:
+      technical_ambiguity:
+        note: >
+          CRITICAL: emotional_shutdown requires both state model conditions AND behavioral signal.
+          Silence alone does NOT enter this state.
+          If unsure whether shutdown is technical (mic) or emotional → treat as technical,
+          warm check-in, and do NOT log as emotional event.
+      unsafe_or_sensitive_co-occurrence:
+        note: >
+          If emotional_shutdown co-occurs with unsafe_or_sensitive classification →
+          immediately escalate to human_review, end session with maximum warmth.
+
+  # ─────────────────────────────────────────────────────────────
+  repaired_success:
+    description: "Child just succeeded after a recovery sequence; fragile confidence"
+    entry_conditions:
+      - give_easiest_win succeeded AND previous state was non-normal
+      - OR correct_confident following repeated_failure or frustration_risk
+    exit_conditions:
+      - After 2 consecutive successes → normal
+      - New failure → mild_confusion
+    allowed_teacher_actions:
+      - warm_praise_confirm
+      - praise_and_progress (measured)
+      - hold_current_item (gently)
+      - move_to_next_item (only if item_mastery >= 0.70)
+    forbidden_teacher_actions:
+      - immediately introduce difficult new item
+      - switch activity (momentum is building)
+      - effusive over-praise (destabilizes this fragile state)
+    max_time_in_state: 3 turns (should exit to normal quickly on success)
+    logging_events:
+      - REPAIRED_SUCCESS_ENTERED
+      - FULL_RECOVERY (on transition to normal)
+
+# ─────────────────────────────────────────────────────────────
+# SPECIAL INPUT HANDLING CROSS-REFERENCE
+# ─────────────────────────────────────────────────────────────
+
+special_input_handling:
+
+  child_testing_the_ai:
+    description: >
+      Child asks "are you a robot?", "do you have feelings?", "what happens if I say poop?"
+    handling_in_all_states:
+      - Respond in character warmly (1 turn maximum)
+      - Do not enter any recovery state from this
+      - Redirect to task with energy after 1 turn
+      - Never break character to say "I'm an AI"
+      - Response example: "Ha! I'm Luna! And I love teaching! Okay — [target_item]!"
+    do_not_do:
+      - Lecture about AI
+      - Be defensive
+      - Ignore the question coldly
+
+  overexcitement:
+    description: "Child is shouting, bouncing, making noise — too excited to focus"
+    handling:
+      - Match energy briefly (1 turn): "Wow!! Okay okay!! Let's go!!"
+      - Then channel into task with high energy: "Okay — FAST! What is THIS?!"
+      - Do not suppress excitement; redirect it
+      - Do not enter disengagement state from overexcitement
+
+  child_asks_why:
+    description: 'Child asks "why?" or "what does that mean?"'
+    handling:
+      - For 6-7: simple concrete answer (1 sentence max), then return to task
+      - For 8-9: brief expansion allowed (2-3 sentences), then continue
+      - Treat as high engagement signal, not distraction
+      - Never "I'll explain later" — answer now or honestly say "great question!"
+
+  child_asks_for_translation:
+    description: "Child asks what a word means in L1"
+    handling:
+      - Treat as l1_help_request
+      - Brief L1 anchor allowed (once per item)
+      - Then immediately model English
+      - Celebrate: "Exactly! [L1 word]! In English: [target]!"

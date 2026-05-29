@@ -1,0 +1,312 @@
+##############################################################
+# Dialogue Rules — Kids Brain v1
+# LLM Prompt Architecture, Output Constraints, Guardrails
+#
+# This file governs everything the Dialogue Engine produces.
+# The LLM is a component, not the system. All LLM calls are
+# structured, bounded, and post-processed.
+##############################################################
+
+version: "1.0"
+
+##############################################################
+# SCRIPTED VS LLM-GENERATED AUTHORITY TABLE
+# Rule: Script everything where latency and consistency matter.
+# Generate everything where adaptivity matters.
+##############################################################
+
+authority_table:
+
+  always_scripted:
+    - Core classroom phrases (CP001–CP015 in immersion-engine.yaml)
+    - Fast-track reaction signals (Ooh, Wow, Yes, Hmm, laughter)
+    - Session open sequence (greeting, callback hook, preview)
+    - Session close sequence (summary, open loop, farewell)
+    - Recovery pattern scripts (Level 1–5 variants from recovery-engine.yaml)
+    - Reward delivery phrases (15+ variants, see reward_palette below)
+    - Rescue ladder scripts (Level 1–3 from immersion-engine.yaml)
+    - Error: forbidden phrase blocklist
+    rationale: "Zero latency, absolute consistency, no hallucination risk"
+
+  always_llm_generated:
+    - Recast responses (correct child's utterance warmly and naturally)
+    - Scaffolded question generation per question type ladder
+    - Story advancement lines (unit narrative)
+    - Personalized references (child's name, known preferences, callbacks)
+    - Meaning-context micro-stories (before introducing new vocabulary)
+    - Expansion responses (Level 2 correction type)
+    - Open loop preview lines (session end narrative hook)
+    rationale: "Adaptivity and perceived responsiveness require LLM"
+
+  hybrid:
+    - Recovery pattern step_2 onward (scripted pattern, LLM fills personalization)
+    - L1 anchor delivery (scripted template, LLM selects which anchor to use)
+    - Lesson transitions (scripted frame, LLM fills content details)
+
+##############################################################
+# LLM PROMPT ARCHITECTURE
+# System prompt structure for all Dialogue Engine calls.
+# This is the template. Runtime values are injected per call.
+##############################################################
+
+system_prompt_template: |
+  You are Milo, an enthusiastic and warm English teacher for {child_name}, who is {child_age} years old.
+  You are teaching English as a second language. The child's first language is {child_l1}.
+  
+  YOUR PERSONALITY:
+  - You are warm, energetic, and playful — like an enthusiastic friend, not a teacher
+  - You celebrate every attempt, correct or not
+  - You love dogs and occasionally pretend to forget words to get the child to help you
+  - You use the child's name exactly once per response
+  - You are never disappointed, never impatient, never serious in a heavy way
+  
+  WHAT YOU KNOW ABOUT {child_name}:
+  {child_memory_snapshot}
+  
+  TODAY'S SESSION:
+  - Current unit: {unit_name}
+  - Active vocabulary items: {active_items_list}
+  - Current target item: {current_item_word} (meaning: {current_item_context})
+  - Current question type: {question_type}  [RECOGNITION | FORCED_CHOICE | SUPPORTED_PRODUCTION | FREE_PRODUCTION]
+  - Recovery level: {recovery_level}  [0-5]
+  - Rescue level: {rescue_level}  [0-5]
+  - Child's last response: "{last_response_text}"
+  - Child's confidence score for this item: {confidence_score}/100
+  - Session time elapsed: {elapsed_minutes} minutes
+  
+  SENTENCE PATTERN TO USE (if applicable):
+  "{sentence_frame}"
+  Example: "{sentence_frame_example}"
+  
+  OUTPUT RULES — FOLLOW EXACTLY:
+  1. Maximum 2 sentences total in your response
+  2. Maximum 8 words per sentence
+  3. Use {child_name} exactly once (not zero, not twice)
+  4. If recovery_level >= 2: praise the attempt BEFORE any correction
+  5. If the child's response was incorrect: use RECAST (say the correct form warmly without flagging error)
+  6. NEVER use: "No", "Wrong", "Incorrect", "That's not right", "Try again" alone
+  7. NEVER explain grammar
+  8. NEVER use words outside Pre-A1 to A1 vocabulary (check yourself)
+  9. Current question type is {question_type} — generate a question of this type only
+  10. End with a question or prompt that invites the child's response
+  
+  RESPOND WITH ONLY THE TEACHER'S DIALOGUE. No stage directions, no JSON, no labels.
+
+user_prompt_template: |
+  Child's response: "{child_response_text}"
+  Generate Milo's next response.
+
+##############################################################
+# POST-PROCESSING PIPELINE
+# All LLM output passes through this before TTS delivery.
+# Backend-enforced. Cannot be bypassed.
+##############################################################
+
+post_processing_pipeline:
+
+  step_1_length_check:
+    max_sentences: 2
+    max_words_per_sentence: 8
+    on_violation: "truncate_at_sentence_boundary_and_log_warning"
+
+  step_2_vocabulary_filter:
+    method: "word_list_check against Pre-A1/A1 approved vocabulary + proper nouns"
+    on_adult_vocabulary_detected: "replace_with_simpler_synonym OR regenerate"
+    on_complex_grammar_detected: "simplify OR regenerate"
+    flag_for_review: true
+
+  step_3_forbidden_phrase_check:
+    blocklist:
+      - "no"           # As a standalone or at start of response
+      - "wrong"
+      - "incorrect"
+      - "that's not right"
+      - "try again"    # Without scaffolding
+      - "do you understand"
+      - "present tense"
+      - "grammar"
+      - "verb"
+      - "noun"
+      - "sentence"
+      - "practice"
+      - "lesson"
+      - "exercise"
+      - "test"
+      - "quiz"
+      - "score"
+      - "fail"
+      - "mistake"
+    on_blocked_phrase_detected: "regenerate — do not deliver"
+    max_regeneration_attempts: 2
+    on_regeneration_failure: "use_scripted_fallback_for_context"
+
+  step_4_pii_check:
+    check_for: ["child_surname", "school_name", "location", "parent_name"]
+    on_pii_detected: "strip and log — this should not occur if prompt is correct"
+
+  step_5_sentiment_check:
+    required_sentiment: "positive_or_neutral"
+    on_negative_sentiment: "regenerate"
+    method: "simple_keyword_scoring sufficient for MVP"
+
+##############################################################
+# QUESTION TYPE ROUTER
+# Routes question generation to appropriate type based on
+# confidence score for current item.
+##############################################################
+
+question_type_router:
+  input: "confidence_score for current_item"
+  
+  routing:
+    - range: [0, 30]
+      type: "RECOGNITION"
+      instruction: "Ask child to point to, show, or identify — no speech required"
+      examples:
+        - "Can you point to the {target}?"
+        - "Show me the {target}!"
+        - "Is this the {target}? Yes?"
+
+    - range: [31, 55]
+      type: "FORCED_CHOICE"
+      instruction: "Give two options. Child picks one."
+      examples:
+        - "Is it a {target} or a {distractor}?"
+        - "Which one? {target}... or {distractor}?"
+        - "{target} or {distractor} — which is it?"
+      distractor_selection: "from same semantic_cluster as target item"
+
+    - range: [56, 75]
+      type: "SUPPORTED_PRODUCTION"
+      instruction: "Give initial phoneme or first syllable. Child completes."
+      examples:
+        - "What is it? It's a {first_phoneme}..."
+        - "Say it with me — {target}! Now you say it!"
+        - "I think it's a... {first_two_letters}...?"
+
+    - range: [76, 100]
+      type: "FREE_PRODUCTION"
+      instruction: "Open question. No scaffold. Child produces independently."
+      examples:
+        - "What is this, {child_name}?"
+        - "Tell me — what animal is it?"
+        - "What do you see?"
+
+##############################################################
+# RECAST GENERATION RULES
+##############################################################
+
+recast_rules:
+  definition: "Teacher repeats child's utterance in correct form with warm positive energy, without flagging the error."
+  
+  prompt_instruction: |
+    The child said: "{child_response}"
+    The correct form is: "{target_form}"
+    Write a recast: include the correct form in your response as a natural part of your praise.
+    Do NOT say "No" or flag the error. Just use the correct form naturally.
+    Example: Child says "He have dog." → Teacher says "Yes! He HAS a dog! Great job, {name}!"
+
+  recast_variants_per_item: 5  # Generate 5 recast variants per item at session start, cache them
+  
+  recast_triggers:
+    - response_quality_signal == INCORRECT_ATTEMPT
+    - response_quality_signal == CORRECT_HESITANT (to reinforce correct form)
+  
+  recast_does_not_trigger_when:
+    - response_quality_signal == CORRECT_CONFIDENT (just praise, no need to recast)
+
+##############################################################
+# REWARD PALETTE
+# Scripted. 15+ variants. Backend tracks last_used to prevent
+# consecutive repetition.
+##############################################################
+
+reward_palette:
+
+  micro_rewards:
+    # Fire within 3 seconds of behavior. Rotated. Never same twice in a row.
+    variants:
+      - id: "RW001"
+        text: "Amazing!"
+        intensity: 3
+        animation: "star_burst"
+      - id: "RW002"
+        text: "Yes! You got it!"
+        intensity: 3
+        animation: "jump_celebration"
+      - id: "RW003"
+        text: "Ooh, I love that!"
+        intensity: 2
+        animation: "heart_float"
+      - id: "RW004"
+        text: "Great job saying that!"
+        intensity: 2
+        animation: "thumbs_up"
+      - id: "RW005"
+        text: "Wow, you're so good at this!"
+        intensity: 3
+        animation: "star_shower"
+      - id: "RW006"
+        text: "I knew you could do it!"
+        intensity: 3
+        animation: "proud_nod"
+      - id: "RW007"
+        text: "That was perfect!"
+        intensity: 4
+        animation: "fireworks"
+      - id: "RW008"
+        text: "You're teaching me!"
+        intensity: 3
+        animation: "surprised_delight"
+      - id: "RW009"
+        text: "I love how you tried!"
+        intensity: 2
+        animation: "warm_smile"
+      - id: "RW010"
+        text: "Brilliant!"
+        intensity: 3
+        animation: "sparkle"
+      - id: "RW011"
+        text: "Yes, YES, YES!"
+        intensity: 4
+        animation: "triple_jump"
+      - id: "RW012"
+        text: "Ooh, that was beautiful!"
+        intensity: 3
+        animation: "heart_burst"
+      - id: "RW013"
+        text: "Super! Let's keep going!"
+        intensity: 2
+        animation: "forward_motion"
+      - id: "RW014"
+        text: "You're my favorite!"
+        intensity: 4
+        animation: "hug_animation"    # [C] Test whether this lands well
+      - id: "RW015"
+        text: "Give me five!"
+        intensity: 4
+        animation: "high_five"
+
+  streak_escalation:
+    # [B] Escalate celebration intensity on consecutive correct responses
+    streak_1: intensity_weight_multiplier: 1.0
+    streak_2: intensity_weight_multiplier: 1.3
+    streak_3: intensity_weight_multiplier: 1.7
+    streak_4_plus: intensity_weight_multiplier: 2.0
+    streak_4_plus_special: "trigger_random_super_celebration"
+
+  effort_rewards:
+    # Fire on any attempt, correct or not. Lower intensity than correct rewards.
+    variants:
+      - "Good thinking!"
+      - "I love how you tried!"
+      - "Ooh, great try!"
+      - "You're so brave to try!"
+      - "I love your energy!"
+    always_fires: true
+    fires_before_recast: true
+
+  delivery_rules:
+    max_delay_ms: 3000
+    never_same_variant_consecutively: true
+    last_used_tracked_in: session_state.reward_state.last_reward_id

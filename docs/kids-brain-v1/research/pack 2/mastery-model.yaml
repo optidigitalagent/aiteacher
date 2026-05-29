@@ -1,0 +1,224 @@
+# mastery-model.yaml
+# Defines how mastery is determined, tracked, and decays for young ESL learners.
+# Critical: a correct answer is NOT mastery.
+# Mastery is a stable, multi-evidence claim about long-term retention.
+
+meta:
+  design_principle: >
+    Mastery is declared only when a child demonstrates retrieval across
+    multiple time points, activity types, and demand levels.
+    Single-session performance is treated as emerging evidence only. [A]
+  age_range: 6–9
+  language_context: ESL (English as a Second Language)
+
+# ─────────────────────────────────────────
+# MASTERY LEVELS
+# ─────────────────────────────────────────
+
+mastery_levels:
+
+  emerging:
+    description: >
+      Child has encountered the item. May recognize it in very
+      constrained contexts (e.g., forced_choice with 2 options).
+      No reliable retrieval yet.
+    color_code: red
+    minimum_signals:
+      - item_introduced: true
+    advancement_to_developing:
+      correct_comprehension_minimum: 2    # in same session
+      activity_types_required: 1          # any one activity
+      consecutive_correct_needed: 1
+    evidence_code: A
+
+  developing:
+    description: >
+      Child can comprehend and sometimes produce with support.
+      Recall is present but unstable — hesitation and errors occur.
+    color_code: yellow
+    minimum_signals:
+      - correct_comprehension_count >= 3
+      - correct_production_count >= 1
+      - seen_in_sessions >= 1
+    advancement_to_secure:
+      correct_production_minimum: 3        # across at least 2 sessions
+      correct_comprehension_minimum: 5
+      sessions_with_correct_production: 2  # cannot be achieved in single session
+      activity_diversity: 2                # must succeed in 2 different activity types
+      consecutive_correct_final: 2
+    decay_to_emerging:
+      if_not_seen_for_days: 14
+    evidence_code: B
+
+  secure:
+    description: >
+      Child can reliably produce and understand the item with minimal
+      hesitation across different activity types.
+      Retrieval is consistent but not yet automatic.
+    color_code: green
+    minimum_signals:
+      - correct_production_count >= 6
+      - correct_comprehension_count >= 8
+      - sessions_with_correct_production >= 3
+      - activity_diversity >= 3
+      - comprehension_confidence >= 75
+      - production_confidence >= 70
+    advancement_to_automatic:
+      correct_production_minimum: 10
+      correct_comprehension_minimum: 12
+      sessions_with_correct_production: 5
+      weeks_since_introduction: 2          # cannot be rushed [A]
+      max_hesitation_rate_last_10: 0.2     # ≤ 20% hesitant in last 10 attempts
+      production_confidence_min: 85
+    decay_to_developing:
+      if_not_seen_for_days: 21
+      or_if_wrong_production_rate_above: 0.4  # in latest session
+    evidence_code: B
+
+  automatic:
+    description: >
+      Child produces and understands effortlessly and accurately.
+      Recall is fast and consistent.
+      Item still included in spaced review but at low frequency.
+    color_code: blue
+    minimum_signals:
+      - production_confidence >= 85
+      - comprehension_confidence >= 85
+      - sessions_with_correct_production >= 5
+      - weeks_since_introduction >= 2
+    decay_to_secure:
+      if_not_seen_for_days: 30
+      or_if_wrong_production_rate_above: 0.25  # in latest session
+    evidence_code: B
+
+# ─────────────────────────────────────────
+# WORD MASTERY
+# ─────────────────────────────────────────
+
+word_mastery:
+  description: Mastery of a single lexical item (e.g., "cat")
+  tracks:
+    - word_id
+    - mastery_level
+    - production_confidence
+    - comprehension_confidence
+    - correct_production_count
+    - correct_comprehension_count
+    - sessions_seen
+    - sessions_with_correct_production
+    - activity_types_succeeded_in: []
+    - last_seen_timestamp
+    - last_correct_timestamp
+    - review_due_timestamp
+    - introduced_lesson_id
+    - introduced_session_date
+
+  signals_required_to_advance:
+    notes: >
+      No single signal determines mastery.
+      All advancement decisions require convergent evidence. [A]
+
+  false_mastery_guards:
+    - name: no_single_session_mastery
+      rule: >
+        A word cannot reach `secure` or `automatic` within a single session
+        regardless of performance. [A]
+    - name: no_speed_mastery
+      rule: >
+        Fast correct answers do not accelerate mastery advancement.
+        Time-in-learning is a required dimension. [B]
+    - name: no_prompted_mastery
+      rule: >
+        correct_prompted results do not count toward advancement
+        criteria for production_confidence. [A]
+
+# ─────────────────────────────────────────
+# PATTERN MASTERY
+# ─────────────────────────────────────────
+
+pattern_mastery:
+  description: >
+    Mastery of a grammatical or phonological pattern that spans
+    multiple words (e.g., "This is a ___", plural -s, color + noun).
+  tracks:
+    - pattern_id
+    - pattern_type: lexical | grammatical | phonological
+    - words_in_pattern: []
+    - mastery_level: emerging | developing | secure | automatic
+    - correct_pattern_uses: int
+    - sessions_with_pattern_use: int
+    - generalization_evidence: bool   # used pattern with a NEW word
+
+  advancement_rules:
+    emerging_to_developing:
+      correct_pattern_uses_min: 3
+      words_demonstrated_in: 2        # must see pattern across ≥2 different words
+
+    developing_to_secure:
+      correct_pattern_uses_min: 8
+      words_demonstrated_in: 4
+      sessions_demonstrated_in: 2
+      generalization_evidence: false  # generalization not required for secure
+
+    secure_to_automatic:
+      generalization_evidence: true   # must use pattern with novel word [A]
+      sessions_demonstrated_in: 4
+      correct_pattern_uses_min: 15
+
+  evidence_code: B
+
+# ─────────────────────────────────────────
+# UNIT MASTERY
+# ─────────────────────────────────────────
+
+unit_mastery:
+  description: >
+    Mastery of a curriculum unit (e.g., Unit 3: Animals).
+    Unit mastery unlocks next unit.
+  requires:
+    - all_target_words_at_minimum_developing: true
+    - target_words_at_secure_or_above_percent: 70
+    - unit_review_session_completed: true
+    - days_since_unit_introduction_minimum: 7   # no rushing units [B]
+
+  signals:
+    - words_at_emerging: int
+    - words_at_developing: int
+    - words_at_secure: int
+    - words_at_automatic: int
+    - unit_review_score: float (0.0–1.0)
+    - unit_unlocked: bool
+
+  evidence_code: B
+
+# ─────────────────────────────────────────
+# MASTERY DECAY MODEL
+# ─────────────────────────────────────────
+
+mastery_decay:
+  description: >
+    Memory fades without review. The engine tracks time since last
+    successful retrieval and applies decay penalties.
+    Designed for ages 6–9: decay is faster than adults. [B]
+
+  decay_schedule:
+    emerging:
+      no_review_days_until_decay: 7
+      decay_action: reset to introduced (retains emerging status but resets signals)
+
+    developing:
+      no_review_days_until_decay: 14
+      decay_action: lower to emerging
+
+    secure:
+      no_review_days_until_decay: 21
+      decay_action: lower to developing
+
+    automatic:
+      no_review_days_until_decay: 30
+      decay_action: lower to secure
+
+  notes:
+    - "Decay windows are conservative for young learners. [B]"
+    - "Decay does not apply during active lesson review. [A]"
+    - "Partial decay (confidence reduction without level drop) applied at 50% of decay threshold. [C]"

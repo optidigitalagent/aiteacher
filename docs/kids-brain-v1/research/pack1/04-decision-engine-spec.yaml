@@ -1,0 +1,382 @@
+# Mentium Kids — Decision Engine Specification
+# Version: 1.0
+# Classification: [A/B] Engineering design with pedagogical grounding
+
+# ─────────────────────────────────────────────────────────────
+# PRIORITY ORDER (evaluated top to bottom; first match wins)
+# ─────────────────────────────────────────────────────────────
+
+priority_order:
+  1: child_safety          # unsafe_or_sensitive label → immediate escalation
+  2: emotional_confidence  # recovery state, emotional_safety below threshold
+  3: comprehension         # does the child understand?
+  4: production            # can the child say it in English?
+  5: curriculum_progression
+  6: entertainment
+
+# ─────────────────────────────────────────────────────────────
+# DECISION ACTIONS CATALOG
+# ─────────────────────────────────────────────────────────────
+
+actions:
+
+  # ── SAFETY ──────────────────────────────────────────────────
+
+  escalate_to_safety:
+    description: "Immediately suspend pedagogical activity and handle safety event"
+    trigger_conditions:
+      - classification == unsafe_or_sensitive
+    required_state: any
+    forbidden_conditions: []
+    output_action: suspend_session_flag_human_review
+    teacher_response_type: warm_close_no_lesson_content
+    teacher_response_template: >
+      "Let's take a little break. Everything is okay."
+    memory_update:
+      - log: safety_event
+      - flag: requires_human_review
+    logging_event: SAFETY_FLAG
+    cost_impact: minimal (no LLM; pre-canned response)
+
+  # ── EMOTIONAL SAFETY ─────────────────────────────────────────
+
+  pause_and_check_in:
+    description: "Teacher pauses task and warmly checks on child"
+    trigger_conditions:
+      - classification in [emotional_shutdown, l1_refusal]
+      - OR emotional_safety < 0.35
+      - OR recovery_state == emotional_shutdown
+    required_state:
+      - emotional_safety: < 0.45
+    forbidden_conditions:
+      - never follow this with a task question immediately after
+    output_action: soft_pause
+    teacher_response_type: emotional_check_no_task
+    teacher_response_template: >
+      "Hey, are you okay? That's totally fine. We can take a break."
+    memory_update:
+      - decrement: engagement_level
+      - set: recovery_state = disengagement (if not already lower)
+    logging_event: EMOTIONAL_PAUSE
+    cost_impact: minimal
+
+  give_easiest_win:
+    description: "Give the child the simplest possible task they cannot fail"
+    trigger_conditions:
+      - recovery_state in [frustration_risk, repeated_failure]
+      - OR recent_failure_count >= 3
+      - OR emotional_safety < 0.5
+    required_state:
+      - item_mastery on any recent item: > 0.0 (something already seen)
+    forbidden_conditions:
+      - do not use if session_stamina < 0.2 (end session instead)
+    output_action: revert_to_mastered_item
+    teacher_response_type: low_stakes_recall
+    teacher_response_template: >
+      "Hey, do you remember this one? [shows already-mastered item]"
+    memory_update:
+      - increment: recent_success_count
+      - increment: emotional_safety += 0.1
+      - set: recovery_state = repaired_success (if success occurs)
+    logging_event: EASY_WIN
+    cost_impact: minimal
+
+  end_session:
+    description: "Gracefully close the session"
+    trigger_conditions:
+      - session_stamina < 0.15
+      - OR session_elapsed_ms > session_cap_ms
+      - OR recovery_state == emotional_shutdown AND give_easiest_win failed
+      - OR refusal repeated 3 times in session
+    required_state: any
+    forbidden_conditions: []
+    output_action: close_session_warmly
+    teacher_response_type: positive_farewell_no_failure_framing
+    teacher_response_template: >
+      "Amazing work today! See you next time!"
+    memory_update:
+      - write: session_summary
+      - write: last_item_reached
+      - write: items_attempted
+    logging_event: SESSION_END
+    cost_impact: minimal
+
+  # ── COMPREHENSION ACTIONS ─────────────────────────────────────
+
+  model_answer:
+    description: "Teacher says the correct answer clearly before asking child to repeat"
+    trigger_conditions:
+      - classification in [silence_long, no_response, i_dont_know, l1_translation]
+      - AND attempt_number <= 2
+    required_state:
+      - emotional_safety: >= 0.4
+    forbidden_conditions:
+      - do not model if model_was_given == true in this turn (avoid double model)
+    output_action: speak_target_clearly_then_invite_repeat
+    teacher_response_type: model_and_invite
+    teacher_response_template: >
+      "Listen — [target_item]. Can you say [target_item]?"
+    memory_update:
+      - set: model_was_given = true
+    logging_event: MODEL_GIVEN
+    cost_impact: minimal
+
+  ask_forced_choice:
+    description: "Present two options to lower production demand"
+    trigger_conditions:
+      - classification in [silence_medium, wrong_semantic, l1_translation, i_dont_know]
+      - AND attempt_number >= 1
+      - AND age_band: 6-7 (primary)
+    required_state:
+      - comprehension_confidence < 0.6
+    forbidden_conditions:
+      - do not repeat forced_choice more than twice on same item
+    output_action: present_two_choices
+    teacher_response_type: binary_choice_prompt
+    teacher_response_template: >
+      "Is it a [option_a] or a [option_b]?"
+    memory_update:
+      - none (choice itself updates state after response)
+    logging_event: FORCED_CHOICE_OFFERED
+    cost_impact: minimal
+
+  simplify:
+    description: "Reduce complexity — shorter sentence, easier word, fewer requirements"
+    trigger_conditions:
+      - classification in [wrong_semantic, avoidance_nonsense, repeated_failure pattern]
+      - AND activity_type != forced_choice (already simple)
+    required_state:
+      - production_confidence < 0.4
+    output_action: lower_difficulty_version_of_task
+    teacher_response_type: easier_prompt
+    memory_update:
+      - decrement: current_difficulty_level
+    logging_event: SIMPLIFY
+    cost_impact: minimal
+
+  use_l1_anchor:
+    description: "Briefly acknowledge L1, then bridge to English"
+    trigger_conditions:
+      - classification in [l1_translation, l1_help_request, code_switch]
+      - AND l1_dependency in child_state < 0.7 (don't anchor if already very L1-dependent)
+    required_state:
+      - l1_anchor_used_this_item: false (limit L1 use per item)
+    forbidden_conditions:
+      - do not use as primary teaching method
+      - do not repeat L1 anchor more than once per item
+    output_action: acknowledge_l1_model_english
+    teacher_response_type: l1_bridge
+    teacher_response_template: >
+      "Yes! Собака! In English, it's [dog]. Dog! Can you say dog?"
+    memory_update:
+      - set: l1_anchor_used_this_item = true
+      - increment: l1_dependency += 0.05
+    logging_event: L1_ANCHOR_USED
+    cost_impact: minimal
+
+  # ── PRODUCTION ACTIONS ───────────────────────────────────────
+
+  praise_and_progress:
+    description: "Acknowledge correct answer, celebrate, move to next item"
+    trigger_conditions:
+      - classification in [correct_confident]
+      - AND fake_praise_guard passes (see below)
+    required_state:
+      - emotional_safety: >= 0.5
+    forbidden_conditions:
+      - do not use effusive praise if recent_success_count > 5 (praise inflation)
+    output_action: celebrate_and_advance
+    teacher_response_type: contextual_praise_then_progress
+    praise_variety_required: true
+    memory_update:
+      - increment: recent_success_count
+      - increment: item_mastery for target_item
+      - decrement: frustration_risk
+      - set: last_correct_item
+    logging_event: CORRECT_PROGRESS
+    cost_impact: minimal (template-based) or low (LLM variety)
+
+  warm_praise_confirm:
+    description: "Praise hesitant correct answer, reinforce without pressure"
+    trigger_conditions:
+      - classification in [correct_hesitant, near_correct, pronunciation_variant]
+    output_action: affirm_and_recast
+    teacher_response_type: warm_recast
+    teacher_response_template: >
+      "Yes! [recast correct form]. Well done!"
+    memory_update:
+      - increment: recent_success_count (half weight)
+      - increment: production_confidence += 0.05
+    logging_event: WARM_CONFIRM
+    cost_impact: minimal
+
+  recast_and_confirm:
+    description: "Repeat correct form naturally after near-correct answer"
+    trigger_conditions:
+      - classification in [near_correct, pronunciation_variant, code_switch]
+    output_action: recast_target_naturally
+    teacher_response_type: implicit_correction
+    teacher_response_template: >
+      "Yes — [target_item]! Great!"
+    memory_update:
+      - increment: pronunciation_confidence += 0.03
+    logging_event: RECAST
+    cost_impact: minimal
+
+  praise_echo_then_check:
+    description: "Praise the echo/repeat, then check comprehension separately"
+    trigger_conditions:
+      - classification == repeated_after_model
+    output_action: praise_then_comprehension_check
+    teacher_response_type: echo_praise_then_new_prompt
+    teacher_response_template: >
+      "[target_item]! Yes! Now — [comprehension check prompt]"
+    memory_update:
+      - no mastery increment (echo doesn't confirm knowledge)
+      - set: comprehension_check_pending = true
+    logging_event: ECHO_DETECTED
+    cost_impact: minimal
+
+  # ── ENGAGEMENT / REDIRECT ACTIONS ───────────────────────────
+
+  play_along_briefly:
+    description: "Engage with child's playfulness for 1 turn, then redirect"
+    trigger_conditions:
+      - classification == playful_nonsense
+      - AND play_along_count_this_session < 2
+    required_state:
+      - engagement_level >= 0.6
+    forbidden_conditions:
+      - do not play along more than twice per session
+    output_action: brief_play_response_then_task
+    teacher_response_type: playful_redirect
+    memory_update:
+      - increment: play_along_count_this_session
+    logging_event: PLAY_ALONG
+    cost_impact: low (LLM for variety) or minimal (template)
+
+  warm_redirect:
+    description: "Acknowledge off-topic content without shame, redirect to task"
+    trigger_conditions:
+      - classification in [off_topic_story, distraction, random_nonsense]
+    output_action: acknowledge_then_redirect
+    teacher_response_type: warm_redirect
+    teacher_response_template: >
+      "Oh wow! Let's look at this too — [resume task]"
+    logging_event: REDIRECT
+    cost_impact: minimal
+
+  switch_activity:
+    description: "Move to a different activity type to reset engagement"
+    trigger_conditions:
+      - activity_fatigue >= 0.7
+      - OR engagement_level < 0.3
+      - OR avoidance_nonsense on same item 3+ times
+    required_state:
+      - session_stamina >= 0.3
+    output_action: change_activity_type
+    teacher_response_type: transition_prompt
+    teacher_response_template: >
+      "Okay let's try something different — ready?"
+    memory_update:
+      - reset: activity_fatigue
+      - increment: novelty_need_satisfied
+    logging_event: ACTIVITY_SWITCH
+    cost_impact: minimal
+
+  hold_current_item:
+    description: "Stay on this item — do not advance — but vary approach"
+    trigger_conditions:
+      - classification in [wrong_semantic, near_correct, repeated_after_model]
+      - AND item_mastery < 0.6
+      - AND attempt_number <= 3
+    output_action: retry_with_different_scaffold
+    logging_event: HOLD_ITEM
+    cost_impact: minimal
+
+  move_to_next_item:
+    description: "Advance to next item after sufficient mastery signal"
+    trigger_conditions:
+      - item_mastery >= 0.7
+      - OR classification == correct_confident AND attempt_number == 1
+      - OR correct_confident on item 2+ times this session
+    forbidden_conditions:
+      - do not advance if recovery_state is frustration_risk or worse
+    output_action: transition_to_next_item
+    teacher_response_type: progress_celebration
+    logging_event: ITEM_ADVANCE
+    cost_impact: minimal
+
+  continue_progression:
+    description: "Normal pacing — continue without intervention"
+    trigger_conditions:
+      - classification == correct_confident
+      - AND emotional_safety >= 0.7
+      - AND engagement_level >= 0.5
+    output_action: advance_normally
+    logging_event: NORMAL_PROGRESS
+    cost_impact: minimal
+
+# ─────────────────────────────────────────────────────────────
+# DECISION RESOLUTION ALGORITHM
+# ─────────────────────────────────────────────────────────────
+
+resolution_algorithm: |
+  1. Run safety check first.
+     IF classification == unsafe_or_sensitive → escalate_to_safety (exit)
+
+  2. Check emotional state.
+     IF emotional_safety < 0.35 → pause_and_check_in (exit)
+     IF recovery_state in [emotional_shutdown] → pause_and_check_in (exit)
+     IF session_stamina < 0.15 → end_session (exit)
+
+  3. Check recovery state.
+     IF recovery_state == frustration_risk AND recent_failure_count >= 3 → give_easiest_win
+     IF recovery_state == repeated_failure → model_answer or ask_forced_choice
+
+  4. Classify-based routing.
+     Look up classification label → get default_teacher_action from taxonomy.
+     Load corresponding action from decision engine.
+     Validate against required_state and forbidden_conditions.
+     If validation fails → use safe_fallback from taxonomy.
+
+  5. Apply priority guard.
+     Confirm action does not violate higher-priority rule.
+
+  6. Execute action.
+     Generate response (template or LLM, within style constraints).
+     Update state model.
+     Write logging event.
+
+# ─────────────────────────────────────────────────────────────
+# FAKE PRAISE GUARD
+# ─────────────────────────────────────────────────────────────
+
+fake_praise_guard:
+  description: >
+    Prevent hollow/automatic praise that children learn to ignore.
+    Praise should feel earned and specific, not reflexive.
+  rules:
+    - IF recent_success_count >= 6 AND all items trivial: use neutral_acknowledgement instead
+    - Rotate praise vocabulary: maintain list of 15+ variants; do not repeat same phrase within 3 turns
+    - After very easy task (first item for age_band 8-9): use simple "good" not "amazing"
+    - For correct_confident after model: use weaker praise than for unprompted correct
+  [B]: Research suggests specific praise ("You said 'dog'! Perfect!") outperforms generic ("Amazing!")
+
+# ─────────────────────────────────────────────────────────────
+# L1 USE POLICY IN DECISION ENGINE
+# ─────────────────────────────────────────────────────────────
+
+l1_policy:
+  permitted_uses:
+    - l1_anchor after l1_translation (once per item)
+    - l1_help_request: briefly explain then model English
+    - l1_refusal: acknowledge in L1 if needed for emotional safety
+  forbidden_uses:
+    - L1 as primary instructional language
+    - L1 when English scaffolding has not been attempted first
+    - L1 as default when child is silent (silence ≠ L1 request)
+  l1_dependency_management:
+    - Track l1_dependency in state model
+    - If l1_dependency > 0.6: prefer forced_choice over L1 anchoring
+    - Goal: decrease L1 dependency across sessions

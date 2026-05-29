@@ -1,0 +1,391 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kidsbrain/schemas/session-state/v1",
+  "title": "SessionState",
+  "description": "Runtime session state object. Created at session start, updated continuously, persisted at session end. The Session Orchestrator reads and writes this. All subsystems read from it. Backend-authoritative.",
+  "type": "object",
+  "required": [
+    "session_id",
+    "child_id",
+    "session_number",
+    "unit",
+    "started_at",
+    "status",
+    "curriculum_state",
+    "emotional_state",
+    "immersion_state",
+    "reward_state",
+    "timing_state",
+    "cost_state",
+    "open_loop_state"
+  ],
+
+  "properties": {
+
+    "session_id": {
+      "type": "string",
+      "description": "UUID for this session. Generated at start.",
+      "format": "uuid"
+    },
+
+    "child_id": {
+      "type": "string",
+      "description": "Reference to child profile. Never expose full profile in this object."
+    },
+
+    "session_number": {
+      "type": "integer",
+      "description": "Lifetime session count for this child. First session = 1.",
+      "minimum": 1
+    },
+
+    "unit": {
+      "type": "integer",
+      "description": "Current curriculum unit number."
+    },
+
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+
+    "ended_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "default": null
+    },
+
+    "status": {
+      "type": "string",
+      "enum": ["active", "closing", "completed", "abandoned"],
+      "description": "Session lifecycle status."
+    },
+
+    "curriculum_state": {
+      "type": "object",
+      "description": "Tracks what has been taught, what is active, and what remains.",
+      "required": ["active_items", "completed_items", "flagged_items", "current_item_id", "current_question_type"],
+      "properties": {
+
+        "active_items": {
+          "type": "array",
+          "description": "Learning object IDs currently in rotation for this session.",
+          "items": {
+            "type": "object",
+            "required": ["item_id", "confidence_score", "modes_used", "attempts", "successes"],
+            "properties": {
+              "item_id": { "type": "string" },
+              "confidence_score": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100,
+                "description": "Per-item confidence score. Drives question type routing."
+              },
+              "modes_used": {
+                "type": "array",
+                "description": "Interaction modes already used for this item this session. Mode Tracker uses this to ensure varied repetition.",
+                "items": { "type": "string" }
+              },
+              "attempts": {
+                "type": "integer",
+                "description": "Total attempts on this item this session.",
+                "minimum": 0
+              },
+              "successes": {
+                "type": "integer",
+                "description": "Correct responses this session.",
+                "minimum": 0
+              },
+              "consecutive_failures": {
+                "type": "integer",
+                "description": "Consecutive failures. Triggers Level 4 recovery at 2.",
+                "minimum": 0
+              },
+              "introduced_at_minute": {
+                "type": "number",
+                "description": "Session minute when item was first introduced."
+              }
+            }
+          }
+        },
+
+        "completed_items": {
+          "type": "array",
+          "description": "Item IDs considered acquired in this session (confidence >= 76).",
+          "items": { "type": "string" }
+        },
+
+        "flagged_items": {
+          "type": "array",
+          "description": "Item IDs removed from active rotation due to Level 4+ recovery. Pending reintroduction in different mode.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item_id": { "type": "string" },
+              "reason": { "type": "string" },
+              "flagged_at_minute": { "type": "number" },
+              "failed_mode": { "type": "string" }
+            }
+          }
+        },
+
+        "current_item_id": {
+          "type": ["string", "null"],
+          "description": "ID of the item currently being practiced."
+        },
+
+        "current_question_type": {
+          "type": "string",
+          "enum": ["RECOGNITION", "FORCED_CHOICE", "SUPPORTED_PRODUCTION", "FREE_PRODUCTION"],
+          "description": "Current position on question type ladder for current item."
+        },
+
+        "session_plan": {
+          "type": "array",
+          "description": "Ordered list of item IDs for this session (new + review). Set by Curriculum Engine at session start.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "emotional_state": {
+      "type": "object",
+      "description": "Tracks child's emotional and engagement state. Updated continuously by Emotional Engine.",
+      "required": ["recovery_level", "global_confidence_score", "consecutive_successes"],
+      "properties": {
+
+        "recovery_level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Current recovery engine level. 0 = normal flow."
+        },
+
+        "global_confidence_score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Rolling average of per-item confidence scores. Session-level indicator."
+        },
+
+        "consecutive_successes": {
+          "type": "integer",
+          "description": "Count of consecutive correct responses. Drives streak escalation in rewards.",
+          "minimum": 0
+        },
+
+        "freeze_events_this_session": {
+          "type": "integer",
+          "description": "Count of NO_RESPONSE events. Tracks overall session difficulty.",
+          "minimum": 0
+        },
+
+        "emotional_shutdown_occurred": {
+          "type": "boolean",
+          "description": "Whether Level 5 recovery was triggered this session.",
+          "default": false
+        },
+
+        "last_response_signal": {
+          "type": "string",
+          "enum": [
+            "CORRECT_CONFIDENT",
+            "CORRECT_HESITANT",
+            "INCORRECT_ATTEMPT",
+            "NO_RESPONSE",
+            "L1_SWITCH",
+            "REPEATED_FAILURE",
+            "EMOTIONAL_SHUTDOWN"
+          ],
+          "description": "Most recent response quality signal."
+        },
+
+        "state_estimate": {
+          "type": "string",
+          "enum": ["engaged", "neutral", "hesitant", "frustrated", "shutdown"],
+          "description": "Emotional Engine's current estimate of child state."
+        }
+      }
+    },
+
+    "immersion_state": {
+      "type": "object",
+      "description": "Tracks English-first rescue ladder state and L1 usage.",
+      "properties": {
+
+        "rescue_level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Current rescue ladder level. 0 = English only (default)."
+        },
+
+        "l1_events_this_session": {
+          "type": "integer",
+          "description": "Count of L1 uses this session (rescue ladder Level 4+).",
+          "minimum": 0
+        },
+
+        "l1_items": {
+          "type": "array",
+          "description": "Item IDs for which L1 was used this session.",
+          "items": { "type": "string" }
+        },
+
+        "wait_time_state": {
+          "type": "string",
+          "enum": ["idle", "waiting", "elapsed"],
+          "description": "Current state of wait time controller."
+        },
+
+        "wait_started_at_ms": {
+          "type": ["number", "null"],
+          "description": "Timestamp when current wait started."
+        }
+      }
+    },
+
+    "reward_state": {
+      "type": "object",
+      "description": "Tracks reward delivery to prevent habituation and ensure variation.",
+      "properties": {
+        "last_reward_id": {
+          "type": ["string", "null"],
+          "description": "ID of most recently delivered reward. Next reward must differ."
+        },
+        "rewards_delivered_this_session": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "current_streak": {
+          "type": "integer",
+          "description": "Consecutive correct responses. Drives escalation.",
+          "minimum": 0
+        }
+      }
+    },
+
+    "timing_state": {
+      "type": "object",
+      "description": "Tracks time-based triggers. Read by Session Orchestrator.",
+      "properties": {
+        "elapsed_seconds": {
+          "type": "number",
+          "description": "Seconds since session start. Updated continuously."
+        },
+        "last_novelty_injection_at_second": {
+          "type": ["number", "null"],
+          "description": "Session second when last novelty event was injected. Attention Engine uses this."
+        },
+        "session_phase": {
+          "type": "string",
+          "enum": ["open", "main", "review", "closing"],
+          "description": "Current phase of session lifecycle."
+        },
+        "minutes_until_close": {
+          "type": "number",
+          "description": "Time remaining before session close sequence triggers."
+        }
+      }
+    },
+
+    "cost_state": {
+      "type": "object",
+      "description": "Tracks resource usage for cost protection. Backend-enforced.",
+      "properties": {
+        "llm_calls_this_session": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of LLM calls. Hard cap: 40."
+        },
+        "tts_chars_this_session": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Characters sent to TTS. Hard cap: 3000."
+        },
+        "estimated_cost_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Estimated session cost. Alert if > 0.15."
+        },
+        "cost_cap_reached": {
+          "type": "boolean",
+          "description": "If true: LLM calls disabled, session uses scripted-only mode.",
+          "default": false
+        }
+      }
+    },
+
+    "open_loop_state": {
+      "type": "object",
+      "description": "Ensures every session ends with an unresolved hook. [B]",
+      "required": ["has_open_loop"],
+      "properties": {
+        "has_open_loop": {
+          "type": "boolean",
+          "description": "Session Orchestrator validates this is true before allowing session close.",
+          "default": false
+        },
+        "open_loop_type": {
+          "type": "string",
+          "enum": ["story_cliffhanger", "partial_collection", "next_session_hint", "character_secret"],
+          "description": "Which type of open loop was established."
+        },
+        "open_loop_text": {
+          "type": "string",
+          "description": "The actual preview text delivered to child."
+        }
+      }
+    },
+
+    "recovery_history": {
+      "type": "array",
+      "description": "Log of all recovery events this session. Used for session analysis and child profile update.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item_id": { "type": "string" },
+          "recovery_level": { "type": "integer" },
+          "pattern_used": { "type": "string" },
+          "resolved": { "type": "boolean" },
+          "at_minute": { "type": "number" }
+        }
+      }
+    },
+
+    "session_summary": {
+      "type": "object",
+      "description": "Populated at session end. Persisted to child profile. Used for next session opening.",
+      "properties": {
+        "items_introduced": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "items_mastered": {
+          "type": "array",
+          "description": "Items that reached confidence >= 76",
+          "items": { "type": "string" }
+        },
+        "items_flagged": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "total_attempts": { "type": "integer" },
+        "success_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "highlight_moment": {
+          "type": "string",
+          "description": "LLM-generated one-sentence highlight for parent summary and next session callback. Example: '{name} learned to say CAT, DOG, and FISH today!'"
+        },
+        "emotional_arc": {
+          "type": "string",
+          "enum": ["positive", "mixed", "difficult"],
+          "description": "Overall session emotional tone for child profile update."
+        },
+        "open_loop_text": {
+          "type": "string",
+          "description": "The open loop delivered — used for next session opening callback."
+        }
+      }
+    }
+  }
+}

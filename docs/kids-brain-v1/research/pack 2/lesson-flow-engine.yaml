@@ -1,0 +1,208 @@
+# lesson-flow-engine.yaml
+# Defines the structure and pacing of a single lesson session.
+# The lesson must always end on success. Never end after failure.
+
+meta:
+  core_constraint: >
+    A lesson has a defined arc: warm up → introduce → practice →
+    consolidate → close. The engine must ensure the arc completes
+    with the child in a positive, successful state. [B]
+  age_range: 6–9
+
+# ─────────────────────────────────────────
+# LESSON PHASES
+# ─────────────────────────────────────────
+
+lesson_phases:
+
+  warm_up:
+    purpose: >
+      Re-activate prior knowledge. Review items from previous session.
+      Calibrate current engagement and confidence levels.
+    allowed_activities:
+      - listen_and_point
+      - forced_choice_4
+      - repeat_after_me
+      - sentence_frame_production   # only for secure/automatic items
+    forbidden_activities:
+      - sentence_production         # do not cold-start with high demand
+    items:
+      source: previous_lesson_words OR overdue_review_words
+      max_items: 4
+    duration:
+      age_6_7_minutes: 3–4
+      age_8_9_minutes: 4–5
+    success_rule: >
+      If warm_up success rate < 50%, stay in warm_up phase
+      with easier items before advancing to introduction.
+    next_phase: introduction
+    note: "Warm-up primes retrieval and sets a positive emotional tone. [B]"
+
+  introduction:
+    purpose: >
+      Present new target vocabulary. One item at a time.
+      Build form-meaning mapping with rich input.
+    allowed_activities:
+      - listen_and_point
+      - repeat_after_me
+      - forced_choice_2
+      - forced_choice_4
+    forbidden_activities:
+      - sentence_production
+      - review_production
+    items:
+      source: current_lesson_target_words (new only)
+      max_new_items:
+        age_6_7: 3
+        age_8_9: 4
+    introduction_sequence_per_item:
+      step_1: teacher presents item with image + audio (listen_and_point)
+      step_2: repeat_after_me x1–2
+      step_3: forced_choice_2 x1
+      step_4: move to next item
+    duration:
+      age_6_7_minutes: 6–8
+      age_8_9_minutes: 7–10
+    rule: >
+      Do not introduce more than 1 new item every 2 minutes.
+      Overloading input is the primary cause of non-retention. [A]
+    next_phase: practice
+    note: "Item cap per lesson is strictly enforced. Less is more in young L2 learners. [A]"
+
+  practice:
+    purpose: >
+      Develop production ability for today's items.
+      Move up the activity demand ladder.
+      This is the core instructional phase.
+    allowed_activities:
+      - repeat_after_me
+      - forced_choice_4
+      - supported_production
+      - sentence_frame_production
+      - sentence_production
+    forbidden_activities:
+      - listen_and_point   # too low demand for practice
+      - review_production  # reserved for consolidation
+    items:
+      source: current_lesson_target_words (introduced this session)
+      cycle_through: true  # visit each item at least twice
+    duration:
+      age_6_7_minutes: 8–12
+      age_8_9_minutes: 10–15
+    progression_during_practice:
+      per_item_goal: reach sentence_frame_production or sentence_production
+      fallback_acceptable: supported_production if confidence doesn't support higher
+    difficulty_adjustment: per_item (items progress independently)
+    next_phase: consolidation
+    note: >
+      Practice is where most learning happens. Do not rush to consolidation. [B]
+
+  consolidation:
+    purpose: >
+      Force a retrieval gap. Review all introduced items.
+      Confirm learning before session ends.
+    allowed_activities:
+      - forced_choice_4
+      - supported_production
+      - sentence_frame_production
+      - sentence_production
+    forbidden_activities:
+      - listen_and_point
+      - repeat_after_me
+    items:
+      source: all items introduced in this session
+      minimum_coverage: 100%   # every introduced item must be reviewed
+      minimum_gap_from_introduction_minutes: 10
+    duration:
+      age_6_7_minutes: 4–6
+      age_8_9_minutes: 5–8
+    success_threshold: 0.70   # 70% correct to consider consolidation passed
+    if_below_threshold:
+      action: extend consolidation by 1 additional pass
+      fallback: reduce demand level for each failing item
+    next_phase: close
+
+  close:
+    purpose: >
+      End lesson on a positive, successful note.
+      Brief reward / celebration. Save progress.
+    rule: >
+      CRITICAL: The close phase must ONLY begin when the child
+      has succeeded at something in the last 2 activity events.
+      If not, insert an easiest_win before triggering close. [B]
+    allowed_activities:
+      - easiest_win protocol
+      - celebration_activity
+    forbidden_activities:
+      - any new item introduction
+      - any high-demand production activity
+    duration:
+      age_6_7_minutes: 1–2
+      age_8_9_minutes: 1–2
+    actions:
+      - trigger reward animation (Teacher Activity Layer)
+      - save mastery updates to Memory Architecture
+      - schedule review for all introduced items
+      - generate lesson completion report
+
+# ─────────────────────────────────────────
+# LESSON STRUCTURE BY AGE
+# ─────────────────────────────────────────
+
+lesson_structure_by_age:
+
+  age_6_7:
+    total_duration_minutes: 20–25
+    target_new_words: 3
+    review_words: 3–4
+    phase_sequence: [warm_up, introduction, practice, consolidation, close]
+    activity_switches_per_lesson: 6–9
+    reward_frequency: every 2–3 correct responses
+    note: >
+      Shorter attention span requires higher activity variety
+      and more frequent positive reinforcement. [B]
+
+  age_8_9:
+    total_duration_minutes: 25–35
+    target_new_words: 4
+    review_words: 4–5
+    phase_sequence: [warm_up, introduction, practice, consolidation, close]
+    activity_switches_per_lesson: 8–12
+    reward_frequency: every 3–4 correct responses
+    note: >
+      Slightly longer attention and greater metacognitive capacity.
+      Can sustain higher production demand earlier. [B]
+
+# ─────────────────────────────────────────
+# LESSON SHAPE (DIFFICULTY ARC)
+# ─────────────────────────────────────────
+
+lesson_difficulty_arc:
+  description: >
+    The lesson follows a deliberate difficulty arc to maintain
+    engagement and ensure a positive ending.
+  shape:
+    warm_up: medium (familiar items)
+    introduction: low (new items, high support)
+    practice_early: low-medium (scaffolded production)
+    practice_peak: medium-high (sentence production if ready)
+    consolidation: medium (familiar demand on fresh retrieval)
+    close: low (guaranteed success items)
+  principle: >
+    The peak challenge occurs in the middle of practice.
+    Never at the end. The lesson winds down from peak. [B]
+
+# ─────────────────────────────────────────
+# REVIEW INTEGRATION
+# ─────────────────────────────────────────
+
+review_integration:
+  warm_up_review_source:
+    - previous_lesson_items (all)
+    - overdue_review_items (by review_due timestamp)
+  consolidation_review_source:
+    - this_session_items only
+  weekly_review_replaces:
+    - warm_up phase only
+    - introduction still proceeds as normal
+    - weekly review block duration_max_minutes: 10

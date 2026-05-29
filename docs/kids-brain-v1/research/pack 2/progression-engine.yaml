@@ -1,0 +1,235 @@
+# progression-engine.yaml
+# Defines state transitions after every child response.
+# All rules are evaluated in priority order (highest first).
+# First matching rule wins.
+
+meta:
+  evidence_codes:
+    A: Strong evidence
+    B: Expert consensus
+    C: Hypothesis requiring validation
+
+# ─────────────────────────────────────────
+# CLASSIFICATION → PROGRESSION STATE MAP
+# ─────────────────────────────────────────
+
+# For each classification code, defines:
+#   - allowed_next_states: legal transitions from this result
+#   - forbidden_next_states: must never transition to these
+#   - minimum_production_confidence: floor before advance is permitted
+#   - minimum_comprehension_confidence: floor before advance is permitted
+
+classification_transitions:
+
+  correct_confident:
+    allowed_next_states:
+      - stay           # if mastery not yet secured
+      - advance        # if confidence thresholds met
+      - review         # if review is due
+    forbidden_next_states:
+      - lower_difficulty
+      - scaffold
+    minimum_production_confidence: 60
+    minimum_comprehension_confidence: 60
+    notes: "Single confident correct is not mastery. [A]"
+
+  correct_hesitant:
+    allowed_next_states:
+      - stay
+      - repeat
+      - scaffold       # if comprehension_confidence < 50
+    forbidden_next_states:
+      - advance
+      - lower_difficulty
+    minimum_production_confidence: 0
+    minimum_comprehension_confidence: 0
+    notes: "Hesitation signals unstable retrieval. Repeat before advancing. [B]"
+
+  correct_prompted:
+    allowed_next_states:
+      - repeat
+      - scaffold
+      - stay
+    forbidden_next_states:
+      - advance
+      - lower_difficulty
+    minimum_production_confidence: 0
+    minimum_comprehension_confidence: 0
+    notes: "Prompted correct = comprehension present, production unsupported. [A]"
+
+  partial_correct:
+    allowed_next_states:
+      - stay
+      - scaffold
+      - repeat
+    forbidden_next_states:
+      - advance
+    minimum_production_confidence: 0
+    minimum_comprehension_confidence: 0
+    notes: "Partial = something is learned. Do not penalize heavily. [B]"
+
+  wrong_semantic:
+    allowed_next_states:
+      - scaffold
+      - repeat
+      - lower_difficulty
+    forbidden_next_states:
+      - advance
+      - stay           # staying with same activity/difficulty after semantic error is ineffective
+    minimum_production_confidence: 0
+    minimum_comprehension_confidence: 0
+    notes: "Semantic confusion may indicate form-meaning mapping failure. Scaffold. [B]"
+
+  wrong_random:
+    allowed_next_states:
+      - scaffold
+      - lower_difficulty
+      - repeat         # only if frustration < 40
+    forbidden_next_states:
+      - advance
+      - stay
+    minimum_production_confidence: 0
+    minimum_comprehension_confidence: 0
+    notes: "Random errors may indicate guessing or disengagement. Check engagement. [B]"
+
+  no_response:
+    allowed_next_states:
+      - scaffold
+      - lower_difficulty
+      - repeat         # with reduced demand (e.g. forced_choice instead of production)
+    forbidden_next_states:
+      - advance
+      - stay           # never stay on same demand level after silence
+    minimum_production_confidence: 0
+    minimum_comprehension_confidence: 0
+    notes: "Silence = too high a demand, anxiety, or disengagement. Always reduce. [B]"
+
+  off_task:
+    allowed_next_states:
+      - stay           # resume same item after re-engagement
+      - lower_difficulty
+    forbidden_next_states:
+      - advance
+      - scaffold       # scaffold is a learning intervention, not re-engagement
+    minimum_production_confidence: 0
+    minimum_comprehension_confidence: 0
+    notes: "Off-task is not a learning signal. Do not update mastery. [B]"
+
+  imitation_only:
+    allowed_next_states:
+      - stay
+      - scaffold
+    forbidden_next_states:
+      - advance
+      - lower_difficulty
+    minimum_production_confidence: 0
+    minimum_comprehension_confidence: 0
+    notes: >
+      Imitation is a valid early production strategy for ages 6–9. [A]
+      Do not treat as incorrect. Scaffold toward deeper processing.
+
+# ─────────────────────────────────────────
+# PROGRESSION STATE DEFINITIONS
+# ─────────────────────────────────────────
+
+progression_states:
+
+  stay:
+    description: >
+      Continue current activity at current difficulty.
+      Child is making progress but mastery not yet secured.
+    max_consecutive_stay: 3
+    after_max_stay: scaffold
+
+  repeat:
+    description: >
+      Repeat the same item with identical activity and difficulty.
+      Use when child showed partial understanding.
+    max_consecutive_repeats: 2
+    after_max_repeats: scaffold
+    note: "Identical repeat without variation has limited benefit after 2 attempts. [A]"
+
+  scaffold:
+    description: >
+      Lower the demand of the current activity without changing the item.
+      Example: switch from sentence_production to forced_choice.
+    max_consecutive_scaffolds: 2
+    after_max_scaffolds: lower_difficulty
+
+  advance:
+    description: >
+      Move to a more demanding activity or the next item.
+      Requires confidence thresholds AND consecutive_correct conditions.
+    requirements:
+      consecutive_correct_minimum: 2
+      production_confidence_minimum: 65
+      comprehension_confidence_minimum: 65
+    note: "Advance on stability, not speed. [A]"
+
+  lower_difficulty:
+    description: >
+      Move to a simpler version of the task or an easier item.
+      Triggered by repeated failure or no_response.
+    triggers:
+      consecutive_wrong_minimum: 2
+      or_frustration_above: 60
+
+  review:
+    description: >
+      Return to a previously seen item from this session or earlier.
+      Scheduled by review-and-spacing-engine.
+    mandatory_after_item_completion: true
+    note: "Review is not optional. [A]"
+
+# ─────────────────────────────────────────
+# CONFIDENCE THRESHOLDS FOR ADVANCE
+# ─────────────────────────────────────────
+
+advance_thresholds:
+  # These are GLOBAL minimums. Per-activity rules may be stricter.
+
+  from_repeat_after_me:
+    to_forced_choice:
+      production_confidence_min: 40
+      consecutive_correct_min: 2
+
+  from_forced_choice:
+    to_supported_production:
+      production_confidence_min: 55
+      consecutive_correct_min: 2
+
+  from_supported_production:
+    to_sentence_production:
+      production_confidence_min: 70
+      consecutive_correct_min: 3
+
+  from_sentence_production:
+    to_review:
+      production_confidence_min: 75
+      comprehension_confidence_min: 70
+      consecutive_correct_min: 2
+
+# ─────────────────────────────────────────
+# FORBIDDEN GLOBAL TRANSITIONS
+# ─────────────────────────────────────────
+
+global_forbidden_transitions:
+  - from: any
+    to: advance
+    if: frustration > 70
+    reason: "Never advance a frustrated child regardless of accuracy. [B]"
+
+  - from: any
+    to: advance
+    if: consecutive_correct < 2
+    reason: "One correct answer never warrants advancement. [A]"
+
+  - from: any
+    to: stay
+    if: consecutive_wrong >= 3
+    reason: "Three consecutive wrongs require an intervention, not persistence. [B]"
+
+  - from: any
+    to: any_production_activity
+    if: comprehension_confidence < 35
+    reason: "Production cannot precede basic comprehension. [A]"
