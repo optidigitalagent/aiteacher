@@ -92,6 +92,14 @@ export const LOG_EVENTS = {
   ACTIVITY_TRANSITION_SELECTED: 'activity_transition_selected',
   EASIEST_WIN_SELECTED: 'easiest_win_selected',
   SESSION_CLOSE_DECISION: 'session_close_decision',
+
+  // Teacher Response Engine events (Phase 6)
+  TEACHER_RESPONSE_STARTED: 'teacher_response_started',
+  TEACHER_RESPONSE_FALLBACK_USED: 'teacher_response_fallback_used',
+  PLACEHOLDER_GUARD_TRIGGERED: 'placeholder_guard_triggered',
+  FORBIDDEN_PHRASE_BLOCKED: 'forbidden_phrase_blocked',
+  LLM_TEACHER_REQUESTED: 'llm_teacher_requested',
+  SAFETY_CLOSE_RESPONSE_BUILT: 'safety_close_response_built',
 } as const;
 
 export type LogEventName = (typeof LOG_EVENTS)[keyof typeof LOG_EVENTS];

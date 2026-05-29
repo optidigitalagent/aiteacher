@@ -41,6 +41,21 @@ export const CORE_TEACHER_VOCABULARY: readonly string[] = [
 
   // Numbers (core)
   'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+
+  // Essential prepositions present in scripted teacher responses
+  'in',
+
+  // L1-bridge words (scripted l1 recovery responses)
+  'english', 'heard',
+
+  // Greeting warmth (scripted greeting and emotional-shutdown responses)
+  'hey', 'ooh',
+
+  // Session-close words (scripted safety-close responses)
+  'soon', 'bye',
+
+  // Emotional-support and recovery words (scripted recovery responses)
+  'stuck', 'sometimes', 'too', 'get',
 ] as const;
 
 /**
