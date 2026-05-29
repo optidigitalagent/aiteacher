@@ -67,9 +67,19 @@ import { hashUserId } from '../observability/langfuse-client.js'
 import { recordTraceEvent } from '../runtime/index.js'
 import { recordStudentMessage, recordTeacherMessage, recordSystemEvent } from '../lesson/transcript-recorder.js'
 import { classifyVoiceTranscript } from '../voice/voice-turn-stabilizer.js'
+import {
+  startSession as kidsStartSession,
+  processTurn as kidsProcessTurn,
+} from '../kids-runtime/orchestrator.js'
+import type { ChildResponse as KidsChildResponse } from '../kids-runtime/types.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
+
+// ── Kids prototype caps ───────────────────────────────────────────────────────
+const KIDS_MAX_DURATION_MS = 15 * 60 * 1000
+const KIDS_MAX_LLM_CALLS   = 20
+const KIDS_MAX_TTS_CHARS   = 2000
 
 // Derive unit number from a section string like "2.3" → 2
 function unitFromSection(section: string): number {
@@ -448,6 +458,9 @@ interface ClientMeta {
   // finalized and a new usage record is created, elapsedMs = Date.now() - originalStart
   // would charge the full lesson duration again instead of just the current session.
   billingStartedAt: number | null
+  // Mentium Kids prototype mode flag
+  isKidsMode:    boolean
+  kidsSessionId: string | null  // in-memory session ID from kids orchestrator
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -1077,6 +1090,157 @@ async function handleLessonStart(
   await ttsStream(ws, meta, greeting)
 }
 
+// ── Mentium Kids prototype handlers ──────────────────────────────────────────
+
+async function kidsTtsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise<void> {
+  if (!text.trim()) return
+  if (meta.interruptPending) {
+    meta.interruptPending = false
+    meta.ttsActive = false
+    send(ws, { type: 'teacher_turn_end' })
+    return
+  }
+  meta.ttsCharCount += text.length
+  meta.ttsActive = true
+  const prev = meta.ttsController
+  meta.ttsController = new AbortController()
+  try { prev?.abort() } catch { /* ignore */ }
+  try {
+    await speakToClient(
+      (msg) => send(ws, msg),
+      text,
+      meta.ttsController.signal,
+      'nova',
+    )
+    send(ws, { type: 'teacher_turn_end' })
+  } catch (err: unknown) {
+    const isAbort = err instanceof Error && err.name === 'AbortError'
+    if (!isAbort) console.error('[kids] TTS error:', err instanceof Error ? err.message : err)
+    send(ws, { type: 'teacher_turn_end' })
+  } finally {
+    meta.ttsActive = false
+  }
+}
+
+async function handleKidsLessonStart(ws: WebSocket, meta: ClientMeta): Promise<void> {
+  const sessionId = meta.sessionId!
+  const userId = meta.userId!
+
+  try {
+    await query(
+      `UPDATE kids_sessions SET status = 'active', updated_at = NOW()
+       WHERE session_id = $1 AND user_id = $2`,
+      [sessionId, userId],
+    )
+  } catch (err) {
+    console.error('[kids] session_activate error:', err instanceof Error ? err.message : err)
+    send(ws, { type: 'error', code: 'INVALID_SESSION', message: 'Failed to activate kids session.' })
+    return
+  }
+
+  meta.isKidsMode      = true
+  meta.lessonId        = sessionId
+  meta.lessonStartedAt = Date.now()
+  meta.billingStartedAt = Date.now()
+
+  meta.maxDurationRef = setTimeout(() => {
+    console.log(`[kids] max_duration session=${sessionId}`)
+    send(ws, { type: 'error', code: 'LIMIT_REACHED', message: 'Session time limit reached.' })
+    ws.close(4400, 'Session time limit')
+  }, KIDS_MAX_DURATION_MS)
+
+  send(ws, { type: 'lesson_ready', sessionId })
+
+  const { sessionId: kidsId, greeting } = kidsStartSession({
+    childId:       userId,
+    childName:     'Student',
+    childAge:      8,
+    childL1:       'uk',
+    sessionNumber: 1,
+  })
+
+  meta.kidsSessionId = kidsId
+  console.log(`[kids] session_started user=${userId} session=${sessionId} kidsId=${kidsId}`)
+
+  const greetingText = greeting.slowTrack.text
+  send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: greetingText })
+  await kidsTtsStream(ws, meta, greetingText)
+}
+
+async function processKidsTurn(ws: WebSocket, meta: ClientMeta, text: string): Promise<void> {
+  const kidsId = meta.kidsSessionId
+  if (!kidsId) {
+    send(ws, { type: 'error', code: 'INVALID_SESSION', message: 'Kids session not initialized.' })
+    return
+  }
+
+  if (meta.lessonStartedAt && Date.now() - meta.lessonStartedAt > KIDS_MAX_DURATION_MS) {
+    send(ws, { type: 'error', code: 'LIMIT_REACHED', message: 'Session time limit reached.' })
+    ws.close(4400, 'Session time limit')
+    return
+  }
+
+  if (meta.aiCallCount >= KIDS_MAX_LLM_CALLS) {
+    send(ws, { type: 'error', code: 'LIMIT_REACHED', message: 'Prototype call limit reached.' })
+    ws.close(4400, 'Call limit reached')
+    return
+  }
+
+  if (meta.ttsCharCount >= KIDS_MAX_TTS_CHARS) {
+    send(ws, { type: 'error', code: 'LIMIT_REACHED', message: 'Prototype output limit reached.' })
+    ws.close(4400, 'Output limit reached')
+    return
+  }
+
+  meta.aiCallCount++
+
+  const childResponse: KidsChildResponse = { text, latencyMs: 1000 }
+
+  let result: Awaited<ReturnType<typeof kidsProcessTurn>>
+  try {
+    result = await kidsProcessTurn(kidsId, childResponse)
+  } catch (err) {
+    console.error('[kids] processTurn error:', err instanceof Error ? err.message : err)
+    send(ws, { type: 'error', code: 'INTERNAL_ERROR', message: 'Session processing error.' })
+    return
+  }
+
+  if (result.fastTrack.text) {
+    send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: result.fastTrack.text })
+  }
+
+  const responseText = result.slowTrack.text
+  if (responseText) {
+    send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: responseText })
+    await kidsTtsStream(ws, meta, responseText)
+  }
+
+  if (result.shouldClose) {
+    console.log(`[kids] session_closed_naturally session=${meta.sessionId}`)
+    try {
+      await query(
+        `UPDATE kids_sessions SET status = 'completed', ended_at = NOW(), updated_at = NOW(),
+         llm_calls = $1, tts_chars = $2 WHERE session_id = $3`,
+        [meta.aiCallCount, meta.ttsCharCount, meta.sessionId],
+      )
+    } catch { /* non-fatal */ }
+    const durationMin = meta.lessonStartedAt
+      ? Math.round((Date.now() - meta.lessonStartedAt) / 60000)
+      : 0
+    send(ws, {
+      type: 'lesson_end',
+      summary: {
+        lessonId:        meta.sessionId ?? '',
+        phasesReached:   ['DIAGNOSTIC'],
+        exerciseScore:   0,
+        vocabularyCount: result.updatedState.curriculumState.completedItems.length,
+        durationMin,
+      },
+    })
+    ws.close(1000, 'Session complete')
+  }
+}
+
 async function handleFocusLessonStart(
   ws: WebSocket,
   meta: ClientMeta,
@@ -1088,6 +1252,28 @@ async function handleFocusLessonStart(
   if (meta.lessonId) {
     console.log(`[paid-lesson] duplicate_begin_ignored lessonId=${meta.lessonId}`)
     return
+  }
+
+  // ── Kids session check — runs before billing/subscription gate ───────────
+  if (meta.sessionId && meta.userId) {
+    try {
+      const kidsRow = await query<{ user_id: string }>(
+        `SELECT user_id FROM kids_sessions WHERE session_id = $1 AND status != 'ended'`,
+        [meta.sessionId],
+      )
+      if (kidsRow.rows.length > 0) {
+        if (kidsRow.rows[0].user_id !== meta.userId) {
+          send(ws, { type: 'error', code: 'INVALID_SESSION', message: 'Session not found.' })
+          ws.close(4401, 'Invalid session')
+          return
+        }
+        await handleKidsLessonStart(ws, meta)
+        return
+      }
+    } catch (err) {
+      console.error('[kids] session_check error:', err instanceof Error ? err.message : err)
+      // Fall through to adult flow on DB error
+    }
   }
 
   if (!await checkAndLinkPaidSession(ws, meta)) return
@@ -1806,6 +1992,15 @@ async function processInput(
 ): Promise<void> {
   if (!meta.lessonId) {
     send(ws, { type: 'error', code: 'NO_LESSON', message: 'Start a lesson first.' })
+    return
+  }
+
+  // Kids mode: route to kids orchestrator, bypassing adult lesson flow
+  if (meta.isKidsMode) {
+    if (meta.aiProcessing) { meta.queuedInput = text; return }
+    meta.aiProcessing = true
+    try { await processKidsTurn(ws, meta, text) }
+    finally { meta.aiProcessing = false }
     return
   }
 
@@ -2936,6 +3131,8 @@ export function attachLessonWS(server: Server): void {
         lastSubmittedVoiceTurnId: null,
         stabilizationRef:         null,
         billingStartedAt: null,
+        isKidsMode:    false,
+        kidsSessionId: null,
       }
     }
 

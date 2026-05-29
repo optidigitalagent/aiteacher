@@ -1,0 +1,309 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kidsbrain/schemas/learning-object/v1",
+  "title": "LearningObject",
+  "description": "Canonical schema for a single vocabulary/language item in Kids Brain v1. Every item in the curriculum database must conform to this schema.",
+  "type": "object",
+  "required": [
+    "id",
+    "curriculum",
+    "unit",
+    "topic",
+    "word",
+    "word_type",
+    "forms",
+    "sentence_frames",
+    "tpr_gesture",
+    "visual_cue_id",
+    "sound_cue_id",
+    "difficulty",
+    "semantic_cluster",
+    "l1_translations",
+    "interaction_modes",
+    "rescue_ladder_scripts"
+  ],
+  "properties": {
+
+    "id": {
+      "type": "string",
+      "description": "Unique identifier. Format: {curriculum_code}-U{unit}-{type_code}{seq}. Example: SMS-U4-N001",
+      "pattern": "^[A-Z]+-U[0-9]+-[A-Z][0-9]+$"
+    },
+
+    "curriculum": {
+      "type": "string",
+      "enum": ["Super Minds Starter", "Super Minds Level 1"],
+      "description": "Source curriculum"
+    },
+
+    "unit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "description": "Unit number within curriculum"
+    },
+
+    "topic": {
+      "type": "string",
+      "description": "Unit theme. Example: 'Animals', 'My Body', 'Food'"
+    },
+
+    "word": {
+      "type": "string",
+      "description": "Base form of the target word or phrase"
+    },
+
+    "word_type": {
+      "type": "string",
+      "enum": ["noun", "verb", "adjective", "phrase", "number", "color"],
+      "description": "Grammatical category. Used internally only — never surfaced to child."
+    },
+
+    "forms": {
+      "type": "array",
+      "description": "All forms the child may encounter or produce",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "examples": [["a cat", "the cat", "cats"], ["jump", "jumping", "I can jump"]]
+    },
+
+    "sentence_frames": {
+      "type": "array",
+      "description": "Interaction frames — NOT grammar rules. These are the patterns used in question generation and production tasks.",
+      "items": {
+        "type": "object",
+        "required": ["frame", "example", "level"],
+        "properties": {
+          "frame": {
+            "type": "string",
+            "description": "Pattern template. Use {word} as placeholder.",
+            "examples": ["What is it? It's a {word}.", "I have a {word}.", "I like {word}s."]
+          },
+          "example": {
+            "type": "string",
+            "description": "Filled example for the item"
+          },
+          "level": {
+            "type": "string",
+            "enum": ["starter", "level_1"],
+            "description": "Which curriculum level introduced this frame"
+          }
+        }
+      },
+      "minItems": 1
+    },
+
+    "tpr_gesture": {
+      "type": "string",
+      "description": "Animation key for Total Physical Response gesture. Maps to animation library. Example: 'mime_stroking_cat', 'jump_action', 'eating_mime'",
+      "examples": ["mime_stroking_cat", "jump_action", "eating_mime", "pointing_to_body_part"]
+    },
+
+    "visual_cue_id": {
+      "type": "string",
+      "description": "ID of the associated image/visual in the asset library. Frontend fetches this.",
+      "examples": ["img_cat_001", "img_jump_001", "img_apple_001"]
+    },
+
+    "sound_cue_id": {
+      "type": "string",
+      "description": "ID of associated audio cue (animal sound, action sound, word sound effect). Used in Rescue Ladder Level 3.",
+      "examples": ["sfx_meow", "sfx_woof", "sfx_jump", "sfx_crunch_apple"]
+    },
+
+    "audio_model_id": {
+      "type": "string",
+      "description": "ID of pre-recorded teacher pronunciation model for this word. Used for phonics support.",
+      "examples": ["audio_cat_model_01", "audio_jump_model_01"]
+    },
+
+    "difficulty": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Relative difficulty for target age range. 1=very easy (cat, dog), 5=harder (butterfly, crocodile)"
+    },
+
+    "semantic_cluster": {
+      "type": "array",
+      "description": "IDs of semantically related items. Used for forced-choice distractors and co-occurrence in sessions.",
+      "items": { "type": "string" },
+      "minItems": 2,
+      "examples": [["SMS-U4-N002", "SMS-U4-N003", "SMS-U4-N004"]]
+    },
+
+    "l1_translations": {
+      "type": "object",
+      "description": "L1 anchor words for Rescue Ladder Level 4. Single word only — no sentences.",
+      "required": ["uk"],
+      "properties": {
+        "uk": {
+          "type": "string",
+          "description": "Ukrainian translation (single word/phrase)"
+        },
+        "ru": {
+          "type": "string",
+          "description": "Russian translation (single word/phrase)"
+        }
+      },
+      "examples": [{"uk": "кіт", "ru": "кот"}]
+    },
+
+    "interaction_modes": {
+      "type": "array",
+      "description": "All interaction modes available for this item. Used by Mode Tracker to ensure varied repetition across 7+ modes.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "point_recognition",
+          "yes_no",
+          "forced_choice",
+          "chorus_production",
+          "whisper_production",
+          "supported_production",
+          "free_production",
+          "tpr_action",
+          "song_context",
+          "story_context"
+        ]
+      },
+      "minItems": 5,
+      "description_of_modes": {
+        "point_recognition": "Child points to image — no speech required",
+        "yes_no": "Teacher names item, child confirms yes/no",
+        "forced_choice": "Two options presented, child picks one",
+        "chorus_production": "Teacher and child say it together",
+        "whisper_production": "Child whispers the word",
+        "supported_production": "Child produces with phonemic cue",
+        "free_production": "Child produces without any scaffold",
+        "tpr_action": "Child performs physical action associated with word",
+        "song_context": "Word appears in a song",
+        "story_context": "Word appears in a narrative context"
+      }
+    },
+
+    "rescue_ladder_scripts": {
+      "type": "object",
+      "description": "Item-specific scripts for each level of the Rescue Ladder. Pre-authored. Fills in at runtime.",
+      "required": ["level_1", "level_2", "level_3"],
+      "properties": {
+        "level_1": {
+          "type": "string",
+          "description": "Paralinguistic scaffold — what teacher says with emphasis. Use {word}.",
+          "examples": ["It's a BIG {word}! Look — {word}!"]
+        },
+        "level_2": {
+          "type": "string",
+          "description": "Visual scaffold — stripped-down pointing script. Use {word}.",
+          "examples": ["Look! [gesture]. {word}! What?"]
+        },
+        "level_3": {
+          "type": "string",
+          "description": "Sound/mime script — incorporate sound cue and mime. Use {word} and {sound_cue}.",
+          "examples": ["{sound_cue}! A {word}! {word}! What animal?"]
+        }
+      }
+    },
+
+    "story_context": {
+      "type": "object",
+      "description": "How this item appears in the unit narrative. Optional for MVP.",
+      "properties": {
+        "character": {
+          "type": "string",
+          "description": "Which story character uses/encounters this item"
+        },
+        "scene_summary": {
+          "type": "string",
+          "description": "One-sentence description of when this word appears in the story"
+        },
+        "session_introduced": {
+          "type": "integer",
+          "description": "Session number within the unit where this item is first introduced via story"
+        }
+      }
+    },
+
+    "recycled_in_units": {
+      "type": "array",
+      "description": "Unit numbers where this item recurs (spiral curriculum). Used by spaced repetition scheduler.",
+      "items": { "type": "integer" }
+    },
+
+    "prerequisite_items": {
+      "type": "array",
+      "description": "IDs of items that should be acquired before this one is introduced.",
+      "items": { "type": "string" }
+    },
+
+    "tags": {
+      "type": "array",
+      "description": "Flexible tagging for content filtering and session planning.",
+      "items": { "type": "string" },
+      "examples": [["animal", "pet", "unit4"], ["action", "verb", "body"]]
+    }
+  },
+
+  "examples": [
+    {
+      "id": "SMS-U4-N001",
+      "curriculum": "Super Minds Starter",
+      "unit": 4,
+      "topic": "Animals",
+      "word": "cat",
+      "word_type": "noun",
+      "forms": ["a cat", "the cat", "cats"],
+      "sentence_frames": [
+        {
+          "frame": "What is it? It's a {word}.",
+          "example": "What is it? It's a cat.",
+          "level": "starter"
+        },
+        {
+          "frame": "I have a {word}.",
+          "example": "I have a cat.",
+          "level": "starter"
+        },
+        {
+          "frame": "I like {word}s.",
+          "example": "I like cats.",
+          "level": "starter"
+        }
+      ],
+      "tpr_gesture": "mime_stroking_cat",
+      "visual_cue_id": "img_cat_001",
+      "sound_cue_id": "sfx_meow",
+      "audio_model_id": "audio_cat_model_01",
+      "difficulty": 1,
+      "semantic_cluster": ["SMS-U4-N002", "SMS-U4-N003", "SMS-U4-N004", "SMS-U4-N005"],
+      "l1_translations": {
+        "uk": "кіт",
+        "ru": "кот"
+      },
+      "interaction_modes": [
+        "point_recognition",
+        "yes_no",
+        "forced_choice",
+        "chorus_production",
+        "whisper_production",
+        "supported_production",
+        "free_production",
+        "tpr_action",
+        "song_context"
+      ],
+      "rescue_ladder_scripts": {
+        "level_1": "It's a BIG cat! Look — CAT!",
+        "level_2": "Look! [gesture]. Cat! What?",
+        "level_3": "Meow! A cat! CAT! What animal?"
+      },
+      "story_context": {
+        "character": "Luna the cat",
+        "scene_summary": "Luna appears in the forest and Milo needs to name her",
+        "session_introduced": 1
+      },
+      "recycled_in_units": [5, 7],
+      "prerequisite_items": [],
+      "tags": ["animal", "pet", "unit4", "starter", "easy"]
+    }
+  ]
+}

@@ -409,4 +409,23 @@ router.get('/lessons/:lessonId/transcript', requireAuth, async (req: Request, re
   }
 })
 
+// POST /lesson/kids/start — experimental authenticated mode (no subscription required)
+// Creates a mentium_kids session record. Enforces auth; no billing gate.
+router.post('/lesson/kids/start', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.userId
+  try {
+    const sessionId = uuid()
+    await query(
+      `INSERT INTO kids_sessions (session_id, user_id, mode, status)
+       VALUES ($1, $2, 'mentium_kids', 'created')`,
+      [sessionId, userId],
+    )
+    console.log(`[kids] session_created user=${userId} session=${sessionId}`)
+    res.json({ sessionId })
+  } catch (err) {
+    console.error('[kids] start error:', err instanceof Error ? err.message : err)
+    res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to create kids session' })
+  }
+})
+
 export default router

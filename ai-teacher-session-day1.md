@@ -1,521 +1,641 @@
-Read CLAUDE.md first.                                            
-                                                                   
-  TASK:                                                            
-  Implement Phase 2E.1 — Paid Correction Quality Alignment for AI  
-  Teacher.                                                         
-                                                                   
-  CONTEXT:                                                         
-  The paid lesson runtime audit is complete.                       
-                                                                   
-  Audit findings confirmed:                                        
-  - runtime architecture is strong                                 
-  - backend authority is correct                                   
-  - WS orchestration is stable                                     
-  - reconnect/resync is stable                                     
-  - guards are strong                                              
-  - teacher brain architecture is already sophisticated            
-  - Golden Runtime Certification passes                            
-                                                                   
-  This task is NOT about:                                          
-  - rewriting runtime                                              
-  - redesigning teacher prompts                                    
-  - adding memory systems                                          
-  - adding freeform conversation                                   
-  - changing lesson FSM                                            
-  - changing WS protocol                                           
-  - adding extra AI calls                                          
-                                                                   
-  PRIMARY AUDIT FINDING:                                           
-  The biggest remaining quality gap in paid lessons is:            
-  correction specificity asymmetry.                                
-                                                                   
-  Specifically:                                                    
-                                                                   
-  Legacy correction path already contains:                         
-  - deriveAnswerContext()                                          
-  - answer-aware correction hints                                  
-  - smarter contextual guidance                                    
-  - TYPE_TURN_A_SUPPLEMENT logic                                   
-                                                                   
-  BUT:                                                             
-  main engine/orchestrator path often falls back to:               
-  - generic correction phrasing                                    
-  - weak retry guidance                                            
-  - less exercise-aware specificity                                
-                                                                   
-  Result:                                                          
-  paid lessons sometimes feel:                                     
-  “technically correct but pedagogically flat.”                    
-                                                                   
-  ==================================================               
-  PRIMARY GOAL                                                     
-  ==================================================               
-                                                                   
-  Improve paid lesson correction quality                           
-  WITHOUT changing runtime architecture.                           
-                                                                   
-  Goal:                                                            
-  feed the existing teacher brain                                  
-  better correction context.                                       
-                                                                   
-  NOT:                                                             
-  make the AI “smarter” through more inference.                    
-                                                                   
-  ==================================================               
-  VERY IMPORTANT PRODUCT RULE                                      
-  ==================================================               
-                                                                   
-  Paid lessons are NOT demo lessons.                               
-                                                                   
-  DO NOT:                                                          
-  - make teacher overly conversational                             
-  - create free chat behavior                                      
-  - increase teacher verbosity                                     
-  - add emotional overreaction                                     
-  - add personality-heavy dialogue                                 
-                                                                   
-  Paid runtime must remain:                                        
-  exercise-authoritative.                                          
-                                                                   
-  Conversation exists:                                             
-  to support the exercise,                                         
-  not replace it.                                                  
-                                                                   
-  ==================================================               
-  TARGET OUTCOME                                                   
-  ==================================================               
-                                                                   
-  Corrections should become:                                       
-  - more specific                                                  
-  - more contextual                                                
-  - more pedagogically useful                                      
-  - more answer-aware                                              
-  - less generic                                                   
-  - less robotic                                                   
-                                                                   
-  WITHOUT:                                                         
-  - becoming long                                                  
-  - becoming chatty                                                
-  - leaking answers too early                                      
-  - increasing latency/cost                                        
-                                                                   
-  ==================================================               
-  REASONING MODE REQUIRED                                          
-  ==================================================               
-                                                                   
-  Before coding:                                                   
-                                                                   
-  1. Inspect all paid correction paths.                            
-                                                                   
-  Map:                                                             
-  - engine submit flow                                             
-  - correction generation flow                                     
-  - retry/stay logic                                               
-  - teacher context builder                                        
-  - correction hint builder                                        
-  - answer evaluation layer                                        
-  - deriveAnswerContext() usage                                    
-  - TYPE_TURN_A_SUPPLEMENT usage                                   
-  - orchestrator prompt assembly                                   
-  - AI correction examples                                         
-                                                                   
-  2. Compare:                                                      
-  legacy correction path                                           
-  vs                                                               
-  main engine/orchestrator path.                                   
-                                                                   
-  3. Identify:                                                     
-  - what contextual information is lost                            
-  - where specificity disappears                                   
-  - where generic retries appear                                   
-  - where correction hints flatten                                 
-  - where teacher loses exercise precision                         
-                                                                   
-  4. Explain:                                                      
-  - safest integration points                                      
-  - lowest-risk alignment improvements                             
-  - which existing utilities should be reused                      
-  - where runtime determinism must remain untouched                
-                                                                   
-  ==================================================               
-  IMPLEMENTATION STRATEGY                                          
-  ==================================================               
-                                                                   
-  DO NOT create:                                                   
-  - new AI systems                                                 
-  - new orchestration layers                                       
-  - new runtime abstractions                                       
-  - new memory systems                                             
-  - giant prompts                                                  
-                                                                   
-  Instead:                                                         
-  improve correction-context alignment                             
-  inside the existing architecture.                                
-                                                                   
-  ==================================================               
-  IMPLEMENTATION REQUIREMENTS                                      
-  ==================================================               
-                                                                   
-  1. Align engine path with smarter correction context             
-  ==================================================               
-                                                                   
-  Ensure main engine/orchestrator path receives:                   
-  - contextual answer hints                                        
-  - exercise-aware retry guidance                                  
-  - item-specific correction framing                               
-  - grammar/vocabulary focus context                               
-  - expected-answer shape hints                                    
-                                                                   
-  WITHOUT:                                                         
-  - leaking exact answers immediately                              
-  - over-explaining                                                
-  - adding extra inference calls                                   
-                                                                   
-  ==================================================               
-  2. Reuse existing correction intelligence                        
-  ==================================================               
-                                                                   
-  Audit showed useful logic already exists in legacy path.         
-                                                                   
-  Safely reuse where appropriate:                                  
-  - deriveAnswerContext()                                          
-  - answer-specific hint generation                                
-  - TYPE_TURN_A_SUPPLEMENT behavior                                
-  - contextual retry framing                                       
-  - answer-shape guidance                                          
-                                                                   
-  Prefer:                                                          
-  consolidation                                                    
-  over duplication.                                                
-                                                                   
-  ==================================================               
-  3. Improve retry guidance quality                                
-  ==================================================               
-                                                                   
-  Current weak pattern examples:                                   
-                                                                   
-  - “Try again.”                                                   
-  - “Not quite.”                                                   
-  - generic retries                                                
-  - flat correction loops                                          
-                                                                   
-  Target:                                                          
-  teacher gives:                                                   
-  - directional guidance                                           
-  - conceptual nudges                                              
-  - structure hints                                                
-  - grammar focus hints                                            
-  - contextual clarification                                       
-                                                                   
-  GOOD examples:                                                   
-                                                                   
-  Instead of:                                                      
-  “Incorrect. Try again.”                                          
-                                                                   
-  Prefer:                                                          
-  “Your idea is close — the tense is the part causing trouble      
-  here.”                                                           
-                                                                   
-  Instead of:                                                      
-  “Not quite.”                                                     
-                                                                   
-  Prefer:                                                          
-  “You have the right vocabulary, but the word order sounds        
-  unnatural here.”                                                 
-                                                                   
-  ==================================================               
-  4. Preserve pacing                                               
-  ==================================================               
-                                                                   
-  Paid lessons are long-form lessons.                              
-                                                                   
-  Corrections must remain:                                         
-  - concise                                                        
-  - fast                                                           
-  - lightweight                                                    
-  - exercise-focused                                               
-                                                                   
-  Avoid:                                                           
-  - mini essays                                                    
-  - long teaching paragraphs                                       
-  - over-analysis                                                  
-  - over-correction                                                
-                                                                   
-  ==================================================               
-  5. Preserve answer progression integrity                         
-  ==================================================               
-                                                                   
-  DO NOT:                                                          
-  - bypass retry logic                                             
-  - bypass stay/advance decisions                                  
-  - auto-advance incorrectly                                       
-  - leak hidden answers                                            
-  - change engine authority                                        
-                                                                   
-  The engine remains:                                              
-  single source of truth.                                          
-                                                                   
-  Teacher only:                                                    
-  interprets and guides.                                           
-                                                                   
-  ==================================================               
-  6. Improve correction precision by exercise type                 
-  ==================================================               
-                                                                   
-  Ensure corrections reflect:                                      
-  - grammar exercise type                                          
-  - vocabulary exercise type                                       
-  - fill-gap structure                                             
-  - ordering tasks                                                 
-  - free speaking tasks                                            
-  - multiple choice tasks                                          
-                                                                   
-  Teacher should sound aware of:                                   
-  what kind of exercise this is.                                   
-                                                                   
-  ==================================================               
-  7. Cursor alignment safety                                       
-  ==================================================               
-                                                                   
-  Audit identified possible stale-context risks.                   
-                                                                   
-  Verify:                                                          
-  teacher correction always references:                            
-  - canonical current cursor                                       
-  - canonical current item                                         
-  - canonical retry state                                          
-                                                                   
-  NEVER:                                                           
-  previous item accidentally.                                      
-                                                                   
-  ==================================================               
-  8. Runtime trace visibility                                      
-  ==================================================               
-                                                                   
-  If ENABLE_RUNTIME_TRACE=1,                                       
-  optionally emit:                                                 
-                                                                   
-  - correction_context_built                                       
-  - answer_context_derived                                         
-  - retry_guidance_selected                                        
-  - exercise_type_correction_used                                  
-  - correction_specificity_score                                   
-                                                                   
-  NO:                                                              
-  - raw transcript storage                                         
-  - secret logging                                                 
-  - sensitive payload dumps                                        
-                                                                   
-  ==================================================               
-  9. Cost safety                                                   
-  ==================================================               
-                                                                   
-  REQUIRED:                                                        
-  - added AI calls = 0                                             
-  - no DB writes                                                   
-  - no Redis writes                                                
-  - minimal prompt increase                                        
-  - no transcript memory                                           
-  - no runtime inflation                                           
-                                                                   
-  ==================================================               
-  10. TTS compatibility                                            
-  ==================================================               
-                                                                   
-  Ensure improved corrections:                                     
-  - still work with TTS                                            
-  - are not too long for speech pacing                             
-  - degrade gracefully if TTS unavailable                          
-                                                                   
-  ==================================================               
-  11. Scope boundaries                                             
-  ==================================================               
-                                                                   
-  DO NOT:                                                          
-  - redesign teacher personality                                   
-  - redesign prompts globally                                      
-  - copy demo conversational flow                                  
-  - introduce emotional companion behavior                         
-  - create autonomous tutoring                                     
-  - weaken certification guarantees                                
-                                                                   
-  This phase is:                                                   
-  pedagogical alignment refinement.                                
-                                                                   
-  ==================================================               
-  MANUAL QA TARGETS                                                
-  ==================================================               
-                                                                   
-  Verify manually on paid lessons:                                 
-                                                                   
-  1. Wrong grammar answer                                          
-  → correction identifies grammar issue naturally                  
-                                                                   
-  2. Wrong vocabulary answer                                       
-  → correction hints meaning/context problem                       
-                                                                   
-  3. Partial answer                                                
-  → teacher guides structure without leaking answer                
-                                                                   
-  4. Retry loop                                                    
-  → retries feel progressive, not repetitive                       
-                                                                   
-  5. Multiple exercise types                                       
-  → correction style adapts appropriately                          
-                                                                   
-  6. Reload/reconnect                                              
-  → correction still matches current cursor/item                   
-                                                                   
-  ==================================================               
-  ACCEPTANCE CHECKLIST                                             
-  ==================================================               
-                                                                   
-  - engine path receives richer correction context                 
-  - correction specificity improved                                
-  - retry guidance improved                                        
-  - exercise-type-aware corrections improved                       
-  - generic retries reduced                                        
-  - no stale-item corrections                                      
-  - pacing preserved                                               
-  - no extra AI calls                                              
-  - no runtime regressions                                         
-  - no WS regressions                                              
-  - no lesson FSM rewrite                                          
-  - Golden Runtime still passes                                    
-  - backend build/typecheck passes                                 
-                                                                   
-  RUN:                                                             
-  - backend build/typecheck                                        
-  - Golden Runtime Certification                                   
-  - paid lesson manual QA                                          
-  - reconnect/resync QA                                            
-                                                                   
-  FINAL REPORT:                                                    
-  Return:                                                          
-  - files changed                                                  
-  - correction-context improvements                                
-  - legacy logic reused                                            
-  - before/after correction examples                               
-  - runtime alignment safeguards                                   
-  - trace additions                                                
-  - cost impact                                                    
-  - Golden Runtime result                                          
-  - manual QA observations                                         
-  - remaining weak correction patternsIMPORTANT:                   
-  This task should be a surgical correction-context alignment fix, 
-   not a teacher personality rewrite.                              
+# MENTIUM KIDS V1 —        
+  IMPLEMENTATION MASTER      
+  PROMPT                     
+                             
+  You are a senior AI        
+  systems architect and      
+  backend-first product      
+  engineer working on a      
+  production-grade AI        
+  English learning platform. 
+                             
+  Your task is to build the  
+  FIRST experimental runtime 
+   for:                      
+                             
+  # Mentium Kids             
+                             
+  inside an already existing 
+   AI learning platform.     
+                             
+  ---                        
+                             
+  ## IMPORTANT CONTEXT       
+                             
+  The platform already has:  
+                             
+  * authentication           
+  * classroom infrastructure 
+  * realtime voice stack     
+  * AI teacher system        
+  * websocket sessions       
+  * TTS/STT                  
+  * adult learning runtime   
+  * lesson/session           
+  architecture               
+                             
+  DO NOT break or replace    
+  the adult system.          
+                             
+  DO NOT modify the existing 
+   adult Obsidian brain.     
+                             
+  We are building:           
+  a completely separate      
+  experimental kids runtime. 
+                             
+  ---                        
+                             
+  ## HIGH LEVEL PRODUCT IDEA 
+                             
+  Mentium Kids is NOT:       
+                             
+  * an AI chatbot            
+  * textbook pages           
+  * grammar exercises        
+  * typing-based learning    
+  * translation-heavy        
+  learning                   
+                             
+  Mentium Kids IS:           
+                             
+  * a realtime AI teacher    
+  companion                  
+  * emotionally safe         
+  * attention-preserving     
+  * English-first            
+  * interaction-driven       
+  * recovery-oriented        
+  * speaking-focused         
+                             
+  The child should feel:     
+  “I’m playing/interacting/a 
+  dventuring.”               
+                             
+  NOT:                       
+  “I’m studying English.”    
+                             
+  ---                        
+                             
+  ## PRIMARY PRODUCT GOAL    
+                             
+  The most important thing   
+  is NOT curriculum          
+  correctness.               
+                             
+  The most important thing   
+  is:                        
+                             
+  * emotional safety         
+  * engagement retention     
+  * confidence preservation  
+  * voluntary participation  
+  * natural interaction      
+                             
+  The AI teacher MUST:       
+                             
+  * prevent frustration      
+  * prevent emotional        
+  shutdown                   
+  * recover confusion        
+  naturally                  
+  * keep interaction moving  
+  * maintain English-first   
+  immersion                  
+                             
+  ---                        
+                             
+  ## ABSOLUTE CONSTRAINTS    
+                             
+  DO NOT:                    
+                             
+  * redesign the frontend    
+  globally                   
+  * touch adult runtime      
+  behavior                   
+  * replace the existing     
+  classroom                  
+  * build giant architecture 
+  * overengineer             
+  abstractions               
+  * create complex reward    
+  economies                  
+  * create multiplayer       
+  systems                    
+  * create full curriculum   
+  systems                    
+  * build long chatbot       
+  conversations              
+  * create grammar           
+  explanation systems        
+  * create translation-first 
+   teaching                  
+                             
+  DO NOT build:              
+                             
+  * worlds                   
+  * inventory systems        
+  * coins/economy systems    
+  * advanced memory systems  
+  * social systems           
+                             
+  This is NOT a production   
+  release.                   
+                             
+  This is:                   
+                             
+  # a runtime prototype for  
+  validating interaction     
+  quality.                   
+                             
+  ---                        
+                             
+  ## IMPLEMENTATION TARGET   
+                             
+  Create:                    
+                             
+  # Mentium Kids Prototype   
+  Runtime                    
+                             
+  inside:                    
+                             
+  /experimental/kids-brain-v 
+  1                          
+                             
+  ---                        
+                             
+  ## EXISTING CORE FILES     
+                             
+  Inside:                    
+                             
+  /experimental/kids-brain-v 
+  1/core                     
+                             
+  there are already          
+  operational brain          
+  specification files:       
+                             
+  * teacher-policy.md        
+  * dialogue-rules.yaml      
+  * recovery-engine.yaml     
+  * immersion-engine.yaml    
+  * learning-object.schema.j 
+  son                        
+  *                          
+  session-state.schema.json  
+  * example-transcripts.yaml 
+                             
+  These files are the SOURCE 
+   OF TRUTH.                 
+                             
+  Your runtime must FOLLOW   
+  them.                      
+                             
+  DO NOT replace them.       
+                             
+  ---                        
+                             
+  ## YOUR TASK               
+                             
+  Build ONLY the minimal     
+  execution/runtime layer    
+  required to validate:      
+                             
+  1. Emotional safety        
+  2. Freeze/confusion        
+  recovery                   
+  3. English-first           
+  interaction                
+  4. Attention preservation  
+  5. Natural teacher         
+  interaction                
+  6. Low-latency reactions   
+                             
+  ---                        
+                             
+  ## RUNTIME MODULES TO      
+  CREATE                     
+                             
+  Create:                    
+                             
+  /experimental/kids-brain-v 
+  1/runtime                  
+                             
+  with:                      
+                             
+  * orchestrator.ts          
+  * recovery-manager.ts      
+  * dialogue-manager.ts      
+  * immersion-manager.ts     
+  * session-engine.ts        
+                             
+  Keep implementation:       
+                             
+  * ultra-simple             
+  * understandable           
+  * testable                 
+  * backend-authoritative    
+                             
+  ---                        
+                             
+  ## WHAT THE MVP MUST DO    
+                             
+  The prototype only needs   
+  ONE topic:                 
+                             
+  # animals                  
+                             
+  Example vocabulary:        
+                             
+  * tiger                    
+  * lion                     
+  * elephant                 
+  * monkey                   
+  * dog                      
+  * cat                      
+                             
+  The runtime must support:  
+                             
+  1. Start session           
+  2. Teacher greeting        
+  3. Tiny speaking task      
+  4. Child response          
+  classification             
+  5. Recovery/scaffolding    
+  6. Continue interaction    
+  loop                       
+  7. End session naturally   
+                             
+  ---                        
+                             
+  ## EXAMPLE FLOW            
+                             
+  Teacher:                   
+  “Hi Alex! Today we’re      
+  going to the zoo!”         
+                             
+  Teacher:                   
+  “What animal do you see?”  
+                             
+  Child:                     
+  “I don’t know.”            
+                             
+  Runtime:                   
+                             
+  * detect confusion         
+  * trigger Recovery Engine  
+  * use immersion ladder     
+  * avoid immediate          
+  translation                
+  * simplify                 
+  * gesture/model/hint       
+  * preserve confidence      
+  * continue naturally       
+                             
+  ---                        
+                             
+  ## VERY IMPORTANT          
+                             
+  The AI teacher must NEVER: 
+                             
+  * sound like ChatGPT       
+  * produce long             
+  explanations               
+  * lecture grammar          
+  * overwhelm the child      
+  * wait too long before     
+  reacting                   
+  * shame mistakes           
+  * aggressively correct     
+                             
+  ---                        
+                             
+  ## FAST REACTION PIPELINE  
+                             
+  This is CRITICAL.          
+                             
+  When the child responds:   
+  the system must produce:   
+                             
+  * immediate emotional      
+  acknowledgement            
+    BEFORE                   
+    full LLM reasoning       
+  completes.                 
+                             
+  Example:                   
+  “Awesome!”                 
+  “Great try!”               
+  “Wow!”                     
+                             
+  This should happen         
+  independently of LLM       
+  latency.                   
+                             
+  ---                        
+                             
+  ## BACKEND AUTHORITY RULES 
+                             
+  Backend must remain        
+  authoritative.             
+                             
+  Frontend is only:          
+                             
+  * UI                       
+  * audio input/output       
+  * animation layer          
+                             
+  Frontend must NOT:         
+                             
+  * decide recovery states   
+  * decide immersion levels  
+  * track authoritative      
+  confidence                 
+  * bypass limits            
+  * generate prompts         
+                             
+  ---                        
+                             
+  ## PROTOTYPE LIMITS        
+                             
+  Hard limits:               
+                             
+  * max session length: 15   
+  min                        
+  * max LLM calls: 20        
+  * max TTS chars: 2000      
+  * max STT duration: 60 sec 
+                             
+  If limits are reached:     
+  fallback gracefully into   
+  scripted mode.             
+                             
+  ---                        
+                             
+  ## IMPORTANT               
+  IMPLEMENTATION PRIORITIES  
+                             
+  Priority order:            
+                             
+  1. emotional safety        
+  2. natural interaction     
+  3. low latency             
+  4. recovery quality        
+  5. immersion quality       
+  6. curriculum correctness  
+                             
+  NOT the reverse.           
+                             
+  ---                        
+                             
+  ## LOGGING REQUIREMENTS    
+                             
+  Log:                       
+                             
+  * silence duration         
+  * recovery triggers        
+  * recovery success/failure 
+  * confidence changes       
+  * L1 rescue usage          
+  * response latency         
+  * child response type      
+                             
+  These logs are REQUIRED.   
+                             
+  ---                        
+                             
+  ## DO NOT OVERENGINEER     
+                             
+  Avoid:                     
+                             
+  * giant abstractions       
+  * enterprise architecture  
+  * premature optimization   
+  * plugin systems           
+  * generic frameworks       
+                             
+  This is an EXPERIMENTAL    
+  runtime.                   
+                             
+  Clarity > scalability.     
+                             
+  ---                        
+                             
+  ## IMPLEMENTATION ROADMAP  
+                             
+  STEP 1                     
+  Create runtime structure.  
+                             
+  STEP 2                     
+  Implement session state    
+  handling.                  
+                             
+  STEP 3                     
+  Implement Recovery Engine  
+  first.                     
+                             
+  STEP 4                     
+  Implement immersion ladder 
+   behavior.                 
+                             
+  STEP 5                     
+  Implement dialogue         
+  orchestration.             
+                             
+  STEP 6                     
+  Implement fast-track       
+  reactions.                 
+                             
+  STEP 7                     
+  Implement one complete     
+  interaction loop.          
+                             
+  STEP 8                     
+  Add                        
+  logging/instrumentation.   
+                             
+  STEP 9                     
+  Test with scripted child   
+  scenarios.                 
+                             
+  STEP 10                    
+  Document known             
+  limitations.               
+                             
+  ---                        
+                             
+  ## TEST SCENARIOS          
+                             
+  Must support:              
+                             
+  * child answers correctly  
+  * child silent             
+  * child confused           
+  * child says “I don’t      
+  know”                      
+  * child answers in         
+  Russian/Ukrainian          
+  * child distracted         
+  * child repeats wrong      
+  answer twice               
+                             
+  ---                        
+                             
+  ## SUCCESS CRITERIA        
+                             
+  The prototype succeeds if: 
+                             
+  * interaction feels        
+  emotionally safe           
+  * recovery feels natural   
+  * child never gets stuck   
+  permanently                
+  * interaction remains      
+  mostly English-first       
+  * latency feels responsive 
+  * runtime stays            
+  stable/simple              
+                             
+  ---                        
+                             
+  ## FINAL IMPORTANT RULE    
+                             
+  If architecture complexity 
+   starts increasing         
+  rapidly:                   
+  ## FINAL IMPORTANT RULE                                       
+                                                                
+  If architecture complexity starts increasing rapidly:         
+  STOP and simplify.                                            
+                                                                
+  The goal is:                                                  
+                                                                
+  # validating interaction intelligence                         
+                                                                
+  NOT building a massive platform.                              
+                                                                
 
-● I'll start by reading the project rules and then thoroughly
-  inspect all paid correction paths before touching any code.
+● Let me first explore what's already in the experimental
+  directory before building anything.
 
-  Read 2 files (ctrl+o to expand)
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
 
-● Now let me do a thorough exploration of the correction paths.
+● Now let me read all the core spec files to understand the
+  source of truth before building.
 
-● Explore(Map all paid correction paths in the backend)
-  ⎿  In progress… · 20 tool uses · 23.3k tokens · (ctrl+o to 
-     (ctrl+b to run 38 background) 82 6
-●
-✢ ForDone (39 tool uses · 91.5k tokens · 1m 45s)
-  (ctrl+o to expand)o ask a quick side question without 
+  Read 7 files (ctrl+o to expand)
 
-● Excellent mapping. Now let me read the actual key files to see
-  the exact code before touching anything.
+● Now I have a complete picture of all spec files. Building the
+  runtime in structured pieces.
 
-  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+  Piece 1 of 4 — types + curriculum data + logger
 
-● Now let me read the exercise teaching files and the legacy
-  correction path in lesson-ws.ts.
+● Write(experimental\kids-brain-v1\runtime\types.ts)
+  ⎿  Wrote 166 lines to
+     experimental\kids-brain-v1\runtime\types.ts
+       2   | 'CORRECT_CONFIDENT'nal =
+       3   | 'CORRECT_HESITANT'
+       4   | 'INCORRECT_ATTEMPT'
+       5   | 'NO_RESPONSE'
+       6   | 'L1_SWITCH'
+       8   | 'EMOTIONAL_SHUTDOWN';
+       9 
+      10 export type QuestionType = 'RECOGNITION' | 'FORC
+         ED_CHOICE' | 'SUPPORTED_PRODUCTION' | 'FREE_PROD
+         UCTION';
+     … +167 lines (ctrl+o to expand)
 
-  Searched for 1 pattern, read 3 files (ctrl+o to expand)
+● Write(experimental\kids-brain-v1\runtime\animals-curriculum.ts
+       )
+  ⎿  Wrote 125 lines to experimental\kids-brain-v1\runtime\
+     animals-curriculum.ts
+         ;mport type { LearningObject } from './types.js'
+       2 
+       3 export const ANIMALS: LearningObject[] = [
+       4   {
+       5     id: 'SMS-U4-N001',
+       6     word: 'cat',
+       7     topic: 'Animals',
+       8     forms: ['a cat', 'the cat', 'cats'],
+       9     soundCueId: 'sfx_meow',
+      10     visualCueId: 'img_cat_001',
+     … +131 lines (ctrl+o to expand)
 
-● Now let me see how teacherInput from the orchestrator and the
-  exercise teaching context (in the system prompt) are combined.
+● Write(experimental\kids-brain-v1\runtime\logger.ts)
+  ⎿  Wrote 35 lines to
+     experimental\kids-brain-v1\runtime\logger.ts
+         /types.js'; { SessionLog, SessionState } from '.
+       2 
+       3 const sessionLogs = new Map<string, SessionLog[]
+         >();
+       4 
+       6   state: SessionState,
+       7   type: SessionLog['type'],
+       8   data: Record<string, unknown>
+       9 ): void {
+      10   const entry: SessionLog = {
+     … +32 lines (ctrl+o to expand)
 
-  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+● Piece 2 of 4 — session-engine + recovery-manager
 
-● Now I have the complete picture. The gap is crystal clear:
+● Write(experimental\kids-brain-v1\runtime\session-engine.ts)
+  ⎿  Wrote 194 lines to
+     experimental\kids-brain-v1\runtime\session-engine.ts
+      2 import type { SessionState, ItemState, QuestionTy
+        pe, StartSessionParams } from './types.js';
+      3 import { ANIMALS } from './animals-curriculum.js'
+        ;
+      4 import { log } from './logger.js';
+      5 
+      6 const SESSION_MAX_SECONDS = 15 * 60;
+      7 export const LLM_CALL_CAP = 20;
+      8 export const TTS_CHAR_CAP = 2000;
+      9 const STARTING_CONFIDENCE = 30;
+     … +222 lines (ctrl+o to expand)
 
-  Root cause: buildCorrectionBlock() in master-orchestrator.ts (the
-   engine path) is type-agnostic — it generates generic TURN
-  instructions like "Ask ONE guiding question..." regardless of
-  exercise type. Meanwhile, exercise-format-registry.ts already has
-   rich type-specific hintPolicy.turnA/B/C for every exercise type.
-   The registry's guidance reaches the system prompt via
-  buildExerciseTeachingBrainSection(), but the per-turn user 
-  message (teacherInput) overrides it with the generic text — which
-   is what the AI acts on.
+● Write(experimental\kids-brain-v1\runtime\recovery-manager.ts)
+  ⎿  Wrote 348 lines to
+     experimental\kids-brain-v1\runtime\recovery-manager.ts
+         veryLevel } from './types.js';sponseSignal, Reco
+       2 import { applyConfidenceDelta, flagItem } from '
+         ./session-engine.js';
+       4 import { log } from './logger.js';
+       5 // ─── Scripted script pools with rotation track
+         ing ─────────────────────────────
+       7 const EFFORT_PRAISE = [
+       8   'Ooh, good try! Listen — ',
+       9   'I love that you tried! It\'s ',
+      10   'Great thinking! Did you hear? ',
+     … +416 lines (ctrl+o to expand)
+  ⎿  You've hit your monthly spend limit.
+     /usage-credits to adjust your monthly spend limit.
 
-  Fixes needed:
-  1. buildCorrectionBlock() must use
-  getHintPolicy(exerciseType).turnA/B/C instead of generic text
-  2. buildTeacherContextFromResult() must pass etr.exerciseType to
-  buildCorrectionBlock()
-  3. Add a lightweight deriveAnswerShapeHint() (mirrors legacy
-  deriveAnswerContext()) for grammar-form answers
-  4. Add trace log when ENABLE_RUNTIME_TRACE=1
+✻ Cogitated for 11m 45s
+   Continue ONLY the minimal runtime prototype.
 
-  Read 1 file (ctrl+o to expand)
-  ⎿  You've hit your session limit · resets 2:20pm (Europe/Kiev)
-     /upgrade to increase your usage limit.
-Continue from the identified root cause and implementation plan.
+Do NOT expand architecture.
+Do NOT add new systems.
+Do NOT add rewards/economy/multiplayer/features.
 
-You already completed:
+Finish ONLY:
 
-* full paid runtime audit
-* correction-path mapping
-* legacy vs engine-path comparison
-* root-cause identification
+* dialogue-manager.ts
+* immersion-manager.ts
+* orchestrator.ts
 
-DO NOT restart exploration.
+Then:
 
-Resume directly from the identified fixes:
+* wire the runtime together
+* create one runnable interaction flow
+* add simple test harness/scripts
+* validate the complete ask → listen → recover → continue loop
 
-1. buildCorrectionBlock()
-   → replace generic correction guidance with exercise-type-aware guidance using:
-   getHintPolicy(exerciseType).turnA/B/C
+Keep everything:
 
-2. buildTeacherContextFromResult()
-   → pass canonical exerciseType into correction-context generation
+* simple
+* testable
+* backend-authoritative
+* low-latency
 
-3. Implement lightweight deriveAnswerShapeHint()
-   → grammar/vocabulary/order-aware answer-shape guidance
-   → inspired by legacy deriveAnswerContext()
-   → no transcript memory
-   → no extra AI calls
-
-4. Add optional runtime trace events when ENABLE_RUNTIME_TRACE=1:
-
-* correction_context_built
-* answer_context_derived
-* retry_guidance_selected
-* exercise_type_correction_used
-
-IMPORTANT:
-This is a surgical correction-context alignment fix.
-Do NOT:
-
-* redesign prompts
-* rewrite orchestrator
-* add freeform conversation
-* add extra AI calls
-* weaken runtime determinism
-* modify lesson FSM
-* modify WS protocol
-
-After implementation:
-
-* run backend typecheck
-* run Golden Runtime Certification
-* run paid lesson QA
-* verify correction specificity improved without verbosity increase
-
-Then return final report:
-
-* files changed
-* exact alignment fixes implemented
-* before/after correction examples
-* runtime safety safeguards
-* trace additions
-* Golden Runtime result
-* remaining weak correction patterns
+Focus ONLY on:
+interaction quality and recovery behavior.

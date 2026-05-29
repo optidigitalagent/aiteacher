@@ -23,6 +23,7 @@ const MIGRATIONS = [
   '013_runtime_safety.sql',
   '014_student_memory.sql',
   '015_lesson_transcripts.sql',
+  '018_kids_sessions.sql',
 ]
 
 async function migrate(): Promise<void> {

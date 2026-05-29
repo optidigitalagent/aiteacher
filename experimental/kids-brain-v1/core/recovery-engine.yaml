@@ -1,0 +1,325 @@
+##############################################################
+# Recovery Engine — Kids Brain v1
+# 5-Level Frustration Recovery State Machine
+# 
+# This is the most critical runtime subsystem.
+# Built before curriculum engine. Operates independently.
+# All session flows run through this state machine.
+#
+# Classification: [A] Evidence-backed (Krashen Affective Filter,
+#   Vygotsky ZPD, Dweck Growth Mindset, teacher observation data)
+##############################################################
+
+version: "1.0"
+priority: CRITICAL
+
+##############################################################
+# CORE PRINCIPLE
+# Recovery does not aim to teach the item.
+# Recovery aims to restore the emotional state that makes 
+# teaching possible. A recovery sequence that ends with the
+# child still confused but "progressed past" has FAILED.
+# Recovery succeeds ONLY when the child experiences a win.
+##############################################################
+
+##############################################################
+# INPUT SIGNALS
+# The Recovery Engine receives these signals from:
+# - Emotional Engine (confidence_score, state_estimate)
+# - Session Orchestrator (response_latency, response_type)
+# - Immersion Engine (l1_switch_detected)
+# - Dialogue Engine (response_quality_signal)
+##############################################################
+
+input_signals:
+
+  response_quality_signal:
+    CORRECT_CONFIDENT:
+      description: "Fast response, clear production, matches target"
+      latency_range_ms: [500, 3000]
+      maps_to_recovery_level: 0
+
+    CORRECT_HESITANT:
+      description: "Correct but slow, quiet, or uncertain"
+      latency_range_ms: [3000, 6000]
+      maps_to_recovery_level: 1
+
+    INCORRECT_ATTEMPT:
+      description: "Child tried but produced wrong form"
+      maps_to_recovery_level: 2
+
+    NO_RESPONSE:
+      description: "Silence beyond wait_time threshold"
+      trigger_ms: "age_profile.response_timing.wait_time_before_scaffold_ms"
+      maps_to_recovery_level: 3
+
+    L1_SWITCH:
+      description: "Child responded in Ukrainian or Russian"
+      maps_to_recovery_level: 3
+
+    REPEATED_FAILURE:
+      description: "Same item failed twice consecutively"
+      maps_to_recovery_level: 4
+
+    EMOTIONAL_SHUTDOWN:
+      description: "Prolonged silence + L1-only + volume drop"
+      detection: "silence > hard_cutoff AND (l1_switch OR volume_drop_detected)"
+      maps_to_recovery_level: 5
+
+##############################################################
+# STATE MACHINE
+##############################################################
+
+states:
+
+  # ─────────────────────────────────────────────────────────
+  # LEVEL 0 — NORMAL FLOW
+  # ─────────────────────────────────────────────────────────
+  level_0:
+    name: "Normal Flow"
+    trigger: response_quality_signal == CORRECT_CONFIDENT
+    confidence_adjustment: +5
+    actions:
+      - fire_micro_reward               # Immediate praise within 3s
+      - advance_question_type_if_ready  # Move up question ladder if confidence ≥ threshold
+      - log_success(item_id, mode)
+    next_item: true
+    teacher_behavior: "Praise + continue"
+
+  # ─────────────────────────────────────────────────────────
+  # LEVEL 1 — HESITANT RESPONSE
+  # "I got something, but the child wasn't confident"
+  # ─────────────────────────────────────────────────────────
+  level_1:
+    name: "Hesitant Response"
+    trigger: response_quality_signal == CORRECT_HESITANT
+    confidence_adjustment: +2   # Smaller gain — confidence not fully established
+    actions:
+      - fire_amplified_praise           # Bigger than normal to boost confidence
+      - deliver_recast                  # Confirm correct form warmly
+      - repeat_item_in_same_mode        # One more supported attempt
+      - do_NOT_advance_question_type    # Stay at current level
+    teacher_script_variants:            # Scripted. Rotate. Never repeat consecutively.
+      - "Yes! {recast}! Say it one more time — {target}!"
+      - "I heard you! {recast}! Can you say it a little louder?"
+      - "Ooh! {recast}! You know this! Say it again!"
+      - "Yes! {recast}! One more time — nice and clear!"
+      - "I love how you said that! {recast}! Again?"
+
+  # ─────────────────────────────────────────────────────────
+  # LEVEL 2 — INCORRECT ATTEMPT
+  # "Child tried but got it wrong. The attempt is the behavior to praise."
+  # ─────────────────────────────────────────────────────────
+  level_2:
+    name: "Incorrect Attempt"
+    trigger: response_quality_signal == INCORRECT_ATTEMPT
+    confidence_adjustment: -3
+    actions:
+      - fire_effort_praise_IMMEDIATELY  # Praise the attempt before anything else
+      - deliver_recast                  # Correct form embedded in warm response
+      - deliver_shared_answer           # Teacher + child say it together
+      - re_attempt_at_LOWER_question_type  # Drop one level on question ladder
+    sequence:
+      step_1: "Effort praise (scripted)"
+      step_2: "Recast (LLM-generated, warm)"
+      step_3: "Together production (scripted)"
+      step_4: "Easiest possible win (recognition or yes/no)"
+      step_5: "Success moment — celebrate"
+    teacher_script_variants:
+      effort_praise:
+        - "Ooh, good try! Listen — {recast}!"
+        - "I love that you tried! It's {recast}!"
+        - "Great thinking! Did you hear? {recast}!"
+        - "Yes, you're SO close! It's {recast}!"
+        - "Mmm! Good thinking! {recast}!"
+      shared_answer:
+        - "Say it with me! Ready? {target}! Now you!"
+        - "Together! One, two, three — {target}! You try!"
+        - "Let's say it together — {target}! Your turn!"
+      guarantee: "Must end with child producing target form, even if just one syllable"
+
+  # ─────────────────────────────────────────────────────────
+  # LEVEL 3 — FREEZE (No Response) or L1 Switch
+  # "Child is stuck or has retreated to native language"
+  # ─────────────────────────────────────────────────────────
+  level_3:
+    name: "Freeze or L1 Switch"
+    trigger: "response_quality_signal == NO_RESPONSE OR L1_SWITCH"
+    confidence_adjustment: -8
+    pattern_selection: "choose_one_of_three_based_on_recent_history"
+    patterns:
+
+      pattern_3a_silly_guess:
+        name: "The Silly Guess"
+        description: "Teacher makes a deliberately wrong, funny guess. Breaks tension. Child corrects teacher."
+        teacher_script_variants:
+          - "Hmm... is it a... BANANA? No no no! Is it a... ELEPHANT? Hmm! What IS it?"
+          - "Wait — I think it's a... PIZZA? That can't be right! Do YOU know?"
+          - "Is it a... SHOE? A flying shoe? No! I need your help! What is it?"
+        expected_outcome: "Child laughs and/or says the correct word confidently"
+        on_success:
+          confidence_adjustment: +10  # Higher than normal — this is confident correction of teacher
+          action: fire_amplified_celebration
+        note: "[B] Deliberate confusion as elicitation is underused in AI tutoring. High-value pattern."
+
+      pattern_3b_together_answer:
+        name: "The Together Answer"
+        description: "Say it in chorus. Child produces correctly in group safety."
+        teacher_script_variants:
+          - "Let's say it together! Ready? One, two, three — {target}! Now YOU!"
+          - "With me! {target}! Together — {target}! Your turn!"
+          - "You and me! {target}! Again — {target}! Now just you!"
+        expected_outcome: "Child produces target form with teacher support"
+        on_success:
+          confidence_adjustment: +5
+          action: fire_praise
+
+      pattern_3c_easiest_win:
+        name: "The Easiest Win"
+        description: "Immediately drop to a task the child cannot fail."
+        task_examples:
+          - "Can you point to the {target}?"       # Recognition — cannot fail
+          - "Is this a {target}? Yes or no?"       # Yes/no — near-zero failure
+          - "Nod your head if you see the {target}!"  # Non-verbal — zero speech risk
+        expected_outcome: "Child succeeds. Confidence partially restored."
+        on_success:
+          confidence_adjustment: +8
+          action: "fire_praise + escalate_back_to_forced_choice"
+
+    l1_switch_specific_handling:
+      acknowledge: true
+      script: "Oh! I heard you! In English, we say {target}! Can you say {target}?"
+      note: "Acknowledge the L1 attempt warmly. Do NOT ignore or correct the L1 use as wrong. Reframe to English immediately."
+      l1_counter_increment: true
+
+  # ─────────────────────────────────────────────────────────
+  # LEVEL 4 — REPEATED FAILURE ON SAME ITEM
+  # "This item is currently outside ZPD. Tactical retreat."
+  # ─────────────────────────────────────────────────────────
+  level_4:
+    name: "Repeated Failure — Item Flag"
+    trigger: "same item has triggered Level 2+ response twice consecutively"
+    confidence_adjustment: 0   # Do NOT further reduce confidence
+    actions:
+      - flag_item_for_repositioning     # Mark item as "needs reintroduction in different mode"
+      - perform_full_activity_reset     # Switch to completely different activity
+      - inject_guaranteed_success_activity  # Song, game, or known-easy item
+      - return_to_flagged_item_in_3_to_5_minutes_via_different_mode
+    reset_activity_options:             # [C] Specific activities require validation
+      - "vocabulary_song"               # Song tied to current unit cluster
+      - "action_game"                   # TPR game (Simon Says equivalent)
+      - "easy_review_item"              # Previously mastered item for confidence rebuild
+    teacher_script:
+      transition: "Ooh! Let's do something fun for a minute! Ready?"
+      return_preview: "We'll come back to that word later — in a SECRET game!"
+    curriculum_engine_signal:
+      action: "remove_item_from_active_rotation"
+      reintroduce_after: "next_session_via_different_interaction_mode"
+    note: "[A] ZPD theory: item outside current ZPD. Tactical retreat is correct response, not persistence."
+
+  # ─────────────────────────────────────────────────────────
+  # LEVEL 5 — EMOTIONAL SHUTDOWN
+  # "Child has emotionally exited. Teaching is impossible.
+  #  Priority is ONLY emotional recovery, not language."
+  # ─────────────────────────────────────────────────────────
+  level_5:
+    name: "Emotional Shutdown"
+    trigger: "prolonged_silence AND (l1_only OR volume_drop_detected OR repeated_level_4)"
+    confidence_adjustment: 0   # Do NOT attempt to teach anything right now
+    actions:
+      - STOP_ALL_CURRICULUM_CONTENT_IMMEDIATELY
+      - activate_full_emotional_reset
+      - do_NOT_return_to_flagged_item_this_session
+    emotional_reset_sequence:
+      step_1:
+        action: "warm_acknowledgment"
+        script_variants:
+          - "Hey, it's okay! English is hard sometimes."
+          - "That's okay! You're doing great."
+          - "Milo gets stuck too sometimes!"
+        note: "Brief, warm. Not extended. Don't dwell on the failure."
+      step_2:
+        action: "favorite_activity"
+        selection: "child_profile.favorite_activity OR default_to_song"
+        script: "Let's do something fun! {child_name}, do you want to sing our song?"
+      step_3:
+        action: "guaranteed_success_moment"
+        use: "previously_mastered_easy_item"
+        purpose: "Child must experience a win before session continues or ends"
+      step_4:
+        action: "warm_close_or_continue_decision"
+        logic: |
+          if time_remaining > 4_minutes AND child_re_engaged:
+            continue_with_different_content
+          else:
+            move_to_session_close_sequence
+        note: "If less than 4 minutes remain or child did not re-engage, close session warmly."
+    session_after_level_5:
+      note: "Next session: start at lower confidence assumption. Check item that triggered Level 5 — consider permanent repositioning or mode change."
+
+##############################################################
+# RECOVERY ENGINE RUNTIME RULES
+##############################################################
+
+runtime_rules:
+
+  # Rule 1: Recovery must always end with a success moment [A]
+  success_guarantee:
+    rule: "Every recovery sequence (Level 2+) must conclude with the child experiencing a win."
+    definition_of_win: "Child produces target form correctly, OR child succeeds at a fallback task."
+    enforcement: "Recovery state machine cannot transition to next curriculum item until win_achieved = true"
+
+  # Rule 2: Never repeat the same recovery script consecutively [B]
+  variant_rotation:
+    rule: "Recovery script variants must be tracked. Same variant cannot fire twice in a row."
+    implementation: "recovery_script_last_used tracked per level in session state"
+
+  # Rule 3: Escalate recovery level only, never skip down more than 1 [B]
+  level_transition:
+    escalation: "Can jump multiple levels up if signals are strong (e.g., direct to Level 5)"
+    de_escalation: "After recovery success, return to Level 0 for NEXT item (not current)"
+    note: "A success in recovery at Level 3 does not mean the item is mastered. Reset confidence to Level 1 for that item."
+
+  # Rule 4: Item reposition trigger [A]
+  item_reposition:
+    trigger: "Level 4 activated for same item in same session, OR Level 3 activated 3 times for same item across sessions"
+    action: "Move item to 'needs_reintroduction' queue"
+    reintroduction_mode: "Must use DIFFERENT interaction mode than the one that failed"
+
+  # Rule 5: Humor is a valid and important recovery tool [B]
+  humor_policy:
+    authorized: true
+    contexts: ["Level 3 Silly Guess pattern", "Level 4 reset activity"]
+    type: "age_appropriate_absurdity_only"
+    forbidden: ["sarcasm", "irony", "humor_at_childs_expense"]
+
+  # Rule 6: Recovery engine has authority over curriculum engine [B]
+  authority:
+    rule: "When recovery engine is active at Level 3+, curriculum engine yields completely."
+    curriculum_engine_behavior: "Pauses. Does not advance. Does not inject new items."
+
+##############################################################
+# CONFIDENCE SCORE MODEL
+##############################################################
+
+confidence_score:
+  range: [0, 100]
+  initial_value: "age_profile.difficulty_calibration.starting_confidence_assumption"
+  
+  adjustments:
+    level_0_correct_confident: +5
+    level_1_correct_hesitant: +2
+    level_2_incorrect_attempt: -3
+    level_3_freeze_or_l1: -8
+    level_3_recovery_success: +10  # Larger gain for overcoming a hard moment
+    level_4_flag: 0
+    level_5_shutdown: 0
+
+  per_item_tracking: true     # Confidence score is tracked PER vocabulary item, not globally
+  global_score: true          # Global session confidence also maintained (average of active items)
+
+  thresholds:
+    recognition_only: [0, 30]
+    forced_choice: [31, 55]
+    supported_production: [56, 75]
+    free_production: [76, 100]

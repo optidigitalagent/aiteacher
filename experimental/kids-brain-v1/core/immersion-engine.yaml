@@ -1,0 +1,305 @@
+##############################################################
+# Immersion Engine — Kids Brain v1
+# English-First Rescue Ladder State Machine
+#
+# Governs when and how the system escalates from English-only
+# toward L1 scaffolding. Default state is always English-only.
+# Translation is a last resort, not a default.
+#
+# Classification: [A] Evidence-backed (Krashen, Macaro,
+#   immersion methodology research)
+##############################################################
+
+version: "1.0"
+priority: HIGH
+
+##############################################################
+# CORE PRINCIPLE
+# English-first. Always attempt meaning-making in English
+# before escalating. Most comprehension failures are resolved
+# at Level 1–2 if scaffolding is rich enough.
+# L1 is a rescue tool, not a teaching medium.
+##############################################################
+
+default_state: "english_only"
+
+##############################################################
+# TRIGGERS FOR RESCUE LADDER ACTIVATION
+##############################################################
+
+activation_triggers:
+  primary: "No response after wait_time_controller elapses (see below)"
+  secondary: "Recovery Engine signals Level 3+ (freeze/L1 switch)"
+  tertiary: "Dialogue Engine detects comprehension failure signal"
+  
+  comprehension_failure_signals:
+    - response_latency > wait_time_threshold
+    - child_says: ["I don't know", "what?", "huh?", "не знаю", "що?", "я не розумію"]
+    - l1_response_detected
+    - silence_beyond_threshold
+
+##############################################################
+# WAIT TIME CONTROLLER
+# Controls the warm hold after a question before any scaffold
+# fires. This is intentional processing time — not failure.
+##############################################################
+
+wait_time_controller:
+  duration_ms: "age_profile.response_timing.wait_time_before_scaffold_ms"  # 3000–4500ms
+  
+  hold_signal_during_wait:
+    type: "warm_visual_and_audio"
+    description: "Milo maintains encouraging presence. Does NOT speak. Nods, smiles, leans in."
+    audio: "soft_encouraging_hum_or_silence_with_animation"
+    note: "[A] Warm silence, not neutral silence. The emotional tone of silence matters."
+
+  on_wait_time_elapsed:
+    action: "activate_rescue_ladder_at_level_1"
+
+  hard_cutoff_ms: "age_profile.response_timing.silence_hard_cutoff_ms"  # 6000–8000ms
+  on_hard_cutoff:
+    action: "activate_rescue_ladder_at_level_2 AND signal_recovery_engine_level_3"
+
+##############################################################
+# RESCUE LADDER — 5 LEVELS
+##############################################################
+
+rescue_ladder:
+
+  # ─────────────────────────────────────────────────────────
+  # LEVEL 1 — PARALINGUISTIC CONTEXT
+  # Gesture, facial expression, tone carry the meaning.
+  # No new language added.
+  # ─────────────────────────────────────────────────────────
+  level_1:
+    name: "Paralinguistic Scaffold"
+    trigger: "wait_time elapsed, first attempt"
+    medium: "animation + audio cue"
+    actions:
+      - slow_down_speech_rate_to_70_percent
+      - increase_expressiveness_signal        # Wider eyes, bigger smile in animation
+      - re_deliver_question_with_gesture_cue  # Animate pointing, acting, miming
+      - add_vocal_emphasis_on_target_word     # "It's a BIG RED CAT!"
+    examples:
+      - "What IS this?" → slow down, point to image, wide eyes, dramatic pause
+      - "What color?" → Teacher animation sweeps across color, points dramatically
+    l1_used: false
+    script_type: "llm_generated_with_paralinguistic_instruction"
+    prompt_instruction: "Repeat your question slower, with strong emphasis on the key word. No new vocabulary."
+
+  # ─────────────────────────────────────────────────────────
+  # LEVEL 2 — VISUAL CONTEXT
+  # Point, show, reference visual. Still English-only.
+  # ─────────────────────────────────────────────────────────
+  level_2:
+    name: "Visual Scaffold"
+    trigger: "Level 1 did not resolve within wait_time"
+    medium: "visual reference + simplified language"
+    actions:
+      - highlight_or_zoom_relevant_visual     # Frontend signal: zoom/highlight image
+      - simplify_question_language            # Strip to 2–3 words maximum
+      - add_visual_gesture_animation          # Point, trace, circle
+    examples:
+      - "What is it?" → [zoom to image] + "Look! This! What?"
+      - "What color?" → [point to color] + "This color. What color?"
+    l1_used: false
+    script_type: "scripted_simplified_forms"
+    simplified_forms:
+      - "Look! [gesture]. What?"
+      - "This! [point]. What is it?"
+      - "Look here! [visual highlight]. Name?"
+    frontend_signal:
+      type: "VISUAL_FOCUS_REQUEST"
+      payload: "{ item_id: current_item, focus_type: 'zoom' }"
+
+  # ─────────────────────────────────────────────────────────
+  # LEVEL 3 — SOUND AND MIME CONTEXT
+  # Add sound cues, animal sounds, action mimes.
+  # Still English-only. Meaning through sensory richness.
+  # ─────────────────────────────────────────────────────────
+  level_3:
+    name: "Sound and Mime Scaffold"
+    trigger: "Level 2 did not resolve"
+    medium: "sound effect + mime + simplified English"
+    actions:
+      - play_associated_sound_cue             # "cat" → meow sound
+      - deliver_mime_animation                # Teacher mimes action or animal
+      - use_known_reference_bridge            # Connect to something child already knows
+    examples:
+      - "cat" → [meow sound] + "Meow! A cat! What is it?"
+      - "jump" → [teacher animation jumps] + "Jump! Jump! What am I doing?"
+      - "dog" → [woof sound + mime petting] + "Woof woof! What animal? What IS it?"
+    known_reference_bridge_examples:
+      - "Like in cartoons — the animal that goes WOOF! What is it?"
+      - "Big animal! Like in the zoo! ROAAAAR! What animal?"
+    l1_used: false
+    sound_cue_library: "mapped in learning-object.schema.json per item"
+    script_type: "scripted_sound_and_mime_scripts_per_item"
+
+  # ─────────────────────────────────────────────────────────
+  # LEVEL 4 — L1 ANCHOR WORD
+  # Single L1 word only. Stated once. Immediately return to English.
+  # This is the only permitted L1 use in the rescue ladder.
+  # ─────────────────────────────────────────────────────────
+  level_4:
+    name: "L1 Anchor Word"
+    trigger: "Level 3 did not resolve AND frustration_state is genuine (not strategic)"
+    medium: "single L1 word + immediate English return"
+    l1_used: true
+    l1_usage_type: "single_anchor_word_only"
+    
+    frustration_vs_strategy_detection:
+      genuine_frustration_signals:
+        - silence_duration > 8000ms
+        - volume_drop_detected
+        - repeated_l1_responses_in_same_session
+        - level_3_recovery_activated_twice_same_item
+      strategic_avoidance_signals:
+        - l1_response_after_very_short_latency (< 1000ms)
+        - child_history shows l1_use_dropping_over_sessions
+        - child_just_succeeded_on_similar_item
+      on_suspected_strategy:
+        action: "Do NOT escalate to Level 4. Stay at Level 3. Use Silly Guess (Recovery Level 3a)."
+        note: "[B] Children learn to trigger L1 by pretending not to understand. Do not reward this behavior."
+
+    script_template:
+      - "{l1_word}! In English — {target}! Can you say {target}?"
+      - "In English it's {target}! {target}! Like [{l1_word}]! Say it — {target}!"
+    l1_words_source: "learning_object.l1_translations field"
+    
+    after_l1_delivery:
+      - return_to_english_immediately
+      - do_not_repeat_l1_word
+      - attempt_production_in_english
+      - increment_l1_usage_counter
+
+    l1_usage_counter:
+      session_target: 2         # Trend toward 0 over child's progression
+      session_hard_max: 5
+      on_exceed_hard_max: "activate_recovery_level_5 (emotional shutdown protocol)"
+      longitudinal_tracking: true
+      alert_if_rising: true     # Alert if L1 use is increasing week over week
+
+  # ─────────────────────────────────────────────────────────
+  # LEVEL 5 — DIRECT TRANSLATION (Emergency Only)
+  # Full translation. Rare. Never proactive.
+  # Only when child is in genuine distress.
+  # ─────────────────────────────────────────────────────────
+  level_5:
+    name: "Emergency Translation"
+    trigger: "Level 4 did not resolve AND emotional_shutdown signals present"
+    medium: "full L1 explanation, brief, warm"
+    l1_used: true
+    frequency_expectation: "rare — should almost never occur in normal sessions"
+    
+    permitted_use_cases:
+      - Child is genuinely distressed (crying, highly upset)
+      - Child is expressing a real need (physical discomfort, safety)
+      - Session is on the verge of complete emotional collapse
+    
+    script:
+      - Deliver brief warm L1 explanation
+      - Immediately activate Recovery Engine Level 5 (emotional reset)
+      - Do not continue curriculum after Level 5 immersion use
+    
+    note: "[B] If Level 5 immersion triggers regularly, the curriculum items being taught are outside the child's ZPD. Curriculum must be adjusted."
+
+##############################################################
+# L1 USAGE TRACKER
+##############################################################
+
+l1_usage_tracker:
+  per_session:
+    counter: 0           # Incremented by each L1 use event
+    target: 2
+    hard_max: 5
+    items_used_l1: []    # List of item_ids where L1 was used this session
+
+  longitudinal:
+    track_weekly_average: true
+    alert_threshold: "weekly average rising for 2+ consecutive weeks"
+    trend_target: "decreasing as child progresses"
+    note: "L1 usage should naturally decrease as child builds English home base [B]"
+
+##############################################################
+# CORE CLASSROOM PHRASE DICTIONARY
+# Scripted, pre-recorded, used consistently from Session 1.
+# These become comprehensible through pattern without translation.
+# [B] Evidence-backed: routine phrases build English home base
+##############################################################
+
+core_phrase_dictionary:
+  total_phrases: 15       # MVP set. Expand to 30–35 in v2.
+  delivery: "always_scripted_never_llm_generated"
+  recording: "pre_recorded_TTS_for_zero_latency"
+
+  phrases:
+    session_management:
+      - id: "CP001"
+        english: "Let's go!"
+        context: "Activity start signal"
+        gesture: "forward_motion_animation"
+      - id: "CP002"
+        english: "Are you ready?"
+        context: "Before any new activity"
+        gesture: "lean_forward_questioning"
+      - id: "CP003"
+        english: "Listen! Listen carefully."
+        context: "Before audio input"
+        gesture: "hand_to_ear_animation"
+      - id: "CP004"
+        english: "Your turn!"
+        context: "Child production cue"
+        gesture: "point_to_child_animation"
+      - id: "CP005"
+        english: "Say it with me!"
+        context: "Chorus production"
+        gesture: "gesture_together_animation"
+      - id: "CP006"
+        english: "One more time!"
+        context: "Repeat request"
+        gesture: "circular_motion_animation"
+
+    comprehension_check:
+      - id: "CP007"
+        english: "Look! Look here."
+        context: "Directing visual attention"
+        gesture: "pointing_animation"
+      - id: "CP008"
+        english: "What is it?"
+        context: "Free production question"
+        gesture: "questioning_expression"
+      - id: "CP009"
+        english: "Show me!"
+        context: "Recognition/pointing task"
+        gesture: "reaching_gesture"
+
+    encouragement:
+      - id: "CP010"
+        english: "Amazing!"
+        context: "Correct response celebration"
+        gesture: "celebration_animation"
+      - id: "CP011"
+        english: "I love how you tried!"
+        context: "Effort praise (any attempt)"
+        gesture: "warm_smile_nod"
+      - id: "CP012"
+        english: "Yes! That's it!"
+        context: "Confirmation of correct answer"
+        gesture: "thumbs_up_animation"
+
+    mystery_and_curiosity:
+      - id: "CP013"
+        english: "Hmm, I wonder..."
+        context: "Curiosity build / thinking pause"
+        gesture: "thinking_expression"
+      - id: "CP014"
+        english: "I don't know — do YOU know?"
+        context: "Deliberate confusion elicitation"
+        gesture: "wide_eyes_question"
+
+    session_boundary:
+      - id: "CP015"
+        english: "See you next time!"
+        context: "Session close"
+        gesture: "warm_wave_farewell"

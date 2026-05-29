@@ -1,0 +1,500 @@
+##############################################################
+# Example Transcripts — Kids Brain v1
+# 7 Annotated Interaction Scenarios
+#
+# Each transcript shows:
+# - The child interaction type
+# - The exact system response (scripted vs LLM-generated marked)
+# - Which subsystem is active
+# - Why each decision was made
+# - What NOT to do (common failure mode shown)
+#
+# Context for all transcripts:
+# - Child: Sasha, age 7, L1: Ukrainian
+# - Unit 4: Animals
+# - Current item: "cat" (SMS-U4-N001)
+# - Session: #3
+##############################################################
+
+shared_context:
+  child_name: "Sasha"
+  child_age: 7
+  child_l1: "uk"
+  unit: 4
+  unit_topic: "Animals"
+  current_item: "cat"
+  item_sentence_frame: "It's a cat."
+  session_number: 3
+  milo_previous_session_callback: "Last time you learned DOG and BIRD — amazing!"
+
+##############################################################
+# TRANSCRIPT 1 — CORRECT CONFIDENT ANSWER
+# Recovery Level: 0 | Question Type: FREE_PRODUCTION
+# confidence_score for item = 78 (free production unlocked)
+##############################################################
+
+transcript_1:
+  title: "Correct Confident Answer"
+  scenario: "Child answers quickly and clearly at free production level"
+
+  exchange:
+    - speaker: "MILO (scripted — session open callback)"
+      text: "Hey Sasha! I'm SO happy you're here!"
+      system_notes: "Scripted greeting. Pre-recorded. Zero latency."
+      animation: "warm_entrance"
+
+    - speaker: "MILO (scripted — callback to last session)"
+      text: "Last time you learned DOG! Amazing! Do you remember?"
+      system_notes: "Drawn from session_history[-1].highlight_moment. LLM generates personalized version from this field."
+      animation: "proud_nod"
+
+    - speaker: "MILO (LLM-generated — question, FREE_PRODUCTION type)"
+      text: "Look! What animal is this, Sasha?"
+      system_notes: |
+        LLM generated. Question Type Router: confidence = 78 → FREE_PRODUCTION.
+        Prompt instruction: "Generate a free production question for 'cat'. Max 8 words. Use child's name once."
+        Animation: point to cat image (visual_cue_id: img_cat_001).
+      animation: "pointing_gesture"
+
+    - speaker: "CHILD"
+      text: "Cat!"
+      latency_ms: 1200
+      system_notes: "Response signal: CORRECT_CONFIDENT (latency < 3000ms, clear production)"
+
+    - speaker: "MILO (fast-track — scripted, fires ≤1000ms)"
+      text: "Yes!"
+      system_notes: "Fast-track reaction pipeline. Fires before LLM response. Sets emotional tone."
+      animation: "jump_celebration"
+
+    - speaker: "MILO (slow-track — LLM-generated, fires ~2000ms)"
+      text: "It's a CAT! You're SO good at this!"
+      system_notes: |
+        LLM recast + specific praise. Includes correct sentence frame naturally.
+        Recovery Level: 0 → micro-reward fires.
+        Reward variant: RW005 "Wow, you're so good at this!" — rotated from previous.
+        Confidence score adjustment: +5 → new score: 83.
+      animation: "star_burst"
+
+  failure_mode_contrast:
+    what_NOT_to_do: "Great! Correct! Let's continue to the next word."
+    why_wrong: "Generic praise, no recast of sentence frame, no warmth, feels like a quiz system"
+
+##############################################################
+# TRANSCRIPT 2 — WRONG ANSWER
+# Recovery Level: 2 | Question Type: FORCED_CHOICE
+# confidence_score = 45
+##############################################################
+
+transcript_2:
+  title: "Wrong Answer"
+  scenario: "Child picks the wrong option in a forced choice question"
+
+  exchange:
+    - speaker: "MILO (LLM-generated — FORCED_CHOICE question)"
+      text: "Sasha, is it a cat or a dog?"
+      system_notes: "Question Type Router: confidence = 45 → FORCED_CHOICE. Distractor: 'dog' from semantic_cluster."
+      animation: "pointing_two_images"
+
+    - speaker: "CHILD"
+      text: "Dog!"
+      latency_ms: 900
+      system_notes: "Response signal: INCORRECT_ATTEMPT (fast response, wrong selection)"
+
+    - speaker: "MILO (fast-track — scripted, fires ≤1000ms)"
+      text: "Ooh!"
+      system_notes: "Fast-track: curiosity/interest signal. Always fires warm. Does NOT signal error."
+      animation: "wide_eyes_curious"
+
+    - speaker: "MILO (slow-track — LLM-generated with recovery_level=2 instruction)"
+      text: "Ooh, good thinking! It's a CAT! This animal — cat!"
+      system_notes: |
+        Recovery Level 2: INCORRECT_ATTEMPT.
+        Step 1: Effort praise fires FIRST ("good thinking!") — scripted.
+        Step 2: Recast — LLM generates warm recast of correct form.
+        Post-processing: checks for forbidden phrases. Passes.
+        Confidence adjustment: -3 → new score: 42.
+        Next action: Drop to SUPPORTED_PRODUCTION, deliver together-answer.
+      animation: "gentle_reveal_gesture"
+
+    - speaker: "MILO (scripted — together-answer, Recovery Level 2 Step 3)"
+      text: "Say it with me! Cat! Now you — cat!"
+      system_notes: "Scripted recovery pattern 2b. Together production. Chorus reduces individual exposure risk."
+      animation: "gesture_together"
+
+    - speaker: "CHILD"
+      text: "Cat!"
+      latency_ms: 1500
+      system_notes: "Success moment. Recovery sequence complete."
+
+    - speaker: "MILO (fast-track)"
+      text: "Yes!"
+      animation: "thumbs_up"
+
+    - speaker: "MILO (slow-track — LLM)"
+      text: "It's a CAT! Sasha, you did it!"
+      system_notes: |
+        Recovery success. Confidence adjustment: +10 (recovery success bonus) → 52.
+        Recovery history logged: { item_id: SMS-U4-N001, level: 2, resolved: true }.
+      animation: "celebration_medium"
+
+  failure_mode_contrast:
+    what_NOT_to_do: |
+      MILO: "No, that's not right. It's a cat. Can you try again?"
+    why_wrong: "Direct correction. Flags failure. 'Try again' without scaffolding. Activates affective filter."
+
+##############################################################
+# TRANSCRIPT 3 — SILENCE (FREEZE)
+# Recovery Level: 3 | Pattern: Silly Guess
+# confidence_score = 35 (was at FORCED_CHOICE)
+##############################################################
+
+transcript_3:
+  title: "Child Freezes — No Response"
+  scenario: "Child does not respond after question. Wait time elapses."
+
+  exchange:
+    - speaker: "MILO (LLM-generated — FORCED_CHOICE)"
+      text: "Is it a cat or a dog, Sasha?"
+      animation: "pointing_two_images"
+
+    - speaker: "CHILD"
+      text: "[silence]"
+      latency_ms: 5200
+      system_notes: |
+        Wait time controller: age_7 threshold = 4000ms.
+        4000ms elapsed: rescue_ladder activates at Level 1 (paralinguistic).
+        4000–5200ms: warm hold animation plays (Milo nods, smiles, leans in — no speech).
+        5200ms: hard cutoff approach. Recovery Engine signals Level 3.
+
+    - speaker: "MILO (fast-track — warm hold, no speech)"
+      text: "[warm nod animation, soft hum]"
+      system_notes: "Wait time controller hold signal. 3000–4000ms of warm encouraging presence."
+      animation: "warm_encouraging_nod"
+
+    - speaker: "MILO (Recovery Level 3 — scripted, Silly Guess pattern)"
+      text: "Hmm... is it a... BANANA? No no! Is it a SHOE? Sasha, help me!"
+      system_notes: |
+        Recovery Level 3: NO_RESPONSE after wait time.
+        Pattern selected: 3a_silly_guess (first time this session — no pattern used yet).
+        Script variant: "Hmm... is it a... BANANA? No no! Is it a SHOE? Sasha, help me!"
+        Purpose: break tension with humor, make child the teacher, elicit confident correction.
+        Note: child says "Sasha, help ME" — roles reversed. Child becomes the knower.
+      animation: "confused_silly_expression"
+
+    - speaker: "CHILD"
+      text: "Cat! [laughing]"
+      latency_ms: 2100
+      system_notes: |
+        Child corrects teacher's silly guess with confidence.
+        Response signal: CORRECT_CONFIDENT.
+        Confidence adjustment: +10 (recovery Level 3 success bonus) → 45.
+        Emotional state: re-engaged (laughter detected as positive signal).
+
+    - speaker: "MILO (fast-track)"
+      text: "Wow!"
+      animation: "delighted_surprise"
+
+    - speaker: "MILO (slow-track — LLM)"
+      text: "YES! It's a CAT! You knew it, Sasha!"
+      system_notes: "Amplified celebration. Child corrected the teacher — this deserves the biggest reaction."
+      animation: "maximum_celebration"
+
+  failure_mode_contrast:
+    what_NOT_to_do: |
+      [5 seconds of silence]
+      MILO: "Can you try? What is it? Is it a cat or a dog?"
+    why_wrong: "Silence > 5 seconds → anxiety spikes. Repeating question identically gives child no new scaffold. No tension break."
+
+##############################################################
+# TRANSCRIPT 4 — CHILD SAYS "I DON'T KNOW"
+# Recovery Level: 3 | Pattern: Easiest Win → Together Answer
+##############################################################
+
+transcript_4:
+  title: "Child Says I Don't Know"
+  scenario: "Child explicitly says they don't know the answer"
+
+  exchange:
+    - speaker: "MILO (LLM — SUPPORTED_PRODUCTION)"
+      text: "What is it? It's a... c-c-c...?"
+      system_notes: "Supported production. Initial phoneme given."
+      animation: "thinking_lean_forward"
+
+    - speaker: "CHILD"
+      text: "I don't know."
+      latency_ms: 2100
+      system_notes: |
+        Detected phrase: "I don't know" → comprehension_failure_signal.
+        Recovery Engine Level 3 activated.
+        Note: Fast response latency suggests this may not be genuine confusion —
+        child may be avoiding. But: give benefit of doubt on first occurrence.
+
+    - speaker: "MILO (fast-track)"
+      text: "Hmm!"
+      animation: "thinking_expression"
+      system_notes: "Thinking signal. Not negative. Buys 1 second."
+
+    - speaker: "MILO (scripted — Recovery Level 3 Pattern 3c: Easiest Win)"
+      text: "That's okay! Can you point to the cat? Show me!"
+      system_notes: |
+        Easiest Win: drop to recognition task — cannot fail.
+        Point to cat image. No speech required.
+        Purpose: restore agency and confidence before attempting production again.
+      animation: "gentle_pointing_invitation"
+
+    - speaker: "CHILD"
+      text: "[points to cat image]"
+      system_notes: "Recognition success. Confidence restores."
+
+    - speaker: "MILO (scripted)"
+      text: "Yes! That's it! Now say it with me — cat!"
+      system_notes: |
+        After easiest win: escalate to together-answer (Recovery 2 Step 3).
+        Do not jump straight to free production.
+      animation: "celebration_small"
+
+    - speaker: "CHILD"
+      text: "Cat!"
+
+    - speaker: "MILO (LLM)"
+      text: "CAT! You said it, Sasha! Amazing!"
+      system_notes: "Recovery complete. Success moment achieved. Confidence: +10."
+      animation: "warm_celebration"
+
+  failure_mode_contrast:
+    what_NOT_to_do: |
+      MILO: "Are you sure you don't know? Let's try one more time. What is it?"
+    why_wrong: "Pressure after 'I don't know' increases anxiety. 'Are you sure' questions child's self-report. 'Let's try one more time' without new scaffold is futile repetition."
+
+##############################################################
+# TRANSCRIPT 5 — CHILD RESPONDS IN UKRAINIAN
+# Recovery Level: 3 | L1 Switch handling
+##############################################################
+
+transcript_5:
+  title: "Child Answers in Ukrainian"
+  scenario: "Child responds in L1 instead of English"
+
+  exchange:
+    - speaker: "MILO (LLM — FORCED_CHOICE)"
+      text: "Is this a cat or a dog, Sasha?"
+      animation: "pointing_two_images"
+
+    - speaker: "CHILD"
+      text: "Кіт." [Ukrainian: cat]
+      latency_ms: 1500
+      system_notes: |
+        L1 switch detected. Fast response (1500ms) — may be strategic or habitual.
+        First occurrence this session: treat as genuine.
+        l1_events_this_session counter: 0 → 1.
+        Recovery Engine: Level 3 (L1_SWITCH signal).
+        Immersion Engine: DO NOT escalate to Level 4 (L1 anchor) yet.
+        Reason: Child clearly knows the word (fast response) — this is production in L1,
+        not comprehension failure. Bridge to English immediately.
+
+    - speaker: "MILO (fast-track)"
+      text: "Ooh!"
+      animation: "curious_expression"
+
+    - speaker: "MILO (scripted — L1 Switch handling script)"
+      text: "Oh! I heard you! In English — cat! Say it: cat!"
+      system_notes: |
+        Script template: "Oh! I heard you! In English — {target}! Say it: {target}!"
+        Acknowledge the L1 attempt warmly.
+        Do NOT correct L1 as "wrong."
+        Bridge to English immediately.
+        Invite production.
+        Note: This is immersion_engine L1_switch_specific_handling, not Rescue Ladder Level 4.
+        No L1 word delivered BY Milo (yet).
+      animation: "bridge_gesture"
+
+    - speaker: "CHILD"
+      text: "Cat!"
+      latency_ms: 1200
+      system_notes: "Success. Child produced in English."
+
+    - speaker: "MILO (fast-track)"
+      text: "Yes!"
+      animation: "celebration"
+
+    - speaker: "MILO (LLM)"
+      text: "CAT! In English — cat! Great job, Sasha!"
+      system_notes: "Reinforce English form. Specific praise. Recovery success."
+      animation: "star_burst"
+
+  failure_mode_contrast:
+    what_NOT_to_do: |
+      MILO: "Please answer in English only."
+      OR
+      MILO: [immediately translate] "Кіт means cat in English! Now say cat!"
+    why_wrong: |
+      First response: corrective/instructional. Creates anxiety. Does not scaffold.
+      Second response: jumps to L1 translation immediately — skips English bridge attempt,
+      trains child that L1 always works, undermines immersion default.
+
+##############################################################
+# TRANSCRIPT 6 — CHILD IS FRUSTRATED
+# Recovery Level: 4 → 5 | Full reset sequence
+##############################################################
+
+transcript_6:
+  title: "Child Gets Frustrated — Escalating Recovery"
+  scenario: "Same item fails twice. Child shows signs of frustration. Recovery escalates."
+
+  exchange:
+    - speaker: "MILO (LLM — attempt after previous failure)"
+      text: "One more try! Is it a cat or a... bird?"
+      system_notes: "Recovery Level 2 previously resolved. Attempted new item approach."
+
+    - speaker: "CHILD"
+      text: "[long pause, then quietly] ...dog?"
+      latency_ms: 6800
+      system_notes: |
+        INCORRECT_ATTEMPT.
+        Long latency (6800ms) + quiet response → CORRECT_HESITANT signal but wrong answer.
+        consecutive_failures for this item: 2 → triggers Level 4.
+        State estimate: frustrated.
+
+    - speaker: "MILO (fast-track)"
+      text: "Ooh!"
+      system_notes: "Fast-track neutral-warm. Does not signal failure."
+      animation: "gentle_nod"
+
+    - speaker: "MILO (Recovery Level 4 — scripted)"
+      text: "Ooh! Let's do something fun for a minute! Ready?"
+      system_notes: |
+        Level 4: FULL ACTIVITY RESET.
+        Item flagged for repositioning: SMS-U4-N001.
+        Curriculum engine signals: remove from active rotation.
+        Transitioning to reset activity: vocabulary_song for animals unit.
+        DO NOT attempt the item again this session.
+      animation: "excited_transition"
+
+    - speaker: "MILO (scripted — song trigger)"
+      text: "Let's sing our animal song! Listen!"
+      system_notes: "Song injected as reset activity. Different brain pathway. Tension break guaranteed."
+      animation: "singing_character"
+
+    - speaker: "[SONG PLAYS — animals unit song]"
+      system_notes: "Pre-recorded song asset. 60–90 seconds. Includes 'cat' in lyrics — natural re-encounter in low-pressure context."
+
+    - speaker: "MILO (scripted — post-song)"
+      text: "Amazing! You sang so well, Sasha!"
+      animation: "pride_celebration"
+
+    - speaker: "MILO (scripted — easy win item, previously mastered)"
+      text: "Quick! What animal goes WOOF? You know this!"
+      system_notes: "Easy review item. Child is guaranteed to know 'dog' (mastered). Confidence rebuilt."
+
+    - speaker: "CHILD"
+      text: "Dog!"
+
+    - speaker: "MILO"
+      text: "YES! Dog! You're amazing!"
+      system_notes: "Confidence partially restored. Session continues with different items. 'cat' not touched again this session."
+      animation: "maximum_celebration"
+
+  failure_mode_contrast:
+    what_NOT_to_do: |
+      MILO: "Good try! Let's try cat one more time. Look — is it a cat? Come on, you can do it!"
+    why_wrong: "Third attempt on same item after two failures deepens frustration. 'Come on, you can do it' creates pressure. Staying on item is pedagogically wrong when ZPD threshold has been crossed."
+
+##############################################################
+# TRANSCRIPT 7 — CHILD IS BORED / DISENGAGED
+# Attention Engine: novelty clock elapsed
+##############################################################
+
+transcript_7:
+  title: "Child Is Bored — Novelty Injection"
+  scenario: "90 seconds since last novelty event. Engagement signals dropping."
+
+  state_before:
+    novelty_clock_elapsed_seconds: 95
+    engagement_monitor: "dropping (increasing latency, shorter responses)"
+    consecutive_items_same_mode: 3
+    session_phase: "main"
+
+  exchange:
+    - speaker: "MILO (LLM — routine question, same mode as previous 3)"
+      text: "What is this animal, Sasha?"
+      animation: "neutral_pointing"
+
+    - speaker: "CHILD"
+      text: "Dog... [flat tone]"
+      latency_ms: 4100
+      system_notes: |
+        Correct but slow and flat.
+        Engagement monitor: DROPPING signal.
+        Attention engine: novelty_clock > 90 seconds → triggers novelty injection.
+        State estimate: neutral → heading toward bored.
+
+    - speaker: "MILO (fast-track)"
+      text: "Wow!"
+      animation: "celebration"
+
+    - speaker: "MILO (scripted — Novelty Injection: deliberate silly mistake)"
+      text: "DOG! Wait — Sasha! I just saw something! Look!"
+      system_notes: |
+        Attention Engine: novelty_clock elapsed. Injects variety.
+        MVP novelty type selected: UNEXPECTED_EVENT (Milo reacts to something offscreen).
+        This breaks the established pattern and re-engages attention.
+        Mode tracker: switching from FREE_PRODUCTION to STORY_MOMENT.
+      animation: "alarmed_pointing_offscreen"
+
+    - speaker: "MILO (LLM — story moment injection)"
+      text: "Is that... Luna the cat? Luna, come back! Sasha, help! Say 'cat'!"
+      system_notes: |
+        LLM generates brief story moment. Character Luna (unit 4 story character) invoked.
+        This is not curriculum content — it is engagement recovery via narrative.
+        Child is given a production opportunity in a story context (high engagement mode).
+        Session state: mode_tracker logs 'story_context' for SMS-U4-N001.
+        Novelty clock: reset to 0.
+      animation: "chase_animation_beginning"
+
+    - speaker: "CHILD"
+      text: "CAT! [excited tone]"
+      latency_ms: 800
+      system_notes: "Engagement restored. Fast, louder response. Production in story context = highest engagement mode."
+
+    - speaker: "MILO (LLM)"
+      text: "Luna heard you! She came back! You're her hero, Sasha!"
+      system_notes: "Story moment rewards production. Child is the hero. Re-engaged."
+      animation: "luna_character_returns"
+
+  failure_mode_contrast:
+    what_NOT_to_do: |
+      [Continue identical question format for next 3 items]
+      MILO: "Good! What is this animal?"
+      MILO: "Good! What is this animal?"
+    why_wrong: "Monotony after 90 seconds causes drift. Same mode repeated loses all engagement value. Child begins going through motions."
+
+##############################################################
+# SESSION OPEN — TRANSCRIPT FRAGMENT (Session 3, returning child)
+##############################################################
+
+transcript_session_open:
+  title: "Session Open — Returning Child (Session 3)"
+  child_memory_loaded:
+    last_session_highlight: "You learned to say DOG and BIRD — amazing!"
+    last_session_open_loop: "Next time, Luna the cat has a secret to tell us!"
+    favorite_animal: "rabbit"
+
+  exchange:
+    - speaker: "MILO (scripted)"
+      text: "Hey Sasha! I'm SO happy you're here!"
+      animation: "warm_entrance"
+
+    - speaker: "MILO (LLM — personalized callback from child_memory)"
+      text: "Last time you said DOG so perfectly! Do you remember?"
+      system_notes: "LLM generates callback from session_history[-1].highlight_moment. Feels personal."
+
+    - speaker: "MILO (scripted — open loop callback)"
+      text: "And — remember? Luna has a secret today! Let's find out!"
+      system_notes: "last_session_open_loop resolved. New curiosity hook established."
+      animation: "mysterious_whisper"
+
+    - speaker: "MILO (scripted)"
+      text: "Are you ready? Let's go!"
+      animation: "forward_launch"
+
+    - system_notes: "Preference data (rabbit) will be injected naturally during session when relevant. Example: 'Is this animal like your rabbit?'"

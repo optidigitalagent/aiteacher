@@ -1,0 +1,10 @@
+{
+  "name": "mentium-kids-brain-v1",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npx tsx runtime/test-scenarios.ts",
+    "typecheck": "npx tsc --noEmit"
+  }
+}
