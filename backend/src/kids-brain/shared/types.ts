@@ -49,11 +49,15 @@ export const AGE_PROFILE_8_9: AgeProfile = {
   maxClauses: 2,
 };
 
-/** Cost counters for token budget tracking per session (§14.3). */
+/** Cost counters for token budget tracking per session (§14.3, Phase 4). */
 export interface CostCounters {
   tokensGenerated: number;
   llmCallsClassification: number;
   llmCallsTeacherResponse: number;
+  // ── Added by Phase 4 (State Engine) ──
+  sttSeconds: number;
+  ttsCharacters: number;
+  turnCount: number;
 }
 
 /** Minimal context passed to LLM for teacher response generation (§12.2). */

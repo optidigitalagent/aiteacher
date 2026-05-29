@@ -42,4 +42,18 @@ export interface ChildState {
 
   /** Current recovery state (mirrors recovery state machine) */
   recoveryLevel: RecoveryState;
+
+  // ── Added by Phase 4 (State Engine) ────────────────────────────────────────
+
+  /**
+   * Accumulated need for novel activity/variety. Initial: 0.0.
+   * Increases when same activity type is repeated; resets on activity switch.
+   */
+  noveltyNeed: SessionScore;
+
+  /**
+   * Risk of refusal behavior this session. Initial: 0.0.
+   * Increases on refusal/l1_refusal/emotional_shutdown labels.
+   */
+  refusalRisk: SessionScore;
 }

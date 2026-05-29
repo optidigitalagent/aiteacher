@@ -74,6 +74,24 @@ export const LOG_EVENTS = {
 
   // Parent review
   PARENT_REVIEW_TRIGGERED: 'PARENT_REVIEW_TRIGGERED',
+
+  // State Engine events (Phase 4)
+  STATE_UPDATE_STARTED: 'state_update_started',
+  STATE_UPDATE_COMPLETED: 'state_update_completed',
+  CHILD_STATE_CHANGED: 'child_state_changed',
+  ITEM_STATE_CHANGED: 'item_state_changed',
+  ENGAGEMENT_CHANGED: 'engagement_changed',
+  CONFIDENCE_CHANGED: 'confidence_changed',
+  SAFE_TO_CONTINUE_FALSE: 'safe_to_continue_false',
+
+  // Learning Engine events (Phase 5)
+  LEARNING_DECISION_STARTED: 'learning_decision_started',
+  PROGRESSION_RULE_FIRED: 'progression_rule_fired',
+  MASTERY_CANDIDATE_CREATED: 'mastery_candidate_created',
+  REVIEW_CANDIDATE_CREATED: 'review_candidate_created',
+  ACTIVITY_TRANSITION_SELECTED: 'activity_transition_selected',
+  EASIEST_WIN_SELECTED: 'easiest_win_selected',
+  SESSION_CLOSE_DECISION: 'session_close_decision',
 } as const;
 
 export type LogEventName = (typeof LOG_EVENTS)[keyof typeof LOG_EVENTS];

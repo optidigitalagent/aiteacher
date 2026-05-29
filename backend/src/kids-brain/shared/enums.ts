@@ -186,3 +186,35 @@ export enum SessionStopReason {
   REFUSAL = 'refusal',
   SAFETY = 'safety',
 }
+
+// ── Phase 5: Learning Engine ──────────────────────────────────────────────────
+
+/** Additional activity types used by the Learning Engine (Phase 5). */
+export enum LearningActivityType {
+  YES_NO_COMPREHENSION = 'yes_no_comprehension',
+  TPR_ACTION = 'tpr_action',
+  REVIEW_LOOP = 'review_loop',
+  EASIEST_WIN = 'easiest_win',
+  RECOVERY_PROMPT = 'recovery_prompt',
+}
+
+/**
+ * All learning decision types emitted by the Learning Engine (Phase 5).
+ * Represents the high-level pedagogical action to take this turn.
+ */
+export enum LearningDecisionType {
+  STAY_CURRENT_ITEM = 'stay_current_item',
+  REPEAT_CURRENT_ACTIVITY = 'repeat_current_activity',
+  SCAFFOLD_CURRENT_ITEM = 'scaffold_current_item',
+  LOWER_DIFFICULTY = 'lower_difficulty',
+  ADVANCE_ACTIVITY = 'advance_activity',
+  ADVANCE_ITEM = 'advance_item',
+  TRIGGER_REVIEW = 'trigger_review',
+  TRIGGER_EASIEST_WIN = 'trigger_easiest_win',
+  CONTINUE_RECOVERY = 'continue_recovery',
+  REPAIRED_SUCCESS = 'repaired_success',
+  CLOSE_SUCCESS = 'close_success',
+  CLOSE_SAFETY = 'close_safety',
+  CLOSE_TIMEOUT = 'close_timeout',
+  HOLD_UNCERTAIN = 'hold_uncertain',
+}

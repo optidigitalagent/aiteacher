@@ -48,3 +48,11 @@ export { classifyResponse, runDeterministicClassifier, computeTimeoutFallback, n
 // Perception layer (Phase 2)
 export type { PerceptionBundle, PerceptionInput, PromptContext, ChildStateSnapshot, UncertaintyReason, L1DetectionResult, NormalizedStt, LatencyAnalysis, SilenceAnalysis } from './perception/index.js';
 export { buildPerceptionBundle, detectL1, L1_KEYWORD_MAP, normalizeSTT, analyzeLatency, analyzeSilence, computeInputQuality, InputQuality, PERCEPTION_UNCERTAINTY_THRESHOLD } from './perception/index.js';
+
+// State Engine (Phase 4)
+export { runStateEngine, computeConfidenceDeltas, computeNewRecoveryState, applyChildStateDeltas, createInitialChildState, updateItemState, createInitialItemState, applyCostDelta, buildTurnOnlyCostDelta, createInitialCostCounters, buildTurnRecord, appendTurn, recalculateSuccessFailureCounts, STATE_ENGINE_MAX_RECENT_TURNS, buildUpdatedSessionMemory, computeStaminaDelta, activityDidSwitch, consecutiveSameActivityCount } from './state-engine/index.js';
+export type { StateEngineInput, StateEngineOutput, StateUpdateSummary, ConfidenceDeltas, ItemStateDeltas, CostCounterDelta, AppliedUpdate } from './state-engine/index.js';
+
+// Learning Engine (Phase 5)
+export { runLearningEngine, computeConsecutiveCorrect, computeConsecutiveWrong, computeConsecutiveSameActivity, countLabelInLastN, computeProgressionDecision, activityDemandLevel, activityAtLevel, highestFeasibleActivity, selectNextActivity, selectEasiestWin, hasMasteredItems, isMasteredForEasiestWin, computeMasteryUpdateCandidate, computeReviewCandidate, checkSessionClose, evaluateLessonFlow, canBeginClose, computeEngagementAdaptation, FRUSTRATION_STOP_E, FRUSTRATION_EASIEST_WIN_E, ADVANCE_CONSECUTIVE_CORRECT, ADVANCE_PROD_MIN, ADVANCE_COMP_MIN, LOWER_CONSECUTIVE_WRONG, SCAFFOLD_CONSECUTIVE_WRONG } from './learning-engine/index.js';
+export type { LearningDecision, LearningEngineInput, CurrentItemContext, AvailableItem, ReviewQueueItem, MasteryUpdateCandidate, ReviewScheduleCandidate, EasiestWinResult, ProgressionOutcome, DerivedSignals } from './learning-engine/index.js';
