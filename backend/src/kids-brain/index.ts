@@ -40,3 +40,7 @@ export {
   CORE_TEACHER_VOCABULARY_SET,
   isCoreTeacherWordAllowed,
 } from './teacher-response/core-teacher-vocabulary.js';
+
+// Perception layer (Phase 2)
+export type { PerceptionBundle, PerceptionInput, PromptContext, ChildStateSnapshot, UncertaintyReason, L1DetectionResult, NormalizedStt, LatencyAnalysis, SilenceAnalysis } from './perception/index.js';
+export { buildPerceptionBundle, detectL1, L1_KEYWORD_MAP, normalizeSTT, analyzeLatency, analyzeSilence, computeInputQuality, InputQuality, PERCEPTION_UNCERTAINTY_THRESHOLD } from './perception/index.js';
