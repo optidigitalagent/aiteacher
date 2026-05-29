@@ -73,6 +73,24 @@ import {
 } from '../kids-runtime/orchestrator.js'
 import type { ChildResponse as KidsChildResponse } from '../kids-runtime/types.js'
 
+// ── Kids Brain v1 imports ─────────────────────────────────────────────────────
+import {
+  startKidsBrainSession,
+  processKidsBrainTurn,
+  endKidsBrainSession,
+} from '../kids-brain/runtime/index.js'
+import type { KidsBrainSessionStartInput } from '../kids-brain/runtime/index.js'
+import {
+  buildSTTResultFromText,
+  adaptRuntimePackets,
+  requiresSessionClose,
+} from '../kids-brain/adapters/index.js'
+import type { AdaptedKidsMessage } from '../kids-brain/adapters/index.js'
+import { RedisSessionStoreImpl } from '../kids-brain/infrastructure/index.js'
+import { AgeBand } from '../kids-brain/shared/enums.js'
+import { AGE_PROFILE_6_7 } from '../kids-brain/shared/types.js'
+import type { SessionMemory as KidsBrainSessionMemory } from '../kids-brain/contracts/session-memory.js'
+
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
 
@@ -80,6 +98,12 @@ const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
 const KIDS_MAX_DURATION_MS = 15 * 60 * 1000
 const KIDS_MAX_LLM_CALLS   = 20
 const KIDS_MAX_TTS_CHARS   = 2000
+
+// ── Kids Brain v1 feature flag ────────────────────────────────────────────────
+// Set USE_KIDS_BRAIN_V1=true to activate the new Kids Brain v1 runtime.
+// When unset/false, kids mode falls back to the old kids-runtime prototype.
+// Adult sessions are never affected by this flag.
+const USE_KIDS_BRAIN_V1 = process.env.USE_KIDS_BRAIN_V1 === 'true'
 
 // Derive unit number from a section string like "2.3" → 2
 function unitFromSection(section: string): number {
@@ -459,8 +483,9 @@ interface ClientMeta {
   // would charge the full lesson duration again instead of just the current session.
   billingStartedAt: number | null
   // Mentium Kids prototype mode flag
-  isKidsMode:    boolean
-  kidsSessionId: string | null  // in-memory session ID from kids orchestrator
+  isKidsMode:       boolean
+  kidsSessionId:    string | null  // in-memory session ID from kids orchestrator
+  kidsBrainV1Active: boolean        // true when Kids Brain v1 is active (vs old prototype)
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -1090,6 +1115,223 @@ async function handleLessonStart(
   await ttsStream(ws, meta, greeting)
 }
 
+// ── Kids Brain v1 infrastructure ─────────────────────────────────────────────
+
+let _kidsBrainRedisStore: RedisSessionStoreImpl | null = null
+function getKidsBrainRedisStore(): RedisSessionStoreImpl {
+  if (!_kidsBrainRedisStore) _kidsBrainRedisStore = new RedisSessionStoreImpl(redis)
+  return _kidsBrainRedisStore
+}
+
+// Executes adapted Kids Brain v1 action packets and returns true if the session should close.
+async function processKidsV1Packets(
+  ws: WebSocket,
+  meta: ClientMeta,
+  messages: AdaptedKidsMessage[],
+): Promise<boolean> {
+  let shouldClose = requiresSessionClose(messages)
+  for (const msg of messages) {
+    switch (msg.type) {
+      case 'kids_teacher_text':
+        send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: msg.text })
+        await kidsTtsStream(ws, meta, msg.text)
+        break
+      case 'kids_safety_close':
+        send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: msg.text })
+        await kidsTtsStream(ws, meta, msg.text)
+        break
+      case 'kids_session_complete':
+      case 'kids_start_listening':
+      case 'kids_stop_listening':
+        // mic control and close signal handled by caller
+        break
+    }
+  }
+  return shouldClose
+}
+
+// ── Kids Brain v1 session start ───────────────────────────────────────────────
+
+async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Promise<void> {
+  const sessionId = meta.sessionId!
+  const userId = meta.userId!
+
+  try {
+    await query(
+      `UPDATE kids_sessions SET status = 'active', updated_at = NOW()
+       WHERE session_id = $1 AND user_id = $2`,
+      [sessionId, userId],
+    )
+  } catch (err) {
+    console.error('[kids-v1] session_activate error:', err instanceof Error ? err.message : err)
+    send(ws, { type: 'error', code: 'INVALID_SESSION', message: 'Failed to activate kids session.' })
+    return
+  }
+
+  meta.isKidsMode        = true
+  meta.kidsBrainV1Active = true
+  meta.lessonId          = sessionId
+  meta.lessonStartedAt   = Date.now()
+  meta.billingStartedAt  = Date.now()
+
+  meta.maxDurationRef = setTimeout(() => {
+    console.log(`[kids-v1] max_duration session=${sessionId}`)
+    send(ws, { type: 'error', code: 'LIMIT_REACHED', message: 'Session time limit reached.' })
+    ws.close(4400, 'Session time limit')
+  }, KIDS_MAX_DURATION_MS)
+
+  send(ws, { type: 'lesson_ready', sessionId })
+
+  // Cold profile fallbacks (Phase 8 — no Postgres profile lookup yet)
+  const kidsV1Input: KidsBrainSessionStartInput = {
+    sessionId,
+    userId,
+    childId:         userId,
+    childFirstName:  'friend',
+    ageBand:         AgeBand.SIX_SEVEN,
+    ageProfile:      AGE_PROFILE_6_7,
+    lessonTargetWords: [],
+    unitReviewWords:   [],
+    characterNames:    ['milo'],
+    timestamp:         new Date().toISOString(),
+  }
+
+  const startResult = startKidsBrainSession(kidsV1Input)
+
+  try {
+    const store = getKidsBrainRedisStore()
+    await store.saveSession(startResult.sessionMemory)
+    console.log(`[kids-v1] session_persisted session=${sessionId}`)
+  } catch (err) {
+    console.error('[kids-v1] redis_persist_error:', err instanceof Error ? err.message : err)
+    send(ws, { type: 'error', code: 'INTERNAL_ERROR', message: 'Failed to persist kids session.' })
+    return
+  }
+
+  meta.kidsSessionId = sessionId
+  console.log(`[kids-v1] session_started user=${userId} session=${sessionId}`)
+
+  const adapted = adaptRuntimePackets(startResult.actionPackets)
+  await processKidsV1Packets(ws, meta, adapted)
+}
+
+// ── Kids Brain v1 turn processing ─────────────────────────────────────────────
+
+async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: string): Promise<void> {
+  const sessionId = meta.kidsSessionId
+  if (!sessionId) {
+    send(ws, { type: 'error', code: 'INVALID_SESSION', message: 'Kids Brain v1 session not initialized.' })
+    return
+  }
+
+  if (meta.lessonStartedAt && Date.now() - meta.lessonStartedAt > KIDS_MAX_DURATION_MS) {
+    send(ws, { type: 'error', code: 'LIMIT_REACHED', message: 'Session time limit reached.' })
+    ws.close(4400, 'Session time limit')
+    return
+  }
+
+  if (meta.aiCallCount >= KIDS_MAX_LLM_CALLS) {
+    send(ws, { type: 'error', code: 'LIMIT_REACHED', message: 'Prototype call limit reached.' })
+    ws.close(4400, 'Call limit reached')
+    return
+  }
+
+  meta.aiCallCount++
+
+  // Load session memory from Redis
+  let sessionMemory: KidsBrainSessionMemory
+  try {
+    const store = getKidsBrainRedisStore()
+    const loaded = await store.getSession(sessionId)
+    if (!loaded) {
+      console.error(`[kids-v1] session_memory_not_found session=${sessionId}`)
+      send(ws, { type: 'error', code: 'INVALID_SESSION', message: 'Kids session not found in Redis.' })
+      return
+    }
+    sessionMemory = loaded
+  } catch (err) {
+    console.error('[kids-v1] redis_load_error:', err instanceof Error ? err.message : err)
+    send(ws, { type: 'error', code: 'INTERNAL_ERROR', message: 'Failed to load kids session.' })
+    return
+  }
+
+  const sttResult = buildSTTResultFromText(text || null)
+
+  let result: Awaited<ReturnType<typeof processKidsBrainTurn>>
+  try {
+    result = await processKidsBrainTurn({
+      sessionMemory,
+      sttResult,
+      responseLatencyMs: null,
+      silenceDurationMs: 0,
+      attemptCount:      sessionMemory.currentItemAttemptCount,
+      targetWord:        null,
+      childFirstName:    'friend',
+      lessonTargetWords: [],
+      unitReviewWords:   [],
+      characterNames:    ['milo'],
+      timestamp:         new Date().toISOString(),
+    })
+  } catch (err) {
+    console.error('[kids-v1] processKidsBrainTurn error:', err instanceof Error ? err.message : err)
+    send(ws, { type: 'error', code: 'INTERNAL_ERROR', message: 'Session processing error.' })
+    return
+  }
+
+  // Safety close: stop session immediately, no further LLM calls
+  if (!result.safeToContinue) {
+    console.log(`[kids-v1] safety_close session=${sessionId}`)
+    const adapted = adaptRuntimePackets(result.actionPackets)
+    await processKidsV1Packets(ws, meta, adapted)
+    try {
+      await query(
+        `UPDATE kids_sessions SET status = 'ended', ended_at = NOW(), updated_at = NOW()
+         WHERE session_id = $1`,
+        [sessionId],
+      )
+      await getKidsBrainRedisStore().deleteSession(sessionId)
+    } catch { /* non-fatal */ }
+    ws.close(4400, 'Safety close')
+    return
+  }
+
+  // Persist updated session memory to Redis
+  try {
+    await getKidsBrainRedisStore().saveSession(result.updatedSessionMemory)
+  } catch (err) {
+    console.error('[kids-v1] redis_save_error (non-fatal):', err instanceof Error ? err.message : err)
+  }
+
+  const adapted = adaptRuntimePackets(result.actionPackets)
+  const shouldClose = await processKidsV1Packets(ws, meta, adapted)
+
+  if (result.shouldCloseSession || shouldClose) {
+    console.log(`[kids-v1] session_closed_naturally session=${sessionId}`)
+    const durationMin = meta.lessonStartedAt
+      ? Math.round((Date.now() - meta.lessonStartedAt) / 60000)
+      : 0
+    try {
+      await query(
+        `UPDATE kids_sessions SET status = 'completed', ended_at = NOW(), updated_at = NOW(),
+         llm_calls = $1, tts_chars = $2 WHERE session_id = $3`,
+        [meta.aiCallCount, meta.ttsCharCount, meta.sessionId],
+      )
+      await getKidsBrainRedisStore().deleteSession(sessionId)
+    } catch { /* non-fatal */ }
+    send(ws, {
+      type: 'lesson_end',
+      summary: {
+        lessonId:        meta.sessionId ?? '',
+        phasesReached:   ['DIAGNOSTIC'],
+        exerciseScore:   0,
+        vocabularyCount: result.updatedSessionMemory.itemsMastered.length,
+        durationMin,
+      },
+    })
+    ws.close(1000, 'Session complete')
+  }
+}
+
 // ── Mentium Kids prototype handlers ──────────────────────────────────────────
 
 async function kidsTtsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise<void> {
@@ -1267,7 +1509,11 @@ async function handleFocusLessonStart(
           ws.close(4401, 'Invalid session')
           return
         }
-        await handleKidsLessonStart(ws, meta)
+        if (USE_KIDS_BRAIN_V1) {
+          await handleKidsBrainV1LessonStart(ws, meta)
+        } else {
+          await handleKidsLessonStart(ws, meta)
+        }
         return
       }
     } catch (err) {
@@ -1995,12 +2241,19 @@ async function processInput(
     return
   }
 
-  // Kids mode: route to kids orchestrator, bypassing adult lesson flow
+  // Kids mode: route to Kids Brain v1 or old prototype, bypassing adult lesson flow
   if (meta.isKidsMode) {
     if (meta.aiProcessing) { meta.queuedInput = text; return }
     meta.aiProcessing = true
-    try { await processKidsTurn(ws, meta, text) }
-    finally { meta.aiProcessing = false }
+    try {
+      if (meta.kidsBrainV1Active) {
+        await processKidsBrainV1Turn(ws, meta, text)
+      } else {
+        await processKidsTurn(ws, meta, text)
+      }
+    } finally {
+      meta.aiProcessing = false
+    }
     return
   }
 
@@ -3131,8 +3384,9 @@ export function attachLessonWS(server: Server): void {
         lastSubmittedVoiceTurnId: null,
         stabilizationRef:         null,
         billingStartedAt: null,
-        isKidsMode:    false,
-        kidsSessionId: null,
+        isKidsMode:        false,
+        kidsSessionId:     null,
+        kidsBrainV1Active: false,
       }
     }
 
