@@ -90,6 +90,7 @@ import { RedisSessionStoreImpl } from '../kids-brain/infrastructure/index.js'
 import { AgeBand } from '../kids-brain/shared/enums.js'
 import { AGE_PROFILE_6_7 } from '../kids-brain/shared/types.js'
 import type { SessionMemory as KidsBrainSessionMemory } from '../kids-brain/contracts/session-memory.js'
+import { getVocabularyWords } from '../kids-brain/curriculum/index.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
@@ -105,11 +106,16 @@ const KIDS_MAX_TTS_CHARS   = 2000
 // Adult sessions are never affected by this flag.
 const USE_KIDS_BRAIN_V1 = process.env.USE_KIDS_BRAIN_V1 === 'true'
 
-// ── Kids Brain v1 prototype vocabulary ───────────────────────────────────────
-// Animal vocabulary used for the supervised prototype session (Phase 8.8).
-// Matches the QA simulation set from the Phase 8.7 audit.
-// TODO: replace with per-session curriculum lookup when curriculum engine is built.
-const KIDS_PROTOTYPE_TARGET_WORDS = ['cat', 'dog', 'lion', 'monkey', 'elephant', 'tiger']
+// ── Kids Brain v1 curriculum reference ───────────────────────────────────────
+// Prototype lesson identifiers — resolved once at module load from the static curriculum registry.
+// These replace the former KIDS_LESSON_TARGET_WORDS literal (Phase 10D).
+const PROTO_COURSE_ID = 'mentium-kids-prototype-animals'
+const PROTO_UNIT_ID   = 'animals-zoo-001'
+const PROTO_LESSON_ID = 'animals-zoo-lesson-001'
+
+const KIDS_LESSON_TARGET_WORDS: string[] = [
+  ...getVocabularyWords(PROTO_COURSE_ID, PROTO_UNIT_ID, PROTO_LESSON_ID),
+]
 
 // Derive unit number from a section string like "2.3" → 2
 function unitFromSection(section: string): number {
@@ -1196,7 +1202,7 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
     childFirstName:  'friend',
     ageBand:         AgeBand.SIX_SEVEN,
     ageProfile:      AGE_PROFILE_6_7,
-    lessonTargetWords: KIDS_PROTOTYPE_TARGET_WORDS,
+    lessonTargetWords: KIDS_LESSON_TARGET_WORDS,
     unitReviewWords:   [],
     characterNames:    ['milo'],
     timestamp:         new Date().toISOString(),
@@ -1273,9 +1279,9 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
       attemptCount:      sessionMemory.currentItemAttemptCount,
       // Phase 8.8: derive target word from session memory; fall back to first prototype word.
       // currentTargetItemId is initialized in session-bootstrap from lessonTargetWords[0].
-      targetWord:        sessionMemory.currentTargetItemId ?? KIDS_PROTOTYPE_TARGET_WORDS[0],
+      targetWord:        sessionMemory.currentTargetItemId ?? KIDS_LESSON_TARGET_WORDS[0],
       childFirstName:    'friend',
-      lessonTargetWords: KIDS_PROTOTYPE_TARGET_WORDS,
+      lessonTargetWords: KIDS_LESSON_TARGET_WORDS,
       unitReviewWords:   [],
       characterNames:    ['milo'],
       timestamp:         new Date().toISOString(),

@@ -20,6 +20,9 @@ import type { RuntimeSessionStartResult } from './runtime-result.js';
 
 const DEFAULT_TTS_VOICE = 'default_teacher_v1';
 
+// Prototype lesson identifier — seeded into SessionMemory so the runtime knows which lesson is active.
+const PROTOTYPE_LESSON_ID = 'animals-zoo-lesson-001';
+
 /** Scripted lesson opening greeting (spec §10.2 — never LLM-generated). */
 const GREETING_TEXT = "Hello! Let's play and learn English! Are you ready?";
 const GREETING_FALLBACK = "Hello! Ready to learn?";
@@ -60,6 +63,7 @@ function buildInitialSessionMemory(
     currentActivityId: ActivityType.LISTEN_AND_POINT,
     // Phase 8.8: seed first target word from lesson vocabulary so classifiers have a non-null target.
     currentTargetItemId: input.lessonTargetWords[0] ?? null,
+    lessonId: PROTOTYPE_LESSON_ID,
     currentItemAttemptCount: 0,
     lessonPhase: LessonPhase.WARM_UP,
 

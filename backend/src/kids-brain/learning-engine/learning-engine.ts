@@ -35,6 +35,7 @@ import type {
   LearningEngineInput,
   DerivedSignals,
   ProgressionOutcome,
+  AvailableItem,
 } from './learning-engine-types.js';
 import { buildLearningDecision } from './learning-decision.js';
 import type { LearningDecision, BuildDecisionParams } from './learning-decision.js';
@@ -342,7 +343,11 @@ export function runLearningEngine(input: LearningEngineInput): LearningDecision 
     decisionType: progressionOutcome.decisionType,
     nextTeacherActionCode: nextTeacherAction,
     nextActivityType: nextActivity,
-    nextTargetItemId: progressionOutcome.nextItemId,
+    nextTargetItemId: resolveNextItemId(
+      progressionOutcome.shouldAdvanceItem,
+      progressionOutcome.nextItemId,
+      input.availableItems,
+    ),
     shouldStayOnCurrentItem: progressionOutcome.shouldStayOnCurrentItem,
     shouldAdvanceItem: progressionOutcome.shouldAdvanceItem,
     shouldReview: progressionOutcome.shouldReview,
@@ -449,6 +454,23 @@ function buildLog(
     timestamp: new Date().toISOString(),
     payload,
   };
+}
+
+/**
+ * Resolves the next target item when shouldAdvanceItem=true but the progression engine
+ * returned nextItemId=undefined (R22 gap). Selects the item immediately after the
+ * current item in availableItems order. Returns undefined if current is last or unknown.
+ */
+function resolveNextItemId(
+  shouldAdvanceItem: boolean,
+  nextItemId: string | undefined,
+  availableItems: AvailableItem[],
+): string | undefined {
+  if (!shouldAdvanceItem) return nextItemId;
+  if (nextItemId !== undefined) return nextItemId;
+  const currentIndex = availableItems.findIndex(i => i.isCurrentItem);
+  if (currentIndex === -1 || currentIndex >= availableItems.length - 1) return undefined;
+  return availableItems[currentIndex + 1].itemId;
 }
 
 function makeNullOutcome(decisionType: LearningDecisionType): ProgressionOutcome {

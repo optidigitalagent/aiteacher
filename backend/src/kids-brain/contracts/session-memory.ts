@@ -52,6 +52,9 @@ export interface SessionMemory {
   // Token / cost tracking (§14.3)
   costCounters: CostCounters;
 
+  // Curriculum reference (Phase 10D)
+  lessonId?: string | null;
+
   // Autosave
   autosaveSequenceNumber: number; // Monotonic; increments on each write
 
