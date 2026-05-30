@@ -1,4 +1,5 @@
 import { PROTO_ANIMALS_COURSE } from './prototype-animals-lesson.js';
+import { KIDS_BOX_1_COURSE } from './kids-box/kids-box-unit-01.js';
 import type {
   KidsCurriculumCourse,
   KidsCurriculumUnit,
@@ -16,7 +17,10 @@ import {
 
 // ─── Static registry ──────────────────────────────────────────────────────────
 
-const REGISTERED_COURSES: readonly KidsCurriculumCourse[] = Object.freeze([PROTO_ANIMALS_COURSE]);
+const REGISTERED_COURSES: readonly KidsCurriculumCourse[] = Object.freeze([
+  PROTO_ANIMALS_COURSE,
+  KIDS_BOX_1_COURSE,
+]);
 
 // ─── Lookup helpers ───────────────────────────────────────────────────────────
 
