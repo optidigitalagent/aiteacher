@@ -43,3 +43,22 @@ export {
   PROTO_ANIMALS_UNIT,
   PROTO_ANIMALS_COURSE,
 } from './prototype-animals-lesson.js';
+
+// Curriculum loader
+export type { CurriculaValidationResult } from './curriculum-loader.js';
+export {
+  listCourses,
+  loadCourse,
+  loadUnit,
+  loadLesson,
+  loadItem,
+  listLessonItems,
+  listLessonActivities,
+  getActivityById,
+  getVocabularyWords,
+  getVocabularyItems,
+  getDistractors,
+  getVisualSafeActivities,
+  getLessonForPrototype,
+  validateRegisteredCurricula,
+} from './curriculum-loader.js';
