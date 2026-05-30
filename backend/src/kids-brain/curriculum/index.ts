@@ -36,3 +36,10 @@ export {
   validateActivityUISafety,
   validateLessonHasNoVisualRequiredActivityWithoutVisualSupport,
 } from './curriculum-validators.js';
+
+// Prototype lesson content
+export {
+  PROTO_ANIMALS_LESSON,
+  PROTO_ANIMALS_UNIT,
+  PROTO_ANIMALS_COURSE,
+} from './prototype-animals-lesson.js';
