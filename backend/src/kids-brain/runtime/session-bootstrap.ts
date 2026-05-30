@@ -58,7 +58,8 @@ function buildInitialSessionMemory(
 
     currentUnitId: null,
     currentActivityId: ActivityType.LISTEN_AND_POINT,
-    currentTargetItemId: null,
+    // Phase 8.8: seed first target word from lesson vocabulary so classifiers have a non-null target.
+    currentTargetItemId: input.lessonTargetWords[0] ?? null,
     currentItemAttemptCount: 0,
     lessonPhase: LessonPhase.WARM_UP,
 

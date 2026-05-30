@@ -105,6 +105,12 @@ const KIDS_MAX_TTS_CHARS   = 2000
 // Adult sessions are never affected by this flag.
 const USE_KIDS_BRAIN_V1 = process.env.USE_KIDS_BRAIN_V1 === 'true'
 
+// ── Kids Brain v1 prototype vocabulary ───────────────────────────────────────
+// Animal vocabulary used for the supervised prototype session (Phase 8.8).
+// Matches the QA simulation set from the Phase 8.7 audit.
+// TODO: replace with per-session curriculum lookup when curriculum engine is built.
+const KIDS_PROTOTYPE_TARGET_WORDS = ['cat', 'dog', 'lion', 'monkey', 'elephant', 'tiger']
+
 // Derive unit number from a section string like "2.3" → 2
 function unitFromSection(section: string): number {
   const n = parseInt(section.split('.')[0] ?? '1', 10)
@@ -1190,7 +1196,7 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
     childFirstName:  'friend',
     ageBand:         AgeBand.SIX_SEVEN,
     ageProfile:      AGE_PROFILE_6_7,
-    lessonTargetWords: [],
+    lessonTargetWords: KIDS_PROTOTYPE_TARGET_WORDS,
     unitReviewWords:   [],
     characterNames:    ['milo'],
     timestamp:         new Date().toISOString(),
@@ -1265,9 +1271,11 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
       responseLatencyMs: null,
       silenceDurationMs: 0,
       attemptCount:      sessionMemory.currentItemAttemptCount,
-      targetWord:        null,
+      // Phase 8.8: derive target word from session memory; fall back to first prototype word.
+      // currentTargetItemId is initialized in session-bootstrap from lessonTargetWords[0].
+      targetWord:        sessionMemory.currentTargetItemId ?? KIDS_PROTOTYPE_TARGET_WORDS[0],
       childFirstName:    'friend',
-      lessonTargetWords: [],
+      lessonTargetWords: KIDS_PROTOTYPE_TARGET_WORDS,
       unitReviewWords:   [],
       characterNames:    ['milo'],
       timestamp:         new Date().toISOString(),

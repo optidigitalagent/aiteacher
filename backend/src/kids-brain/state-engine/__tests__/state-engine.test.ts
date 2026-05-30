@@ -335,8 +335,8 @@ describe('State Engine — Phase 4', () => {
     expect(cs.emotionalSafety).toBeGreaterThanOrEqual(prev.emotionalSafety);
     // Frustration risk not increased
     expect(cs.frustrationRisk).toBeLessThanOrEqual(prev.frustrationRisk + 0.01); // near-zero tolerance
-    // Not counted as failure
-    expect(cs.recentFailureCount).toBe(0);
+    // Phase 8.8: I_DONT_KNOW counts as failure in the rolling window (spec §7.1 / NB1 fix)
+    expect(cs.recentFailureCount).toBe(1);
   });
 
   // ── Test 9: refusal escalates recovery state ──────────────────────────────
