@@ -284,15 +284,23 @@ export async function processKidsBrainTurn(
 
   logs.push(...teacherOutput.logsToEmit);
 
-  // ── Step 6: Update recentPraisePhrases in session memory ──────────────────────
+  // ── Step 6: Update recentPraisePhrases and persist target progression ─────────
 
   const baseMemory = stateOutput.updatedSessionMemory;
-  const updatedSessionMemory = teacherOutput.praisePhraseUsed !== null
+  const memWithPraise = teacherOutput.praisePhraseUsed !== null
     ? {
         ...baseMemory,
         recentPraisePhrases: [...baseMemory.recentPraisePhrases, teacherOutput.praisePhraseUsed].slice(-3),
       }
     : baseMemory;
+
+  // Persist target item advancement from the learning engine decision.
+  // When learningDecision.nextTargetItemId is defined, the learning engine has
+  // explicitly chosen a new target (e.g. easiest-win recovery, review trigger).
+  // Without this, currentTargetItemId never advances and lessons loop indefinitely.
+  const updatedSessionMemory = learningDecision.nextTargetItemId !== undefined
+    ? { ...memWithPraise, currentTargetItemId: learningDecision.nextTargetItemId }
+    : memWithPraise;
 
   // ── Step 7: Build action packets ──────────────────────────────────────────────
 
