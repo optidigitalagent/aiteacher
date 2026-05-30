@@ -21,7 +21,7 @@ import type { RuntimeSessionStartResult } from './runtime-result.js';
 const DEFAULT_TTS_VOICE = 'default_teacher_v1';
 
 /** Scripted lesson opening greeting (spec §10.2 — never LLM-generated). */
-const GREETING_TEXT = "Hello! Let's play and learn English today! Are you ready? Here we go!";
+const GREETING_TEXT = "Hello! Let's play and learn English! Are you ready?";
 const GREETING_FALLBACK = "Hello! Ready to learn?";
 
 /** Creates the initial CostCounters with all counters zeroed. */

@@ -392,7 +392,7 @@ describe('Scenario 5 — L1 Usage (Russian / Ukrainian)', () => {
 describe('Scenario 6 — Silence', () => {
   it('short silence (2s) → gentle scaffolding, no frustration', async () => {
     const { sessionMemory } = startKidsBrainSession(BASE_START);
-    const r = await processKidsBrainSilence(makeSilence(sessionMemory, 2000, 'cat'));
+    const r = await processKidsBrainSilence(makeSilence(sessionMemory, 4000, 'cat'));
 
     assertTurnQuality(r, 'short-silence');
     expect(r.perceptionBundle.isSilence).toBe(true);

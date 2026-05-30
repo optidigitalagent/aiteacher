@@ -207,6 +207,13 @@ export async function processKidsBrainTurn(
     recentTurns: sessionMemory.recentTurns,
     ageProfile: sessionMemory.ageProfile,
     // No llmClassifier — Phase 7: no LLM calls
+    vocabularyContext: input.targetWord
+      ? {
+          targetWord: input.targetWord,
+          relatedWords: input.lessonTargetWords.filter(w => w !== input.targetWord),
+          vocabularyGroup: input.lessonTargetWords,
+        }
+      : undefined,
   };
 
   const classificationResult = await classifyResponse(classificationInput);

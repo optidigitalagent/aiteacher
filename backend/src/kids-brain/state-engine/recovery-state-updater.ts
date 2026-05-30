@@ -26,6 +26,7 @@ const FAILURE_LABELS = new Set<ClassificationLabel>([
   ClassificationLabel.REFUSAL,
   ClassificationLabel.L1_REFUSAL,
   ClassificationLabel.EMOTIONAL_SHUTDOWN,
+  ClassificationLabel.I_DONT_KNOW,
 ]);
 
 /**
