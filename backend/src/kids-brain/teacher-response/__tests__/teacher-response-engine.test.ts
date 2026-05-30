@@ -11,6 +11,10 @@ import {
   FeedbackTone,
   LogSeverity,
 } from '../../shared/enums.js';
+import {
+  getAllTemplatesForKey,
+  renderTemplate,
+} from '../response-template-bank.js';
 import { createInitialChildState } from '../../state-engine/child-state-updater.js';
 import { createInitialCostCounters } from '../../state-engine/cost-counter-updater.js';
 import { runTeacherResponseEngine } from '../teacher-response-engine.js';
@@ -652,6 +656,105 @@ describe('TeacherResponseEngine', () => {
     expect(response.toLowerCase()).not.toContain('пес');
     // Should still contain the target word
     expect(response.toLowerCase()).toContain('dog');
+  });
+
+  // ── Phase 8.10 placeholder regression tests ──────────────────────────────────
+
+  // B1: renderTemplate replaces ALL occurrences of {word} (not just the first)
+  it('B1. renderTemplate replaces every {word} occurrence, not just the first', () => {
+    const template = 'With me! {word}! Together — {word}! Your turn!';
+    const result = renderTemplate(template, { word: 'cat' });
+    expect(result).toBe('With me! cat! Together — cat! Your turn!');
+    expect(result).not.toContain('{word}');
+  });
+
+  // B2: renderTemplate replaces ALL {optA} and {optB} occurrences
+  it('B2. renderTemplate replaces every {optA}/{optB} occurrence', () => {
+    const template = 'Is it {optA} or {optB}? {optA} or {optB}?';
+    const result = renderTemplate(template, { optA: 'cat', optB: 'dog' });
+    expect(result).toBe('Is it cat or dog? cat or dog?');
+    expect(result).not.toContain('{optA}');
+    expect(result).not.toContain('{optB}');
+  });
+
+  // B3: all templates in repeat_after_me render without unresolved placeholders
+  it('B3. all repeat_after_me template variants render without unresolved placeholders', () => {
+    const variants = getAllTemplatesForKey('repeat_after_me');
+    for (const template of variants) {
+      const rendered = renderTemplate(template, { word: 'dog' });
+      expect(rendered, `template: "${template}"`).not.toMatch(/\{word\}/);
+      expect(rendered, `template: "${template}"`).not.toMatch(/\{optA\}/);
+      expect(rendered, `template: "${template}"`).not.toMatch(/\{optB\}/);
+      expect(hasUnresolvedPlaceholders(rendered), `template: "${template}" has unresolved braces`).toBe(false);
+    }
+  });
+
+  // B4: all template bank keys render without unresolved placeholders when given valid vars
+  it('B4. all template bank keys render cleanly with valid vars', () => {
+    const keys = [
+      'correct_answer', 'hesitant_correct', 'near_correct', 'wrong_but_safe',
+      'repeat_after_me', 'supported_production', 'recovery_prompt', 'l1_rescue',
+      'silence_rescue', 'easiest_win',
+    ] as const;
+    for (const key of keys) {
+      const variants = getAllTemplatesForKey(key);
+      for (const template of variants) {
+        const rendered = renderTemplate(template, { word: 'lion', optA: 'lion', optB: 'cat' });
+        expect(rendered, `key=${key} template="${template}"`).not.toMatch(/\{word\}/);
+        expect(rendered, `key=${key} template="${template}"`).not.toMatch(/\{optA\}/);
+        expect(rendered, `key=${key} template="${template}"`).not.toMatch(/\{optB\}/);
+        expect(hasUnresolvedPlaceholders(rendered), `key=${key} template="${template}"`).toBe(false);
+      }
+    }
+  });
+
+  // B5: buildRecoveryResponse returns no unresolved {word}/{optA}/{optB} for all types
+  it('B5. buildRecoveryResponse produces no unresolved placeholders for all recovery types', () => {
+    const types = [
+      'silence_long', 'no_response', 'wrong_semantic', 'repeated_failure',
+      'l1_translation', 'l1_help_request', 'i_dont_know',
+    ] as const;
+    const params = {
+      targetWord: 'monkey',
+      forcedChoiceOptionA: 'monkey',
+      forcedChoiceOptionB: 'elephant',
+      l1BudgetUsed: false,
+      recentPhrases: [],
+    };
+    for (const type of types) {
+      const text = buildRecoveryResponse(type, params);
+      expect(text, `type=${type}`).not.toContain('{word}');
+      expect(text, `type=${type}`).not.toContain('{optA}');
+      expect(text, `type=${type}`).not.toContain('{optB}');
+      expect(text, `type=${type}`).not.toContain('{target}');
+      expect(hasUnresolvedPlaceholders(text), `type=${type}`).toBe(false);
+    }
+  });
+
+  // B6: teacher output never contains literal {target} — placeholder guard catches it
+  it('B6. placeholder guard catches {target} in any teacher text', () => {
+    const templates = [
+      'With me! {target}! Together — {target}! Your turn!',
+      "Let's say it together! Ready? {target}! Now YOU!",
+      'You and me! {target}! Again — {target}! Now just you!',
+    ];
+    for (const t of templates) {
+      const result = applyPlaceholderGuard(t, "Let's try again!");
+      expect(result.wasTriggered, `template: "${t}"`).toBe(true);
+      expect(result.text, `template: "${t}"`).toBe("Let's try again!");
+    }
+  });
+
+  // B7: forced_choice templates render both options without leaving placeholders
+  it('B7. forced_choice templates render both {optA} and {optB} completely', () => {
+    const variants = getAllTemplatesForKey('forced_choice');
+    for (const template of variants) {
+      const rendered = renderTemplate(template, { optA: 'cat', optB: 'dog' });
+      expect(rendered).not.toMatch(/\{optA\}/);
+      expect(rendered).not.toMatch(/\{optB\}/);
+      expect(rendered).toContain('cat');
+      expect(rendered).toContain('dog');
+    }
   });
 
   // Additional: response plan has all required fields

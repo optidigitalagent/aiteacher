@@ -202,7 +202,7 @@ export function buildRecoveryAction(
     applyConfidenceDelta(state, itemId, -3);
     state.emotionalState.consecutiveSuccesses = 0;
     const praise = rotate(EFFORT_PRAISE, 'level2_praise');
-    const together = rotate(TOGETHER_SCRIPTS, 'level2_together').replace('{target}', targetWord);
+    const together = rotate(TOGETHER_SCRIPTS, 'level2_together').replace(/\{target\}/g, targetWord);
     log(state, 'recovery_trigger', { level: 2, signal });
     return {
       recoveryLevel: 2,
@@ -282,7 +282,7 @@ export function buildRecoveryAction(
       };
     } else if (pattern === 1) {
       // Pattern 3b: Together answer
-      const together = rotate(TOGETHER_SCRIPTS, 'level3_together').replace('{target}', targetWord);
+      const together = rotate(TOGETHER_SCRIPTS, 'level3_together').replace(/\{target\}/g, targetWord);
       log(state, 'recovery_trigger', { level: 3, signal, pattern: 'together_answer' });
       return {
         recoveryLevel: 3,
@@ -294,7 +294,7 @@ export function buildRecoveryAction(
     } else {
       // Pattern 3c: Easiest win
       const easiest = rotate(EASIEST_WIN_SCRIPTS, 'level3_easiest').replace(
-        '{target}',
+        /\{target\}/g,
         targetWord
       );
       log(state, 'recovery_trigger', { level: 3, signal, pattern: 'easiest_win' });
