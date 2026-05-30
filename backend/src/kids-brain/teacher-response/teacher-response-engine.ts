@@ -32,6 +32,7 @@ import {
 export interface TeacherResponseEngineOutput {
   plan: TeacherResponsePlan;
   logsToEmit: LogEvent[];
+  praisePhraseUsed: string | null;
 }
 
 // ── Guard pipeline ─────────────────────────────────────────────────────────────
@@ -323,6 +324,9 @@ export function runTeacherResponseEngine(
     });
   }
 
+  // Detect which praise phrase was used (for recentPraisePhrases rotation)
+  const praisePhraseUsed = PRAISE_VARIANTS.find(v => guardResult.text.includes(v)) ?? null;
+
   // Compute allowed vocabulary used in the final text
   const finalTokens = guardResult.text.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
   const allowedUsed = finalTokens.filter(t => allowedVocabSet.has(t));
@@ -361,5 +365,5 @@ export function runTeacherResponseEngine(
     },
   });
 
-  return { plan, logsToEmit: logs };
+  return { plan, logsToEmit: logs, praisePhraseUsed };
 }

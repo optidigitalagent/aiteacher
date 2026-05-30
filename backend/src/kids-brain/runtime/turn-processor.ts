@@ -284,9 +284,19 @@ export async function processKidsBrainTurn(
 
   logs.push(...teacherOutput.logsToEmit);
 
-  // ── Step 6: Build action packets ──────────────────────────────────────────────
+  // ── Step 6: Update recentPraisePhrases in session memory ──────────────────────
 
-  const updatedTurnNumber = stateOutput.updatedSessionMemory.turnNumber;
+  const baseMemory = stateOutput.updatedSessionMemory;
+  const updatedSessionMemory = teacherOutput.praisePhraseUsed !== null
+    ? {
+        ...baseMemory,
+        recentPraisePhrases: [...baseMemory.recentPraisePhrases, teacherOutput.praisePhraseUsed].slice(-3),
+      }
+    : baseMemory;
+
+  // ── Step 7: Build action packets ──────────────────────────────────────────────
+
+  const updatedTurnNumber = updatedSessionMemory.turnNumber;
   const safeToContinue = stateOutput.stateUpdateSummary.safeToContinue;
   const shouldCloseSession =
     learningDecision.shouldCloseSession || teacherOutput.plan.safetyBlocked;
@@ -306,7 +316,7 @@ export async function processKidsBrainTurn(
     stateEngineOutput: stateOutput,
     learningDecision,
     teacherResponsePlan: teacherOutput.plan,
-    updatedSessionMemory: stateOutput.updatedSessionMemory,
+    updatedSessionMemory,
     actionPackets,
     logsToEmit: logs,
     safeToContinue,
