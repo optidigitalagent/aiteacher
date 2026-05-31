@@ -1194,7 +1194,23 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
 
   send(ws, { type: 'lesson_ready', sessionId })
 
-  // Cold profile fallbacks (Phase 8 — no Postgres profile lookup yet)
+  // Reconnect guard (Phase 11K): resume existing session if one exists in Redis.
+  // Prevents session reset on page reload / WS reconnect.
+  const store = getKidsBrainRedisStore()
+  let existingMemory: KidsBrainSessionMemory | null = null
+  try {
+    existingMemory = await store.reconnectSession(sessionId, userId)
+  } catch {
+    // Redis unavailable — fall through to cold start
+  }
+
+  if (existingMemory) {
+    meta.kidsSessionId = sessionId
+    console.log(`[kids-v1] session_resumed session=${sessionId} item=${existingMemory.currentTargetItemId} activity=${existingMemory.currentActivityId}`)
+    return
+  }
+
+  // Cold start — no prior session in Redis for this user; create fresh.
   const kidsV1Input: KidsBrainSessionStartInput = {
     sessionId,
     userId,
@@ -1211,7 +1227,6 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
   const startResult = startKidsBrainSession(kidsV1Input)
 
   try {
-    const store = getKidsBrainRedisStore()
     await store.saveSession(startResult.sessionMemory)
     console.log(`[kids-v1] session_persisted session=${sessionId}`)
   } catch (err) {
