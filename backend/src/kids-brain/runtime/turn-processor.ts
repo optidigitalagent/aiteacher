@@ -36,7 +36,7 @@ import type { TeacherResponseInput } from '../teacher-response/teacher-response-
 import type { KidsBrainTurnInput, RuntimeActionPacket } from './runtime-types.js';
 import { RuntimeActionPacketType } from './runtime-types.js';
 import type { RuntimeTurnResult } from './runtime-result.js';
-import { applyExerciseBridge } from './exercise-runner.js';
+import { applyExerciseBridge, buildExercisePrompt } from './exercise-runner.js';
 import { findLessonById } from '../curriculum/curriculum-loader.js';
 import {
   buildActivityContext,
@@ -491,6 +491,32 @@ export async function processKidsBrainTurn(
   // Phase 13D: apply exercise bridge AFTER learning engine, so exercise sequence
   // takes precedence over learning engine item advancement.
   const updatedSessionMemory = runExerciseBridge(memAfterLearning, classificationResult.label);
+
+  // ── Step 6B: exercise-advance intercept (Phase 13F) ───────────────────────────
+  // If the bridge advanced the exercise, override plan.mainText with the next
+  // exercise's authored prompt. This mirrors the paid lesson pattern: teacher text
+  // must always reflect post-transition state, never pre-bridge state.
+  const prevExerciseId = memAfterLearning.currentExerciseId ?? null;
+  const nextExerciseId = updatedSessionMemory.currentExerciseId ?? null;
+
+  if (prevExerciseId !== nextExerciseId) {
+    const lesson = memAfterLearning.lessonId ? findLessonById(memAfterLearning.lessonId) : null;
+
+    if (nextExerciseId !== null) {
+      // Advanced to next exercise — use its authored prompt.
+      const nextExercise = lesson?.exercises?.find(e => e.exerciseId === nextExerciseId) ?? null;
+      if (nextExercise) {
+        teacherOutput.plan = { ...teacherOutput.plan, mainText: buildExercisePrompt(nextExercise) };
+      }
+    } else if (prevExerciseId !== null) {
+      // Lesson exhausted — use the just-completed exercise's closing prompt.
+      const closingExercise = lesson?.exercises?.find(e => e.exerciseId === prevExerciseId) ?? null;
+      const closingPrompt = closingExercise
+        ? buildExercisePrompt(closingExercise)
+        : "Great job today! We're all done!";
+      teacherOutput.plan = { ...teacherOutput.plan, mainText: closingPrompt };
+    }
+  }
 
   // ── Step 7: Build action packets ──────────────────────────────────────────────
 
