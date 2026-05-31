@@ -11,10 +11,13 @@ import {
 import {
   KidsCurriculumActivityType,
   KidsCurriculumItemType,
+  KidsTextbookActivityType,
+  KidsCompletionRuleType,
 } from '../curriculum-types.js';
 import {
   validateKidsCurriculumCourse,
   validateKidsCurriculumLesson,
+  validateLessonExercises,
   validateNoPlaceholderLeaks,
   validateFinalOutputNoPlaceholders,
   validateLessonHasNoVisualRequiredActivityWithoutVisualSupport,
@@ -392,5 +395,180 @@ describe('kids-box-unit-01: cross-lesson invariants', () => {
     expect(lessonIds).toContain('kb1-u01-l01');
     expect(lessonIds).toContain('kb1-u01-l02');
     expect(lessonIds).toContain('kb1-u01-l03');
+  });
+});
+
+// ─── Lesson 2 exercise suite ──────────────────────────────────────────────────
+
+describe('kids-box-unit-01: lesson 2 exercises (Phase 13B)', () => {
+  const exercises = KB1_U01_L02_COLOURS.exercises!;
+  const lessonItemIds = new Set(KB1_U01_L02_COLOURS.items.map(i => i.itemId));
+  const APPROVED_VARIABLES = ['{target}', '{choiceA}', '{choiceB}', '{childName}', '{characterName}'];
+  const PLACEHOLDER_REGEX = /\{[^}]+\}/g;
+
+  it('40. lesson 2 has exercises defined', () => {
+    expect(KB1_U01_L02_COLOURS.exercises).toBeDefined();
+    expect(KB1_U01_L02_COLOURS.exercises!.length).toBeGreaterThan(0);
+  });
+
+  it('41. exercise count is between 8 and 12', () => {
+    expect(exercises.length).toBeGreaterThanOrEqual(8);
+    expect(exercises.length).toBeLessThanOrEqual(12);
+  });
+
+  it('42. exercises are ordered sequentially from 1', () => {
+    const orders = exercises.map(e => e.order).sort((a, b) => a - b);
+    orders.forEach((order, i) => expect(order).toBe(i + 1));
+  });
+
+  it('43. first exercise is readiness_to_colour', () => {
+    const first = exercises.find(e => e.order === 1);
+    expect(first).toBeDefined();
+    expect(first!.exerciseId).toContain('readiness');
+  });
+
+  it('44. final exercise has nextExerciseId null', () => {
+    const last = exercises.reduce((a, b) => (a.order > b.order ? a : b));
+    expect(last.nextExerciseId).toBeNull();
+  });
+
+  it('45. nextExerciseId chain is valid — every link resolves', () => {
+    const ids = new Set(exercises.map(e => e.exerciseId));
+    for (const ex of exercises) {
+      if (ex.nextExerciseId !== null) {
+        expect(
+          ids.has(ex.nextExerciseId),
+          `"${ex.exerciseId}" nextExerciseId "${ex.nextExerciseId}" not found`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('46. all exercises pass validateLessonExercises()', () => {
+    const result = validateLessonExercises(KB1_U01_L02_COLOURS);
+    expect(result.valid, result.errors.join('\n')).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('47. all exercises are audio-safe (allowedWithoutVisualUI = true)', () => {
+    for (const ex of exercises) {
+      expect(
+        ex.allowedWithoutVisualUI,
+        `${ex.exerciseId} must be audio-safe`,
+      ).toBe(true);
+    }
+  });
+
+  it('48. no exercise requires visual UI', () => {
+    for (const ex of exercises) {
+      expect(
+        ex.requiresVisualUI,
+        `${ex.exerciseId} must not require visual UI`,
+      ).toBe(false);
+    }
+  });
+
+  it('49. all targetItemIds reference real lesson items', () => {
+    for (const ex of exercises) {
+      for (const itemId of ex.targetItemIds) {
+        expect(
+          lessonItemIds.has(itemId),
+          `"${itemId}" in ${ex.exerciseId} is not a lesson item`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('50. listen-and-repeat exercises use correct_repetitions with requiredCorrectCount 2', () => {
+    const repeatExs = exercises.filter(
+      e => e.textbookActivityType === KidsTextbookActivityType.LISTEN_AND_REPEAT,
+    );
+    expect(repeatExs.length).toBeGreaterThan(0);
+    for (const ex of repeatExs) {
+      expect(ex.completionRule.type).toBe(KidsCompletionRuleType.CORRECT_REPETITIONS);
+      expect(ex.completionRule.requiredCorrectCount).toBe(2);
+    }
+  });
+
+  it('51. listen-and-choose exercises use correct_choice with requiredCorrectCount 1', () => {
+    const choiceExs = exercises.filter(
+      e => e.textbookActivityType === KidsTextbookActivityType.LISTEN_AND_CHOOSE,
+    );
+    expect(choiceExs.length).toBeGreaterThan(0);
+    for (const ex of choiceExs) {
+      expect(ex.completionRule.type).toBe(KidsCompletionRuleType.CORRECT_CHOICE);
+      expect(ex.completionRule.requiredCorrectCount).toBe(1);
+    }
+  });
+
+  it('52. all exercises have valid retry policies with escalation ladder', () => {
+    for (const ex of exercises) {
+      expect(ex.retryPolicy).toBeDefined();
+      expect(ex.retryPolicy.maxAttempts).toBeGreaterThanOrEqual(1);
+      expect(ex.retryPolicy.escalationLadder.length).toBeGreaterThan(0);
+      expect(ex.retryPolicy.fallbackExerciseId === null || typeof ex.retryPolicy.fallbackExerciseId === 'string').toBe(true);
+    }
+  });
+
+  it('53. no teacher instruction exceeds 200 characters', () => {
+    for (const ex of exercises) {
+      expect(
+        ex.teacherInstruction.length,
+        `${ex.exerciseId} instruction too long (${ex.teacherInstruction.length} chars)`,
+      ).toBeLessThanOrEqual(200);
+    }
+  });
+
+  it('54. no teacher instruction contains unapproved placeholders', () => {
+    for (const ex of exercises) {
+      const matches = ex.teacherInstruction.match(PLACEHOLDER_REGEX) ?? [];
+      const unapproved = matches.filter(p => !APPROVED_VARIABLES.includes(p));
+      expect(
+        unapproved,
+        `${ex.exerciseId} has unapproved placeholders: ${unapproved.join(', ')}`,
+      ).toHaveLength(0);
+    }
+  });
+
+  it('55. all exercise IDs are unique', () => {
+    const ids = exercises.map(e => e.exerciseId);
+    const unique = new Set(ids);
+    expect(unique.size).toBe(ids.length);
+  });
+
+  it('56. repeat-word exercises have non-empty expectedAnswers', () => {
+    const repeatWordExs = exercises.filter(e => e.studentActionType === 'repeat_word');
+    expect(repeatWordExs.length).toBeGreaterThan(0);
+    for (const ex of repeatWordExs) {
+      expect(
+        ex.expectedAnswers.length,
+        `${ex.exerciseId} needs expectedAnswers`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('57. choice exercises have non-empty choices and expectedAnswers', () => {
+    const choiceExs = exercises.filter(e => e.studentActionType === 'say_choice');
+    expect(choiceExs.length).toBeGreaterThan(0);
+    for (const ex of choiceExs) {
+      expect(ex.choices.length, `${ex.exerciseId} needs choices`).toBeGreaterThan(0);
+      expect(ex.expectedAnswers.length, `${ex.exerciseId} needs expectedAnswers`).toBeGreaterThan(0);
+    }
+  });
+
+  it('58. no choice contains isCorrect field (frontend-authoritative field banned)', () => {
+    for (const ex of exercises) {
+      for (const choice of ex.choices) {
+        expect(
+          'isCorrect' in choice,
+          `${ex.exerciseId} choice "${choice.choiceId}" must not have isCorrect`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('59. public lesson 2 export still contains all 7 colour items', () => {
+    expect(KB1_U01_L02_COLOURS.items).toHaveLength(7);
+    expect(KB1_U01_L02_COLOURS.lessonId).toBe('kb1-u01-l02');
   });
 });
