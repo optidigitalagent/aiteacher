@@ -446,13 +446,18 @@ export async function processKidsBrainTurn(
       }
     : baseMemory;
 
-  // Persist target item advancement from the learning engine decision.
-  // When learningDecision.nextTargetItemId is defined, the learning engine has
-  // explicitly chosen a new target (e.g. easiest-win recovery, review trigger).
-  // Without this, currentTargetItemId never advances and lessons loop indefinitely.
-  const updatedSessionMemory = learningDecision.nextTargetItemId !== undefined
-    ? { ...memWithPraise, currentTargetItemId: learningDecision.nextTargetItemId }
-    : memWithPraise;
+  // Persist activity and target item advancement from the learning engine decision.
+  // currentActivityId must be updated every turn so subsequent turns see the new
+  // activity (e.g. LISTEN_AND_POINT → REPEAT_AFTER_ME). Without this, the activity
+  // is frozen at session-start value and R22 (the only item-advance rule) is never
+  // reached, leaving the child stuck on the first vocabulary item indefinitely.
+  const updatedSessionMemory: SessionMemory = {
+    ...memWithPraise,
+    currentActivityId: learningDecision.nextActivityType,
+    ...(learningDecision.nextTargetItemId !== undefined
+      ? { currentTargetItemId: learningDecision.nextTargetItemId }
+      : {}),
+  };
 
   // ── Step 7: Build action packets ──────────────────────────────────────────────
 
