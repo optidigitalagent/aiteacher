@@ -86,8 +86,16 @@ const READINESS_PHRASES = new Set([
   "go",
 ]);
 
+function normalizeReadinessPhrase(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[.!?,]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function isReadinessPhrase(text: string): boolean {
-  return READINESS_PHRASES.has(text.trim().toLowerCase());
+  return READINESS_PHRASES.has(normalizeReadinessPhrase(text));
 }
 
 /**
