@@ -93,6 +93,9 @@ export const LOG_EVENTS = {
   EASIEST_WIN_SELECTED: 'easiest_win_selected',
   SESSION_CLOSE_DECISION: 'session_close_decision',
 
+  // Phase 11E: Readiness handshake
+  READINESS_PHRASE_INTERCEPTED: 'readiness_phrase_intercepted',
+
   // Teacher Response Engine events (Phase 6)
   TEACHER_RESPONSE_STARTED: 'teacher_response_started',
   TEACHER_RESPONSE_FALLBACK_USED: 'teacher_response_fallback_used',

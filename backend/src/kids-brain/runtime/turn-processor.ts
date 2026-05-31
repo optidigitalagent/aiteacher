@@ -12,7 +12,8 @@
  * - Input SessionMemory is never mutated
  */
 
-import { LogSeverity, TeacherActionCode, FeedbackTone } from '../shared/enums.js';
+import { randomUUID } from 'node:crypto';
+import { LogSeverity, TeacherActionCode, FeedbackTone, ClassificationLabel } from '../shared/enums.js';
 import { LOG_EVENTS } from '../shared/log-events.js';
 import type { LogEvent } from '../shared/log-events.js';
 
@@ -20,6 +21,7 @@ import { buildPerceptionBundle } from '../perception/perception-builder.js';
 import type { PerceptionInput } from '../perception/perception-types.js';
 
 import { classifyResponse } from '../classification/classification-router.js';
+import { buildResult } from '../classification/classification-result.js';
 import type { ClassificationInput } from '../classification/classification-types.js';
 
 import { runStateEngine } from '../state-engine/state-engine.js';
@@ -43,9 +45,147 @@ import {
   buildAvailableActivities,
   buildTeacherResponseContext,
 } from './runtime-context.js';
+import { buildTeacherResponsePlan } from '../teacher-response/teacher-response-plan.js';
 import type { TeacherResponsePlan } from '../teacher-response/teacher-response-plan.js';
+import type { PerceptionBundle } from '../perception/perception-bundle.js';
+import type { SessionMemory } from '../contracts/session-memory.js';
 
 const DEFAULT_TTS_VOICE = 'default_teacher_v1';
+
+// ── Readiness handshake ───────────────────────────────────────────────────────
+
+const READINESS_PHRASES = new Set([
+  "i'm ready",
+  "im ready",
+  "ready",
+  "yes",
+  "yep",
+  "ok",
+  "okay",
+  "start",
+  "let's go",
+  "lets go",
+  "go",
+]);
+
+function isReadinessPhrase(text: string): boolean {
+  return READINESS_PHRASES.has(text.trim().toLowerCase());
+}
+
+/**
+ * Handles the first child input when the session is still in the readiness-
+ * confirmation phase (hasStartedFirstExercise === false).
+ *
+ * Instead of classifying the phrase against the first target word, this path:
+ * 1. Runs perception + a neutral synthetic classification (no mastery/recovery effects).
+ * 2. Runs state engine normally (increments turnNumber, positive engagement signal).
+ * 3. Emits a scripted first-exercise prompt: "Listen — [word]! Now you!"
+ * 4. Sets hasStartedFirstExercise = true so subsequent turns use the normal pipeline.
+ */
+async function buildReadinessTurnResult(
+  input: KidsBrainTurnInput,
+  sessionMemory: SessionMemory,
+  perceptionBundle: PerceptionBundle,
+  inputTurnNumber: number,
+  logs: LogEvent[],
+): Promise<RuntimeTurnResult> {
+  const sessionId = sessionMemory.sessionId;
+
+  logs.push(makeLog(
+    LOG_EVENTS.READINESS_PHRASE_INTERCEPTED,
+    sessionId,
+    inputTurnNumber,
+    LogSeverity.INFO,
+    { normalizedText: perceptionBundle.normalizedTranscript ?? '' },
+  ));
+
+  // Neutral synthetic classification: child made a positive attempt.
+  // Override mastery/progression/recovery flags so nothing is counted.
+  const syntheticClassification = buildResult({
+    label: ClassificationLabel.CORRECT_HESITANT,
+    confidence: 1.0,
+    source: 'deterministic',
+    reasons: ['readiness_phrase_intercepted'],
+    perception: perceptionBundle,
+    requiresRecovery: false,
+    eligibleForMasteryUpdate: false,
+    eligibleForProgression: false,
+  });
+
+  // Run state engine: increments turnNumber, applies small positive deltas.
+  const activityContext = buildActivityContext(sessionMemory);
+  const stateInput: StateEngineInput = {
+    sessionMemory,
+    perceptionBundle,
+    classificationResult: syntheticClassification,
+    currentActivityContext: activityContext,
+    timestamp: input.timestamp,
+  };
+  const stateOutput = runStateEngine(stateInput);
+  logs.push(...stateOutput.logsToEmit);
+
+  // Run learning engine: with eligibleForProgression=false, stays on current item.
+  const learningInput: LearningEngineInput = {
+    sessionMemory,
+    stateEngineOutput: stateOutput,
+    classificationResult: syntheticClassification,
+    perceptionBundle,
+    currentActivityContext: activityContext,
+    currentItemContext: buildCurrentItemContext(sessionMemory),
+    availableActivities: buildAvailableActivities(),
+    availableItems: buildAvailableItems(input.lessonTargetWords, sessionMemory.currentTargetItemId),
+    timestamp: input.timestamp,
+  };
+  const learningDecision = runLearningEngine(learningInput);
+
+  // Scripted first-exercise prompt. Never say "try again" here.
+  const firstWord = sessionMemory.currentTargetItemId ?? input.targetWord ?? input.lessonTargetWords[0] ?? '';
+  const firstExerciseText = firstWord
+    ? `Listen — ${firstWord}! Now you!`
+    : "Ready! Let's start!";
+
+  const plan = buildTeacherResponsePlan({
+    responseId: randomUUID(),
+    sessionId,
+    turnNumber: stateOutput.updatedSessionMemory.turnNumber,
+    teacherActionCode: TeacherActionCode.MODEL_ANSWER,
+    responseMode: 'scripted',
+    mainText: firstExerciseText,
+    fallbackText: "Let's go! Say the word!",
+    allowedVocabularyUsed: firstWord ? [firstWord] : [],
+    blockedVocabulary: [],
+    placeholdersRemoved: false,
+    requiresLLM: false,
+    safetyBlocked: false,
+    emotionalTone: FeedbackTone.WARM,
+  });
+
+  // Mark readiness complete. Always stay on first target — child hasn't answered yet.
+  const updatedSessionMemory: SessionMemory = {
+    ...stateOutput.updatedSessionMemory,
+    hasStartedFirstExercise: true,
+    currentTargetItemId: sessionMemory.currentTargetItemId,
+  };
+
+  const turnNumber = updatedSessionMemory.turnNumber;
+  const actionPackets = buildActionPackets(plan, sessionId, turnNumber, false);
+
+  return {
+    sessionId,
+    turnNumber,
+    perceptionBundle,
+    classificationResult: syntheticClassification,
+    stateEngineOutput: stateOutput,
+    learningDecision,
+    teacherResponsePlan: plan,
+    updatedSessionMemory,
+    actionPackets,
+    logsToEmit: logs,
+    safeToContinue: true,
+    shouldCloseSession: false,
+    createdAt: new Date().toISOString(),
+  };
+}
 
 /**
  * Converts a TeacherResponsePlan into RuntimeActionPacket[].
@@ -196,6 +336,18 @@ export async function processKidsBrainTurn(
       inputQuality: perceptionBundle.inputQuality,
     },
   ));
+
+  // ── Readiness handshake guard ─────────────────────────────────────────────────
+  // When the session has not yet started its first exercise, readiness phrases
+  // ("I'm ready", "start", "yes", "ok", etc.) must NOT be classified as wrong
+  // answers against the first curriculum target word.
+  if (
+    !sessionMemory.hasStartedFirstExercise &&
+    perceptionBundle.normalizedTranscript !== null &&
+    isReadinessPhrase(perceptionBundle.normalizedTranscript)
+  ) {
+    return buildReadinessTurnResult(input, sessionMemory, perceptionBundle, inputTurnNumber, logs);
+  }
 
   // ── Step 2: Classification ────────────────────────────────────────────────────
 

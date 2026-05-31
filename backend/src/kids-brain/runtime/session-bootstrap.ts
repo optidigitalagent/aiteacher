@@ -87,6 +87,8 @@ function buildInitialSessionMemory(
 
     autosaveSequenceNumber: 0,
 
+    hasStartedFirstExercise: false,
+
     startedAt: input.timestamp,
     updatedAt: input.timestamp,
     sessionElapsedMs: 0,

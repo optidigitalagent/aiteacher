@@ -55,6 +55,10 @@ export interface SessionMemory {
   // Curriculum reference (Phase 10D)
   lessonId?: string | null;
 
+  // Phase 11E: readiness handshake — false until first readiness phrase is confirmed.
+  // Optional for backward compatibility with sessions created before Phase 11E.
+  hasStartedFirstExercise?: boolean;
+
   // Autosave
   autosaveSequenceNumber: number; // Monotonic; increments on each write
 

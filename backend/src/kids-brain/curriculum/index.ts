@@ -53,6 +53,17 @@ export {
   KIDS_BOX_1_COURSE,
 } from './kids-box/kids-box-unit-01.js';
 
+// Kid's Box 1 — Course map (metadata only, all 12 units)
+export type {
+  UnitExtractionStatus,
+  KidsBoxPageRange,
+  KidsBoxUnitMapEntry,
+  KidsBoxReviewBlock,
+  KidsBoxCLILSection,
+  KidsBox1CourseMap,
+} from './kids-box/kids-box-1-course-map.js';
+export { KIDS_BOX_1_COURSE_MAP } from './kids-box/kids-box-1-course-map.js';
+
 // Curriculum loader
 export type { CurriculaValidationResult } from './curriculum-loader.js';
 export {
