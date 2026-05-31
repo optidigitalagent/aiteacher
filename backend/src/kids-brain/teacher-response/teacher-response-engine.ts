@@ -140,15 +140,12 @@ function buildMainText(
     });
   }
 
-  // Correct answer
+  // Correct answer — use template bank (all variants are vocabulary-safe)
   if (
     label === ClassificationLabel.CORRECT_CONFIDENT &&
     route.mode !== 'fallback_safe'
   ) {
-    const praiseVariants = PRAISE_VARIANTS.filter(v => !recentPhrases.includes(v));
-    const pool = praiseVariants.length > 0 ? praiseVariants : [...PRAISE_VARIANTS];
-    const praise = pool[Math.floor(Math.random() * pool.length)];
-    return word ? `${word}! ${praise} You said ${word}!` : praise;
+    return getRenderedTemplate('correct_answer', { word }, recentPhrases);
   }
 
   // Hesitant correct

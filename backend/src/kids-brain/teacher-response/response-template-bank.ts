@@ -38,17 +38,17 @@ const TEMPLATES: Readonly<Record<TemplateKey, readonly string[]>> = {
   ],
 
   correct_answer: [
-    '{word}! Yes! You said {word}! Amazing!',
-    'Yes! {word}! I love it! Great job!',
-    '{word}! Wow! You got it! Brilliant!',
-    'Yes, YES! {word}! That was perfect!',
+    '{word}! Yes! Say it again: {word}! Amazing!',
+    'Yes! {word}! I love it! Brilliant!',
+    '{word}! Wow! You know it! Brilliant!',
+    'Yes! {word}! Yes! That is perfect!',
   ],
 
   hesitant_correct: [
     'Yes! {word}! Say it one more time!',
-    'I heard you! {word}! Can you say it louder?',
+    'I heard you! {word}! Say it one more time!',
     'Ooh! {word}! You know this! Say it again!',
-    'Yes! {word}! One more time, nice and clear!',
+    'Yes! {word}! Say it again, nice and loud!',
   ],
 
   near_correct: [
@@ -117,8 +117,8 @@ const TEMPLATES: Readonly<Record<TemplateKey, readonly string[]>> = {
   ],
 
   close_success: [
-    'Amazing! You did it! I\'m SO proud!',
-    'Yes! You are amazing! Great job today!',
+    'Amazing! You are so good! Brilliant!',
+    'Yes! You are amazing! Brilliant today!',
     "Wow! You're so good! See you next time!",
   ],
 

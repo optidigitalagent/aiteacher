@@ -757,6 +757,83 @@ describe('TeacherResponseEngine', () => {
     }
   });
 
+  // ── Phase 11G RC-A Vocabulary Guard Regression Tests ─────────────────────────
+
+  it('C1. all hesitant_correct templates pass vocabulary guard', () => {
+    const allowedSet = buildAllowedVocabSet(['blue', 'red', 'green'], [], ['Milo']);
+    const variants = getAllTemplatesForKey('hesitant_correct');
+    for (const template of variants) {
+      const rendered = renderTemplate(template, { word: 'blue' });
+      const result = checkVocabulary(rendered, allowedSet);
+      expect(result.passed, `hesitant_correct BLOCKED: "${rendered}" — [${result.blockedTokens.join(', ')}]`).toBe(true);
+    }
+  });
+
+  it('C2. all correct_answer templates in bank pass vocabulary guard', () => {
+    const allowedSet = buildAllowedVocabSet(['dog', 'cat'], [], ['Milo']);
+    const variants = getAllTemplatesForKey('correct_answer');
+    for (const template of variants) {
+      const rendered = renderTemplate(template, { word: 'dog' });
+      const result = checkVocabulary(rendered, allowedSet);
+      expect(result.passed, `correct_answer BLOCKED: "${rendered}" — [${result.blockedTokens.join(', ')}]`).toBe(true);
+    }
+  });
+
+  it('C3. CORRECT_HESITANT never degrades to "Let\'s try again!" across 20 turns', () => {
+    const FALLBACK = "Let's try again!";
+    for (let i = 0; i < 20; i++) {
+      const input = makeInput(
+        ClassificationLabel.CORRECT_HESITANT,
+        {},
+        { targetWord: 'blue', lessonTargetWords: ['blue', 'red', 'green'] },
+      );
+      const { plan } = runTeacherResponseEngine(input);
+      expect(plan.mainText, `CORRECT_HESITANT turn ${i} got fallback`).not.toBe(FALLBACK);
+      expect(plan.blockedVocabulary, `CORRECT_HESITANT turn ${i} had blocked vocab`).toHaveLength(0);
+    }
+  });
+
+  it('C4. CORRECT_CONFIDENT never degrades to "Let\'s try again!" across 20 turns', () => {
+    const FALLBACK = "Let's try again!";
+    for (let i = 0; i < 20; i++) {
+      const input = makeInput(
+        ClassificationLabel.CORRECT_CONFIDENT,
+        {},
+        { targetWord: 'dog', lessonTargetWords: ['dog', 'cat'] },
+      );
+      const { plan } = runTeacherResponseEngine(input);
+      expect(plan.mainText, `CORRECT_CONFIDENT turn ${i} got fallback`).not.toBe(FALLBACK);
+      expect(plan.blockedVocabulary, `CORRECT_CONFIDENT turn ${i} had blocked vocab`).toHaveLength(0);
+    }
+  });
+
+  it('C5. vocabulary guard still blocks out-of-vocabulary text (regression)', () => {
+    const allowedSet = buildAllowedVocabSet(['dog'], [], []);
+    const badText = 'Please conjugate the subjunctive form correctly.';
+    const check = checkVocabulary(badText, allowedSet);
+    expect(check.passed).toBe(false);
+    expect(check.blockedTokens.length).toBeGreaterThan(0);
+    const applied = applyVocabularyGuard(badText, allowedSet, "Let's try again!");
+    expect(applied.guardApplied).toBe(true);
+    expect(applied.text).toBe("Let's try again!");
+  });
+
+  it('C6. no hesitant_correct template contains "louder" or "clear"', () => {
+    for (const t of getAllTemplatesForKey('hesitant_correct')) {
+      expect(t).not.toContain('louder');
+      expect(t).not.toContain('clear');
+    }
+  });
+
+  it('C7. no correct_answer template contains "said", "job", "got", or "was"', () => {
+    for (const t of getAllTemplatesForKey('correct_answer')) {
+      expect(t, `template: "${t}"`).not.toContain('said');
+      expect(t, `template: "${t}"`).not.toContain('job');
+      expect(t, `template: "${t}"`).not.toContain(' got ');
+      expect(t, `template: "${t}"`).not.toContain('was');
+    }
+  });
+
   // Additional: response plan has all required fields
   it('A4. teacher response plan has all required fields', () => {
     const input = makeInput(ClassificationLabel.CORRECT_CONFIDENT);
