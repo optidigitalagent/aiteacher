@@ -21,7 +21,7 @@ import type { RuntimeSessionStartResult } from './runtime-result.js';
 const DEFAULT_TTS_VOICE = 'default_teacher_v1';
 
 // Prototype lesson identifier — seeded into SessionMemory so the runtime knows which lesson is active.
-const PROTOTYPE_LESSON_ID = 'animals-zoo-lesson-001';
+const PROTOTYPE_LESSON_ID = 'kb1-u01-l02';
 
 /** Scripted lesson opening greeting (spec §10.2 — never LLM-generated). */
 const GREETING_TEXT = "Hello! Let's play and learn English! Are you ready?";

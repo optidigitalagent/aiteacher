@@ -43,11 +43,11 @@ import type { PerceptionBundle } from '../../perception/perception-bundle.js';
 import type { ActivityContext } from '../../classification/classification-types.js';
 import { LABEL_TO_ACTION } from '../../classification/classification-result.js';
 
-// ── Prototype curriculum identifiers ─────────────────────────────────────────
+// ── Active curriculum identifiers (Phase 11D: KB1 Lesson 2 — Colours) ────────
 
-const PROTO_COURSE_ID = 'mentium-kids-prototype-animals';
-const PROTO_UNIT_ID   = 'animals-zoo-001';
-const PROTO_LESSON_ID = 'animals-zoo-lesson-001';
+const PROTO_COURSE_ID = 'cambridge-kids-box-1';
+const PROTO_UNIT_ID   = 'kb1-unit-01';
+const PROTO_LESSON_ID = 'kb1-u01-l02';
 
 const CURRICULUM_WORDS = getVocabularyWords(PROTO_COURSE_ID, PROTO_UNIT_ID, PROTO_LESSON_ID);
 
@@ -306,9 +306,9 @@ describe('Phase 10D — curriculum loader vocabulary', () => {
     expect(CURRICULUM_WORDS.length).toBeGreaterThan(0);
   });
 
-  it('curriculum vocabulary is cat/dog/lion/monkey/elephant/tiger in order', () => {
+  it('curriculum vocabulary is blue/green/pink/purple/orange/red/yellow in order', () => {
     expect(Array.from(CURRICULUM_WORDS)).toEqual([
-      'cat', 'dog', 'lion', 'monkey', 'elephant', 'tiger',
+      'blue', 'green', 'pink', 'purple', 'orange', 'red', 'yellow',
     ]);
   });
 
@@ -425,13 +425,13 @@ describe('Phase 10D — nextTargetItemId persists to updatedSessionMemory', () =
 describe('Phase 10D — no placeholder regression', () => {
   it('correct answer: no unresolved placeholders in teacher text', async () => {
     const { sessionMemory } = startKidsBrainSession(makeSessionStartInput('10d-ph-1'));
-    const result = await processKidsBrainTurn(makeTurnInput(sessionMemory, 'cat', 'cat'));
+    const result = await processKidsBrainTurn(makeTurnInput(sessionMemory, 'blue', 'blue'));
     assertNoPlaceholders(result.teacherResponsePlan.mainText, 'correct');
   });
 
   it('wrong answer: no unresolved placeholders in teacher text', async () => {
     const { sessionMemory } = startKidsBrainSession(makeSessionStartInput('10d-ph-2'));
-    const result = await processKidsBrainTurn(makeTurnInput(sessionMemory, 'no', 'cat'));
+    const result = await processKidsBrainTurn(makeTurnInput(sessionMemory, 'no', 'blue'));
     assertNoPlaceholders(result.teacherResponsePlan.mainText, 'refusal');
   });
 });
@@ -448,5 +448,54 @@ describe('Phase 10D — feature flag regression guard', () => {
     const teacherPacket = result.actionPackets.find(p => p.packetType === 'teacher_text');
     expect(teacherPacket).toBeDefined();
     expect(teacherPacket?.teacherText).toBeTruthy();
+  });
+});
+
+describe('Phase 11D — KB1 Lesson 2 Colours activation', () => {
+  it('active runtime course is cambridge-kids-box-1', () => {
+    expect(PROTO_COURSE_ID).toBe('cambridge-kids-box-1');
+  });
+
+  it('active runtime unit is kb1-unit-01', () => {
+    expect(PROTO_UNIT_ID).toBe('kb1-unit-01');
+  });
+
+  it('active runtime lesson is kb1-u01-l02', () => {
+    expect(PROTO_LESSON_ID).toBe('kb1-u01-l02');
+  });
+
+  it('lessonTargetWords are the 7 KB1 colours', () => {
+    expect(Array.from(CURRICULUM_WORDS)).toEqual([
+      'blue', 'green', 'pink', 'purple', 'orange', 'red', 'yellow',
+    ]);
+  });
+
+  it('sessionMemory.lessonId equals kb1-u01-l02', () => {
+    const { sessionMemory } = startKidsBrainSession(makeSessionStartInput('11d-lessonid-1'));
+    expect(sessionMemory.lessonId).toBe('kb1-u01-l02');
+  });
+
+  it('first target word is blue', () => {
+    const { sessionMemory } = startKidsBrainSession(makeSessionStartInput('11d-first-target'));
+    expect(sessionMemory.currentTargetItemId).toBe('blue');
+  });
+
+  it('no animal words in the active curriculum', () => {
+    const animalWords = ['cat', 'dog', 'lion', 'monkey', 'elephant', 'tiger'];
+    for (const animal of animalWords) {
+      expect(CURRICULUM_WORDS).not.toContain(animal);
+    }
+  });
+
+  it('no unresolved placeholders when responding to first colour word', async () => {
+    const { sessionMemory } = startKidsBrainSession(makeSessionStartInput('11d-ph-1'));
+    const result = await processKidsBrainTurn(makeTurnInput(sessionMemory, 'blue', 'blue'));
+    assertNoPlaceholders(result.teacherResponsePlan.mainText, '11d-correct-blue');
+  });
+
+  it('sessionMemory.lessonId is unchanged after a turn', async () => {
+    const { sessionMemory } = startKidsBrainSession(makeSessionStartInput('11d-lessonid-persist'));
+    const result = await processKidsBrainTurn(makeTurnInput(sessionMemory, 'blue', 'blue'));
+    expect(result.updatedSessionMemory.lessonId).toBe('kb1-u01-l02');
   });
 });

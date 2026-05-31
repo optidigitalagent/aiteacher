@@ -109,9 +109,9 @@ const USE_KIDS_BRAIN_V1 = process.env.USE_KIDS_BRAIN_V1 === 'true'
 // ── Kids Brain v1 curriculum reference ───────────────────────────────────────
 // Prototype lesson identifiers — resolved once at module load from the static curriculum registry.
 // These replace the former KIDS_LESSON_TARGET_WORDS literal (Phase 10D).
-const PROTO_COURSE_ID = 'mentium-kids-prototype-animals'
-const PROTO_UNIT_ID   = 'animals-zoo-001'
-const PROTO_LESSON_ID = 'animals-zoo-lesson-001'
+const PROTO_COURSE_ID = 'cambridge-kids-box-1'
+const PROTO_UNIT_ID   = 'kb1-unit-01'
+const PROTO_LESSON_ID = 'kb1-u01-l02'
 
 const KIDS_LESSON_TARGET_WORDS: string[] = [
   ...getVocabularyWords(PROTO_COURSE_ID, PROTO_UNIT_ID, PROTO_LESSON_ID),
