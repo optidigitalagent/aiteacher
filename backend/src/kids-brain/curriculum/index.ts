@@ -13,12 +13,26 @@ export type {
   KidsCurriculumLesson,
   KidsCurriculumUnit,
   KidsCurriculumCourse,
+  // Exercise schema types
+  KidsExerciseVisualPayload,
+  KidsExerciseAudioPayload,
+  KidsExercisePrompt,
+  KidsExerciseChoice,
+  KidsExerciseStep,
+  KidsCompletionRule,
+  KidsRetryPolicy,
+  KidsExerciseDefinition,
 } from './curriculum-types.js';
 
 export {
   KidsCurriculumActivityType,
   KidsCurriculumItemType,
   KidsFallbackPolicy,
+  // Exercise schema enums
+  KidsTextbookActivityType,
+  KidsStudentActionType,
+  KidsCompletionRuleType,
+  KidsRetryEscalationType,
 } from './curriculum-types.js';
 
 // Schema constants
@@ -35,6 +49,11 @@ export {
   validateFinalOutputNoPlaceholders,
   validateActivityUISafety,
   validateLessonHasNoVisualRequiredActivityWithoutVisualSupport,
+  // Exercise validators
+  validateKidsExerciseDefinition,
+  validateExerciseCompletionRule,
+  validateExerciseRetryPolicy,
+  validateLessonExercises,
 } from './curriculum-validators.js';
 
 // Prototype lesson content

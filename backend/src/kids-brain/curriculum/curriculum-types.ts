@@ -141,6 +141,117 @@ export interface KidsCurriculumPhase {
   exitCriteria: string;
 }
 
+// ─── Textbook Exercise Enums ──────────────────────────────────────────────────
+
+export enum KidsTextbookActivityType {
+  LISTEN_AND_REPEAT = 'listen_and_repeat',
+  LISTEN_AND_POINT = 'listen_and_point',
+  LISTEN_AND_CHOOSE = 'listen_and_choose',
+  ASK_AND_ANSWER = 'ask_and_answer',
+  CHANT = 'chant',
+  STORY_LISTEN = 'story_listen',
+  REVIEW = 'review',
+  PHONICS = 'phonics',
+  VALUES_DISCUSSION = 'values_discussion',
+}
+
+export enum KidsStudentActionType {
+  REPEAT_WORD = 'repeat_word',
+  SAY_CHOICE = 'say_choice',
+  ANSWER_QUESTION = 'answer_question',
+  JOIN_CHANT = 'join_chant',
+  FREE_PRODUCTION = 'free_production',
+  LISTEN_ONLY = 'listen_only',
+}
+
+export enum KidsCompletionRuleType {
+  CORRECT_REPETITIONS = 'correct_repetitions',
+  CORRECT_CHOICE = 'correct_choice',
+  ALL_TARGETS_COMPLETED = 'all_targets_completed',
+  TEACHER_CONTROLLED = 'teacher_controlled',
+  TIME_OR_TURN_LIMIT = 'time_or_turn_limit',
+}
+
+export enum KidsRetryEscalationType {
+  REPEAT_PROMPT = 'repeat_prompt',
+  SIMPLIFY_CHOICES = 'simplify_choices',
+  MODEL_ANSWER = 'model_answer',
+  ENCOURAGEMENT = 'encouragement',
+  MOVE_ON = 'move_on',
+}
+
+// ─── Exercise payload types ───────────────────────────────────────────────────
+
+export interface KidsExerciseVisualPayload {
+  assets: KidsVisualAssetRef[];
+  layoutHint?: string;
+}
+
+export interface KidsExerciseAudioPayload {
+  assets: KidsAudioAssetRef[];
+  playbackOrder?: string[];
+}
+
+export interface KidsExercisePrompt {
+  text: string;
+  ttsText?: string;
+}
+
+export interface KidsExerciseChoice {
+  choiceId: string;
+  text: string;
+}
+
+export interface KidsExerciseStep {
+  stepId: string;
+  order: number;
+  instruction: string;
+  targetItemId?: string;
+}
+
+// ─── Completion rule ──────────────────────────────────────────────────────────
+
+export interface KidsCompletionRule {
+  type: KidsCompletionRuleType;
+  requiredCorrectCount?: number;
+  maxTurns?: number;
+  requiredTargetItemIds?: string[];
+  allowPartialCompletion: boolean;
+}
+
+// ─── Retry policy ─────────────────────────────────────────────────────────────
+
+export interface KidsRetryPolicy {
+  maxAttempts: number;
+  escalationLadder: KidsRetryEscalationType[];
+  fallbackExerciseId: string | null;
+  resetOnCorrect: boolean;
+}
+
+// ─── Exercise definition ──────────────────────────────────────────────────────
+
+export interface KidsExerciseDefinition {
+  exerciseId: string;
+  lessonId: string;
+  order: number;
+  pageRef: string;
+  textbookActivityType: KidsTextbookActivityType;
+  studentActionType: KidsStudentActionType;
+  targetItemIds: string[];
+  teacherInstruction: string;
+  prompt: KidsExercisePrompt;
+  choices: KidsExerciseChoice[];
+  expectedAnswers: string[];
+  visualPromptPayload?: KidsExerciseVisualPayload;
+  audioPromptPayload?: KidsExerciseAudioPayload;
+  completionRule: KidsCompletionRule;
+  retryPolicy: KidsRetryPolicy;
+  nextExerciseId: string | null;
+  requiresVisualUI: boolean;
+  allowedWithoutVisualUI: boolean;
+  tags: string[];
+}
+
 // ─── Lesson ───────────────────────────────────────────────────────────────────
 
 export interface KidsCurriculumLesson {
@@ -154,6 +265,7 @@ export interface KidsCurriculumLesson {
   items: KidsCurriculumItem[];
   activities: KidsActivityDefinition[];
   reviewLinks: KidsReviewLink[];
+  exercises?: KidsExerciseDefinition[];
 }
 
 // ─── Unit ─────────────────────────────────────────────────────────────────────

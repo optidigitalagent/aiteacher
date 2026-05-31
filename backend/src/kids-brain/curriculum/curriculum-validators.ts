@@ -1,4 +1,10 @@
-import { KidsCurriculumActivityType } from './curriculum-types.js';
+import {
+  KidsCurriculumActivityType,
+  KidsStudentActionType,
+  KidsTextbookActivityType,
+  KidsCompletionRuleType,
+  KidsRetryEscalationType,
+} from './curriculum-types.js';
 import type {
   KidsCurriculumCourse,
   KidsCurriculumLesson,
@@ -192,4 +198,209 @@ export function validateLessonHasNoVisualRequiredActivityWithoutVisualSupport(
     );
   }
   return ok();
+}
+
+// ─── Exercise validators ──────────────────────────────────────────────────────
+
+const MAX_INSTRUCTION_LENGTH = 200;
+
+/** Action types that must supply at least one expectedAnswer. */
+const ANSWER_PRODUCING_ACTIONS = new Set<string>([
+  KidsStudentActionType.REPEAT_WORD,
+  KidsStudentActionType.SAY_CHOICE,
+  KidsStudentActionType.ANSWER_QUESTION,
+]);
+
+export function validateExerciseCompletionRule(rule: unknown): ValidationResult {
+  if (!rule || typeof rule !== 'object') {
+    return fail(['completionRule must be an object']);
+  }
+  const r = rule as Record<string, unknown>;
+  const errors: string[] = [];
+
+  const validTypes = Object.values(KidsCompletionRuleType) as string[];
+  if (!r.type || !validTypes.includes(r.type as string)) {
+    errors.push('completionRule.type must be a valid KidsCompletionRuleType');
+  }
+  if (typeof r.allowPartialCompletion !== 'boolean') {
+    errors.push('completionRule.allowPartialCompletion must be a boolean');
+  }
+  if (r.requiredCorrectCount !== undefined && typeof r.requiredCorrectCount !== 'number') {
+    errors.push('completionRule.requiredCorrectCount must be a number');
+  }
+  if (r.maxTurns !== undefined && typeof r.maxTurns !== 'number') {
+    errors.push('completionRule.maxTurns must be a number');
+  }
+
+  return errors.length ? fail(errors) : ok();
+}
+
+export function validateExerciseRetryPolicy(policy: unknown): ValidationResult {
+  if (!policy || typeof policy !== 'object') {
+    return fail(['retryPolicy must be an object']);
+  }
+  const p = policy as Record<string, unknown>;
+  const errors: string[] = [];
+
+  if (typeof p.maxAttempts !== 'number' || p.maxAttempts < 1) {
+    errors.push('retryPolicy.maxAttempts must be a positive number');
+  }
+  if (!Array.isArray(p.escalationLadder)) {
+    errors.push('retryPolicy.escalationLadder must be an array');
+  } else {
+    const validEscalations = Object.values(KidsRetryEscalationType) as string[];
+    const bad = (p.escalationLadder as unknown[]).filter(
+      t => typeof t !== 'string' || !validEscalations.includes(t as string),
+    );
+    if (bad.length > 0) {
+      errors.push(`retryPolicy.escalationLadder contains invalid type(s): ${bad.join(', ')}`);
+    }
+  }
+  if (p.fallbackExerciseId !== null && typeof p.fallbackExerciseId !== 'string') {
+    errors.push('retryPolicy.fallbackExerciseId must be a string or null');
+  }
+  if (typeof p.resetOnCorrect !== 'boolean') {
+    errors.push('retryPolicy.resetOnCorrect must be a boolean');
+  }
+
+  return errors.length ? fail(errors) : ok();
+}
+
+export function validateKidsExerciseDefinition(exercise: unknown): ValidationResult {
+  if (!exercise || typeof exercise !== 'object') {
+    return fail(['exercise must be an object']);
+  }
+  const e = exercise as Record<string, unknown>;
+  const errors: string[] = [];
+
+  if (!e.exerciseId || typeof e.exerciseId !== 'string') errors.push('exerciseId is required');
+  if (!e.lessonId || typeof e.lessonId !== 'string') errors.push('lessonId is required');
+
+  if (typeof e.order !== 'number' || e.order < 1) {
+    errors.push('order must be a number >= 1');
+  }
+
+  if (!e.teacherInstruction || typeof e.teacherInstruction !== 'string') {
+    errors.push('teacherInstruction is required');
+  } else {
+    if (e.teacherInstruction.length > MAX_INSTRUCTION_LENGTH) {
+      errors.push(`teacherInstruction must not exceed ${MAX_INSTRUCTION_LENGTH} characters`);
+    }
+    const matches = e.teacherInstruction.match(PLACEHOLDER_REGEX) ?? [];
+    const unapproved = matches.filter(p => !APPROVED_TEMPLATE_VARIABLES.includes(p));
+    if (unapproved.length > 0) {
+      errors.push(
+        `teacherInstruction contains unapproved placeholder(s): ${unapproved.join(', ')}`,
+      );
+    }
+  }
+
+  const validActionTypes = Object.values(KidsStudentActionType) as string[];
+  if (!e.studentActionType || !validActionTypes.includes(e.studentActionType as string)) {
+    errors.push('studentActionType must be a valid KidsStudentActionType');
+  }
+
+  const validActivityTypes = Object.values(KidsTextbookActivityType) as string[];
+  if (!e.textbookActivityType || !validActivityTypes.includes(e.textbookActivityType as string)) {
+    errors.push('textbookActivityType must be a valid KidsTextbookActivityType');
+  }
+
+  if (!e.completionRule || typeof e.completionRule !== 'object') {
+    errors.push('completionRule is required');
+  } else {
+    const ruleResult = validateExerciseCompletionRule(e.completionRule);
+    if (!ruleResult.valid) errors.push(...ruleResult.errors);
+  }
+
+  if (!e.retryPolicy || typeof e.retryPolicy !== 'object') {
+    errors.push('retryPolicy is required');
+  } else {
+    const policyResult = validateExerciseRetryPolicy(e.retryPolicy);
+    if (!policyResult.valid) errors.push(...policyResult.errors);
+  }
+
+  if (e.requiresVisualUI === true) {
+    if (!e.visualPromptPayload) {
+      errors.push('visualPromptPayload is required when requiresVisualUI is true');
+    }
+    if (e.allowedWithoutVisualUI === true) {
+      errors.push('allowedWithoutVisualUI must be false when requiresVisualUI is true');
+    }
+  }
+
+  if (
+    typeof e.studentActionType === 'string' &&
+    ANSWER_PRODUCING_ACTIONS.has(e.studentActionType)
+  ) {
+    if (!Array.isArray(e.expectedAnswers) || (e.expectedAnswers as unknown[]).length === 0) {
+      errors.push('expectedAnswers must be a non-empty array for answer-producing action types');
+    }
+  }
+
+  if (Array.isArray(e.choices)) {
+    (e.choices as unknown[]).forEach((choice, i) => {
+      if (choice && typeof choice === 'object' && 'isCorrect' in (choice as object)) {
+        errors.push(`choices[${i}] must not contain frontend-authoritative field "isCorrect"`);
+      }
+    });
+  }
+
+  return errors.length ? fail(errors) : ok();
+}
+
+export function validateLessonExercises(lesson: KidsCurriculumLesson): ValidationResult {
+  const exercises = lesson.exercises;
+  if (!exercises || exercises.length === 0) return ok();
+
+  const errors: string[] = [];
+  const lessonItemIds = new Set(lesson.items.map(it => it.itemId));
+  const exerciseIds = new Set<string>();
+  const seenOrders = new Set<number>();
+
+  for (let i = 0; i < exercises.length; i++) {
+    const ex = exercises[i];
+
+    const defResult = validateKidsExerciseDefinition(ex);
+    if (!defResult.valid) {
+      errors.push(...defResult.errors.map(err => `exercises[${i}]: ${err}`));
+    }
+
+    if (ex.exerciseId) {
+      if (exerciseIds.has(ex.exerciseId)) {
+        errors.push(`exercises[${i}]: duplicate exerciseId "${ex.exerciseId}"`);
+      } else {
+        exerciseIds.add(ex.exerciseId);
+      }
+    }
+
+    if (typeof ex.order === 'number') {
+      if (seenOrders.has(ex.order)) {
+        errors.push(`exercises[${i}]: duplicate order ${ex.order}`);
+      } else {
+        seenOrders.add(ex.order);
+      }
+    }
+
+    if (Array.isArray(ex.targetItemIds)) {
+      for (const id of ex.targetItemIds) {
+        if (!lessonItemIds.has(id)) {
+          errors.push(`exercises[${i}]: targetItemId "${id}" not found in lesson items`);
+        }
+      }
+    }
+  }
+
+  // Second pass: validate nextExerciseId cross-references
+  for (let i = 0; i < exercises.length; i++) {
+    const ex = exercises[i];
+    if (ex.nextExerciseId !== null && ex.nextExerciseId !== undefined) {
+      if (!exerciseIds.has(ex.nextExerciseId)) {
+        errors.push(
+          `exercises[${i}]: nextExerciseId "${ex.nextExerciseId}" does not reference an existing exercise`,
+        );
+      }
+    }
+  }
+
+  return errors.length ? fail(errors) : ok();
 }
