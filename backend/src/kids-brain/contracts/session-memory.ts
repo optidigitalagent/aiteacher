@@ -59,6 +59,16 @@ export interface SessionMemory {
   // Optional for backward compatibility with sessions created before Phase 11E.
   hasStartedFirstExercise?: boolean;
 
+  // Phase 13D: Textbook exercise tracking (optional — absent on sessions created before 13D).
+  // currentExerciseId: null when no exercises exist or lesson sequence is exhausted.
+  currentExerciseId?: string | null;
+  currentExerciseOrder?: number | null;
+  // Cumulative turn count for current exercise; resets on exercise completion.
+  exerciseAttemptCount?: number;
+  // Cumulative correct-answer count within current exercise; resets on exercise completion.
+  exerciseCorrectCount?: number;
+  completedExerciseIds?: string[];
+
   // Autosave
   autosaveSequenceNumber: number; // Monotonic; increments on each write
 

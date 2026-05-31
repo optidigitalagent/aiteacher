@@ -36,6 +36,8 @@ import type { TeacherResponseInput } from '../teacher-response/teacher-response-
 import type { KidsBrainTurnInput, RuntimeActionPacket } from './runtime-types.js';
 import { RuntimeActionPacketType } from './runtime-types.js';
 import type { RuntimeTurnResult } from './runtime-result.js';
+import { applyExerciseBridge } from './exercise-runner.js';
+import { findLessonById } from '../curriculum/curriculum-loader.js';
 import {
   buildActivityContext,
   buildPromptContext,
@@ -51,6 +53,22 @@ import type { PerceptionBundle } from '../perception/perception-bundle.js';
 import type { SessionMemory } from '../contracts/session-memory.js';
 
 const DEFAULT_TTS_VOICE = 'default_teacher_v1';
+
+// ── Phase 13D: Exercise bridge ────────────────────────────────────────────────
+
+/**
+ * Applies the exercise progression bridge to session memory.
+ * No-ops when the session has no exercise state (old sessions, no-exercise lessons).
+ */
+function runExerciseBridge(
+  memory: SessionMemory,
+  classificationLabel: import('../shared/enums.js').ClassificationLabel,
+): SessionMemory {
+  if (!memory.currentExerciseId || !memory.lessonId) return memory;
+  const lesson = findLessonById(memory.lessonId);
+  if (!lesson || !lesson.exercises?.length) return memory;
+  return applyExerciseBridge(memory, classificationLabel, lesson);
+}
 
 // ── Readiness handshake ───────────────────────────────────────────────────────
 
@@ -161,11 +179,14 @@ async function buildReadinessTurnResult(
   });
 
   // Mark readiness complete. Always stay on first target — child hasn't answered yet.
-  const updatedSessionMemory: SessionMemory = {
+  const memAfterReadiness: SessionMemory = {
     ...stateOutput.updatedSessionMemory,
     hasStartedFirstExercise: true,
     currentTargetItemId: sessionMemory.currentTargetItemId,
   };
+
+  // Phase 13D: advance readiness exercise (ex-01 is TEACHER_CONTROLLED, maxAttempts:1 → auto-completes).
+  const updatedSessionMemory = runExerciseBridge(memAfterReadiness, syntheticClassification.label);
 
   const turnNumber = updatedSessionMemory.turnNumber;
   const actionPackets = buildActionPackets(plan, sessionId, turnNumber, false);
@@ -451,13 +472,17 @@ export async function processKidsBrainTurn(
   // activity (e.g. LISTEN_AND_POINT → REPEAT_AFTER_ME). Without this, the activity
   // is frozen at session-start value and R22 (the only item-advance rule) is never
   // reached, leaving the child stuck on the first vocabulary item indefinitely.
-  const updatedSessionMemory: SessionMemory = {
+  const memAfterLearning: SessionMemory = {
     ...memWithPraise,
     currentActivityId: learningDecision.nextActivityType,
     ...(learningDecision.nextTargetItemId !== undefined
       ? { currentTargetItemId: learningDecision.nextTargetItemId }
       : {}),
   };
+
+  // Phase 13D: apply exercise bridge AFTER learning engine, so exercise sequence
+  // takes precedence over learning engine item advancement.
+  const updatedSessionMemory = runExerciseBridge(memAfterLearning, classificationResult.label);
 
   // ── Step 7: Build action packets ──────────────────────────────────────────────
 

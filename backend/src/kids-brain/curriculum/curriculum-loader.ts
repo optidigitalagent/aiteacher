@@ -171,6 +171,30 @@ export function getLessonForPrototype(): KidsCurriculumLesson {
   return PROTO_ANIMALS_COURSE.units[0].lessons[0];
 }
 
+/**
+ * Finds a lesson by lessonId across all registered courses and units.
+ * Returns null if not found.
+ */
+export function findLessonById(lessonId: string): KidsCurriculumLesson | null {
+  for (const course of REGISTERED_COURSES) {
+    for (const unit of course.units) {
+      const lesson = unit.lessons.find(l => l.lessonId === lessonId);
+      if (lesson) return lesson;
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns exercises for a lesson by lessonId, sorted by order.
+ * Returns an empty array if the lesson has no exercises.
+ */
+export function loadLessonExercises(
+  lessonId: string,
+): readonly import('./curriculum-types.js').KidsExerciseDefinition[] {
+  return findLessonById(lessonId)?.exercises ?? [];
+}
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 export interface CurriculaValidationResult {

@@ -17,11 +17,26 @@ import type { TeacherResponsePlan } from '../teacher-response/teacher-response-p
 import type { RuntimeActionPacket, KidsBrainSessionStartInput } from './runtime-types.js';
 import { RuntimeActionPacketType } from './runtime-types.js';
 import type { RuntimeSessionStartResult } from './runtime-result.js';
+import { findLessonById } from '../curriculum/curriculum-loader.js';
 
 const DEFAULT_TTS_VOICE = 'default_teacher_v1';
 
 // Prototype lesson identifier — seeded into SessionMemory so the runtime knows which lesson is active.
 const PROTOTYPE_LESSON_ID = 'kb1-u01-l02';
+
+/** Resolve the first exercise for the given lessonId (Phase 13D). */
+function resolveFirstExercise(lessonId: string): {
+  currentExerciseId: string | null;
+  currentExerciseOrder: number | null;
+} {
+  const lesson = findLessonById(lessonId);
+  const exercises = lesson?.exercises;
+  if (!exercises || exercises.length === 0) {
+    return { currentExerciseId: null, currentExerciseOrder: null };
+  }
+  const first = exercises.find(e => e.order === 1) ?? exercises[0]!;
+  return { currentExerciseId: first.exerciseId, currentExerciseOrder: first.order };
+}
 
 /** Scripted lesson opening greeting (spec §10.2 — never LLM-generated). */
 const GREETING_TEXT = "Hello! Let's play and learn English! Are you ready?";
@@ -50,6 +65,8 @@ function createInitialCostCounters(): CostCounters {
 function buildInitialSessionMemory(
   input: KidsBrainSessionStartInput,
 ): SessionMemory {
+  const { currentExerciseId, currentExerciseOrder } = resolveFirstExercise(PROTOTYPE_LESSON_ID);
+
   return {
     sessionId: input.sessionId,
     userId: input.userId,
@@ -88,6 +105,13 @@ function buildInitialSessionMemory(
     autosaveSequenceNumber: 0,
 
     hasStartedFirstExercise: false,
+
+    // Phase 13D: exercise tracking
+    currentExerciseId,
+    currentExerciseOrder,
+    exerciseAttemptCount: 0,
+    exerciseCorrectCount: 0,
+    completedExerciseIds: [],
 
     startedAt: input.timestamp,
     updatedAt: input.timestamp,
