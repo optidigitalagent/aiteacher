@@ -154,7 +154,7 @@ describe('analytics finalization guard in lesson-ws.ts', () => {
 describe('adult runtime isolation', () => {
   it('KIDS_MAX_* constants are not referenced in adult lesson orchestrator', () => {
     try {
-      const orchestratorPath = resolve(__dirname_approx, 'lesson/master-orchestrator.ts');
+      const orchestratorPath = resolve(__dirname, '../../../lesson/master-orchestrator.ts');
       const content = readFileSync(orchestratorPath, 'utf-8');
       expect(content).not.toMatch(/KIDS_MAX/);
     } catch {
