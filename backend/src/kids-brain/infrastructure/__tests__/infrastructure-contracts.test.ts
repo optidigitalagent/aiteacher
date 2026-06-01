@@ -344,10 +344,10 @@ describe('PostgresProfileStore', () => {
     const [sql, params] = calls[0] as [string, unknown[]];
     expect(String(sql)).toContain('kids_brain_child_profiles');
     expect((params as unknown[]).includes('child-uuid')).toBe(true);
-    // firstName should be stored as buffer (no plaintext PII in param string)
+    // Phase 16C: firstName is redacted at save — empty buffer, never the real name
     const firstNameParam = (params as unknown[])[2];
     expect(Buffer.isBuffer(firstNameParam)).toBe(true);
-    expect((firstNameParam as Buffer).toString('utf-8')).toBe('Sasha');
+    expect((firstNameParam as Buffer).length).toBe(0); // real name NOT persisted
   });
 
   it('getChildProfile returns null when no row found', async () => {
@@ -355,6 +355,37 @@ describe('PostgresProfileStore', () => {
     const store = makeProfileStore(db);
     const result = await store.getChildProfile('missing-child', 'user-uuid');
     expect(result).toBeNull();
+  });
+
+  it('getChildProfile returns "friend" as firstName regardless of stored bytes (PII redacted on read)', async () => {
+    const profileRow = {
+      child_id: 'child-uuid',
+      user_id: 'user-uuid',
+      first_name_encrypted: Buffer.from('Sasha', 'utf-8'), // simulate old plaintext storage
+      age_band: 'six_seven',
+      production_confidence_baseline: '0.3',
+      l1_dependency_baseline: '0.2',
+      sessions_completed: 1,
+      last_session_date: null,
+      stt_reliability_estimate: '0.72',
+      high_engagement_topics: [],
+      preferred_activity_types: [],
+      preferred_character_id: null,
+      safe_preferences: true,
+      recent_successes: [],
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    const db = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [profileRow], rowCount: 1 }) // profile row
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }),           // mastery rows (empty)
+    };
+    const store = new PostgresProfileStoreImpl(db as unknown as ConstructorParameters<typeof PostgresProfileStoreImpl>[0]);
+    const result = await store.getChildProfile('child-uuid', 'user-uuid');
+    expect(result).not.toBeNull();
+    expect(result!.firstName).toBe('friend'); // real name never exposed
+    expect(result!.childId).toBe('child-uuid'); // childId preserved
   });
 });
 

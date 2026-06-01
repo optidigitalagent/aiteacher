@@ -8,9 +8,10 @@ import { MasteryLevel, ActivityType } from '../shared/enums.js';
 /**
  * Postgres implementation for ChildProfile, MasteryRecord, and SessionSummary.
  *
- * first_name storage note: the spec requires AES-256-GCM encryption for first_name.
- * In Phase 7.6, first_name is stored as UTF-8 bytes in BYTEA without encryption.
- * TODO Phase 8: add encryption/decryption layer before production use.
+ * Phase 16C PII minimization: firstName is NOT persisted.
+ * An empty buffer is written to first_name_encrypted and 'friend' is returned on reads.
+ * Real encryption (AES-256-GCM) is deferred to a future phase.
+ * childId is the only opaque identifier used for analytics linkage.
  *
  * Scale conversion (Patch 7): postgres stores mastery confidence on 0–100 engine scale.
  * ChildProfile uses 0.0–1.0 session scale. Conversion happens here on read/write.
@@ -37,7 +38,8 @@ export class PostgresProfileStoreImpl implements PostgresProfileStore {
   }
 
   async saveChildProfile(profile: ChildProfile): Promise<void> {
-    const firstNameBytes = Buffer.from(profile.firstName, 'utf-8');
+    // Phase 16C: do not persist real name — write empty buffer.
+    const firstNameBytes = Buffer.alloc(0);
     await this.db.query(
       `INSERT INTO kids_brain_child_profiles (
          child_id, user_id, first_name_encrypted, age_band,
@@ -237,7 +239,7 @@ function rowToProfile(row: RawChildProfileRow, mastery: Map<string, MasteryRecor
   return {
     childId: row.child_id,
     userId: row.user_id,
-    firstName: row.first_name_encrypted.toString('utf-8'),
+    firstName: 'friend', // Phase 16C: real name not decoded — display-safe fallback only
     ageBand: row.age_band as ChildProfile['ageBand'],
     productionConfidenceBaseline: parseFloat(row.production_confidence_baseline),
     l1DependencyBaseline: parseFloat(row.l1_dependency_baseline),
