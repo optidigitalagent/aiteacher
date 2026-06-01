@@ -121,7 +121,7 @@ export default function KidsPrototypePage() {
     setError(null)
     try {
       const sessionId = await startKidsSession()
-      navigate(`/classroom/${sessionId}`, { state: { mode: 'mentium_kids', sessionId } })
+      navigate(`/kids/classroom/${sessionId}`)
     } catch (err) {
       const code = err instanceof Error ? err.message : 'INTERNAL_ERROR'
       if (code === 'UNAUTHENTICATED') {
@@ -170,8 +170,8 @@ export default function KidsPrototypePage() {
 
           <div className="kp-caps">
             <span className="kp-cap-chip">⏱ 15 min max</span>
-            <span className="kp-cap-chip">Animals vocabulary</span>
-            <span className="kp-cap-chip">Ages 5–8</span>
+            <span className="kp-cap-chip">Kids Box · Unit 1</span>
+            <span className="kp-cap-chip">Ages 6–9</span>
           </div>
         </div>
       </div>
