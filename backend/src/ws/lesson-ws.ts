@@ -86,11 +86,12 @@ import {
   requiresSessionClose,
 } from '../kids-brain/adapters/index.js'
 import type { AdaptedKidsMessage } from '../kids-brain/adapters/index.js'
-import { RedisSessionStoreImpl } from '../kids-brain/infrastructure/index.js'
+import { RedisSessionStoreImpl, PostgresProfileStoreImpl } from '../kids-brain/infrastructure/index.js'
 import { AgeBand } from '../kids-brain/shared/enums.js'
 import { AGE_PROFILE_6_7 } from '../kids-brain/shared/types.js'
 import type { SessionMemory as KidsBrainSessionMemory } from '../kids-brain/contracts/session-memory.js'
 import { getVocabularyWords } from '../kids-brain/curriculum/index.js'
+import { persistKidsBrainAnalytics } from '../kids-brain/analytics/session-analytics.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
@@ -498,6 +499,8 @@ interface ClientMeta {
   isKidsMode:       boolean
   kidsSessionId:    string | null  // in-memory session ID from kids orchestrator
   kidsBrainV1Active: boolean        // true when Kids Brain v1 is active (vs old prototype)
+  // Phase 14B: guards against duplicate analytics writes (natural/safety/timeout close already persists)
+  kidsAnalyticsFinalized: boolean
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -1135,6 +1138,12 @@ function getKidsBrainRedisStore(): RedisSessionStoreImpl {
   return _kidsBrainRedisStore
 }
 
+let _kidsProfileStore: PostgresProfileStoreImpl | null = null
+function getKidsProfileStore(): PostgresProfileStoreImpl {
+  if (!_kidsProfileStore) _kidsProfileStore = new PostgresProfileStoreImpl({ query })
+  return _kidsProfileStore
+}
+
 // Executes adapted Kids Brain v1 action packets and returns true if the session should close.
 async function processKidsV1Packets(
   ws: WebSocket,
@@ -1189,6 +1198,17 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
   meta.maxDurationRef = setTimeout(() => {
     console.log(`[kids-v1] max_duration session=${sessionId}`)
     send(ws, { type: 'error', code: 'LIMIT_REACHED', message: 'Session time limit reached.' })
+    if (!meta.kidsAnalyticsFinalized) {
+      meta.kidsAnalyticsFinalized = true
+      void (async () => {
+        try {
+          const mem = await getKidsBrainRedisStore().getSession(sessionId)
+          if (mem) {
+            await persistKidsBrainAnalytics(mem, 'timeout', getKidsProfileStore())
+          }
+        } catch { /* non-fatal */ }
+      })()
+    }
     ws.close(4400, 'Session time limit')
   }, KIDS_MAX_DURATION_MS)
 
@@ -1312,6 +1332,10 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
     console.log(`[kids-v1] safety_close session=${sessionId}`)
     const adapted = adaptRuntimePackets(result.actionPackets)
     await processKidsV1Packets(ws, meta, adapted)
+    if (!meta.kidsAnalyticsFinalized) {
+      meta.kidsAnalyticsFinalized = true
+      await persistKidsBrainAnalytics(result.updatedSessionMemory, 'safety', getKidsProfileStore())
+    }
     try {
       await query(
         `UPDATE kids_sessions SET status = 'ended', ended_at = NOW(), updated_at = NOW()
@@ -1336,6 +1360,10 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
 
   if (result.shouldCloseSession || shouldClose) {
     console.log(`[kids-v1] session_closed_naturally session=${sessionId}`)
+    if (!meta.kidsAnalyticsFinalized) {
+      meta.kidsAnalyticsFinalized = true
+      await persistKidsBrainAnalytics(result.updatedSessionMemory, 'completed', getKidsProfileStore())
+    }
     const durationMin = meta.lessonStartedAt
       ? Math.round((Date.now() - meta.lessonStartedAt) / 60000)
       : 0
@@ -3413,9 +3441,10 @@ export function attachLessonWS(server: Server): void {
         lastSubmittedVoiceTurnId: null,
         stabilizationRef:         null,
         billingStartedAt: null,
-        isKidsMode:        false,
-        kidsSessionId:     null,
-        kidsBrainV1Active: false,
+        isKidsMode:             false,
+        kidsSessionId:          null,
+        kidsBrainV1Active:      false,
+        kidsAnalyticsFinalized: false,
       }
     }
 
