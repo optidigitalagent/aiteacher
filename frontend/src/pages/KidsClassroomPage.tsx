@@ -13,7 +13,9 @@ import {
   primeAudioContext,
   primeHtmlAudio,
   stopAudioPlayback,
+  requestMicPreflight,
 } from '../features/classroom/services/voiceApi'
+import { useKidsMic, type KidsMicState } from '../features/classroom/hooks/useKidsMic'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -102,6 +104,70 @@ function KidsLessonComplete({ summary, onDone }: { summary: LessonSummary | null
         Done 🏠
       </button>
     </div>
+  )
+}
+
+function KidsMicButton({
+  micState,
+  kidsState,
+  onStart,
+  onStop,
+}: {
+  micState: KidsMicState
+  kidsState: KidsState
+  onStart: () => void
+  onStop: () => void
+}) {
+  const isListening = kidsState === 'listening'
+  const isTeaching  = kidsState === 'teaching' || kidsState === 'sending'
+
+  if (micState === 'unavailable') return null
+
+  if (micState === 'blocked') {
+    return (
+      <div className="kmb-blocked">
+        <span className="kmb-blocked-icon">🎤</span>
+        <p className="kmb-blocked-text">Microphone blocked. Please allow microphone access in your browser.</p>
+      </div>
+    )
+  }
+
+  if (micState === 'recording') {
+    return (
+      <button
+        className="kmb-btn kmb-btn--recording"
+        onClick={onStop}
+        aria-label="Stop speaking"
+        type="button"
+      >
+        <span className="kmb-pulse" />
+        <span className="kmb-icon">🎤</span>
+        <span className="kmb-label">Listening…</span>
+      </button>
+    )
+  }
+
+  if (micState === 'requesting') {
+    return (
+      <button className="kmb-btn kmb-btn--requesting" disabled aria-label="Requesting microphone" type="button">
+        <span className="kmb-icon">🎤</span>
+        <span className="kmb-label">Getting mic…</span>
+      </button>
+    )
+  }
+
+  // idle — show tap to speak
+  return (
+    <button
+      className={`kmb-btn kmb-btn--idle${!isListening || isTeaching ? ' kmb-btn--disabled' : ''}`}
+      onClick={onStart}
+      disabled={!isListening || isTeaching}
+      aria-label="Tap to speak"
+      type="button"
+    >
+      <span className="kmb-icon">🎤</span>
+      <span className="kmb-label">{isTeaching ? 'Teacher is speaking…' : 'Tap to speak'}</span>
+    </button>
   )
 }
 
@@ -521,6 +587,129 @@ const CSS = `
   }
   .kc-ready-sub { font-size: 15px; color: #64748B; max-width: 280px; }
 
+  /* ── Mic button ── */
+  .kmb-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 320px;
+    padding: 18px 24px;
+    border: none;
+    border-radius: 20px;
+    font-family: 'Sora', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 180ms cubic-bezier(0.22,1,0.36,1), box-shadow 180ms;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    position: relative;
+    overflow: hidden;
+  }
+  .kmb-btn:active:not(:disabled) { transform: scale(0.97); }
+
+  .kmb-btn--idle {
+    background: linear-gradient(135deg, #A18BFF 0%, #7B8CFF 100%);
+    color: #fff;
+    box-shadow: 0 8px 24px rgba(123,140,255,0.38);
+  }
+  .kmb-btn--idle:hover:not(:disabled) {
+    box-shadow: 0 12px 32px rgba(123,140,255,0.50);
+    transform: scale(1.03);
+  }
+
+  .kmb-btn--disabled,
+  .kmb-btn--idle:disabled {
+    background: #E2E8F0;
+    color: #94A3B8;
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+
+  .kmb-btn--recording {
+    background: linear-gradient(135deg, #FF6B8A 0%, #FF8C6B 100%);
+    color: #fff;
+    box-shadow: 0 8px 24px rgba(255,107,138,0.40);
+    animation: kmb-glow 1.5s ease-in-out infinite;
+  }
+  @keyframes kmb-glow {
+    0%,100% { box-shadow: 0 8px 24px rgba(255,107,138,0.40); }
+    50%      { box-shadow: 0 12px 32px rgba(255,107,138,0.65); }
+  }
+
+  .kmb-btn--requesting {
+    background: #E2E8F0;
+    color: #64748B;
+    box-shadow: none;
+    cursor: wait;
+  }
+
+  .kmb-icon { font-size: 22px; line-height: 1; }
+  .kmb-label { font-size: 16px; font-weight: 700; }
+
+  /* Pulsing ring for active recording */
+  .kmb-pulse {
+    position: absolute;
+    inset: 0;
+    border-radius: 20px;
+    border: 3px solid rgba(255,255,255,0.5);
+    animation: kmb-ring 1.2s ease-out infinite;
+    pointer-events: none;
+  }
+  @keyframes kmb-ring {
+    0%   { transform: scale(1);    opacity: 0.7; }
+    100% { transform: scale(1.08); opacity: 0; }
+  }
+
+  /* Mic blocked notice */
+  .kmb-blocked {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    background: rgba(239,68,68,0.06);
+    border: 1px solid rgba(239,68,68,0.18);
+    border-radius: 16px;
+    max-width: 320px;
+    width: 100%;
+  }
+  .kmb-blocked-icon { font-size: 20px; }
+  .kmb-blocked-text {
+    font-family: 'Sora', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #DC2626;
+    line-height: 1.4;
+  }
+
+  /* ── Input / mic row layout ── */
+  .kc-voice-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+  .kc-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 320px;
+    color: #94A3B8;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .kc-divider::before,
+  .kc-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #E2E8F0;
+  }
+
   /* ── Mobile ── */
   @media (max-width: 480px) {
     .ktb-bubble { padding: 16px 20px; }
@@ -541,6 +730,7 @@ export default function KidsClassroomPage() {
   const [summary, setSummary] = useState<LessonSummary | null>(null)
   const [progressCount, setProgressCount] = useState(0)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [micPreflightDone, setMicPreflightDone] = useState(false)
 
   // Refs for buffering before user taps "Let's Go"
   const wsRef            = useRef<WebSocket | null>(null)
@@ -548,6 +738,14 @@ export default function KidsClassroomPage() {
   const pendingTextRef   = useRef<string | null>(null)
   const pendingAudioRef  = useRef<string[]>([])
   const pendingTurnEnd   = useRef(false)
+
+  // Voice input: only enabled when it is genuinely the child's turn and audio is primed.
+  // Teaching/sending/connecting states all disable mic (teacher is speaking or processing).
+  const micEnabled = kidsState === 'listening' && micPreflightDone
+  const { micState, startRecording, stopRecording, available: micAvailable } = useKidsMic({
+    wsRef,
+    enabled: micEnabled,
+  })
 
   const handleMessage = useCallback((msg: BackendMessage) => {
     switch (msg.type) {
@@ -636,6 +834,13 @@ export default function KidsClassroomPage() {
     // Must be synchronous first for iOS gesture context
     primeHtmlAudio()
     warmAudioContext()
+
+    // Mic preflight: request permission silently within the same user gesture.
+    // Stops tracks immediately — just ensures the browser prompt fires now
+    // so the child does not need a second interaction to unlock the mic.
+    void requestMicPreflight().then((granted) => {
+      if (granted) setMicPreflightDone(true)
+    })
 
     // Async part: wait for AudioContext to be truly running
     await primeAudioContext()
@@ -749,28 +954,44 @@ export default function KidsClassroomPage() {
             </div>
 
             <div className="kc-bottom">
-              <div className="kc-input-row">
-                <input
-                  className="kc-input"
-                  type="text"
-                  placeholder={isInputEnabled ? 'Type your answer…' : ''}
-                  value={inputValue}
-                  onChange={e => setInputValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={!isInputEnabled}
-                  autoComplete="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  aria-label="Your answer"
+              <div className="kc-voice-row">
+                {/* Big mic button — primary answer method for kids */}
+                <KidsMicButton
+                  micState={micState}
+                  kidsState={kidsState}
+                  onStart={() => { void startRecording() }}
+                  onStop={() => stopRecording('child_tap')}
                 />
-                <button
-                  className="kc-btn kc-btn--send"
-                  onClick={handleSubmit}
-                  disabled={!isInputEnabled || !inputValue.trim()}
-                  aria-label="Send answer"
-                >
-                  →
-                </button>
+
+                {/* Divider shown only when text fallback is available */}
+                {micAvailable && (
+                  <div className="kc-divider">or type</div>
+                )}
+
+                {/* Text input — always available as fallback */}
+                <div className="kc-input-row">
+                  <input
+                    className="kc-input"
+                    type="text"
+                    placeholder={isInputEnabled ? 'Type your answer…' : ''}
+                    value={inputValue}
+                    onChange={e => setInputValue(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={!isInputEnabled}
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    aria-label="Your answer"
+                  />
+                  <button
+                    className="kc-btn kc-btn--send"
+                    onClick={handleSubmit}
+                    disabled={!isInputEnabled || !inputValue.trim()}
+                    aria-label="Send answer"
+                  >
+                    →
+                  </button>
+                </div>
               </div>
             </div>
           </>

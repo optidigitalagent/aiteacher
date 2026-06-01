@@ -1195,6 +1195,13 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
   meta.lessonStartedAt   = Date.now()
   meta.billingStartedAt  = Date.now()
 
+  meta.stt?.close()
+  meta.stt               = null
+  meta.pendingTranscript = ''
+  meta.pendingMicStop    = false
+  meta.micActive         = false
+  meta.stt = createSTT(ws, meta)
+
   meta.maxDurationRef = setTimeout(() => {
     console.log(`[kids-v1] max_duration session=${sessionId}`)
     send(ws, { type: 'error', code: 'LIMIT_REACHED', message: 'Session time limit reached.' })
@@ -3670,7 +3677,11 @@ export function attachLessonWS(server: Server): void {
                 if (!raw || !shouldProcessTranscript(raw)) {
                   console.log(`[voice:turn] no_transcript turnId=${captureTurnId}`)
                   if (meta.sessionId && meta.lessonId) {
-                    ttsStream(ws, meta, "I didn't catch that. Try once more.").catch((err: unknown) =>
+                    const noTranscriptMsg = meta.kidsBrainV1Active
+                      ? "I didn't hear you. Try again!"
+                      : "I didn't catch that. Try once more."
+                    const speakNoTranscript = meta.kidsBrainV1Active ? kidsTtsStream : ttsStream
+                    speakNoTranscript(ws, meta, noTranscriptMsg).catch((err: unknown) =>
                       console.error('[voice] no_transcript_tts error:', err))
                   }
                   return
@@ -3692,7 +3703,11 @@ export function attachLessonWS(server: Server): void {
                     `preview="${raw.slice(0, 40)}" turnId=${captureTurnId}`,
                   )
                   if (meta.sessionId && meta.lessonId) {
-                    ttsStream(ws, meta, "I didn't quite catch that. Could you say that again?").catch((err: unknown) =>
+                    const noiseMsg = meta.kidsBrainV1Active
+                      ? "I didn't hear you. Try again!"
+                      : "I didn't quite catch that. Could you say that again?"
+                    const speakNoise = meta.kidsBrainV1Active ? kidsTtsStream : ttsStream
+                    speakNoise(ws, meta, noiseMsg).catch((err: unknown) =>
                       console.error('[voice] noise_reject_tts error:', err))
                   }
                   return
