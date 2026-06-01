@@ -483,7 +483,7 @@ describe('reconnect guard — lesson-ws.ts does not finalize on WS close for kid
     const wsPath = resolve(__dirname, '../../../ws/lesson-ws.ts');
     const content = readFileSync(wsPath, 'utf-8');
     // The function must be called somewhere in processKidsBrainV1Turn
-    const fnMatch = content.match(/async function processKidsBrainV1Turn[\s\S]{1,6000}?\n\}/);
+    const fnMatch = content.match(/async function processKidsBrainV1Turn[\s\S]{1,12000}?\n\}/);
     expect(fnMatch).not.toBeNull();
     expect(fnMatch![0]).toContain('persistKidsBrainAnalytics');
   });

@@ -1227,6 +1227,12 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
   if (existingMemory) {
     meta.kidsSessionId = sessionId
     console.log(`[kids-v1] session_resumed session=${sessionId} item=${existingMemory.currentTargetItemId} activity=${existingMemory.currentActivityId}`)
+    const target = existingMemory.currentTargetItemId
+    const resumeText = target
+      ? `Hi again! Let's keep going. Listen — ${target}! Now you!`
+      : "Hi again! Let's keep going."
+    send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: resumeText })
+    await kidsTtsStream(ws, meta, resumeText)
     return
   }
 
@@ -1283,6 +1289,41 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
     return
   }
 
+  if (meta.ttsCharCount >= KIDS_MAX_TTS_CHARS) {
+    console.log(`[kids-v1] tts_cap_reached session=${sessionId} chars=${meta.ttsCharCount} cap=${KIDS_MAX_TTS_CHARS}`)
+    send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: 'Great work today! Time to finish.' })
+    if (!meta.kidsAnalyticsFinalized) {
+      meta.kidsAnalyticsFinalized = true
+      try {
+        const mem = await getKidsBrainRedisStore().getSession(sessionId)
+        if (mem) await persistKidsBrainAnalytics(mem, 'completed', getKidsProfileStore())
+      } catch { /* non-fatal */ }
+    }
+    try {
+      await query(
+        `UPDATE kids_sessions SET status = 'completed', ended_at = NOW(), updated_at = NOW(),
+         llm_calls = $1, tts_chars = $2 WHERE session_id = $3`,
+        [meta.aiCallCount, meta.ttsCharCount, sessionId],
+      )
+      await getKidsBrainRedisStore().deleteSession(sessionId)
+    } catch { /* non-fatal */ }
+    const ttsDurationMin = meta.lessonStartedAt
+      ? Math.round((Date.now() - meta.lessonStartedAt) / 60000)
+      : 0
+    send(ws, {
+      type: 'lesson_end',
+      summary: {
+        lessonId:        meta.sessionId ?? '',
+        phasesReached:   ['DIAGNOSTIC'],
+        exerciseScore:   0,
+        vocabularyCount: 0,
+        durationMin:     ttsDurationMin,
+      },
+    })
+    ws.close(1000, 'TTS cap reached')
+    return
+  }
+
   meta.aiCallCount++
 
   // Load session memory from Redis
@@ -1325,6 +1366,16 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
     console.error('[kids-v1] processKidsBrainTurn error:', err instanceof Error ? err.message : err)
     send(ws, { type: 'error', code: 'INTERNAL_ERROR', message: 'Session processing error.' })
     return
+  }
+
+  // Emit Kids Brain pipeline diagnostic logs (not forwarded to client)
+  for (const logEvent of result.logsToEmit) {
+    const logLine = `[kids-v1-log] session=${sessionId} event=${logEvent.event} turn=${logEvent.turnNumber ?? 'n/a'}`
+    if (logEvent.severity === 'ERROR' || logEvent.severity === 'CRITICAL') {
+      console.error(logLine, JSON.stringify(logEvent.payload))
+    } else {
+      console.log(logLine, JSON.stringify(logEvent.payload))
+    }
   }
 
   // Safety close: stop session immediately, no further LLM calls

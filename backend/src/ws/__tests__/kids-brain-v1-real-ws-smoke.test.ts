@@ -409,9 +409,9 @@ describe('Phase 15B — Reconnect F–G (real WS server)', () => {
     await closeWS(ws2);
   });
 
-  // ── F: Reconnect — session preserved, no greeting ─────────────────────────
+  // ── F: Reconnect — session preserved, resume message sent ────────────────
 
-  it('F: reconnect → lesson_ready only, no greeting ai_text', async () => {
+  it('F: reconnect → lesson_ready + child-facing resume ai_text (Phase 16B)', async () => {
     // Connect-time lesson_ready
     await waitUntil(messages2, msgs => countOf(msgs, 'lesson_ready') >= 1);
 
@@ -420,15 +420,17 @@ describe('Phase 15B — Reconnect F–G (real WS server)', () => {
     sendFrame(ws2, { type: 'focus_lesson_start', payload: { unit: 1 } });
 
     // handleKidsBrainV1LessonStart sends another lesson_ready, then calls
-    // reconnectSession() which finds the session in Redis and returns early —
-    // NO greeting packets are emitted (cold-start path is skipped).
+    // reconnectSession() which finds the session in Redis — Phase 16B now sends
+    // a child-facing resume message ("Hi again! Let's keep going.") before returning.
     await waitUntil(messages2, msgs => countOf(msgs, 'lesson_ready') > prevLR);
 
-    // Allow 400ms for any potential (erroneous) greeting to arrive
-    await new Promise(resolve => setTimeout(resolve, 400));
+    // Allow 800ms for the resume ai_text (+ optional TTS) to arrive
+    await new Promise(resolve => setTimeout(resolve, 800));
 
     const aiMsgs = aiTexts(messages2);
-    expect(aiMsgs.length, 'No greeting ai_text on reconnect').toBe(0);
+    expect(aiMsgs.length, 'Reconnect should send at least one resume ai_text').toBeGreaterThanOrEqual(1);
+    const resumeMsg = aiMsgs[aiMsgs.length - 1];
+    expect(resumeMsg, 'Resume message should contain "Hi again"').toMatch(/Hi again/i);
   });
 
   // ── G: Post-reconnect turn targets green ──────────────────────────────────
