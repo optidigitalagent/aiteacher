@@ -92,14 +92,14 @@ import { AGE_PROFILE_6_7 } from '../kids-brain/shared/types.js'
 import type { SessionMemory as KidsBrainSessionMemory } from '../kids-brain/contracts/session-memory.js'
 import { getVocabularyWords } from '../kids-brain/curriculum/index.js'
 import { persistKidsBrainAnalytics } from '../kids-brain/analytics/session-analytics.js'
+import {
+  KIDS_MAX_DURATION_MS,
+  KIDS_MAX_LLM_CALLS,
+  KIDS_MAX_TTS_CHARS,
+} from '../kids-brain/runtime/runtime-caps.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
-
-// ── Kids prototype caps ───────────────────────────────────────────────────────
-const KIDS_MAX_DURATION_MS = 15 * 60 * 1000
-const KIDS_MAX_LLM_CALLS   = 20
-const KIDS_MAX_TTS_CHARS   = 2000
 
 // ── Kids Brain v1 feature flag ────────────────────────────────────────────────
 // Set USE_KIDS_BRAIN_V1=true to activate the new Kids Brain v1 runtime.
