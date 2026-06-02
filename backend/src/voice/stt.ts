@@ -1,4 +1,5 @@
 import { createClient, LiveTranscriptionEvents } from '@deepgram/sdk'
+import { type IncomingMessage, type ClientRequest } from 'node:http'
 
 const API_KEY = process.env.DEEPGRAM_API_KEY ?? ''
 
@@ -48,6 +49,41 @@ export class DeepgramSTT {
       sample_rate:      16000,
       channels:         1,
     })
+
+    // ── Phase 16G.3 diagnostic: expose Deepgram WebSocket handshake failure ──
+    // ws emits 'unexpected-response' for HTTP 401/402/403 upgrade rejections
+    // — this is the only event that carries the actual HTTP status + body.
+    type DiagWs = {
+      on(event: 'unexpected-response', cb: (req: ClientRequest, res: IncomingMessage) => void): void
+      on(event: 'close',               cb: (code: number, reason: Buffer) => void): void
+      on(event: 'error',               cb: (err: NodeJS.ErrnoException & { response?: IncomingMessage }) => void): void
+    }
+    const connInternal = conn as unknown as { getWebSocket?: () => DiagWs | null; conn?: DiagWs | null }
+    const rawWs: DiagWs | null = connInternal.getWebSocket?.() ?? connInternal.conn ?? null
+    if (rawWs) {
+      rawWs.on('unexpected-response', (_req, res) => {
+        console.error('[stt:diag] Deepgram rejected HTTP upgrade — status=%d %s',
+          res.statusCode, res.statusMessage)
+        console.error('[stt:diag] response headers: %j', res.headers)
+        let body = ''
+        res.on('data', (chunk: Buffer) => { body += chunk.toString('utf8') })
+        res.on('end', () => console.error('[stt:diag] response body: %s', body || '(empty)'))
+      })
+      rawWs.on('close', (code, reason) => {
+        console.error('[stt:diag] raw ws close — code=%d reason=%s',
+          code, reason?.toString('utf8') || '(none)')
+      })
+      rawWs.on('error', (err) => {
+        console.error('[stt:diag] raw ws error — %s', err.message)
+        if (err.response) {
+          console.error('[stt:diag] error.response status=%d', err.response.statusCode)
+          console.error('[stt:diag] error.response headers: %j', err.response.headers)
+        }
+      })
+    } else {
+      console.error('[stt:diag] could not access underlying WebSocket — getWebSocket() returned null')
+    }
+    // ── End Phase 16G.3 diagnostic ──
 
     conn.on(LiveTranscriptionEvents.Open, () => {
       this.ready = true
@@ -109,10 +145,21 @@ export class DeepgramSTT {
     })
 
     conn.on(LiveTranscriptionEvents.Error, (err: unknown) => {
-      console.error('[stt] deepgram error:', err)
+      console.error('[stt:diag] LiveTranscriptionEvents.Error raw: %j', err)
+      const isErr = err instanceof Error
+      const detail = isErr
+        ? `${err.name}: ${err.message}`
+        : (typeof err === 'object' && err !== null ? JSON.stringify(err) : String(err))
+      if (isErr && err.stack) console.error('[stt:diag] error stack: %s', err.stack)
+      console.error('[stt] deepgram error:', detail)
     })
 
-    conn.on(LiveTranscriptionEvents.Close, () => {
+    conn.on(LiveTranscriptionEvents.Close, (code: unknown, reason: unknown) => {
+      const reasonStr = reason instanceof Buffer
+        ? reason.toString('utf8')
+        : (typeof reason === 'string' ? reason : JSON.stringify(reason))
+      console.error('[stt:diag] LiveTranscriptionEvents.Close — code=%s reason=%s',
+        String(code), reasonStr || '(none)')
       if (this.keepAliveRef) clearInterval(this.keepAliveRef)
       this.ready = false
     })
