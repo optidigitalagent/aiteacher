@@ -811,16 +811,22 @@ export default function KidsClassroomPage() {
 
   // Connect WS on mount
   useEffect(() => {
+    let stale = false
+
     const token = getStoredToken() ?? undefined
     const ws = createClassroomSocket(
       handleMessage,
       undefined,
       (code) => {
+        if (stale) return
         // Functional setter avoids stale closure: if lesson already completed,
         // don't replace the success screen with an error screen.
         setKidsState(prev => {
           if (prev !== 'complete') {
-            setErrorMsg(`Connection closed (${code}). Please try again.`)
+            // code is intentionally unused in the message — raw close codes
+            // are not meaningful to children.
+            void code
+            setErrorMsg('One moment, we\'re reconnecting.')
             stopRecording('disconnect')
             return 'error'
           }
@@ -833,6 +839,7 @@ export default function KidsClassroomPage() {
     wsRef.current = ws
 
     return () => {
+      stale = true
       stopAudioPlayback()
       ws.close(1000, 'page_unmount')
       wsRef.current = null
@@ -1028,7 +1035,7 @@ export default function KidsClassroomPage() {
           <div className="kc-center">
             <p className="kc-error-emoji">😕</p>
             <p className="kc-error-label">Oops! Something went wrong.</p>
-            <p className="kc-error-sub">{errorMsg ?? 'Connection problem. Please try again.'}</p>
+            <p className="kc-error-sub">{errorMsg ?? 'One moment, we\'re reconnecting.'}</p>
             <button
               className="kc-btn kc-btn--retry"
               onClick={() => navigate('/kids')}
