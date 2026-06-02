@@ -59,7 +59,7 @@ function KidsAudioIndicator({ state }: { state: KidsState }) {
   if (state === 'listening') {
     return (
       <div className="kai kai--turn">
-        <span className="kai-label">Your turn! ✍</span>
+        <span className="kai-label">Your turn! 🎤</span>
       </div>
     )
   }
@@ -156,17 +156,22 @@ function KidsMicButton({
     )
   }
 
-  // idle — show tap to speak
+  // idle — label reflects current lesson turn
+  const idleLabel =
+    kidsState === 'teaching' ? 'Listen' :
+    kidsState === 'sending'  ? 'Sending…' :
+    'Tap to speak'
+
   return (
     <button
       className={`kmb-btn kmb-btn--idle${!isListening || isTeaching ? ' kmb-btn--disabled' : ''}`}
       onClick={onStart}
       disabled={!isListening || isTeaching}
-      aria-label="Tap to speak"
+      aria-label={isListening ? 'Tap to speak' : idleLabel}
       type="button"
     >
       <span className="kmb-icon">🎤</span>
-      <span className="kmb-label">{isTeaching ? 'Teacher is speaking…' : 'Tap to speak'}</span>
+      <span className="kmb-label">{idleLabel}</span>
     </button>
   )
 }
@@ -811,10 +816,16 @@ export default function KidsClassroomPage() {
       handleMessage,
       undefined,
       (code) => {
-        if (kidsState !== 'complete') {
-          setErrorMsg(`Connection closed (${code}). Please try again.`)
-          setKidsState('error')
-        }
+        // Functional setter avoids stale closure: if lesson already completed,
+        // don't replace the success screen with an error screen.
+        setKidsState(prev => {
+          if (prev !== 'complete') {
+            setErrorMsg(`Connection closed (${code}). Please try again.`)
+            stopRecording('disconnect')
+            return 'error'
+          }
+          return prev
+        })
       },
       token,
       sessionId,
@@ -883,6 +894,13 @@ export default function KidsClassroomPage() {
     },
     [handleSubmit],
   )
+
+  // Mic stop: send mic_stop to backend and enter sending state so the
+  // button stays disabled until the next teacher_turn_end arrives.
+  const handleMicStop = useCallback(() => {
+    stopRecording('child_tap')
+    setKidsState('sending')
+  }, [stopRecording])
 
   const handleExit = useCallback(() => {
     stopAudioPlayback()
@@ -960,7 +978,7 @@ export default function KidsClassroomPage() {
                   micState={micState}
                   kidsState={kidsState}
                   onStart={() => { void startRecording() }}
-                  onStop={() => stopRecording('child_tap')}
+                  onStop={handleMicStop}
                 />
 
                 {/* Divider shown only when text fallback is available */}
