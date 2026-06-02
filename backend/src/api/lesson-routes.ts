@@ -421,6 +421,13 @@ router.post('/lesson/kids/start', requireAuth, async (req: Request, res: Respons
       [sessionId, userId],
     )
     console.log(`[kids] session_created user=${userId} session=${sessionId}`)
+    // [kids-start-diag] #9 — kids_session_created
+    console.log('[kids-start-diag] kids_session_created', JSON.stringify({
+      sessionId,
+      userId,
+      mode:   'mentium_kids',
+      status: 'created',
+    }))
     res.json({ sessionId })
   } catch (err) {
     console.error('[kids] start error:', err instanceof Error ? err.message : err)

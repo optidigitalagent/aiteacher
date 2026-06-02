@@ -62,8 +62,8 @@ const mocks = vi.hoisted(() => {
   const queryMock = vi.fn(async (sql: string) => {
     const s = sql.trim().toUpperCase();
     // Kids session ownership lookup → signal kids branch to lesson-ws.ts
-    if (s.includes('SELECT USER_ID FROM KIDS_SESSIONS')) {
-      return { rows: [{ user_id: 'u-15b-001' }], rowCount: 1 };
+    if (s.includes('FROM KIDS_SESSIONS')) {
+      return { rows: [{ user_id: 'u-15b-001', status: 'created', mode: 'mentium_kids' }], rowCount: 1 };
     }
     // tryLateRecover active-lesson check → no paid lesson to recover
     if (s.includes('SELECT LESSON_ID FROM LESSON_SESSIONS')) {

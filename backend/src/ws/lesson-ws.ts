@@ -1605,6 +1605,17 @@ async function handleFocusLessonStart(
 ): Promise<void> {
   console.log(`[paid-lesson] begin clicked session=${meta.sessionId} unit=${config.unit} section=${config.section ?? 'none'}`)
 
+  // [kids-start-diag] #1 — focus_start_received
+  console.log('[kids-start-diag] focus_start_received', JSON.stringify({
+    sessionId:         meta.sessionId,
+    userId:            meta.userId,
+    hasSessionId:      !!meta.sessionId,
+    hasUserId:         !!meta.userId,
+    USE_KIDS_BRAIN_V1,
+    metaLessonId:      meta.lessonId,
+    metaKidsSessionId: meta.kidsSessionId ?? null,
+  }))
+
   // Guard: reject duplicate focus_lesson_start on the same WS connection
   if (meta.lessonId) {
     console.log(`[paid-lesson] duplicate_begin_ignored lessonId=${meta.lessonId}`)
@@ -1612,18 +1623,46 @@ async function handleFocusLessonStart(
   }
 
   // ── Kids session check — runs before billing/subscription gate ───────────
+  let _kidsCheckFallReason: 'no_session_id' | 'no_user_id' | 'no_kids_row' | 'kids_lookup_error' | 'unknown' = 'unknown'
+
   if (meta.sessionId && meta.userId) {
+    // [kids-start-diag] #2 — checking_kids_session
+    console.log('[kids-start-diag] checking_kids_session', JSON.stringify({
+      sessionId: meta.sessionId,
+      userId:    meta.userId,
+    }))
+
     try {
-      const kidsRow = await query<{ user_id: string }>(
-        `SELECT user_id FROM kids_sessions WHERE session_id = $1 AND status != 'ended'`,
+      const kidsRow = await query<{ user_id: string; status: string; mode: string }>(
+        `SELECT user_id, status, mode FROM kids_sessions WHERE session_id = $1 AND status != 'ended'`,
         [meta.sessionId],
       )
+
+      // [kids-start-diag] #3 — kids_session_lookup_result
+      console.log('[kids-start-diag] kids_session_lookup_result', JSON.stringify({
+        rowsLength:    kidsRow.rows.length,
+        rowUserId:     kidsRow.rows[0]?.user_id ?? null,
+        currentUserId: meta.userId,
+        status:        kidsRow.rows[0]?.status  ?? null,
+        mode:          kidsRow.rows[0]?.mode    ?? null,
+      }))
+
       if (kidsRow.rows.length > 0) {
         if (kidsRow.rows[0].user_id !== meta.userId) {
+          // [kids-start-diag] #4 — owner_mismatch
+          console.log('[kids-start-diag] owner_mismatch', JSON.stringify({
+            rowUserId:     kidsRow.rows[0].user_id,
+            currentUserId: meta.userId,
+          }))
           send(ws, { type: 'error', code: 'INVALID_SESSION', message: 'Session not found.' })
           ws.close(4401, 'Invalid session')
           return
         }
+        // [kids-start-diag] #5 — routing_to_kids_brain_v1
+        console.log('[kids-start-diag] routing_to_kids_brain_v1', JSON.stringify({
+          sessionId: meta.sessionId,
+          userId:    meta.userId,
+        }))
         if (USE_KIDS_BRAIN_V1) {
           await handleKidsBrainV1LessonStart(ws, meta)
         } else {
@@ -1631,11 +1670,36 @@ async function handleFocusLessonStart(
         }
         return
       }
+
+      // [kids-start-diag] #6 — no_kids_session_row
+      console.log('[kids-start-diag] no_kids_session_row', JSON.stringify({
+        sessionId: meta.sessionId,
+        userId:    meta.userId,
+      }))
+      _kidsCheckFallReason = 'no_kids_row'
     } catch (err) {
+      // [kids-start-diag] #8 — kids_session_lookup_error
+      console.log('[kids-start-diag] kids_session_lookup_error', JSON.stringify({
+        sessionId:    meta.sessionId,
+        userId:       meta.userId,
+        errorName:    err instanceof Error ? err.name    : 'unknown',
+        errorMessage: err instanceof Error ? err.message : String(err),
+      }))
       console.error('[kids] session_check error:', err instanceof Error ? err.message : err)
-      // Fall through to adult flow on DB error
+      _kidsCheckFallReason = 'kids_lookup_error'
     }
+  } else if (!meta.sessionId) {
+    _kidsCheckFallReason = 'no_session_id'
+  } else {
+    _kidsCheckFallReason = 'no_user_id'
   }
+
+  // [kids-start-diag] #7 — falling_through_to_paid_guard
+  console.log('[kids-start-diag] falling_through_to_paid_guard', JSON.stringify({
+    sessionId: meta.sessionId,
+    userId:    meta.userId,
+    reason:    _kidsCheckFallReason,
+  }))
 
   if (!await checkAndLinkPaidSession(ws, meta)) return
 

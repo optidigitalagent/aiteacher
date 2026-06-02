@@ -47,8 +47,8 @@ const mocks = vi.hoisted(() => {
 
   const queryMock = vi.fn(async (sql: string) => {
     const s = sql.trim().toUpperCase()
-    if (s.includes('SELECT USER_ID FROM KIDS_SESSIONS')) {
-      return { rows: [{ user_id: 'u-16g-001' }], rowCount: 1 }
+    if (s.includes('FROM KIDS_SESSIONS')) {
+      return { rows: [{ user_id: 'u-16g-001', status: 'created', mode: 'mentium_kids' }], rowCount: 1 }
     }
     if (s.includes('SELECT LESSON_ID FROM LESSON_SESSIONS')) {
       return { rows: [], rowCount: 0 }
@@ -405,7 +405,7 @@ describe('Phase 16G — Adult/free session STT regression', () => {
     mocks.queryMock.mockImplementation(async (sql: string) => {
       const s = sql.trim().toUpperCase()
       // Return no kids session → adult billing path
-      if (s.includes('SELECT USER_ID FROM KIDS_SESSIONS')) {
+      if (s.includes('FROM KIDS_SESSIONS')) {
         return { rows: [], rowCount: 0 }
       }
       if (s.includes('SELECT LESSON_ID FROM LESSON_SESSIONS')) {
