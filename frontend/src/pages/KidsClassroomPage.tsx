@@ -864,6 +864,9 @@ export default function KidsClassroomPage() {
     await primeAudioContext()
     audioStartedRef.current = true
 
+    // Signal backend to begin the lesson (triggers handleKidsBrainV1LessonStart)
+    sendMessage(wsRef.current, { type: 'focus_lesson_start', payload: { unit: 1 } })
+
     // Flush buffered text
     if (pendingTextRef.current) {
       setTeacherText(pendingTextRef.current)
