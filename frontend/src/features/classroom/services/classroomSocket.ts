@@ -131,6 +131,8 @@ export type BackendMessage =
   | { type: 'lesson_time_warning'; remainingMs: number }
   // Phase 2 recovery: periodic remaining-time broadcast (every 60 seconds)
   | { type: 'lesson_timer_update'; remainingMs: number }
+  // TTS provider quota / rate-limit / outage — non-blocking, lesson continues in text mode
+  | { type: 'voice_unavailable'; reason?: 'TTS_PROVIDER_QUOTA' | 'TTS_RATE_LIMITED' | 'TTS_PROVIDER_UNAVAILABLE' | 'TTS_UNKNOWN_ERROR' | string }
   // Reconnect grace-window resync: replaces any stale local state after reattach.
   // No teacher greeting. No AI call. No lesson restart.
   | {
