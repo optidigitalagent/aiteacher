@@ -84,53 +84,64 @@ Do NOT treat this as a Kids WebSocket adapter issue unless new logs prove otherw
 
 ## Current Active Blocker
 
-### P0: TTS Provider Quota Failure
+### P1: TTS Provider Billing / Key Configuration (Railway env action required)
 
-Current error:
+Current diagnosis (from production logs):
 
-[kids] TTS error: 429 You exceeded your current quota
+```
+[tts:fallback] ElevenLabs disabled reason=TTS_UNKNOWN_ERROR — falling through to OpenAI
+[tts:fallback] OpenAI TTS TTS_PROVIDER_QUOTA — disabling for process lifetime
+[kids:voice_degraded] reason=TTS_PROVIDER_QUOTA
+```
 
-Meaning:
-OpenAI TTS is being called, but provider quota/billing is exhausted.
+Root causes identified and code fixed (commit d3d5128):
 
-Current behavior:
-- Lesson still runs.
-- STT works.
-- AI text works.
-- Voice output is broken.
+1. ElevenLabs: Returns HTTP error (401 invalid key or 422 invalid voice ID).
+   Code was misclassifying this as TTS_UNKNOWN_ERROR — now correctly identifies.
 
-Required next fix:
-Implement safe Kids TTS fallback.
+2. OpenAI TTS: Returns 429 insufficient_quota — account has no credits.
 
-Expected behavior:
-- If TTS provider fails with quota/rate/API error:
-  - do not crash
-  - do not close WebSocket
-  - send ai_text normally
-  - emit teacher_turn_end
-  - optionally emit voice_unavailable
-  - continue lesson in text-only degraded mode
-  - apply provider cooldown so OpenAI is not retried every turn
+3. tts.ts was ignoring OPENAI_TTS_MODEL / OPENAI_TTS_VOICE env vars (hardcoded 'tts-1').
 
-## Next Task
+4. Process-lifetime disable (never recovered). Now replaced with TTL-based cooldown
+   (15 min for quota, 6 hours for auth errors).
 
-Use this task title:
+Code is fixed. Real TTS resumes as soon as provider credentials/billing are valid.
 
-Fix Kids TTS Quota Failure with Safe Fallback
+### Required Railway Environment Variable Actions
 
-Scope:
-- backend TTS service
-- Kids runtime TTS call site
-- optional frontend handling for voice_unavailable
+After deploying, Railway logs will show:
+```
+[tts:provider_check] {"selectedProvider":"auto","elevenlabs":{...},"openai":{...}}
+```
 
-Do NOT:
-- redesign UI
-- change Kids curriculum
-- change lesson FSM
-- call TTS from frontend
-- remove cost caps
-- retry TTS indefinitely
-- bypass backend authority
+To restore voice audio, at least ONE of these must be done:
+
+Option A — Fix OpenAI (recommended, fast):
+  1. Go to platform.openai.com → Billing → Add credits to the project
+  2. OR set OPENAI_TTS_MODEL=gpt-4o-mini-tts in Railway (cheaper model, same quality)
+  3. Verify OPENAI_API_KEY in Railway matches the project with credits
+
+Option B — Fix ElevenLabs:
+  1. Verify ELEVENLABS_API_KEY in Railway is valid and not expired
+  2. Verify ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM exists in the ElevenLabs account
+     (default voice Rachel — substitute a voice ID from your account if needed)
+
+Option C — Quick bypass (bypasses ElevenLabs while fixing it):
+  Set TTS_PROVIDER=openai in Railway env vars (skips ElevenLabs entirely)
+
+### Production Logs to Verify Voice is Working
+
+After deploy, successful voice output looks like:
+```
+[tts:provider_check] {"selectedProvider":"auto","elevenlabs":{"keyPresent":true,...},...}
+[tts:provider_selected] provider=elevenlabs voiceId=21m00Tcm4TlvDq8ikWAM
+```
+OR:
+```
+[tts:provider_selected] provider=openai model=tts-1 voice=nova
+```
+(no [tts:provider_error] or [kids:voice_degraded] after this)
 
 ## Logs That Confirm Healthy Kids Startup
 
