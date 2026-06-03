@@ -69,7 +69,14 @@ const mocks = vi.hoisted(() => {
 
   const hashUserIdMock = vi.fn((id: string | null) => (id ? id.slice(0, 8) : null));
 
-  return { redisMock, redisStore, queryMock, verifyTokenMock, hashUserIdMock };
+  const deepgramSTTMock = vi.fn().mockImplementation(() => ({
+    close:       vi.fn(),
+    clearBuffer: vi.fn(),
+    flushBuffer: vi.fn(() => ''),
+    send:        vi.fn(),
+  }));
+
+  return { redisMock, redisStore, queryMock, verifyTokenMock, hashUserIdMock, deepgramSTTMock };
 });
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -96,13 +103,8 @@ vi.mock('../../voice/tts.js', () => ({
   speakToClient: vi.fn(async () => undefined),
 }));
 vi.mock('../../voice/stt.js', () => ({
-  DeepgramSTT: vi.fn().mockImplementation(() => ({
-    connect:     vi.fn(),
-    close:       vi.fn(),
-    clearBuffer: vi.fn(),
-    flushBuffer: vi.fn(() => ''),
-    isConnected: vi.fn(() => false),
-  })),
+  DeepgramSTT:           mocks.deepgramSTTMock,
+  DEEPGRAM_LIVE_OPTIONS: {},
 }));
 vi.mock('../../billing/subscription-service.js', () => ({
   getSubscription: vi.fn(async () => null),  // no subscription → 4402 for adult path
@@ -389,5 +391,127 @@ describe('16J.2 — C: Adult session (no kids row) still reaches payment guard �
 
     expect(logs.some(l => l.includes('[payment-guard-hit]')),
       '[payment-guard-hit] must be logged for adult session').toBe(true);
+  });
+});
+
+// ── Suite D — Kids runtime startup crash → KIDS_RUNTIME_START_FAILED / 4501 ───
+
+describe('16J.2 — D: Kids runtime startup crash → KIDS_RUNTIME_START_FAILED (4501)', () => {
+  const SESSION_ID = 'sess-16j2-runtime-crash';
+
+  beforeEach(() => {
+    mocks.queryMock.mockImplementation(async (sql: string) => {
+      const s = sql.trim().toUpperCase();
+      if (s.includes('FROM KIDS_SESSIONS')) {
+        return { rows: [{ user_id: 'u-16j2-001', status: 'created', mode: 'mentium_kids' }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+  });
+
+  afterEach(() => {
+    // Restore default STT mock after each test that may have overridden it
+    mocks.deepgramSTTMock.mockImplementation(() => ({
+      close:       vi.fn(),
+      clearBuffer: vi.fn(),
+      flushBuffer: vi.fn(() => ''),
+      send:        vi.fn(),
+    }));
+    mocks.queryMock.mockReset();
+    mocks.queryMock.mockImplementation(async () => ({ rows: [], rowCount: 0 }));
+  });
+
+  it('D1: runtime crash closes with 4501, not 4500 or 4402', async () => {
+    mocks.deepgramSTTMock.mockImplementationOnce(() => {
+      throw new TypeError('rawWs.on is not a function');
+    });
+
+    const ws = new WebSocket(kidsWsUrl(SESSION_ID, 'tok-16j2-kids'));
+    const messages: Msg[] = [];
+    ws.on('message', (raw) => {
+      try { messages.push(JSON.parse(raw.toString()) as Msg); } catch { /* skip */ }
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open',  resolve);
+      ws.once('error', reject);
+    });
+
+    await waitUntil(messages, msgs => msgs.some(m => m['type'] === 'lesson_ready'), 3000);
+
+    const closeProm = waitForClose(ws, 4000);
+    sendFrame(ws, { type: 'focus_lesson_start', payload: { unit: 1 } });
+    const { code } = await closeProm;
+
+    expect(code, 'Runtime crash must close with 4501, not 4500 or 4402').toBe(4501);
+  });
+
+  it('D2: runtime crash sends KIDS_RUNTIME_START_FAILED, not SESSION_VERIFICATION_FAILED or PAYMENT_REQUIRED', async () => {
+    mocks.deepgramSTTMock.mockImplementationOnce(() => {
+      throw new TypeError('rawWs.on is not a function');
+    });
+
+    const ws = new WebSocket(kidsWsUrl(SESSION_ID, 'tok-16j2-kids'));
+    const messages: Msg[] = [];
+    ws.on('message', (raw) => {
+      try { messages.push(JSON.parse(raw.toString()) as Msg); } catch { /* skip */ }
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open',  resolve);
+      ws.once('error', reject);
+    });
+
+    await waitUntil(messages, msgs => msgs.some(m => m['type'] === 'lesson_ready'), 3000);
+
+    const closeProm = waitForClose(ws, 4000);
+    sendFrame(ws, { type: 'focus_lesson_start', payload: { unit: 1 } });
+    await closeProm;
+
+    const runtimeFailMsg = messages.find(m => m['type'] === 'error' && m['code'] === 'KIDS_RUNTIME_START_FAILED');
+    expect(runtimeFailMsg, 'KIDS_RUNTIME_START_FAILED error must be sent').toBeDefined();
+
+    const verifyFailMsg = messages.find(m => m['type'] === 'error' && m['code'] === 'SESSION_VERIFICATION_FAILED');
+    expect(verifyFailMsg, 'SESSION_VERIFICATION_FAILED must NOT be sent for runtime startup crash').toBeUndefined();
+
+    const paymentMsg = messages.find(m => m['type'] === 'error' && m['code'] === 'PAYMENT_REQUIRED');
+    expect(paymentMsg, 'PAYMENT_REQUIRED must NOT be sent for kids runtime crash').toBeUndefined();
+  });
+
+  it('D3: runtime crash is logged as [kids-runtime-start-error], not kids_session_lookup_error', async () => {
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      const line = args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+      logs.push(line);
+    });
+
+    mocks.deepgramSTTMock.mockImplementationOnce(() => {
+      throw new TypeError('rawWs.on is not a function');
+    });
+
+    const ws = new WebSocket(kidsWsUrl(SESSION_ID, 'tok-16j2-kids'));
+    const messages: Msg[] = [];
+    ws.on('message', (raw) => {
+      try { messages.push(JSON.parse(raw.toString()) as Msg); } catch { /* skip */ }
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open',  resolve);
+      ws.once('error', reject);
+    });
+
+    await waitUntil(messages, msgs => msgs.some(m => m['type'] === 'lesson_ready'), 3000);
+
+    const closeProm = waitForClose(ws, 4000);
+    sendFrame(ws, { type: 'focus_lesson_start', payload: { unit: 1 } });
+    await closeProm;
+
+    spy.mockRestore();
+
+    const lookupErrors = logs.filter(l => l.includes('kids_session_lookup_error'));
+    expect(lookupErrors, 'Must NOT log runtime crash as kids_session_lookup_error').toHaveLength(0);
+
+    const runtimeErrors = logs.filter(l => l.includes('[kids-runtime-start-error]'));
+    expect(runtimeErrors, 'Must log runtime crash as [kids-runtime-start-error]').not.toHaveLength(0);
   });
 });

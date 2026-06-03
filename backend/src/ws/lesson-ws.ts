@@ -1631,6 +1631,7 @@ async function handleFocusLessonStart(
 
   // ── Kids session check — runs before billing/subscription gate ───────────
   let _kidsCheckFallReason: 'no_session_id' | 'no_user_id' | 'no_kids_row' | 'kids_lookup_error' | 'unknown' = 'unknown'
+  let _kidsOwnerValidated = false
 
   if (meta.sessionId && meta.userId) {
     // [kids-start-diag] #2 — checking_kids_session
@@ -1675,36 +1676,15 @@ async function handleFocusLessonStart(
           ws.close(4401, 'Invalid session')
           return
         }
-        // [kids-start-diag] #5 — routing_to_kids_brain_v1
-        console.log('[kids-start-diag] routing_to_kids_brain_v1', JSON.stringify({
-          sessionId:       meta.sessionId,
-          userId:          meta.userId,
-          USE_KIDS_BRAIN_V1,
+        _kidsOwnerValidated = true
+      } else {
+        // [kids-start-diag] #6 — no_kids_session_row
+        console.log('[kids-start-diag] no_kids_session_row', JSON.stringify({
+          sessionId: meta.sessionId,
+          userId:    meta.userId,
         }))
-        if (DEBUG_KIDS_START) console.log('[kids-start-diag]', JSON.stringify({
-          sessionId:           meta.sessionId,
-          userId:              meta.userId,
-          kidsSessionFound:    true,
-          ownerMatch:          true,
-          useKidsBrainV1:      USE_KIDS_BRAIN_V1,
-          routingBranch:       USE_KIDS_BRAIN_V1 ? 'kids_brain_v1' : 'kids_prototype',
-          paymentGuardEntered: false,
-          closeCode:           null,
-        }))
-        if (USE_KIDS_BRAIN_V1) {
-          await handleKidsBrainV1LessonStart(ws, meta)
-        } else {
-          await handleKidsLessonStart(ws, meta)
-        }
-        return
+        _kidsCheckFallReason = 'no_kids_row'
       }
-
-      // [kids-start-diag] #6 — no_kids_session_row
-      console.log('[kids-start-diag] no_kids_session_row', JSON.stringify({
-        sessionId: meta.sessionId,
-        userId:    meta.userId,
-      }))
-      _kidsCheckFallReason = 'no_kids_row'
     } catch (err) {
       // [kids-start-diag] #8 — kids_session_lookup_error
       console.log('[kids-start-diag] kids_session_lookup_error', JSON.stringify({
@@ -1736,6 +1716,51 @@ async function handleFocusLessonStart(
     _kidsCheckFallReason = 'no_session_id'
   } else {
     _kidsCheckFallReason = 'no_user_id'
+  }
+
+  // ── Kids runtime routing — outside DB-lookup try/catch so runtime errors are labelled correctly ──
+  if (_kidsOwnerValidated) {
+    // [kids-start-diag] #5 — routing_to_kids_brain_v1
+    console.log('[kids-start-diag] routing_to_kids_brain_v1', JSON.stringify({
+      sessionId:       meta.sessionId,
+      userId:          meta.userId,
+      USE_KIDS_BRAIN_V1,
+    }))
+    if (DEBUG_KIDS_START) console.log('[kids-start-diag]', JSON.stringify({
+      sessionId:           meta.sessionId,
+      userId:              meta.userId,
+      kidsSessionFound:    true,
+      ownerMatch:          true,
+      useKidsBrainV1:      USE_KIDS_BRAIN_V1,
+      routingBranch:       USE_KIDS_BRAIN_V1 ? 'kids_brain_v1' : 'kids_prototype',
+      paymentGuardEntered: false,
+      closeCode:           null,
+    }))
+    try {
+      if (USE_KIDS_BRAIN_V1) {
+        await handleKidsBrainV1LessonStart(ws, meta)
+      } else {
+        await handleKidsLessonStart(ws, meta)
+      }
+      return
+    } catch (err) {
+      const wsObj = ws as unknown as Record<string, unknown>
+      console.log('[kids-runtime-start-error]', JSON.stringify({
+        sessionId:        meta.sessionId,
+        userId:           meta.userId,
+        errorName:        err instanceof Error ? err.name    : 'unknown',
+        errorMessage:     err instanceof Error ? err.message : String(err),
+        hasOn:            typeof wsObj['on']    === 'function',
+        hasSend:          typeof wsObj['send']  === 'function',
+        hasClose:         typeof wsObj['close'] === 'function',
+        socketConstructor: wsObj['constructor'] instanceof Function
+          ? (wsObj['constructor'] as { name?: string }).name ?? 'unknown'
+          : 'unknown',
+      }))
+      send(ws, { type: 'error', code: 'KIDS_RUNTIME_START_FAILED', message: 'Kids session startup failed. Please retry.' })
+      ws.close(4501, 'Kids runtime start failed')
+      return
+    }
   }
 
   // [kids-start-diag] #7 — falling_through_to_paid_guard

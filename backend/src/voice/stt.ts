@@ -59,8 +59,15 @@ export class DeepgramSTT {
       on(event: 'close',               cb: (code: number, reason: Buffer) => void): void
       on(event: 'error',               cb: (err: NodeJS.ErrnoException & { response?: IncomingMessage }) => void): void
     }
-    const connInternal = conn as unknown as { getWebSocket?: () => DiagWs | null; conn?: DiagWs | null }
-    const rawWs: DiagWs | null = connInternal.getWebSocket?.() ?? connInternal.conn ?? null
+    const connInternal = conn as unknown as { getWebSocket?: () => unknown; conn?: unknown }
+    const rawWsCandidate = connInternal.getWebSocket?.() ?? connInternal.conn ?? null
+    // Guard: some Deepgram SDK versions return a non-ws object from getWebSocket()/conn.
+    // Check .on is a function before attaching diagnostic hooks to avoid TypeError crash.
+    const rawWs: DiagWs | null = (
+      rawWsCandidate !== null &&
+      rawWsCandidate !== undefined &&
+      typeof (rawWsCandidate as { on?: unknown }).on === 'function'
+    ) ? (rawWsCandidate as DiagWs) : null
     if (rawWs) {
       rawWs.on('unexpected-response', (req, res) => {
         console.error('[stt:diag] Deepgram rejected HTTP upgrade — status=%d %s',
@@ -85,6 +92,8 @@ export class DeepgramSTT {
           console.error('[stt:diag] error.response headers: %j', err.response.headers)
         }
       })
+    } else if (rawWsCandidate) {
+      console.error('[stt:diag] rawWs.on is not a function — Deepgram SDK internal structure changed; skipping diagnostic hooks')
     } else {
       console.error('[stt:diag] could not access underlying WebSocket — getWebSocket() returned null')
     }
