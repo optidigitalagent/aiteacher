@@ -105,7 +105,8 @@ const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
 // Set USE_KIDS_BRAIN_V1=true to activate the new Kids Brain v1 runtime.
 // When unset/false, kids mode falls back to the old kids-runtime prototype.
 // Adult sessions are never affected by this flag.
-const USE_KIDS_BRAIN_V1 = process.env.USE_KIDS_BRAIN_V1 === 'true'
+const USE_KIDS_BRAIN_V1  = process.env.USE_KIDS_BRAIN_V1  === 'true'
+const DEBUG_KIDS_START   = process.env.DEBUG_KIDS_START   === 'true'
 
 // ── Kids Brain v1 curriculum reference ───────────────────────────────────────
 // Prototype lesson identifiers — resolved once at module load from the static curriculum registry.
@@ -776,6 +777,12 @@ function resetInactivityTimer(ws: WebSocket, meta: ClientMeta): void {
 }
 
 async function checkAndLinkPaidSession(ws: WebSocket, meta: ClientMeta): Promise<boolean> {
+  // [payment-guard-hit] — adult billing gate reached; Kids sessions must never reach this point
+  console.log('[payment-guard-hit]', JSON.stringify({
+    sessionId: meta.sessionId,
+    userId:    meta.userId,
+  }))
+
   if (!meta.userId) {
     send(ws, { type: 'error', code: 'AUTH_REQUIRED', message: 'Authentication required.' })
     return false
@@ -1654,14 +1661,35 @@ async function handleFocusLessonStart(
             rowUserId:     kidsRow.rows[0].user_id,
             currentUserId: meta.userId,
           }))
+          if (DEBUG_KIDS_START) console.log('[kids-start-diag]', JSON.stringify({
+            sessionId:           meta.sessionId,
+            userId:              meta.userId,
+            kidsSessionFound:    true,
+            ownerMatch:          false,
+            useKidsBrainV1:      USE_KIDS_BRAIN_V1,
+            routingBranch:       'owner_mismatch',
+            paymentGuardEntered: false,
+            closeCode:           4401,
+          }))
           send(ws, { type: 'error', code: 'INVALID_SESSION', message: 'Session not found.' })
           ws.close(4401, 'Invalid session')
           return
         }
         // [kids-start-diag] #5 — routing_to_kids_brain_v1
         console.log('[kids-start-diag] routing_to_kids_brain_v1', JSON.stringify({
-          sessionId: meta.sessionId,
-          userId:    meta.userId,
+          sessionId:       meta.sessionId,
+          userId:          meta.userId,
+          USE_KIDS_BRAIN_V1,
+        }))
+        if (DEBUG_KIDS_START) console.log('[kids-start-diag]', JSON.stringify({
+          sessionId:           meta.sessionId,
+          userId:              meta.userId,
+          kidsSessionFound:    true,
+          ownerMatch:          true,
+          useKidsBrainV1:      USE_KIDS_BRAIN_V1,
+          routingBranch:       USE_KIDS_BRAIN_V1 ? 'kids_brain_v1' : 'kids_prototype',
+          paymentGuardEntered: false,
+          closeCode:           null,
         }))
         if (USE_KIDS_BRAIN_V1) {
           await handleKidsBrainV1LessonStart(ws, meta)
@@ -1686,7 +1714,23 @@ async function handleFocusLessonStart(
         errorMessage: err instanceof Error ? err.message : String(err),
       }))
       console.error('[kids] session_check error:', err instanceof Error ? err.message : err)
-      _kidsCheckFallReason = 'kids_lookup_error'
+      // Cannot verify session type — reject rather than falling through to adult payment guard.
+      // A DB error here means either the kids_sessions table is missing (migration not run)
+      // or the DB is unavailable. In either case, a 4402 "Payment Required" is misleading.
+      // The [payment-guard-hit] log must NOT appear for this path.
+      if (DEBUG_KIDS_START) console.log('[kids-start-diag]', JSON.stringify({
+        sessionId:           meta.sessionId,
+        userId:              meta.userId,
+        kidsSessionFound:    null,
+        ownerMatch:          null,
+        useKidsBrainV1:      USE_KIDS_BRAIN_V1,
+        routingBranch:       'error_db',
+        paymentGuardEntered: false,
+        closeCode:           4500,
+      }))
+      send(ws, { type: 'error', code: 'SESSION_VERIFICATION_FAILED', message: 'Session verification failed. Please try again.' })
+      ws.close(4500, 'Session verification failed')
+      return
     }
   } else if (!meta.sessionId) {
     _kidsCheckFallReason = 'no_session_id'
@@ -1699,6 +1743,16 @@ async function handleFocusLessonStart(
     sessionId: meta.sessionId,
     userId:    meta.userId,
     reason:    _kidsCheckFallReason,
+  }))
+  if (DEBUG_KIDS_START) console.log('[kids-start-diag]', JSON.stringify({
+    sessionId:           meta.sessionId,
+    userId:              meta.userId,
+    kidsSessionFound:    false,
+    ownerMatch:          null,
+    useKidsBrainV1:      USE_KIDS_BRAIN_V1,
+    routingBranch:       'adult_paid_guard',
+    paymentGuardEntered: true,
+    closeCode:           null,
   }))
 
   if (!await checkAndLinkPaidSession(ws, meta)) return

@@ -1,4 +1,5 @@
 import { createClient, LiveTranscriptionEvents } from '@deepgram/sdk'
+import type { LiveSchema } from '@deepgram/sdk/dist/main/lib/types/TranscriptionSchema.js'
 import { type IncomingMessage, type ClientRequest } from 'node:http'
 
 const API_KEY = process.env.DEEPGRAM_API_KEY ?? ''
@@ -6,6 +7,21 @@ const API_KEY = process.env.DEEPGRAM_API_KEY ?? ''
 // How long after speech stops before we fire the transcript.
 // 1500ms = student can think for 1.5s mid-answer without triggering AI.
 const UTTERANCE_END_MS = 1500
+
+// Exported for unit tests — change here propagates to test assertions automatically.
+// detect_language is a PrerecordedSchema-only field; sending it to the Live API
+// causes HTTP 400. Use explicit language=en instead.
+export const DEEPGRAM_LIVE_OPTIONS: LiveSchema = {
+  model:            'nova-2',
+  language:         'en',
+  smart_format:     true,
+  interim_results:  true,
+  endpointing:      300,
+  utterance_end_ms: UTTERANCE_END_MS,
+  encoding:         'linear16',
+  sample_rate:      16000,
+  channels:         1,
+}
 
 type DgLive = ReturnType<ReturnType<typeof createClient>['listen']['live']>
 
@@ -33,22 +49,7 @@ export class DeepgramSTT {
       return
     }
 
-    const conn = createClient(API_KEY).listen.live({
-      model:            'nova-2',
-      // Phase 7.2: enable auto language detection for UA/RU/EN learner speech.
-      // Removes the forced 'en-US' lock that corrupted Cyrillic speech into English phonetics.
-      detect_language:  true,
-      smart_format:     true,
-      interim_results:  true,
-      // endpointing controls how fast Deepgram marks is_final — keep it snappy
-      endpointing:      300,
-      // utterance_end_ms: fires UtteranceEnd event after N ms of silence
-      // This is what we use to actually send the transcript to the AI
-      utterance_end_ms: UTTERANCE_END_MS,
-      encoding:         'linear16',
-      sample_rate:      16000,
-      channels:         1,
-    })
+    const conn = createClient(API_KEY).listen.live(DEEPGRAM_LIVE_OPTIONS)
 
     // ── Phase 16G.3 diagnostic: expose Deepgram WebSocket handshake failure ──
     // ws emits 'unexpected-response' for HTTP 401/402/403 upgrade rejections
@@ -61,9 +62,13 @@ export class DeepgramSTT {
     const connInternal = conn as unknown as { getWebSocket?: () => DiagWs | null; conn?: DiagWs | null }
     const rawWs: DiagWs | null = connInternal.getWebSocket?.() ?? connInternal.conn ?? null
     if (rawWs) {
-      rawWs.on('unexpected-response', (_req, res) => {
+      rawWs.on('unexpected-response', (req, res) => {
         console.error('[stt:diag] Deepgram rejected HTTP upgrade — status=%d %s',
           res.statusCode, res.statusMessage)
+        // Redact Authorization token before logging request headers
+        const reqHeaders = { ...req.getHeaders() }
+        if (reqHeaders['authorization']) reqHeaders['authorization'] = 'Token [REDACTED]'
+        console.error('[stt:diag] request headers: %j', reqHeaders)
         console.error('[stt:diag] response headers: %j', res.headers)
         let body = ''
         res.on('data', (chunk: Buffer) => { body += chunk.toString('utf8') })
