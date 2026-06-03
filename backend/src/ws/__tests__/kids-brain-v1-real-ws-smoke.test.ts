@@ -83,7 +83,7 @@ const mocks = vi.hoisted(() => {
     return null;
   });
 
-  const speakToClientMock = vi.fn(async () => undefined);
+  const speakToClientMock = vi.fn(async () => ({ ok: true as const }));
   const persistAnalyticsMock = vi.fn(async () => undefined);
   const hashUserIdMock = vi.fn((id: string | null) => (id ? id.slice(0, 8) : null));
 

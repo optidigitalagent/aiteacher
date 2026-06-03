@@ -172,6 +172,16 @@ export interface OutboundTeacherTurnEnd {
 }
 
 /**
+ * Sent when TTS fails with a quota/rate/provider error and the lesson continues
+ * in text-only degraded mode. Frontend must not crash — teacher text is still shown
+ * and teacher_turn_end will follow immediately.
+ */
+export interface OutboundVoiceUnavailable {
+  type:   'voice_unavailable'
+  reason: 'TTS_PROVIDER_QUOTA' | 'TTS_RATE_LIMITED' | 'TTS_PROVIDER_UNAVAILABLE' | 'TTS_UNKNOWN_ERROR'
+}
+
+/**
  * Sent immediately after the backend authenticates the WS connection and
  * validates the paid session. The frontend should show "Begin Lesson" only
  * after receiving this event — not just on WS open.
@@ -275,6 +285,7 @@ export type OutboundMessage =
   | OutboundLessonResumed
   | OutboundStudentMessage
   | OutboundTeacherTurnEnd
+  | OutboundVoiceUnavailable
   | OutboundLessonReady
   | OutboundExerciseCursorUpdated
   | OutboundTipAdded

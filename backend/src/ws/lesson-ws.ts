@@ -1470,16 +1470,24 @@ async function kidsTtsStream(ws: WebSocket, meta: ClientMeta, text: string): Pro
   meta.ttsController = new AbortController()
   try { prev?.abort() } catch { /* ignore */ }
   try {
-    await speakToClient(
+    const result = await speakToClient(
       (msg) => send(ws, msg),
       text,
       meta.ttsController.signal,
       'nova',
     )
+    if (!result.ok) {
+      console.warn(
+        `[kids:voice_degraded] sessionId=${meta.kidsSessionId ?? meta.sessionId} ` +
+        `reason=${result.reason} ttsChars=${text.length} cooldownApplied=true`,
+      )
+      send(ws, { type: 'voice_unavailable', reason: result.reason })
+    }
     send(ws, { type: 'teacher_turn_end' })
   } catch (err: unknown) {
+    // Safety net: speakToClient should not throw, but guard against unexpected errors.
     const isAbort = err instanceof Error && err.name === 'AbortError'
-    if (!isAbort) console.error('[kids] TTS error:', err instanceof Error ? err.message : err)
+    if (!isAbort) console.error('[kids] TTS unexpected error:', err instanceof Error ? err.message : err)
     send(ws, { type: 'teacher_turn_end' })
   } finally {
     meta.ttsActive = false
@@ -3056,23 +3064,27 @@ async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise
     severity:     'debug',
   })
   try {
-    await speakToClient(
+    const result = await speakToClient(
       (msg) => send(ws, msg),
       text,
       meta.ttsController.signal,
       meta.voiceId ?? undefined,
     )
-    console.log(`[paid-lesson] teacher_speaking end chars=${text.length}`)
+    if (result.ok) {
+      console.log(`[paid-lesson] teacher_speaking end chars=${text.length}`)
+    } else {
+      console.warn(`[tts:fallback] adult TTS degraded reason=${result.reason} chars=${text.length}`)
+    }
     // Signal frontend that all TTS audio has been sent for this turn.
     // The client uses this to calculate accurate audio-queue completion time
     // and disable the mic until the queued audio actually finishes playing.
     send(ws, { type: 'teacher_turn_end' })
   } catch (err: unknown) {
+    // Safety net: speakToClient should not throw, but guard against unexpected errors.
     const isAbort = err instanceof Error && err.name === 'AbortError'
     if (!isAbort) {
-      console.error('[ws] TTS error:', err instanceof Error ? err.message : err)
+      console.error('[ws] TTS unexpected error:', err instanceof Error ? err.message : err)
       // Send teacher_turn_end so the frontend mic lifecycle completes even on TTS failure.
-      // Without this the frontend stays in isSpeaking=true forever and the mic never enables.
       send(ws, { type: 'teacher_turn_end' })
     }
     // Do NOT send teacher_turn_end on abort — frontend already handles interruption

@@ -33,38 +33,125 @@ function combineSignals(...signals: AbortSignal[]): AbortSignal {
   return ctrl.signal
 }
 
-// Once ElevenLabs fails with a billing/auth error, skip it for the whole process lifetime
+// ── TTS result types ──────────────────────────────────────────────────────────
+
+export type TtsFailureReason =
+  | 'TTS_PROVIDER_QUOTA'
+  | 'TTS_RATE_LIMITED'
+  | 'TTS_PROVIDER_UNAVAILABLE'
+  | 'TTS_UNKNOWN_ERROR'
+
+export type TtsResult =
+  | { ok: true }
+  | { ok: false; textOnly: true; reason: TtsFailureReason }
+
+// ── Process-level provider disable flags ─────────────────────────────────────
+// Once a provider fails with a quota/billing error the flag is set for the
+// remainder of the process lifetime. Prevents retry storms on every turn.
+
 let elevenLabsDisabled = false
+let openAiTtsDisabled  = false
+
+// ── Error classification ──────────────────────────────────────────────────────
+
+function classifyTtsError(err: unknown): TtsFailureReason {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+  // Check .status on OpenAI SDK APIError objects
+  const status = (err as Record<string, unknown>)['status']
+  if (
+    status === 429 ||
+    msg.includes('429') ||
+    msg.includes('quota') ||
+    msg.includes('insufficient_quota')
+  ) return 'TTS_PROVIDER_QUOTA'
+  if (
+    msg.includes('rate_limit') ||
+    msg.includes('rate limit') ||
+    msg.includes('ratelimit')
+  ) return 'TTS_RATE_LIMITED'
+  if (
+    status === 502 || status === 503 ||
+    msg.includes('502') || msg.includes('503') ||
+    msg.includes('unavailable')
+  ) return 'TTS_PROVIDER_UNAVAILABLE'
+  return 'TTS_UNKNOWN_ERROR'
+}
+
+function isQuotaOrRateError(err: unknown): boolean {
+  const r = classifyTtsError(err)
+  return r === 'TTS_PROVIDER_QUOTA' || r === 'TTS_RATE_LIMITED'
+}
+
+function isBillingOrAuthError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+  const status = (err as Record<string, unknown>)['status']
+  return (
+    status === 401 || status === 402 ||
+    msg.includes('402') || msg.includes('401') ||
+    msg.includes('payment') || msg.includes('invalid_api_key') ||
+    msg.includes('billing')
+  )
+}
+
+// ── Main TTS entry point ──────────────────────────────────────────────────────
+//
+// Returns TtsResult — never throws. Callers must check result.ok to determine
+// whether audio was emitted. On failure the caller should emit voice_unavailable
+// and still send teacher_turn_end so the frontend mic lifecycle completes.
+//
+// Provider cooldown: quota/rate errors set a process-level disable flag so the
+// failed provider is not retried on subsequent turns (prevents retry storms).
 
 export async function speakToClient(
   send: (msg: OutboundMessage) => void,
   text: string,
   signal?: AbortSignal,
   voiceId?: string,
-): Promise<void> {
+): Promise<TtsResult> {
+  // ── ElevenLabs ────────────────────────────────────────────────────────────
   if (ELEVENLABS_KEY && !elevenLabsDisabled) {
     try {
       await speakElevenLabs(send, text, signal, resolveElevenLabsVoiceId(voiceId))
-      return
+      return { ok: true }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (msg.includes('402') || msg.includes('401') || msg.includes('payment') || msg.includes('invalid_api_key')) {
-        console.warn('[tts] ElevenLabs unavailable — switching to OpenAI TTS for this session')
+      if (err instanceof Error && err.name === 'AbortError') return { ok: true }
+
+      if (isBillingOrAuthError(err) || isQuotaOrRateError(err)) {
+        const reason = classifyTtsError(err)
+        console.warn(`[tts:fallback] ElevenLabs disabled reason=${reason} — falling through to OpenAI`)
         elevenLabsDisabled = true
-      } else if (err instanceof Error && err.name === 'AbortError') {
-        return
+        // fall through to OpenAI
       } else {
-        throw err
+        // Unknown error — log and fall through to OpenAI without permanently disabling
+        console.warn('[tts:fallback] ElevenLabs unknown error — trying OpenAI:', err instanceof Error ? err.message : err)
       }
     }
   }
 
-  if (OPENAI_KEY) {
-    await speakOpenAI(send, text, signal, resolveOpenAIVoice(voiceId))
-    return
+  // ── OpenAI TTS ────────────────────────────────────────────────────────────
+  if (OPENAI_KEY && !openAiTtsDisabled) {
+    try {
+      await speakOpenAI(send, text, signal, resolveOpenAIVoice(voiceId))
+      return { ok: true }
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') return { ok: true }
+
+      const reason = classifyTtsError(err)
+      if (reason === 'TTS_PROVIDER_QUOTA' || reason === 'TTS_RATE_LIMITED') {
+        console.warn(`[tts:fallback] OpenAI TTS ${reason} — disabling for process lifetime`)
+        openAiTtsDisabled = true
+      } else {
+        console.warn('[tts:fallback] OpenAI TTS error reason=%s:', reason, err instanceof Error ? err.message : err)
+      }
+      return { ok: false, textOnly: true, reason }
+    }
   }
 
-  console.warn('[tts] no TTS provider configured — voice output disabled')
+  // ── No provider available ─────────────────────────────────────────────────
+  if (!ELEVENLABS_KEY && !OPENAI_KEY) {
+    console.warn('[tts] no TTS provider configured — voice output disabled')
+  }
+  return { ok: false, textOnly: true, reason: 'TTS_PROVIDER_UNAVAILABLE' }
 }
 
 // ── ElevenLabs ────────────────────────────────────────────────────────────────

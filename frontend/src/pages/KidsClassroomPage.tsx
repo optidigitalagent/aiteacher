@@ -736,6 +736,7 @@ export default function KidsClassroomPage() {
   const [progressCount, setProgressCount] = useState(0)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [micPreflightDone, setMicPreflightDone] = useState(false)
+  const [voiceUnavailable, setVoiceUnavailable] = useState(false)
 
   // Refs for buffering before user taps "Let's Go"
   const wsRef            = useRef<WebSocket | null>(null)
@@ -794,6 +795,11 @@ export default function KidsClassroomPage() {
         stopAudioPlayback()
         setSummary(msg.summary)
         setKidsState('complete')
+        break
+      }
+
+      case 'voice_unavailable': {
+        setVoiceUnavailable(true)
         break
       }
 
@@ -977,6 +983,12 @@ export default function KidsClassroomPage() {
               />
 
               <KidsProgressDots count={progressCount} />
+
+              {voiceUnavailable && (
+                <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, textAlign: 'center' }}>
+                  Voice is temporarily unavailable. You can continue.
+                </p>
+              )}
 
               <KidsAudioIndicator state={kidsState} />
             </div>
