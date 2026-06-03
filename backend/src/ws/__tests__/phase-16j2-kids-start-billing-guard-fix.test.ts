@@ -22,6 +22,19 @@ import type { Server } from 'http';
 import type { AddressInfo } from 'net';
 import WebSocket from 'ws';
 
+// ── Test-local DB types ───────────────────────────────────────────────────────
+
+type KidsSessionRow = {
+  user_id: string
+  status: string
+  mode: string
+}
+
+type QueryResult<Row = unknown> = {
+  rows: Row[]
+  rowCount: number
+}
+
 // ── Hoisted setup ─────────────────────────────────────────────────────────────
 
 const mocks = vi.hoisted(() => {
@@ -46,7 +59,7 @@ const mocks = vi.hoisted(() => {
   };
 
   // queryMock is switched per test via mockImplementation
-  const queryMock = vi.fn(async (_sql: string) => ({ rows: [], rowCount: 0 }));
+  const queryMock = vi.fn(async (_sql: string): Promise<QueryResult<KidsSessionRow>> => ({ rows: [], rowCount: 0 }));
 
   const verifyTokenMock = vi.fn(async (token: string) => {
     if (token === 'tok-16j2-kids')  return { userId: 'u-16j2-001', studentId: 's-16j2-001', email: 'kids@16j2.test', name: 'KidsJ2' };
