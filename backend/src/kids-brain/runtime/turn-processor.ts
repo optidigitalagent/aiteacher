@@ -95,7 +95,14 @@ function normalizeReadinessPhrase(text: string): string {
 }
 
 function isReadinessPhrase(text: string): boolean {
-  return READINESS_PHRASES.has(normalizeReadinessPhrase(text));
+  const normalized = normalizeReadinessPhrase(text);
+  if (READINESS_PHRASES.has(normalized)) return true;
+  // Handle compound readiness phrases like "yes i'm ready", "yes ok", "yes let's go"
+  // by checking if the normalized text contains any multi-word readiness phrase,
+  // or is a space-joined combination of known readiness tokens.
+  return [...READINESS_PHRASES].some(
+    p => p.includes(' ') && normalized.includes(p),
+  );
 }
 
 /**

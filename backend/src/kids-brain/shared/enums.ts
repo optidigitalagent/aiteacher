@@ -77,6 +77,9 @@ export enum ClassificationLabel {
   EMOTIONAL_SHUTDOWN = 'emotional_shutdown',
   TEST_THE_AI = 'test_the_ai',
 
+  // Clarification / readiness-in-exercise
+  CLARIFICATION_REQUEST = 'clarification_request',
+
   // Fallback
   UNKNOWN_UNCERTAIN = 'unknown_uncertain',
 }

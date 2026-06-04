@@ -176,6 +176,18 @@ export function routeTeacherResponse(input: TeacherResponseInput): ResponseRoute
     };
   }
 
+  // ── Priority 7.5: Clarification request ("What should I say?", readiness-confusion) ─
+  if (label === ClassificationLabel.CLARIFICATION_REQUEST) {
+    return {
+      mode: 'recovery_script',
+      actionCode: TeacherActionCode.MODEL_ANSWER,
+      recoveryType: 'clarification_request',
+      tone: FeedbackTone.WARM,
+      safetyBlocked: false,
+      requiresLLM: false,
+    };
+  }
+
   // ── Priority 8: Wrong answers ─────────────────────────────────────────────────
   if (
     label === ClassificationLabel.WRONG_SEMANTIC ||

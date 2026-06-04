@@ -13,6 +13,7 @@ export type RecoveryType =
   | 'l1_translation'
   | 'l1_help_request'
   | 'i_dont_know'
+  | 'clarification_request'
   | 'refusal'
   | 'emotional_shutdown'
   | 'unsafe_or_sensitive';
@@ -81,6 +82,15 @@ const I_DONT_KNOW_VARIANTS: readonly string[] = [
   "That's okay! Is it {optA} or {optB}?",
   "No problem! Listen — {word}! {word}!",
   "Let's find out! Is it a {word}? Yes or no?",
+];
+
+// Concrete instruction variants — always include the target word.
+// Used when child asks "what should I say?" or signals readiness confusion.
+const CLARIFICATION_REQUEST_VARIANTS: readonly string[] = [
+  "Say {word}!",
+  "Try saying: {word}!",
+  "Can you say {word}? {word}!",
+  "Listen — {word}! Now you say: {word}!",
 ];
 
 const REFUSAL_VARIANTS: readonly string[] = [
@@ -179,6 +189,11 @@ export function buildRecoveryResponse(
       // Drop to forced choice — preserve emotional safety, reduce production demand
       if (!word) return "That's okay! Let's try together!";
       return resolve(pickVariant(I_DONT_KNOW_VARIANTS, recent), word, optA, optB);
+
+    case 'clarification_request':
+      // Child asked "what should I say?" — always give concrete target-word instruction
+      if (!word) return "Try saying the word! Can you say it?";
+      return resolve(pickVariant(CLARIFICATION_REQUEST_VARIANTS, recent), word, optA, optB);
 
     case 'refusal':
       // Back off, offer choice — relationship > lesson

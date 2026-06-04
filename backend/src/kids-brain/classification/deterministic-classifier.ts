@@ -7,6 +7,8 @@ import {
   UNSAFE_KEYWORDS,
   I_DONT_KNOW_PHRASES,
   REFUSAL_PHRASES,
+  CLARIFICATION_PHRASES,
+  EXERCISE_READINESS_PHRASES,
   NEAR_MATCH_EDIT_DISTANCE_MAX,
   CORRECT_CONFIDENT_MIN_ADJ_CONFIDENCE,
   CORRECT_HESITANT_MIN_ADJ_CONFIDENCE,
@@ -178,6 +180,38 @@ export function runDeterministicClassifier(
     });
   }
 
+  // ── Rule 10.5: Clarification request ("What should I say?", "help me", etc.) ─
+  if (matchesClarificationRequest(transcriptLower)) {
+    return buildResult({
+      label: ClassificationLabel.CLARIFICATION_REQUEST,
+      confidence: 0.95,
+      source: 'deterministic',
+      reasons: ['clarification_phrase_matched'],
+      perception,
+      requiresRecovery: false,
+      eligibleForMasteryUpdate: false,
+      eligibleForProgression: false,
+      recommendedSafeAction: TeacherActionCode.MODEL_ANSWER,
+    });
+  }
+
+  // ── Rule 10.6: Mid-exercise readiness phrase ("Yes I'm ready", "I'm ready") ──
+  // Child is already in an exercise but signals readiness/confusion.
+  // Treat as clarification — teacher should repeat the concrete instruction.
+  if (matchesExerciseReadiness(transcriptLower)) {
+    return buildResult({
+      label: ClassificationLabel.CLARIFICATION_REQUEST,
+      confidence: 0.90,
+      source: 'deterministic',
+      reasons: ['exercise_readiness_phrase_matched'],
+      perception,
+      requiresRecovery: false,
+      eligibleForMasteryUpdate: false,
+      eligibleForProgression: false,
+      recommendedSafeAction: TeacherActionCode.MODEL_ANSWER,
+    });
+  }
+
   // ── Rule 11: Simple refusal (guard: not a YES_NO task answer) ────────────
   if (
     activityContext.promptType !== PromptType.YES_NO &&
@@ -328,6 +362,15 @@ function resolveCorrectLabel(
 
 function matchesIDoNotKnow(text: string): boolean {
   return I_DONT_KNOW_PHRASES.some(phrase => text.includes(phrase));
+}
+
+function matchesClarificationRequest(text: string): boolean {
+  return CLARIFICATION_PHRASES.some(phrase => text.includes(phrase));
+}
+
+function matchesExerciseReadiness(text: string): boolean {
+  const normalized = text.replace(/[.!?,]+/g, '').replace(/\s+/g, ' ').trim();
+  return EXERCISE_READINESS_PHRASES.some(phrase => normalized === phrase || normalized.includes(phrase));
 }
 
 function matchesRefusal(text: string): boolean {

@@ -40,6 +40,38 @@ export const REFUSAL_PHRASES: readonly string[] = [
   "не буду",
 ];
 
+// Clarification / "what should I say" phrases (child asks for instruction, not an answer)
+export const CLARIFICATION_PHRASES: readonly string[] = [
+  "what should i say",
+  "what do i say",
+  "what should i do",
+  "what do i do",
+  "what word",
+  "which word",
+  "say what",
+  "what to say",
+  "i don't know what to say",
+  "i dont know what to say",
+  "help me",
+  "tell me",
+  "what is it",
+];
+
+// Readiness phrases used when the child is already in an exercise
+// (hasStartedFirstExercise=true) but still expressing readiness/confusion.
+// Indicates child understood the instruction but needs it repeated.
+export const EXERCISE_READINESS_PHRASES: readonly string[] = [
+  "yes i'm ready",
+  "yes im ready",
+  "yes ready",
+  "yes okay",
+  "yes ok",
+  "i'm ready",
+  "im ready",
+  "okay ready",
+  "ok ready",
+];
+
 // Unsafe / sensitive keyword list (conservative — spec §6.1 §14.1)
 // [C] This list requires expansion before production deployment.
 export const UNSAFE_KEYWORDS: readonly string[] = [
