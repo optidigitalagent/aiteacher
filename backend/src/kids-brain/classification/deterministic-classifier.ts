@@ -215,7 +215,25 @@ export function runDeterministicClassifier(
     }
 
     // ── Rule 13: Exact target match → correct_confident / correct_hesitant ──
-    if (isExactMatch(transcript, targetWord)) {
+    const _exactMatch = isExactMatch(transcript, targetWord);
+    const _nearMatch  = isNearMatch(transcript, targetWord, NEAR_MATCH_EDIT_DISTANCE_MAX);
+    const _phonMatch  = isPhoneticMatch(transcript, targetWord);
+
+    // [kids-answer-diag] Log 4: matching result for target word comparison
+    console.log('[kids-answer-diag]', JSON.stringify({
+      event: 'match_result',
+      transcript,
+      targetWord,
+      exactMatch: _exactMatch,
+      fuzzyMatch: _nearMatch,
+      pronunciationMatch: _phonMatch,
+      accepted: _exactMatch || _nearMatch || _phonMatch,
+      rejectionReason: (!_exactMatch && !_nearMatch && !_phonMatch)
+        ? 'no_exact_near_or_phonetic_match'
+        : null,
+    }));
+
+    if (_exactMatch) {
       const label = resolveCorrectLabel(perception, activityContext, ageProfile);
       const reasons: string[] = ['exact_match'];
       if (label === ClassificationLabel.CORRECT_HESITANT) reasons.push('hesitant_or_low_confidence');
@@ -232,7 +250,7 @@ export function runDeterministicClassifier(
     }
 
     // ── Rule 14: Phonetic match → pronunciation_variant ──────────────────
-    if (isPhoneticMatch(transcript, targetWord) && !isExactMatch(transcript, targetWord)) {
+    if (_phonMatch) {
       return buildResult({
         label: ClassificationLabel.PRONUNCIATION_VARIANT,
         confidence: 0.72,
@@ -245,7 +263,7 @@ export function runDeterministicClassifier(
     }
 
     // ── Rule 15: Near match (edit distance ≤ 2) → near_correct ──────────
-    if (isNearMatch(transcript, targetWord, NEAR_MATCH_EDIT_DISTANCE_MAX)) {
+    if (_nearMatch) {
       return buildResult({
         label: ClassificationLabel.NEAR_CORRECT,
         confidence: 0.75,
