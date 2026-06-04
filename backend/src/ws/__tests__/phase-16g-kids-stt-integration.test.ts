@@ -292,7 +292,7 @@ describe('Phase 16G — STT initialization after Kids v1 session start', () => {
     sendFrame(ws, { type: 'audio_chunk', data: audioData })
     await new Promise(r => setTimeout(r, 30))
     sendFrame(ws, { type: 'mic_stop' })
-    await new Promise(r => setTimeout(r, 600)) // stabilization + processing
+    await new Promise(r => setTimeout(r, 1000)) // Kids 800ms stabilization + processing
 
     const errors = messages.filter(m => m['type'] === 'error' && m['code'] === 'INVALID_MESSAGE')
     expect(errors).toHaveLength(0)
@@ -373,8 +373,8 @@ describe('Phase 16G — mic_stop no-transcript fallback uses kidsTtsStream', () 
     await new Promise(r => setTimeout(r, 60))
     sendFrame(ws, { type: 'mic_stop' })
 
-    // Wait for 450ms stabilization + processing
-    await new Promise(r => setTimeout(r, 600))
+    // Wait for Kids 800ms stabilization + processing (Kids uses longer window than adults)
+    await new Promise(r => setTimeout(r, 1000))
 
     const calls = mocks.speakToClientMock.mock.calls as unknown[][]
 

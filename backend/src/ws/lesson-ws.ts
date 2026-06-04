@@ -502,6 +502,10 @@ interface ClientMeta {
   kidsBrainV1Active: boolean        // true when Kids Brain v1 is active (vs old prototype)
   // Phase 14B: guards against duplicate analytics writes (natural/safety/timeout close already persists)
   kidsAnalyticsFinalized: boolean
+  // Kids STT turn finalization state — tracks partials so short answers survive late is_final events
+  kidsPartialTranscript: string       // best partial seen this turn (from onInterim while micActive)
+  kidsPartialTurnId:     string | null // voiceTurnId when partial was saved (cross-turn guard)
+  kidsAudioChunkCount:   number        // audio chunks received this turn (diagnostics)
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -3536,6 +3540,12 @@ function createSTT(ws: WebSocket, meta: ClientMeta): DeepgramSTT {
       const fullInterim = meta.pendingTranscript
         ? meta.pendingTranscript + ' ' + interim
         : interim
+      // Kids fallback: save best partial so stabilization can recover if final arrives late.
+      // Turn ID guard prevents cross-turn contamination when next mic_start resets voiceTurnId.
+      if ((meta.kidsBrainV1Active || meta.isKidsMode) && fullInterim.trim()) {
+        meta.kidsPartialTranscript = fullInterim.trim()
+        meta.kidsPartialTurnId     = meta.voiceTurnId
+      }
       send(ws, { type: 'transcript', text: fullInterim })
     },
   )
@@ -3619,6 +3629,9 @@ export function attachLessonWS(server: Server): void {
         pendingMicStopTimeoutRef: null,
         micActive:                false,
         stabilizationRef:         null,
+        kidsPartialTranscript:    '',
+        kidsPartialTurnId:        null,
+        kidsAudioChunkCount:      0,
         lastSeen:                 Date.now(),
       }
     } else {
@@ -3658,6 +3671,9 @@ export function attachLessonWS(server: Server): void {
         kidsSessionId:          null,
         kidsBrainV1Active:      false,
         kidsAnalyticsFinalized: false,
+        kidsPartialTranscript:  '',
+        kidsPartialTurnId:      null,
+        kidsAudioChunkCount:    0,
       }
     }
 
@@ -3775,31 +3791,42 @@ export function attachLessonWS(server: Server): void {
             await processInput(ws, meta, msg.text)
             break
           case 'mic_start': {
-            // Duplicate mic_start while mic is already active — ignore to prevent
-            // stale pipeline from opening a second STT stream.
+            // If stabilization from a previous mic_stop is pending, cancel it.
+            // A new mic_start means the student is starting a fresh recording,
+            // so the previous turn's stabilization window is no longer relevant.
+            if (meta.stabilizationRef) {
+              clearTimeout(meta.stabilizationRef)
+              meta.stabilizationRef = null
+              meta.micActive = false  // stabilization was keeping this true; reset it
+              console.log(`[voice] mic_start_cancelled_stabilization turnId=${meta.voiceTurnId}`)
+            }
+            // True duplicate: mic is actively recording (no stabilization pending).
             if (meta.micActive) {
               console.log('[ws:audio] duplicate_mic_start_ignored')
               break
             }
             // New recording starting — hard-reset all STT state from previous recording.
-            // This prevents stale pendingMicStop, stale transcript, and Deepgram buffer
-            // from contaminating the new turn.
             if (meta.pendingMicStopTimeoutRef) {
               clearTimeout(meta.pendingMicStopTimeoutRef)
               meta.pendingMicStopTimeoutRef = null
             }
-            meta.pendingMicStop    = false
-            meta.pendingTranscript = ''
-            meta.micActive         = true  // open the gate — accept STT events
-            meta.voiceTurnId       = uuid()  // new turn ID — resets dedup window
+            meta.pendingMicStop         = false
+            meta.pendingTranscript      = ''
+            meta.micActive              = true  // open the gate — accept STT events
+            meta.voiceTurnId            = uuid()  // new turn ID — resets dedup window
+            // Reset Kids STT turn state on each new recording
+            meta.kidsPartialTranscript  = ''
+            meta.kidsPartialTurnId      = null
+            meta.kidsAudioChunkCount    = 0
             meta.stt?.clearBuffer()
             console.log(`[voice] mic_start turnId=${meta.voiceTurnId} micActive=true`)
             break
           }
           case 'mic_stop': {
-            // Stabilization window: keep micActive=true for 450ms after mic_stop so
+            // Stabilization window: keep micActive=true after mic_stop so
             // late Deepgram is_final and UtteranceEnd events are still accepted.
-            // This prevents "last words cut off" when audio is still in Deepgram pipeline.
+            // Kids get a wider window (800ms) because short single-word answers
+            // like "blue" can have Deepgram is_final latency of 400–700ms.
             if (meta.pendingMicStopTimeoutRef) {
               clearTimeout(meta.pendingMicStopTimeoutRef)
               meta.pendingMicStopTimeoutRef = null
@@ -3809,92 +3836,122 @@ export function attachLessonWS(server: Server): void {
             }
             meta.pendingMicStop = false  // onTranscript: accumulate path, not immediate-submit
 
-            const STABILIZATION_MS = 450
-            const captureTurnId = meta.voiceTurnId
-            console.log(`[voice:turn] mic_stop turnId=${captureTurnId} stabilizing=${STABILIZATION_MS}ms`)
+            const isKidsTurn = meta.kidsBrainV1Active || meta.isKidsMode
+            const STABILIZATION_MS = isKidsTurn ? 800 : 450
+            const captureTurnId    = meta.voiceTurnId
+            const captureChunks    = meta.kidsAudioChunkCount
+            console.log(`[voice:turn] mic_stop turnId=${captureTurnId} stabilizing=${STABILIZATION_MS}ms kids=${isKidsTurn}`)
 
             meta.stabilizationRef = setTimeout(() => {
               void (async () => {
-                meta.stabilizationRef = null
-                meta.micActive        = false  // turn finalized — discard any further events
+                try {
+                  meta.stabilizationRef = null
+                  meta.micActive        = false  // turn finalized — discard any further events
 
-                // Merge Deepgram buffer (is_final segments not yet in pendingTranscript)
-                const buffered = meta.stt?.flushBuffer() ?? ''
-                if (buffered) {
-                  meta.pendingTranscript = meta.pendingTranscript
-                    ? meta.pendingTranscript + ' ' + buffered
-                    : buffered
-                }
-                const raw = meta.pendingTranscript.trim()
-                meta.pendingTranscript = ''
-                meta.stt?.clearBuffer()
-
-                if (!raw || !shouldProcessTranscript(raw)) {
-                  console.log(`[voice:turn] no_transcript turnId=${captureTurnId}`)
-                  if (meta.sessionId && meta.lessonId) {
-                    const noTranscriptMsg = meta.kidsBrainV1Active
-                      ? "I didn't hear you. Try again!"
-                      : "I didn't catch that. Try once more."
-                    const speakNoTranscript = meta.kidsBrainV1Active ? kidsTtsStream : ttsStream
-                    speakNoTranscript(ws, meta, noTranscriptMsg).catch((err: unknown) =>
-                      console.error('[voice] no_transcript_tts error:', err))
+                  // Merge Deepgram buffer (is_final segments not yet in pendingTranscript)
+                  const buffered = meta.stt?.flushBuffer() ?? ''
+                  if (buffered) {
+                    meta.pendingTranscript = meta.pendingTranscript
+                      ? meta.pendingTranscript + ' ' + buffered
+                      : buffered
                   }
-                  return
-                }
+                  const rawFinal = meta.pendingTranscript.trim()
+                  meta.pendingTranscript = ''
+                  meta.stt?.clearBuffer()
 
-                // Exercise-aware quality classification
-                let exerciseType: string | undefined
-                if (meta.lessonId) {
-                  try {
-                    const cursor = await exerciseEngine.getCursor(meta.lessonId)
-                    exerciseType = cursor?.exerciseType
-                  } catch { /* non-fatal — classifier falls back to permissive mode */ }
-                }
+                  // Kids partial fallback: if no final transcript but we captured a partial
+                  // from an is_final/interim event during the recording, use it.
+                  // Turn ID guard ensures we don't use a partial from a previous turn.
+                  let raw = rawFinal
+                  let transcriptSource: 'final' | 'partial' | 'none' = rawFinal ? 'final' : 'none'
+                  if (!raw && isKidsTurn) {
+                    const partial = meta.kidsPartialTranscript
+                    if (partial && meta.kidsPartialTurnId === captureTurnId) {
+                      raw = partial
+                      transcriptSource = 'partial'
+                      console.log(`[voice:turn:kids] partial_fallback chars=${partial.length} turnId=${captureTurnId}`)
+                    }
+                  }
 
-                const classification = classifyVoiceTranscript(raw, exerciseType)
-                if (!classification.usable) {
+                  if (isKidsTurn) {
+                    console.log(
+                      `[voice:turn:kids] stabilization_done ` +
+                      `chunks=${captureChunks} source=${transcriptSource} ` +
+                      `chars=${raw.length} window=${STABILIZATION_MS}ms turnId=${captureTurnId}`,
+                    )
+                  }
+
+                  if (!raw || !shouldProcessTranscript(raw)) {
+                    const noReason = !raw ? 'empty' : 'filter'
+                    console.log(`[voice:turn] no_transcript reason=${noReason} turnId=${captureTurnId}`)
+                    if (meta.sessionId && meta.lessonId) {
+                      const noTranscriptMsg = meta.kidsBrainV1Active
+                        ? "I didn't hear you. Try again!"
+                        : "I didn't catch that. Try once more."
+                      const speakNoTranscript = meta.kidsBrainV1Active ? kidsTtsStream : ttsStream
+                      speakNoTranscript(ws, meta, noTranscriptMsg).catch((err: unknown) =>
+                        console.error('[voice] no_transcript_tts error:', err))
+                    }
+                    return
+                  }
+
+                  // Exercise-aware quality classification
+                  let exerciseType: string | undefined
+                  if (meta.lessonId) {
+                    try {
+                      const cursor = await exerciseEngine.getCursor(meta.lessonId)
+                      exerciseType = cursor?.exerciseType
+                    } catch { /* non-fatal — classifier falls back to permissive mode */ }
+                  }
+
+                  const classification = classifyVoiceTranscript(raw, exerciseType)
+                  if (!classification.usable) {
+                    console.log(
+                      `[voice:turn] rejected kind=${classification.kind} reason=${classification.reason} ` +
+                      `preview="${raw.slice(0, 40)}" turnId=${captureTurnId}`,
+                    )
+                    if (meta.sessionId && meta.lessonId) {
+                      const noiseMsg = meta.kidsBrainV1Active
+                        ? "I didn't hear you. Try again!"
+                        : "I didn't quite catch that. Could you say that again?"
+                      const speakNoise = meta.kidsBrainV1Active ? kidsTtsStream : ttsStream
+                      speakNoise(ws, meta, noiseMsg).catch((err: unknown) =>
+                        console.error('[voice] noise_reject_tts error:', err))
+                    }
+                    return
+                  }
+
+                  const finalText = classification.normalizedText
+                  if (classification.kind === 'repeat') {
+                    console.log(`[voice:turn] deduped preview="${finalText.slice(0, 40)}" turnId=${captureTurnId}`)
+                  }
+
+                  // Dedup: prevent same turn from submitting twice (e.g., UtteranceEnd race)
+                  const tid = meta.voiceTurnId
+                  if (tid && tid === meta.lastSubmittedVoiceTurnId) {
+                    console.log(`[voice:turn] duplicate_rejected turnId=${tid}`)
+                    return
+                  }
+                  meta.lastSubmittedVoiceTurnId = tid
+
                   console.log(
-                    `[voice:turn] rejected kind=${classification.kind} reason=${classification.reason} ` +
-                    `preview="${raw.slice(0, 40)}" turnId=${captureTurnId}`,
+                    `[voice:turn] submitted chars=${finalText.length} ` +
+                    `kind=${classification.kind} exerciseType=${exerciseType ?? 'unknown'} turnId=${tid}`,
                   )
-                  if (meta.sessionId && meta.lessonId) {
-                    const noiseMsg = meta.kidsBrainV1Active
-                      ? "I didn't hear you. Try again!"
-                      : "I didn't quite catch that. Could you say that again?"
-                    const speakNoise = meta.kidsBrainV1Active ? kidsTtsStream : ttsStream
-                    speakNoise(ws, meta, noiseMsg).catch((err: unknown) =>
-                      console.error('[voice] noise_reject_tts error:', err))
+                  send(ws, { type: 'student_message', text: finalText })
+                  if (meta.lessonId && meta.userId) {
+                    recordStudentMessage({
+                      lessonId: meta.lessonId, sessionId: meta.sessionId,
+                      userId: meta.userId, studentId: meta.studentId,
+                      text: finalText, source: 'stt',
+                    })
                   }
-                  return
+                  processInput(ws, meta, finalText).catch((err: unknown) =>
+                    console.error('[paid-lesson] processInput error (stabilized-mic-stop):', err))
+                } catch (err: unknown) {
+                  console.error('[voice:turn] stabilization_error turnId=%s:', captureTurnId,
+                    err instanceof Error ? err.message : err)
                 }
-
-                const finalText = classification.normalizedText
-                if (classification.kind === 'repeat') {
-                  console.log(`[voice:turn] deduped preview="${finalText.slice(0, 40)}" turnId=${captureTurnId}`)
-                }
-
-                // Dedup: prevent same turn from submitting twice (e.g., UtteranceEnd race)
-                const tid = meta.voiceTurnId
-                if (tid && tid === meta.lastSubmittedVoiceTurnId) {
-                  console.log(`[voice:turn] duplicate_rejected turnId=${tid}`)
-                  return
-                }
-                meta.lastSubmittedVoiceTurnId = tid
-
-                console.log(
-                  `[voice:turn] submitted chars=${finalText.length} ` +
-                  `kind=${classification.kind} exerciseType=${exerciseType ?? 'unknown'} turnId=${tid}`,
-                )
-                send(ws, { type: 'student_message', text: finalText })
-                if (meta.lessonId && meta.userId) {
-                  recordStudentMessage({
-                    lessonId: meta.lessonId, sessionId: meta.sessionId,
-                    userId: meta.userId, studentId: meta.studentId,
-                    text: finalText, source: 'stt',
-                  })
-                }
-                processInput(ws, meta, finalText).catch((err: unknown) =>
-                  console.error('[paid-lesson] processInput error (stabilized-mic-stop):', err))
               })()
             }, STABILIZATION_MS)
             break
@@ -3912,6 +3969,7 @@ export function attachLessonWS(server: Server): void {
               console.log(`[paid-lesson] ignored_audio_chunk reason=ws_not_open ws_state=${ws.readyState}`)
               return
             }
+            if (meta.kidsBrainV1Active || meta.isKidsMode) meta.kidsAudioChunkCount++
             meta.stt.send(msg.data)
             break
           case 'interrupt':
