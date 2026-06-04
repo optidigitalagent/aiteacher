@@ -28,22 +28,6 @@ export function computeTimeoutFallback(
   targetItemId: string | null,
   recentFailureCount: number,
 ): ResponseClassificationResult {
-  // [kids-answer-diag] Log 6: timeout_fallback entered — deterministic classifier returned null
-  console.log('[kids-answer-diag]', JSON.stringify({
-    event: 'timeout_fallback_entered',
-    fallbackTriggered: true,
-    reason: 'deterministic_classifier_returned_null',
-    transcriptPresent: perception.normalizedTranscript !== null,
-    transcriptLength: (perception.normalizedTranscript ?? '').length,
-    normalizedTranscript: perception.normalizedTranscript,
-    targetItemId,
-    perceptionConfidence: perception.perceptionConfidence,
-    adjustedSttConfidence: perception.adjustedSttConfidence,
-    isSilence: perception.isSilence,
-    l1Detected: perception.l1Detected,
-    inputQuality: perception.inputQuality,
-  }));
-
   const transcript = (perception.normalizedTranscript ?? '').toLowerCase();
   const hasUnsafe = UNSAFE_KEYWORDS.some(kw => transcript.includes(kw));
 

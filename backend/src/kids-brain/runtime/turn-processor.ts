@@ -353,26 +353,6 @@ export async function processKidsBrainTurn(
 
   const perceptionBundle = buildPerceptionBundle(perceptionInput);
 
-  // [kids-answer-diag] Log 1: raw transcript from STT
-  console.log('[kids-answer-diag]', JSON.stringify({
-    event: 'raw_transcript',
-    sessionId,
-    turnNumber: inputTurnNumber,
-    rawTranscript: perceptionBundle.rawTranscript,
-  }));
-
-  // [kids-answer-diag] Log 2: normalized transcript
-  console.log('[kids-answer-diag]', JSON.stringify({
-    event: 'normalized_transcript',
-    sessionId,
-    turnNumber: inputTurnNumber,
-    normalizedTranscript: perceptionBundle.normalizedTranscript,
-    wordCount: perceptionBundle.wordCount,
-    transcriptAvailable: perceptionBundle.transcriptAvailable,
-    adjustedSttConfidence: perceptionBundle.adjustedSttConfidence,
-    perceptionConfidence: perceptionBundle.perceptionConfidence,
-  }));
-
   logs.push(makeLog(
     LOG_EVENTS.PERCEPTION_COMPLETED,
     sessionId,
@@ -383,6 +363,11 @@ export async function processKidsBrainTurn(
       l1Detected: perceptionBundle.l1Detected,
       isSilence: perceptionBundle.isSilence,
       inputQuality: perceptionBundle.inputQuality,
+      rawTranscript: perceptionBundle.rawTranscript,
+      normalizedTranscript: perceptionBundle.normalizedTranscript,
+      wordCount: perceptionBundle.wordCount,
+      adjustedSttConfidence: perceptionBundle.adjustedSttConfidence,
+      perceptionConfidence: perceptionBundle.perceptionConfidence,
     },
   ));
 
@@ -417,35 +402,7 @@ export async function processKidsBrainTurn(
       : undefined,
   };
 
-  // [kids-answer-diag] Log 3: evaluation inputs entering classifier
-  console.log('[kids-answer-diag]', JSON.stringify({
-    event: 'evaluation_inputs',
-    sessionId,
-    turnNumber: inputTurnNumber,
-    targetWord: input.targetWord,
-    vocabContextTargetWord: classificationInput.vocabularyContext?.targetWord ?? null,
-    activityContextTargetItemId: activityContext.currentTargetItemId,
-    transcript: perceptionBundle.normalizedTranscript,
-    confidence: perceptionBundle.adjustedSttConfidence,
-    perceptionConfidence: perceptionBundle.perceptionConfidence,
-    inputQuality: perceptionBundle.inputQuality,
-    safeForDeterministic: perceptionBundle.safeForDeterministicClassification,
-  }));
-
   const classificationResult = await classifyResponse(classificationInput);
-
-  // [kids-answer-diag] Log 5: classification decision
-  console.log('[kids-answer-diag]', JSON.stringify({
-    event: 'classification_decision',
-    sessionId,
-    turnNumber: inputTurnNumber,
-    classifierLabel: classificationResult.label,
-    classifierSource: classificationResult.source,
-    classifierConfidence: classificationResult.confidence,
-    requiresRecovery: classificationResult.requiresRecovery,
-    eligibleForMasteryUpdate: classificationResult.eligibleForMasteryUpdate,
-    eligibleForProgression: classificationResult.eligibleForProgression,
-  }));
 
   logs.push(makeLog(
     LOG_EVENTS.CLASSIFICATION_COMPLETED,
@@ -457,6 +414,13 @@ export async function processKidsBrainTurn(
       confidence: classificationResult.confidence,
       source: classificationResult.source,
       requiresRecovery: classificationResult.requiresRecovery,
+      eligibleForMasteryUpdate: classificationResult.eligibleForMasteryUpdate,
+      eligibleForProgression: classificationResult.eligibleForProgression,
+      targetWord: input.targetWord,
+      vocabContextTargetWord: classificationInput.vocabularyContext?.targetWord ?? null,
+      activityContextTargetItemId: activityContext.currentTargetItemId,
+      transcript: perceptionBundle.normalizedTranscript,
+      safeForDeterministic: perceptionBundle.safeForDeterministicClassification,
     },
   ));
 

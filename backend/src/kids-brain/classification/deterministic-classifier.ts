@@ -219,20 +219,6 @@ export function runDeterministicClassifier(
     const _nearMatch  = isNearMatch(transcript, targetWord, NEAR_MATCH_EDIT_DISTANCE_MAX);
     const _phonMatch  = isPhoneticMatch(transcript, targetWord);
 
-    // [kids-answer-diag] Log 4: matching result for target word comparison
-    console.log('[kids-answer-diag]', JSON.stringify({
-      event: 'match_result',
-      transcript,
-      targetWord,
-      exactMatch: _exactMatch,
-      fuzzyMatch: _nearMatch,
-      pronunciationMatch: _phonMatch,
-      accepted: _exactMatch || _nearMatch || _phonMatch,
-      rejectionReason: (!_exactMatch && !_nearMatch && !_phonMatch)
-        ? 'no_exact_near_or_phonetic_match'
-        : null,
-    }));
-
     if (_exactMatch) {
       const label = resolveCorrectLabel(perception, activityContext, ageProfile);
       const reasons: string[] = ['exact_match'];
