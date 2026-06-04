@@ -506,6 +506,10 @@ interface ClientMeta {
   kidsPartialTranscript: string       // best partial seen this turn (from onInterim while micActive)
   kidsPartialTurnId:     string | null // voiceTurnId when partial was saved (cross-turn guard)
   kidsAudioChunkCount:   number        // audio chunks received this turn (diagnostics)
+  // Late transcript collection: after stabilization fires empty for Kids with audio, wait up to
+  // 700ms more for late is_final/UtteranceEnd events before emitting no_transcript.
+  kidsAwaitingLateTranscript: boolean
+  kidsLateFinalizeRef:        ReturnType<typeof setTimeout> | null
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -735,6 +739,8 @@ async function tryLateRecover(
   startTimerBroadcast(ws, meta)
 
   // Create fresh STT for this connection
+  if (meta.kidsLateFinalizeRef) { clearTimeout(meta.kidsLateFinalizeRef); meta.kidsLateFinalizeRef = null }
+  meta.kidsAwaitingLateTranscript = false
   meta.stt?.close()
   meta.stt               = null
   meta.pendingTranscript = ''
@@ -927,6 +933,8 @@ async function resumeLesson(
   // Restart STT for new connection (click-to-send mode).
   // Always close the previous STT first to avoid duplicate Deepgram connections
   // and queue-flush errors if the old instance is still in CONNECTING state.
+  if (meta.kidsLateFinalizeRef) { clearTimeout(meta.kidsLateFinalizeRef); meta.kidsLateFinalizeRef = null }
+  meta.kidsAwaitingLateTranscript = false
   meta.stt?.close()
   meta.stt               = null
   meta.pendingTranscript = ''
@@ -1206,6 +1214,8 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
   meta.lessonStartedAt   = Date.now()
   meta.billingStartedAt  = Date.now()
 
+  if (meta.kidsLateFinalizeRef) { clearTimeout(meta.kidsLateFinalizeRef); meta.kidsLateFinalizeRef = null }
+  meta.kidsAwaitingLateTranscript = false
   meta.stt?.close()
   meta.stt               = null
   meta.pendingTranscript = ''
@@ -3522,6 +3532,35 @@ function createSTT(ws: WebSocket, meta: ClientMeta): DeepgramSTT {
         }
         return
       }
+      // Late transcript: Kids stabilization fired empty, catching late UtteranceEnd.
+      // This is the primary fix for transcript loss when Deepgram is slow (>800ms).
+      if (!meta.micActive && meta.kidsAwaitingLateTranscript) {
+        if (meta.kidsLateFinalizeRef) {
+          clearTimeout(meta.kidsLateFinalizeRef)
+          meta.kidsLateFinalizeRef = null
+        }
+        meta.kidsAwaitingLateTranscript = false
+        const fullText = (meta.pendingTranscript
+          ? meta.pendingTranscript + ' ' + transcript
+          : transcript
+        ).trim()
+        meta.pendingTranscript = ''
+        meta.stt?.clearBuffer()
+        if (fullText && shouldProcessTranscript(fullText)) {
+          const tid = meta.voiceTurnId
+          if (!tid || tid !== meta.lastSubmittedVoiceTurnId) {
+            meta.lastSubmittedVoiceTurnId = tid
+            console.log(`[voice:turn:kids] late_utteranceend chars=${fullText.length} turnId=${tid}`)
+            send(ws, { type: 'student_message', text: fullText })
+            if (meta.lessonId && meta.userId) {
+              recordStudentMessage({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, text: fullText, source: 'stt' })
+            }
+            processInput(ws, meta, fullText).catch((err: unknown) =>
+              console.error('[paid-lesson] processInput error (late-utteranceend-kids):', err))
+          }
+        }
+        return
+      }
       // Discard late Deepgram events that arrive between turns
       if (!meta.micActive) return
       if (!shouldProcessTranscript(transcript)) {
@@ -3536,17 +3575,21 @@ function createSTT(ws: WebSocket, meta: ClientMeta): DeepgramSTT {
     },
     // ── onInterim: fires on is_final and interim Deepgram events ─────────────
     (interim) => {
-      if (!meta.micActive || meta.ttsActive) return
+      // Allow during late collection so is_final arriving after stabilization is not lost.
+      if (!meta.micActive && !meta.kidsAwaitingLateTranscript) return
+      if (meta.ttsActive) return
       const fullInterim = meta.pendingTranscript
         ? meta.pendingTranscript + ' ' + interim
         : interim
-      // Kids fallback: save best partial so stabilization can recover if final arrives late.
+      // Kids fallback: save best partial so stabilization or late-finalize can recover it.
       // Turn ID guard prevents cross-turn contamination when next mic_start resets voiceTurnId.
       if ((meta.kidsBrainV1Active || meta.isKidsMode) && fullInterim.trim()) {
         meta.kidsPartialTranscript = fullInterim.trim()
         meta.kidsPartialTurnId     = meta.voiceTurnId
       }
-      send(ws, { type: 'transcript', text: fullInterim })
+      if (meta.micActive) {
+        send(ws, { type: 'transcript', text: fullInterim })
+      }
     },
   )
 }
@@ -3629,10 +3672,12 @@ export function attachLessonWS(server: Server): void {
         pendingMicStopTimeoutRef: null,
         micActive:                false,
         stabilizationRef:         null,
-        kidsPartialTranscript:    '',
-        kidsPartialTurnId:        null,
-        kidsAudioChunkCount:      0,
-        lastSeen:                 Date.now(),
+        kidsPartialTranscript:      '',
+        kidsPartialTurnId:          null,
+        kidsAudioChunkCount:        0,
+        kidsAwaitingLateTranscript: false,
+        kidsLateFinalizeRef:        null,
+        lastSeen:                   Date.now(),
       }
     } else {
       meta = {
@@ -3671,9 +3716,11 @@ export function attachLessonWS(server: Server): void {
         kidsSessionId:          null,
         kidsBrainV1Active:      false,
         kidsAnalyticsFinalized: false,
-        kidsPartialTranscript:  '',
-        kidsPartialTurnId:      null,
-        kidsAudioChunkCount:    0,
+        kidsPartialTranscript:      '',
+        kidsPartialTurnId:          null,
+        kidsAudioChunkCount:        0,
+        kidsAwaitingLateTranscript: false,
+        kidsLateFinalizeRef:        null,
       }
     }
 
@@ -3810,10 +3857,16 @@ export function attachLessonWS(server: Server): void {
               clearTimeout(meta.pendingMicStopTimeoutRef)
               meta.pendingMicStopTimeoutRef = null
             }
-            meta.pendingMicStop         = false
-            meta.pendingTranscript      = ''
-            meta.micActive              = true  // open the gate — accept STT events
-            meta.voiceTurnId            = uuid()  // new turn ID — resets dedup window
+            // Cancel any pending late-transcript collection from previous turn.
+            if (meta.kidsLateFinalizeRef) {
+              clearTimeout(meta.kidsLateFinalizeRef)
+              meta.kidsLateFinalizeRef = null
+            }
+            meta.kidsAwaitingLateTranscript = false
+            meta.pendingMicStop             = false
+            meta.pendingTranscript          = ''
+            meta.micActive                  = true  // open the gate — accept STT events
+            meta.voiceTurnId                = uuid()  // new turn ID — resets dedup window
             // Reset Kids STT turn state on each new recording
             meta.kidsPartialTranscript  = ''
             meta.kidsPartialTurnId      = null
@@ -3873,16 +3926,53 @@ export function attachLessonWS(server: Server): void {
                     }
                   }
 
-                  if (isKidsTurn) {
-                    console.log(
-                      `[voice:turn:kids] stabilization_done ` +
-                      `chunks=${captureChunks} source=${transcriptSource} ` +
-                      `chars=${raw.length} window=${STABILIZATION_MS}ms turnId=${captureTurnId}`,
-                    )
-                  }
+                  // Diagnostic log — visible in Railway for every turn finalization
+                  console.log(
+                    `[voice:turn:finalize] turnId=${captureTurnId} isKids=${isKidsTurn} ` +
+                    `pendingCharsBefore=${rawFinal.length} flushChars=${buffered.length} ` +
+                    `partialChars=${meta.kidsPartialTranscript.length} finalChars=${raw.length} ` +
+                    `source=${transcriptSource} chunks=${captureChunks} stabilizationMs=${STABILIZATION_MS}`,
+                  )
 
                   if (!raw || !shouldProcessTranscript(raw)) {
                     const noReason = !raw ? 'empty' : 'filter'
+
+                    // Kids turns with audio: start late collection instead of immediate no_transcript.
+                    // Deepgram is_final and UtteranceEnd can arrive after the 800ms window on slow
+                    // networks. During the late window, onInterim and onTranscript remain active.
+                    if (!raw && isKidsTurn && captureChunks > 0) {
+                      const LATE_MS = 700
+                      console.log(`[voice:turn:kids] late_collection_start window=${LATE_MS}ms turnId=${captureTurnId}`)
+                      meta.kidsAwaitingLateTranscript = true
+                      meta.kidsLateFinalizeRef = setTimeout(() => {
+                        meta.kidsAwaitingLateTranscript = false
+                        meta.kidsLateFinalizeRef = null
+                        const lateText = meta.kidsPartialTranscript.trim()
+                        const matchesTurn = meta.kidsPartialTurnId === captureTurnId
+                        if (lateText && matchesTurn && shouldProcessTranscript(lateText)) {
+                          meta.kidsPartialTranscript = ''
+                          const tid = captureTurnId
+                          if (tid && tid !== meta.lastSubmittedVoiceTurnId) {
+                            meta.lastSubmittedVoiceTurnId = tid
+                            console.log(`[voice:turn:kids] late_partial_submit chars=${lateText.length} turnId=${tid}`)
+                            send(ws, { type: 'student_message', text: lateText })
+                            if (meta.lessonId && meta.userId) {
+                              recordStudentMessage({ lessonId: meta.lessonId, sessionId: meta.sessionId, userId: meta.userId, studentId: meta.studentId, text: lateText, source: 'stt' })
+                            }
+                            processInput(ws, meta, lateText).catch((err: unknown) =>
+                              console.error('[paid-lesson] processInput error (late-kids-partial):', err))
+                          }
+                          return
+                        }
+                        console.log(`[voice:turn] no_transcript reason=late_empty turnId=${captureTurnId}`)
+                        if (meta.sessionId && meta.lessonId) {
+                          kidsTtsStream(ws, meta, "I didn't hear you. Try again!").catch((err: unknown) =>
+                            console.error('[voice] no_transcript_tts error:', err))
+                        }
+                      }, LATE_MS)
+                      return
+                    }
+
                     console.log(`[voice:turn] no_transcript reason=${noReason} turnId=${captureTurnId}`)
                     if (meta.sessionId && meta.lessonId) {
                       const noTranscriptMsg = meta.kidsBrainV1Active
@@ -4012,6 +4102,7 @@ export function attachLessonWS(server: Server): void {
       if (meta.timerUpdateRef)           clearInterval(meta.timerUpdateRef)
       if (meta.pendingMicStopTimeoutRef) clearTimeout(meta.pendingMicStopTimeoutRef)
       if (meta.stabilizationRef)        clearTimeout(meta.stabilizationRef)
+      if (meta.kidsLateFinalizeRef)     clearTimeout(meta.kidsLateFinalizeRef)
       meta.ttsController?.abort()
       meta.stt?.close()
       meta.stt = null
