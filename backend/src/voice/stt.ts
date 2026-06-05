@@ -29,11 +29,11 @@ export const DEEPGRAM_LIVE_OPTIONS: LiveSchema = {
 
 // Kids-specific Deepgram options — identical audio format, tighter silence window.
 // Short single-word answers (blue, green, cat) do not need 1.5s of trailing silence.
-// Reducing utterance_end_ms to 700ms makes UtteranceEnd fire faster after the child
-// finishes speaking, reducing the time the connection stays open to pick up echo noise.
+// vad_events: true is required for UtteranceEnd events to fire (Deepgram API requirement).
 export const DEEPGRAM_KIDS_LIVE_OPTIONS: LiveSchema = {
   ...DEEPGRAM_LIVE_OPTIONS,
   utterance_end_ms: UTTERANCE_END_MS_KIDS,
+  vad_events:       true,
 }
 
 type DgLive = ReturnType<ReturnType<typeof createClient>['listen']['live']>
@@ -46,24 +46,63 @@ export class DeepgramSTT {
   private conn: DgLive | null = null
   private ready = false
   private queue: Buffer[] = []
-  private keepAliveRef: ReturnType<typeof setInterval> | null = null
+  private keepAliveRef:   ReturnType<typeof setInterval> | null = null
+  private openTimeoutRef: ReturnType<typeof setTimeout>  | null = null
+  // true during intentional close() call — suppresses onConnectionDied callback
+  private closing = false
 
   // Accumulate final transcript segments until utterance truly ends
   private transcriptBuffer = ''
   // Tracks the last appended is_final segment (normalized) to skip Deepgram duplicates.
   private lastFinalSegmentNorm = ''
+  // Resets on clearBuffer() — prevents redundant [stt:audio] first-chunk logs.
+  private sentFirst = false
 
   constructor(
     private onTranscript: (text: string) => void,
     private onInterim?: (text: string) => void,
     options: LiveSchema = DEEPGRAM_LIVE_OPTIONS,
+    // Called when connection closes unexpectedly (not via close()). Use for pre-warming.
+    private onConnectionDied?: () => void,
   ) {
     if (!API_KEY) {
       console.warn('[stt] DEEPGRAM_API_KEY not set — voice input disabled')
       return
     }
 
+    // [stt:config] — log resolved config (no secrets)
+    console.log(JSON.stringify({
+      event:            '[stt:config]',
+      provider:         'deepgram',
+      model:            options.model,
+      language:         options.language,
+      encoding:         options.encoding,
+      sample_rate:      options.sample_rate,
+      channels:         options.channels,
+      interim_results:  options.interim_results,
+      endpointing:      options.endpointing,
+      utterance_end_ms: options.utterance_end_ms,
+      vad_events:       (options as Record<string, unknown>)['vad_events'] ?? false,
+      smart_format:     options.smart_format,
+      keyPresent:       true,
+    }))
+
     const conn = createClient(API_KEY).listen.live(options)
+    console.log(JSON.stringify({ event: '[stt:lifecycle]', status: 'create' }))
+
+    // If Open doesn't fire within 5s, discard queued audio — prevents infinite queue growth.
+    this.openTimeoutRef = setTimeout(() => {
+      this.openTimeoutRef = null
+      if (!this.ready) {
+        const discarded = this.queue.length
+        this.queue = []
+        console.error(JSON.stringify({
+          event: '[stt:lifecycle]', status: 'open_timeout',
+          discardedChunks: discarded,
+          message: 'Deepgram Open never fired in 5000ms — queue discarded',
+        }))
+      }
+    }, 5000)
 
     // ── Phase 16G.3 diagnostic: expose Deepgram WebSocket handshake failure ──
     // ws emits 'unexpected-response' for HTTP 401/402/403 upgrade rejections
@@ -114,13 +153,25 @@ export class DeepgramSTT {
     // ── End Phase 16G.3 diagnostic ──
 
     conn.on(LiveTranscriptionEvents.Open, () => {
+      if (this.openTimeoutRef) { clearTimeout(this.openTimeoutRef); this.openTimeoutRef = null }
+      const queuedChunks = this.queue.length
+      const queuedBytes  = this.queue.reduce((sum, b) => sum + b.byteLength, 0)
+      console.log(JSON.stringify({
+        event: '[stt:lifecycle]', status: 'open', queuedChunks, queuedBytes,
+      }))
       this.ready = true
       const pending = this.queue.splice(0)
-      for (const buf of pending) {
-        try {
-          conn.send(toArrayBuffer(buf))
-        } catch (err) {
-          console.error('[stt] queue flush send error:', err)
+      if (pending.length > 0) {
+        const flushedBytes = pending.reduce((sum, b) => sum + b.byteLength, 0)
+        console.log(JSON.stringify({
+          event: '[stt:queue]', status: 'flushed', flushedChunks: pending.length, flushedBytes,
+        }))
+        for (const buf of pending) {
+          try {
+            conn.send(toArrayBuffer(buf))
+          } catch (err) {
+            console.error('[stt] queue flush send error:', err)
+          }
         }
       }
       this.keepAliveRef = setInterval(() => {
@@ -173,23 +224,55 @@ export class DeepgramSTT {
     })
 
     conn.on(LiveTranscriptionEvents.Error, (err: unknown) => {
-      console.error('[stt:diag] LiveTranscriptionEvents.Error raw: %j', err)
       const isErr = err instanceof Error
       const detail = isErr
         ? `${err.name}: ${err.message}`
         : (typeof err === 'object' && err !== null ? JSON.stringify(err) : String(err))
+      console.error(JSON.stringify({
+        event:        '[stt:lifecycle]',
+        status:       'error',
+        detail,
+        wasReady:     this.ready,
+        queuedChunks: this.queue.length,
+      }))
       if (isErr && err.stack) console.error('[stt:diag] error stack: %s', err.stack)
-      console.error('[stt] deepgram error:', detail)
+      // FIX: null conn on error so send() returns fast and future isAlive() is accurate.
+      // Close event will follow and also null conn, but doing it here prevents any
+      // send() calls between Error and Close from queueing on a dead socket.
+      this.ready = false
+      if (this.keepAliveRef) { clearInterval(this.keepAliveRef); this.keepAliveRef = null }
+      this.conn  = null
+      this.queue = []   // discard stale queued audio — this conn is dead
     })
 
     conn.on(LiveTranscriptionEvents.Close, (code: unknown, reason: unknown) => {
-      const reasonStr = reason instanceof Buffer
+      const codeStr   = String(code ?? '(none)')
+      const reasonRaw = reason instanceof Buffer
         ? reason.toString('utf8')
         : (typeof reason === 'string' ? reason : JSON.stringify(reason))
-      console.error('[stt:diag] LiveTranscriptionEvents.Close — code=%s reason=%s',
-        String(code), reasonStr || '(none)')
-      if (this.keepAliveRef) clearInterval(this.keepAliveRef)
+      const safeReason = (reasonRaw || '(none)').slice(0, 200)
+      console.error(JSON.stringify({
+        event:          '[stt:lifecycle]',
+        status:         'close',
+        code:           codeStr,
+        reason:         safeReason,
+        wasReady:       this.ready,
+        wasIntentional: this.closing,
+      }))
+      const wasIntentional = this.closing
+      this.closing = false
+      if (this.keepAliveRef)   { clearInterval(this.keepAliveRef);   this.keepAliveRef   = null }
+      if (this.openTimeoutRef) { clearTimeout(this.openTimeoutRef);   this.openTimeoutRef = null }
+      // FIX: null conn on close so send() returns immediately instead of queueing forever.
+      // This ensures isAlive() correctly returns false: conn===null → false.
       this.ready = false
+      this.conn  = null
+      this.queue = []   // discard stale queued audio — this conn is dead
+      // Notify parent of unexpected close so it can pre-warm the next connection
+      // while TTS is playing (before the next mic_start).
+      if (!wasIntentional) {
+        this.onConnectionDied?.()
+      }
     })
 
     this.conn = conn
@@ -200,9 +283,13 @@ export class DeepgramSTT {
   private static readonly MAX_QUEUE = 120
 
   send(base64: string): void {
-    if (!this.conn) return
+    if (!this.conn) return   // conn is null (died) — discard silently
     const buf = Buffer.from(base64, 'base64')
     if (this.ready) {
+      if (!this.sentFirst) {
+        this.sentFirst = true
+        console.log(JSON.stringify({ event: '[stt:audio]', status: 'first_chunk_after_open', bytes: buf.byteLength }))
+      }
       try {
         this.conn.send(toArrayBuffer(buf))
       } catch (err) {
@@ -213,6 +300,15 @@ export class DeepgramSTT {
         this.queue.shift()  // drop oldest to prevent memory growth
       }
       this.queue.push(buf)
+      // Log queue state at start and at every 10-chunk milestone (bounded)
+      if (this.queue.length === 1 || this.queue.length % 10 === 0) {
+        console.log(JSON.stringify({
+          event:        '[stt:queue]',
+          status:       'buffering',
+          queuedChunks: this.queue.length,
+          bytes:        buf.byteLength,
+        }))
+      }
     }
   }
 
@@ -223,27 +319,29 @@ export class DeepgramSTT {
   }
 
   clearBuffer(): void {
-    this.transcriptBuffer        = ''
-    this.lastFinalSegmentNorm    = ''
+    this.transcriptBuffer     = ''
+    this.lastFinalSegmentNorm = ''
+    this.sentFirst            = false   // reset so next turn logs first-chunk again
   }
 
   // Returns and clears the accumulated is_final buffer so mic_stop can submit
   // immediately without waiting for UtteranceEnd.
   flushBuffer(): string {
-    const text                   = this.transcriptBuffer.trim()
-    this.transcriptBuffer        = ''
-    this.lastFinalSegmentNorm    = ''
+    const text                = this.transcriptBuffer.trim()
+    this.transcriptBuffer     = ''
+    this.lastFinalSegmentNorm = ''
     return text
   }
 
   close(): void {
     if (!this.conn) return
+    this.closing = true   // suppress onConnectionDied — this is an intentional close
     const c = this.conn
-    this.conn = null  // prevent double-close race
-    if (this.keepAliveRef) {
-      clearInterval(this.keepAliveRef)
-      this.keepAliveRef = null
-    }
+    this.conn  = null     // prevent double-close race
+    this.ready = false
+    this.queue = []       // discard any queued audio — session is ending
+    if (this.openTimeoutRef) { clearTimeout(this.openTimeoutRef);  this.openTimeoutRef = null }
+    if (this.keepAliveRef)   { clearInterval(this.keepAliveRef);   this.keepAliveRef   = null }
     this.transcriptBuffer     = ''
     this.lastFinalSegmentNorm = ''
     try { c.finish() } catch (err) {

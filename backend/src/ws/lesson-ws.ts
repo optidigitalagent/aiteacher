@@ -518,6 +518,9 @@ interface ClientMeta {
   // In-memory fallback for Redis failures — holds last known session memory so
   // exerciseCorrectCount never resets mid-session when Redis is unavailable.
   kidsMemoryCache: KidsBrainSessionMemory | null
+  // Timestamp of last proactive STT pre-warm (epoch ms). Guards against rapid-reconnect
+  // loops if Deepgram rejects connections repeatedly. Max one pre-warm per 5 seconds.
+  kidsPrewarmCooldown: number
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -3594,6 +3597,35 @@ function getPhasesUpTo(phase: LessonPhase): LessonPhase[] {
 
 function createSTT(ws: WebSocket, meta: ClientMeta, isKids = false): DeepgramSTT {
   const sttOptions = isKids ? DEEPGRAM_KIDS_LIVE_OPTIONS : undefined
+
+  // Kids only: pre-warm next connection when current one dies unexpectedly.
+  // Deepgram often closes the idle connection between turns (during TTS playback).
+  // Creating a fresh connection immediately after death ensures it is Open and ready
+  // well before the next mic_start — eliminating the cold-start queue-flush delay.
+  // Guards: not during active recording; not if WS is closing; max one pre-warm per 5s.
+  const connCreatedAt = Date.now()
+  const onConnectionDied: (() => void) | undefined = isKids
+    ? () => {
+        if (meta.micActive) return                           // don't interrupt active recording
+        if (ws.readyState !== WebSocket.OPEN) return         // session is closing — skip
+        const age = Date.now() - connCreatedAt
+        if (age < 1000) {
+          // Died within 1s of creation — likely persistent Deepgram issue; avoid reconnect loop
+          console.warn(`[voice:kids] stt_prewarm_skipped reason=too_fast age=${age}ms`)
+          return
+        }
+        const now = Date.now()
+        if (now - meta.kidsPrewarmCooldown < 5000) {
+          console.warn('[voice:kids] stt_prewarm_skipped reason=cooldown')
+          return
+        }
+        meta.kidsPrewarmCooldown = now
+        console.log(`[voice:kids] stt_prewarm reason=connection_died age=${age}ms`)
+        meta.stt?.close()
+        meta.stt = createSTT(ws, meta, true)
+      }
+    : undefined
+
   return new DeepgramSTT(
     // ── onTranscript: fires on UtteranceEnd (silence ≥ UTTERANCE_END_MS) ────
     (transcript) => {
@@ -3693,6 +3725,7 @@ function createSTT(ws: WebSocket, meta: ClientMeta, isKids = false): DeepgramSTT
       }
     },
     sttOptions,
+    onConnectionDied,
   )
 }
 
@@ -3781,6 +3814,7 @@ export function attachLessonWS(server: Server): void {
         kidsLateFinalizeRef:        null,
         kidsCurrentTargetWord:      null,
         kidsMemoryCache:            old.kidsMemoryCache ?? null,
+        kidsPrewarmCooldown:        0,
         lastSeen:                   Date.now(),
       }
     } else {
@@ -3827,6 +3861,7 @@ export function attachLessonWS(server: Server): void {
         kidsLateFinalizeRef:        null,
         kidsCurrentTargetWord:      null,
         kidsMemoryCache:            null,
+        kidsPrewarmCooldown:        0,
       }
     }
 

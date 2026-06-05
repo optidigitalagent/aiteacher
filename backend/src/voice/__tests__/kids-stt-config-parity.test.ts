@@ -50,4 +50,12 @@ describe('Kids vs Adult STT config parity', () => {
     expect(Object.prototype.hasOwnProperty.call(DEEPGRAM_KIDS_LIVE_OPTIONS, 'detect_language')).toBe(false)
     expect(Object.prototype.hasOwnProperty.call(DEEPGRAM_LIVE_OPTIONS, 'detect_language')).toBe(false)
   })
+
+  it('Kids config has vad_events: true (required by Deepgram for UtteranceEnd)', () => {
+    expect((DEEPGRAM_KIDS_LIVE_OPTIONS as Record<string, unknown>)['vad_events']).toBe(true)
+  })
+
+  it('Adult config does NOT have vad_events (Kids-specific requirement)', () => {
+    expect(Object.prototype.hasOwnProperty.call(DEEPGRAM_LIVE_OPTIONS, 'vad_events')).toBe(false)
+  })
 })
