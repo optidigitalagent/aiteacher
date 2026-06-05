@@ -1159,6 +1159,40 @@ async function handleLessonStart(
 
 // ── Kids Brain v1 infrastructure ─────────────────────────────────────────────
 
+// Emit kids_exercise_context for the exercise currently stored in session memory.
+// Used on turn advancement AND on reconnect resume so the frontend always receives
+// the exercise card immediately without waiting for the next exercise transition.
+async function emitKidsExerciseContext(ws: WebSocket, memory: KidsBrainSessionMemory): Promise<void> {
+  const exerciseId = memory.currentExerciseId ?? null
+  if (!exerciseId) return
+  try {
+    const ctxLesson = findLessonById(PROTO_LESSON_ID)
+    const ctxExercise = ctxLesson?.exercises?.find(e => e.exerciseId === exerciseId)
+    if (!ctxLesson || !ctxExercise) return
+    const allReal = ctxLesson.exercises?.filter(e => e.order > 1) ?? []
+    const completedReal = (memory.completedExerciseIds ?? []).filter(id => {
+      const ex = ctxLesson.exercises?.find(e => e.exerciseId === id)
+      return ex && ex.order > 1
+    })
+    const targetWords = ctxExercise.targetItemIds
+      .map(id => ctxLesson.items.find(item => item.itemId === id)?.targetText ?? '')
+      .filter(Boolean)
+    send(ws, {
+      type: 'kids_exercise_context',
+      exerciseId,
+      exerciseNumber: ctxExercise.order - 1,
+      instruction: ctxExercise.teacherInstruction,
+      targetWords,
+      choices: ctxExercise.choices ?? [],
+      totalExercises: allReal.length,
+      completedCount: completedReal.length,
+    })
+    console.log(`[kids-v1] exercise_context_sent exercise=${exerciseId} num=${ctxExercise.order - 1}`)
+  } catch (err) {
+    console.warn('[kids-v1] exercise_context_send_error (non-fatal):', err instanceof Error ? err.message : err)
+  }
+}
+
 let _kidsBrainRedisStore: RedisSessionStoreImpl | null = null
 function getKidsBrainRedisStore(): RedisSessionStoreImpl {
   if (!_kidsBrainRedisStore) _kidsBrainRedisStore = new RedisSessionStoreImpl(redis)
@@ -1269,6 +1303,7 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
       ? `Hi again! Let's keep going. Listen — ${target}! Now you!`
       : "Hi again! Let's keep going."
     send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: resumeText })
+    await emitKidsExerciseContext(ws, existingMemory)
     await kidsTtsStream(ws, meta, resumeText)
     return
   }
@@ -1480,37 +1515,11 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
   // Track current target word for concrete no_transcript recovery messages
   meta.kidsCurrentTargetWord = result.updatedSessionMemory.currentTargetItemId ?? null
 
-  // Emit exercise context event when exercise advances so frontend can display exercise info
+  // Emit exercise context when exercise advances so frontend can display exercise info
   const prevExerciseId = sessionMemory.currentExerciseId ?? null
   const newExerciseId = result.updatedSessionMemory.currentExerciseId ?? null
   if (newExerciseId && newExerciseId !== prevExerciseId) {
-    try {
-      const ctxLesson = findLessonById(PROTO_LESSON_ID)
-      const ctxExercise = ctxLesson?.exercises?.find(e => e.exerciseId === newExerciseId)
-      if (ctxLesson && ctxExercise) {
-        const allReal = ctxLesson.exercises?.filter(e => e.order > 1) ?? []
-        const completedReal = (result.updatedSessionMemory.completedExerciseIds ?? []).filter(id => {
-          const ex = ctxLesson.exercises?.find(e => e.exerciseId === id)
-          return ex && ex.order > 1
-        })
-        const targetWords = ctxExercise.targetItemIds
-          .map(id => ctxLesson.items.find(item => item.itemId === id)?.targetText ?? '')
-          .filter(Boolean)
-        send(ws, {
-          type: 'kids_exercise_context',
-          exerciseId: newExerciseId,
-          exerciseNumber: ctxExercise.order - 1,
-          instruction: ctxExercise.teacherInstruction,
-          targetWords,
-          choices: ctxExercise.choices ?? [],
-          totalExercises: allReal.length,
-          completedCount: completedReal.length,
-        })
-        console.log(`[kids-v1] exercise_context_sent exercise=${newExerciseId} num=${ctxExercise.order - 1}`)
-      }
-    } catch (err) {
-      console.warn('[kids-v1] exercise_context_send_error (non-fatal):', err instanceof Error ? err.message : err)
-    }
+    await emitKidsExerciseContext(ws, result.updatedSessionMemory)
   }
 
   const adapted = adaptRuntimePackets(result.actionPackets)
