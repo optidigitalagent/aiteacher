@@ -188,6 +188,20 @@ export function routeTeacherResponse(input: TeacherResponseInput): ResponseRoute
     };
   }
 
+  // ── Priority 7.6: Social / conversational speech ──────────────────────────────
+  // Child greeted or reacted socially ("hello", "great", "yay", etc.).
+  // Redirect warmly to the target word — never treat as silence or error.
+  if (label === ClassificationLabel.SOCIAL_SPEECH) {
+    return {
+      mode: 'recovery_script',
+      actionCode: TeacherActionCode.WARM_REDIRECT,
+      recoveryType: 'social_speech',
+      tone: FeedbackTone.WARM,
+      safetyBlocked: false,
+      requiresLLM: false,
+    };
+  }
+
   // ── Priority 8: Wrong answers ─────────────────────────────────────────────────
   if (
     label === ClassificationLabel.WRONG_SEMANTIC ||

@@ -9,6 +9,11 @@ import {
   REFUSAL_PHRASES,
   CLARIFICATION_PHRASES,
   EXERCISE_READINESS_PHRASES,
+  GREETING_PHRASES,
+  ACKNOWLEDGEMENT_PHRASES,
+  STALLING_PHRASES,
+  CONFUSION_SINGLE_PHRASES,
+  SINGLE_AFFIRMATIVE_PHRASES,
   NEAR_MATCH_EDIT_DISTANCE_MAX,
   CORRECT_CONFIDENT_MIN_ADJ_CONFIDENCE,
   CORRECT_HESITANT_MIN_ADJ_CONFIDENCE,
@@ -324,6 +329,24 @@ export function runDeterministicClassifier(
     }
   }
 
+  // ── Rule 18: Social / conversational speech ───────────────────────────────
+  // Child said a meaningful but off-task word (greeting, reaction, stalling).
+  // NEVER treat as silence — redirect warmly to the target word.
+  // Placed last so target-word rules (12-17) take priority if the word matches.
+  if (matchesSocialSpeech(transcriptLower)) {
+    return buildResult({
+      label: ClassificationLabel.SOCIAL_SPEECH,
+      confidence: 0.85,
+      source: 'deterministic',
+      reasons: ['social_speech_phrase_matched'],
+      perception,
+      requiresRecovery: false,
+      eligibleForMasteryUpdate: false,
+      eligibleForProgression: false,
+      recommendedSafeAction: TeacherActionCode.WARM_REDIRECT,
+    });
+  }
+
   // ── No deterministic rule matched — signal LLM path ──────────────────────
   return null;
 }
@@ -383,4 +406,32 @@ function matchesRefusal(text: string): boolean {
 /** True if the text contains recognizable English alphabetic content. */
 function hasEnglishContent(text: string): boolean {
   return /[a-z]{2,}/i.test(text);
+}
+
+/**
+ * Normalizes social speech for phrase matching.
+ * Strips punctuation and collapses whitespace — same as readiness normalization.
+ */
+function normalizeSocial(text: string): string {
+  return text.replace(/[.!?,?]+/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * True when the transcript is social/conversational speech:
+ * a greeting, acknowledgement, stalling phrase, or single affirmative.
+ *
+ * Uses STRICT exact-match on the normalized text.
+ * This is intentional — "spaceship" must not match "hi" just because
+ * the letters h-i appear as a substring. Only the full normalized
+ * transcript matching a known phrase qualifies as social speech.
+ */
+function matchesSocialSpeech(text: string): boolean {
+  const normalized = normalizeSocial(text);
+  return (
+    GREETING_PHRASES.some(p => normalized === p) ||
+    ACKNOWLEDGEMENT_PHRASES.some(p => normalized === p) ||
+    STALLING_PHRASES.some(p => normalized === p) ||
+    CONFUSION_SINGLE_PHRASES.some(p => normalized === p) ||
+    SINGLE_AFFIRMATIVE_PHRASES.some(p => normalized === p)
+  );
 }

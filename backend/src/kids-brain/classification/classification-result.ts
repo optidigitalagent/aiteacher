@@ -95,6 +95,7 @@ export const LABEL_TO_ACTION: Readonly<Record<ClassificationLabel, TeacherAction
   [ClassificationLabel.TEST_THE_AI]:           TeacherActionCode.WARM_REDIRECT,
   [ClassificationLabel.UNKNOWN_UNCERTAIN]:     TeacherActionCode.HOLD_CURRENT_ITEM,
   [ClassificationLabel.CLARIFICATION_REQUEST]: TeacherActionCode.MODEL_ANSWER,
+  [ClassificationLabel.SOCIAL_SPEECH]:         TeacherActionCode.WARM_REDIRECT,
 };
 
 /** Labels that require recovery scaffolding when detected. */

@@ -45,12 +45,14 @@ export function computeTimeoutFallback(
     });
   }
 
-  if (perception.isSilence) {
+  // Rule 2: silence — only when no transcript exists.
+  // If transcript is present, do NOT treat as silence even if silenceDurationMs is high.
+  if (perception.isSilence && !perception.transcriptAvailable) {
     return buildResult({
       label: ClassificationLabel.SILENCE_LONG,
       confidence: 1.0,
       source: 'timeout_fallback',
-      reasons: ['silence_detected', 'timeout_fallback'],
+      reasons: ['silence_detected', 'no_transcript', 'timeout_fallback'],
       perception,
       requiresRecovery: true,
       eligibleForMasteryUpdate: false,
@@ -74,11 +76,27 @@ export function computeTimeoutFallback(
   }
 
   if (perception.perceptionConfidence < 0.50) {
+    // STRICT RULE: if a transcript exists, NEVER return a silence label.
+    // Low perception confidence with real speech → treat as social/off-topic speech
+    // so the teacher redirects to the target word rather than doing silence recovery.
+    if (perception.transcriptAvailable) {
+      return buildResult({
+        label: ClassificationLabel.SOCIAL_SPEECH,
+        confidence: 0.45,
+        source: 'timeout_fallback',
+        reasons: ['low_perception_confidence_with_transcript', 'timeout_fallback'],
+        perception,
+        requiresRecovery: false,
+        eligibleForMasteryUpdate: false,
+        eligibleForProgression: false,
+        recommendedSafeAction: TeacherActionCode.WARM_REDIRECT,
+      });
+    }
     return buildResult({
       label: ClassificationLabel.SILENCE_MEDIUM,
       confidence: 0.55,
       source: 'timeout_fallback',
-      reasons: ['low_perception_confidence', 'timeout_fallback'],
+      reasons: ['low_perception_confidence', 'no_transcript', 'timeout_fallback'],
       perception,
       requiresRecovery: false,
       eligibleForMasteryUpdate: false,

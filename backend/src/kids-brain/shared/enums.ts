@@ -80,6 +80,10 @@ export enum ClassificationLabel {
   // Clarification / readiness-in-exercise
   CLARIFICATION_REQUEST = 'clarification_request',
 
+  // Social / conversational speech (greetings, acknowledgements, stalling)
+  // Child spoke meaningfully but not the target word — redirect warmly.
+  SOCIAL_SPEECH = 'social_speech',
+
   // Fallback
   UNKNOWN_UNCERTAIN = 'unknown_uncertain',
 }

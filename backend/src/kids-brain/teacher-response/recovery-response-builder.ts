@@ -14,6 +14,7 @@ export type RecoveryType =
   | 'l1_help_request'
   | 'i_dont_know'
   | 'clarification_request'
+  | 'social_speech'
   | 'refusal'
   | 'emotional_shutdown'
   | 'unsafe_or_sensitive';
@@ -35,11 +36,11 @@ export interface RecoveryResponseParams {
   recentPhrases: string[];
 }
 
-/** Scripted variants for silence recovery (gentle, never punishing). */
+/** Short-silence variants — gentle prompt that always names the target word. */
 const SILENCE_SHORT_VARIANTS: readonly string[] = [
-  'Hmm... I wonder...',
-  'Take your time!',
-  "It's okay, I'm here!",
+  "Say {word}!",
+  "Can you say {word}?",
+  "Your turn! Say {word}!",
 ];
 
 const SILENCE_LONG_VARIANTS: readonly string[] = [
@@ -80,8 +81,8 @@ const L1_HELP_REQUEST_VARIANTS: readonly string[] = [
 
 const I_DONT_KNOW_VARIANTS: readonly string[] = [
   "That's okay! Is it {optA} or {optB}?",
-  "No problem! Listen — {word}! {word}!",
-  "Let's find out! Is it a {word}? Yes or no?",
+  "Listen — {word}! {word}! Can you say it?",
+  "Let's see! Is it {optA}? Yes or no?",
 ];
 
 // Concrete instruction variants — always include the target word.
@@ -91,6 +92,16 @@ const CLARIFICATION_REQUEST_VARIANTS: readonly string[] = [
   "Try saying: {word}!",
   "Can you say {word}? {word}!",
   "Listen — {word}! Now you say: {word}!",
+];
+
+// Social speech variants — warm, brief, always redirect to target word.
+// All tokens must be in CORE_TEACHER_VOCABULARY or lesson target words.
+const SOCIAL_SPEECH_VARIANTS: readonly string[] = [
+  "Hey! Say {word}!",
+  "Hey! Can you say {word}?",
+  "Great! Now say {word}!",
+  "Okay! Try: {word}!",
+  "Ready? Say {word}!",
 ];
 
 const REFUSAL_VARIANTS: readonly string[] = [
@@ -148,8 +159,9 @@ export function buildRecoveryResponse(
 
   switch (recoveryType) {
     case 'silence_short':
-      // Gentle warm wait — do not interrupt the child's processing
-      return pickVariant(SILENCE_SHORT_VARIANTS, recent);
+      // Gentle prompt that includes the target word — never vague filler
+      if (!word) return "Your turn!";
+      return resolve(pickVariant(SILENCE_SHORT_VARIANTS, recent), word, optA, optB);
 
     case 'silence_long':
       // Model answer + invite repeat
@@ -194,6 +206,11 @@ export function buildRecoveryResponse(
       // Child asked "what should I say?" — always give concrete target-word instruction
       if (!word) return "Try saying the word! Can you say it?";
       return resolve(pickVariant(CLARIFICATION_REQUEST_VARIANTS, recent), word, optA, optB);
+
+    case 'social_speech':
+      // Child greeted or reacted socially — acknowledge warmly, redirect to target
+      if (!word) return "Ready? Say the word!";
+      return resolve(pickVariant(SOCIAL_SPEECH_VARIANTS, recent), word, optA, optB);
 
     case 'refusal':
       // Back off, offer choice — relationship > lesson

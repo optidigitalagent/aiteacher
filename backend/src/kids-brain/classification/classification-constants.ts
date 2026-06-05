@@ -75,6 +75,39 @@ export const EXERCISE_READINESS_PHRASES: readonly string[] = [
   "ok ready",
 ];
 
+// Social speech — greetings, reactions, stalling, single affirmatives.
+// These are meaningful speech events but not the target word.
+// Must redirect warmly to the target rather than treating as silence.
+export const GREETING_PHRASES: readonly string[] = [
+  "hello", "hi", "hey",
+  "hi there", "hello there",
+  "good morning", "good afternoon", "good evening",
+  "howdy", "hi teacher", "hello teacher",
+  "hey teacher",
+];
+
+export const ACKNOWLEDGEMENT_PHRASES: readonly string[] = [
+  "great", "yay", "wow", "cool", "nice", "awesome",
+  "fantastic", "wonderful", "amazing", "super", "perfect",
+  "brilliant", "alright", "got it", "yipee", "hooray",
+  "hurray", "hurrah", "woohoo", "woo",
+];
+
+export const STALLING_PHRASES: readonly string[] = [
+  "wait", "one second", "one moment", "hold on",
+  "just a second", "just a moment",
+  "let me think", "i need a moment",
+];
+
+export const CONFUSION_SINGLE_PHRASES: readonly string[] = [
+  "what", "huh", "hm", "eh",
+];
+
+export const SINGLE_AFFIRMATIVE_PHRASES: readonly string[] = [
+  "yes", "yeah", "yep", "yup", "sure",
+  "okay", "ok",
+];
+
 // Unsafe / sensitive keyword list (conservative — spec §6.1 §14.1)
 // [C] This list requires expansion before production deployment.
 export const UNSAFE_KEYWORDS: readonly string[] = [

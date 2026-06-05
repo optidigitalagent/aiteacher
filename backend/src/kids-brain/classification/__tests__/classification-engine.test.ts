@@ -217,10 +217,13 @@ describe('test 6 — random nonsense without LLM', () => {
       vocabularyContext: { targetWord: 'dog', relatedWords: [], vocabularyGroup: ['dog', 'cat'] },
     };
     const result = await classifyResponse(input);
+    // SILENCE_MEDIUM was removed from this list: a non-empty transcript must
+    // NEVER become silence. Low-confidence transcripts now get SOCIAL_SPEECH
+    // so the teacher redirects to the target word instead of doing silence recovery.
     const safeLabels: ClassificationLabel[] = [
       ClassificationLabel.RANDOM_NONSENSE,
       ClassificationLabel.UNKNOWN_UNCERTAIN,
-      ClassificationLabel.SILENCE_MEDIUM,
+      ClassificationLabel.SOCIAL_SPEECH,
     ];
     expect(safeLabels).toContain(result.label);
   });
