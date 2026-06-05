@@ -91,6 +91,7 @@ import { AgeBand } from '../kids-brain/shared/enums.js'
 import { AGE_PROFILE_6_7 } from '../kids-brain/shared/types.js'
 import type { SessionMemory as KidsBrainSessionMemory } from '../kids-brain/contracts/session-memory.js'
 import { getVocabularyWords } from '../kids-brain/curriculum/index.js'
+import { findLessonById } from '../kids-brain/curriculum/curriculum-loader.js'
 import { persistKidsBrainAnalytics } from '../kids-brain/analytics/session-analytics.js'
 import {
   KIDS_MAX_DURATION_MS,
@@ -1473,6 +1474,39 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
 
   // Track current target word for concrete no_transcript recovery messages
   meta.kidsCurrentTargetWord = result.updatedSessionMemory.currentTargetItemId ?? null
+
+  // Emit exercise context event when exercise advances so frontend can display exercise info
+  const prevExerciseId = sessionMemory.currentExerciseId ?? null
+  const newExerciseId = result.updatedSessionMemory.currentExerciseId ?? null
+  if (newExerciseId && newExerciseId !== prevExerciseId) {
+    try {
+      const ctxLesson = findLessonById(PROTO_LESSON_ID)
+      const ctxExercise = ctxLesson?.exercises?.find(e => e.exerciseId === newExerciseId)
+      if (ctxLesson && ctxExercise) {
+        const allReal = ctxLesson.exercises?.filter(e => e.order > 1) ?? []
+        const completedReal = (result.updatedSessionMemory.completedExerciseIds ?? []).filter(id => {
+          const ex = ctxLesson.exercises?.find(e => e.exerciseId === id)
+          return ex && ex.order > 1
+        })
+        const targetWords = ctxExercise.targetItemIds
+          .map(id => ctxLesson.items.find(item => item.itemId === id)?.targetText ?? '')
+          .filter(Boolean)
+        send(ws, {
+          type: 'kids_exercise_context',
+          exerciseId: newExerciseId,
+          exerciseNumber: ctxExercise.order - 1,
+          instruction: ctxExercise.teacherInstruction,
+          targetWords,
+          choices: ctxExercise.choices ?? [],
+          totalExercises: allReal.length,
+          completedCount: completedReal.length,
+        })
+        console.log(`[kids-v1] exercise_context_sent exercise=${newExerciseId} num=${ctxExercise.order - 1}`)
+      }
+    } catch (err) {
+      console.warn('[kids-v1] exercise_context_send_error (non-fatal):', err instanceof Error ? err.message : err)
+    }
+  }
 
   const adapted = adaptRuntimePackets(result.actionPackets)
   const shouldClose = await processKidsV1Packets(ws, meta, adapted)

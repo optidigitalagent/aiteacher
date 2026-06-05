@@ -173,11 +173,30 @@ async function buildReadinessTurnResult(
   };
   const learningDecision = runLearningEngine(learningInput);
 
-  // Scripted first-exercise prompt. Never say "try again" here.
+  // Mark readiness complete. Always stay on first target — child hasn't answered yet.
+  const memAfterReadiness: SessionMemory = {
+    ...stateOutput.updatedSessionMemory,
+    hasStartedFirstExercise: true,
+    currentTargetItemId: sessionMemory.currentTargetItemId,
+  };
+
+  // Phase 13D: advance readiness exercise (ex-01 is TEACHER_CONTROLLED, maxAttempts:1 → auto-completes).
+  const updatedSessionMemory = runExerciseBridge(memAfterReadiness, syntheticClassification.label);
+
+  // Build exercise intro text AFTER bridge runs so we use the newly activated exercise.
+  // Display number = order - 1 (order 1 = readiness, first real exercise is order 2 → "Exercise 1").
   const firstWord = sessionMemory.currentTargetItemId ?? input.targetWord ?? input.lessonTargetWords[0] ?? '';
-  const firstExerciseText = firstWord
-    ? `Listen — ${firstWord}! Now you!`
-    : "Ready! Let's start!";
+  let firstExerciseText = firstWord ? `Listen — ${firstWord}! Now you!` : "Ready! Let's start!";
+
+  const activatedExerciseId = updatedSessionMemory.currentExerciseId;
+  if (activatedExerciseId && memAfterReadiness.lessonId) {
+    const activatedLesson = findLessonById(memAfterReadiness.lessonId);
+    const activatedExercise = activatedLesson?.exercises?.find(e => e.exerciseId === activatedExerciseId);
+    if (activatedExercise) {
+      const displayNum = activatedExercise.order - 1;
+      firstExerciseText = `Exercise ${displayNum}! ${activatedExercise.teacherInstruction}`;
+    }
+  }
 
   const plan = buildTeacherResponsePlan({
     responseId: randomUUID(),
@@ -194,16 +213,6 @@ async function buildReadinessTurnResult(
     safetyBlocked: false,
     emotionalTone: FeedbackTone.WARM,
   });
-
-  // Mark readiness complete. Always stay on first target — child hasn't answered yet.
-  const memAfterReadiness: SessionMemory = {
-    ...stateOutput.updatedSessionMemory,
-    hasStartedFirstExercise: true,
-    currentTargetItemId: sessionMemory.currentTargetItemId,
-  };
-
-  // Phase 13D: advance readiness exercise (ex-01 is TEACHER_CONTROLLED, maxAttempts:1 → auto-completes).
-  const updatedSessionMemory = runExerciseBridge(memAfterReadiness, syntheticClassification.label);
 
   const turnNumber = updatedSessionMemory.turnNumber;
   const actionPackets = buildActionPackets(plan, sessionId, turnNumber, false);
@@ -524,10 +533,13 @@ export async function processKidsBrainTurn(
     const lesson = memAfterLearning.lessonId ? findLessonById(memAfterLearning.lessonId) : null;
 
     if (nextExerciseId !== null) {
-      // Advanced to next exercise — use its authored prompt.
+      // Advanced to next exercise — announce exercise number + instruction.
+      // Display number = order - 1 (order 1 = readiness, first real exercise order 2 → "Exercise 1").
       const nextExercise = lesson?.exercises?.find(e => e.exerciseId === nextExerciseId) ?? null;
       if (nextExercise) {
-        teacherOutput.plan = { ...teacherOutput.plan, mainText: buildExercisePrompt(nextExercise) };
+        const displayNum = nextExercise.order - 1;
+        const introText = `Exercise ${displayNum}! ${nextExercise.teacherInstruction}`;
+        teacherOutput.plan = { ...teacherOutput.plan, mainText: introText };
       }
     } else if (prevExerciseId !== null) {
       // Lesson exhausted — use the just-completed exercise's closing prompt.

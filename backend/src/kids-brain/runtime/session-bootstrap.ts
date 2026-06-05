@@ -39,8 +39,8 @@ function resolveFirstExercise(lessonId: string): {
 }
 
 /** Scripted lesson opening greeting (spec §10.2 — never LLM-generated). */
-const GREETING_TEXT = "Hello! Let's play and learn English! Are you ready?";
-const GREETING_FALLBACK = "Hello! Ready to learn?";
+const GREETING_TEXT = "Hello! Today we're learning colours! Are you ready?";
+const GREETING_FALLBACK = "Hello! Ready to learn colours?";
 
 /** Creates the initial CostCounters with all counters zeroed. */
 function createInitialCostCounters(): CostCounters {

@@ -28,6 +28,16 @@ type KidsState =
   | 'complete'    // lesson_end received
   | 'error'       // WS error / disconnected
 
+type ExerciseCtx = {
+  exerciseId:     string
+  exerciseNumber: number
+  instruction:    string
+  targetWords:    string[]
+  choices:        { choiceId: string; text: string }[]
+  totalExercises: number
+  completedCount: number
+}
+
 // ── Inline sub-components ─────────────────────────────────────────────────────
 
 function KidsTeacherBubble({ text, isTyping }: { text: string | null; isTyping: boolean }) {
@@ -715,10 +725,86 @@ const CSS = `
     background: #E2E8F0;
   }
 
+  /* ── Exercise context card ── */
+  .kec-card {
+    width: 100%;
+    max-width: 520px;
+    background: linear-gradient(135deg, rgba(123,140,255,0.08) 0%, rgba(161,139,255,0.06) 100%);
+    border: 1.5px solid rgba(123,140,255,0.18);
+    border-radius: 20px;
+    padding: 14px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .kec-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .kec-num {
+    font-family: 'Sora', sans-serif;
+    font-size: 13px;
+    font-weight: 800;
+    color: #7B8CFF;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .kec-progress {
+    font-family: 'Sora', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    color: #94A3B8;
+    background: rgba(148,163,184,0.1);
+    border-radius: 20px;
+    padding: 2px 10px;
+  }
+  .kec-instruction {
+    font-family: 'Sora', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: #334155;
+    margin: 0;
+    line-height: 1.4;
+  }
+  .kec-words {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 2px;
+  }
+  .kec-word {
+    font-family: 'Sora', sans-serif;
+    font-size: 15px;
+    font-weight: 800;
+    color: #fff;
+    background: linear-gradient(135deg, #7B8CFF 0%, #A18BFF 100%);
+    border-radius: 12px;
+    padding: 4px 14px;
+    letter-spacing: 0.3px;
+  }
+  .kec-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 2px;
+  }
+  .kec-choice {
+    font-family: 'Sora', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: #475569;
+    background: rgba(123,140,255,0.1);
+    border: 1.5px solid rgba(123,140,255,0.2);
+    border-radius: 12px;
+    padding: 4px 14px;
+  }
+
   /* ── Mobile ── */
   @media (max-width: 480px) {
     .ktb-bubble { padding: 16px 20px; }
     .kc-bottom { padding: 10px 16px 20px; }
+    .kec-card { padding: 12px 16px; }
   }
 `
 
@@ -737,6 +823,7 @@ export default function KidsClassroomPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [micPreflightDone, setMicPreflightDone] = useState(false)
   const [voiceUnavailable, setVoiceUnavailable] = useState(false)
+  const [exerciseCtx, setExerciseCtx] = useState<ExerciseCtx | null>(null)
 
   // Refs for buffering before user taps "Let's Go"
   const wsRef            = useRef<WebSocket | null>(null)
@@ -800,6 +887,19 @@ export default function KidsClassroomPage() {
 
       case 'voice_unavailable': {
         setVoiceUnavailable(true)
+        break
+      }
+
+      case 'kids_exercise_context': {
+        setExerciseCtx({
+          exerciseId:     msg.exerciseId,
+          exerciseNumber: msg.exerciseNumber,
+          instruction:    msg.instruction,
+          targetWords:    msg.targetWords,
+          choices:        msg.choices,
+          totalExercises: msg.totalExercises,
+          completedCount: msg.completedCount,
+        })
         break
       }
 
@@ -977,6 +1077,32 @@ export default function KidsClassroomPage() {
         {(kidsState === 'teaching' || kidsState === 'listening' || kidsState === 'sending') && (
           <>
             <div className="kc-main">
+              {/* Exercise context card — shown once exercise starts */}
+              {exerciseCtx && (
+                <div className="kec-card">
+                  <div className="kec-header">
+                    <span className="kec-num">Exercise {exerciseCtx.exerciseNumber}</span>
+                    <span className="kec-progress">
+                      {exerciseCtx.completedCount}/{exerciseCtx.totalExercises}
+                    </span>
+                  </div>
+                  <p className="kec-instruction">{exerciseCtx.instruction}</p>
+                  {exerciseCtx.choices.length > 0 ? (
+                    <div className="kec-choices">
+                      {exerciseCtx.choices.map(c => (
+                        <span key={c.choiceId} className="kec-choice">{c.text}</span>
+                      ))}
+                    </div>
+                  ) : exerciseCtx.targetWords.length > 0 ? (
+                    <div className="kec-words">
+                      {exerciseCtx.targetWords.map(w => (
+                        <span key={w} className="kec-word">{w}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
               <KidsTeacherBubble
                 text={teacherText}
                 isTyping={kidsState === 'sending'}

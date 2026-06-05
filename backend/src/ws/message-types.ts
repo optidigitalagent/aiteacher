@@ -271,6 +271,21 @@ export interface OutboundLessonResync {
   recentTranscript:    ResyncTranscriptEntry[] | null  // last N visible chat messages for UI restore
 }
 
+/**
+ * Sent by Kids Brain v1 runtime when the active exercise changes.
+ * Frontend renders exercise number, instruction, target words, and progress.
+ */
+export interface OutboundKidsExerciseContext {
+  type:           'kids_exercise_context';
+  exerciseId:     string;
+  exerciseNumber: number;
+  instruction:    string;
+  targetWords:    string[];
+  choices:        { choiceId: string; text: string }[];
+  totalExercises: number;
+  completedCount: number;
+}
+
 export type OutboundMessage =
   | OutboundAiText
   | OutboundAudioChunk
@@ -293,3 +308,4 @@ export type OutboundMessage =
   | OutboundLessonTimeWarning
   | OutboundLessonTimerUpdate
   | OutboundLessonResync
+  | OutboundKidsExerciseContext

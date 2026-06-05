@@ -33,10 +33,10 @@ const EX_03_ID = 'kb1-u01-l02-ex-03-green';
 const EX_04_ID = 'kb1-u01-l02-ex-04-red';
 const EX_10_ID = 'kb1-u01-l02-ex-10-close';
 
-// Authored exercise prompts (ttsText takes priority over text in buildExercisePrompt)
-const PROMPT_BLUE   = 'Listen — blue! Now you say it!';
-const PROMPT_GREEN  = 'Listen — green! Now you say it!';
-const PROMPT_RED    = 'Listen — red! Now you say it!';
+// Authored exercise prompts — format: "Exercise N! <teacherInstruction>" (order - 1)
+const PROMPT_BLUE   = 'Exercise 1! Listen. Blue. Say blue!';
+const PROMPT_GREEN  = 'Exercise 2! Listen. Green. Say green!';
+const PROMPT_RED    = 'Exercise 3! Listen. Red. Say red!';
 const PROMPT_CLOSE  = 'Well done! We finished colours today. Great job!';
 
 // ── STT helpers ────────────────────────────────────────────────────────────────
@@ -344,18 +344,18 @@ describe('T — classification result unchanged by Step 6B', () => {
   });
 });
 
-// ── U. Readiness handshake emits "Listen — blue! Now you!" ───────────────────
+// ── U. Readiness handshake emits exercise 1 intro prompt ─────────────────────
 
-describe('U — readiness handshake still emits scripted first-exercise prompt', () => {
-  it('teacher text after readiness phrase is "Listen — blue! Now you!"', async () => {
+describe('U — readiness handshake emits exercise 1 intro prompt', () => {
+  it('teacher text after readiness phrase is the Exercise 1 intro', async () => {
     const { sessionMemory } = startKidsBrainSession(makeSessionInput('13f-U1'));
 
     const r = await processKidsBrainTurn(
       makeTurn(sessionMemory, makeCorrectStt('ready'), 'blue'),
     );
 
-    // Readiness path (buildReadinessTurnResult) is unchanged — Step 6B is NOT in that path.
-    expect(getTeacherText(r.actionPackets)).toBe('Listen — blue! Now you!');
+    // buildReadinessTurnResult now uses teacherInstruction from curriculum after bridge runs.
+    expect(getTeacherText(r.actionPackets)).toBe('Exercise 1! Listen. Blue. Say blue!');
   });
 
   it('readiness turn advances to ex-02-blue (bridge still works as before)', async () => {
@@ -376,7 +376,6 @@ describe('U — readiness handshake still emits scripted first-exercise prompt',
     );
 
     expect(getTeacherText(r.actionPackets)).not.toBe(PROMPT_GREEN);
-    expect(getTeacherText(r.actionPackets)).not.toBe(PROMPT_BLUE);
   });
 });
 

@@ -133,6 +133,17 @@ export type BackendMessage =
   | { type: 'lesson_timer_update'; remainingMs: number }
   // TTS provider quota / rate-limit / outage — non-blocking, lesson continues in text mode
   | { type: 'voice_unavailable'; reason?: 'TTS_PROVIDER_QUOTA' | 'TTS_RATE_LIMITED' | 'TTS_PROVIDER_UNAVAILABLE' | 'TTS_UNKNOWN_ERROR' | string }
+  // Kids Brain v1: sent when active exercise changes (exercise number, instruction, target words)
+  | {
+      type:           'kids_exercise_context'
+      exerciseId:     string
+      exerciseNumber: number
+      instruction:    string
+      targetWords:    string[]
+      choices:        { choiceId: string; text: string }[]
+      totalExercises: number
+      completedCount: number
+    }
   // Reconnect grace-window resync: replaces any stale local state after reattach.
   // No teacher greeting. No AI call. No lesson restart.
   | {
