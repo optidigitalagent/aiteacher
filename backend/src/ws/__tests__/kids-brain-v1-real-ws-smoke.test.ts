@@ -128,12 +128,13 @@ vi.mock('../../voice/stt.js', () => ({
   DEEPGRAM_LIVE_OPTIONS:      { model: 'nova-2', language: 'en', encoding: 'linear16', sample_rate: 16000, channels: 1 },
   DEEPGRAM_KIDS_LIVE_OPTIONS: { model: 'nova-2', language: 'en', encoding: 'linear16', sample_rate: 16000, channels: 1, utterance_end_ms: 700 },
   DeepgramSTT: vi.fn().mockImplementation(() => ({
-    connect:     vi.fn(),
-    close:       vi.fn(),
-    clearBuffer: vi.fn(),
-    flushBuffer: vi.fn(() => ''),
-    isConnected: vi.fn(() => false),
-    isAlive:     vi.fn(() => true),
+    connect:        vi.fn(),
+    close:          vi.fn(),
+    clearBuffer:    vi.fn(),
+    flushBuffer:    vi.fn(() => ''),
+    isConnected:    vi.fn(() => false),
+    isAlive:        vi.fn(() => true),
+    waitUntilReady: vi.fn(async () => true),
   })),
 }));
 

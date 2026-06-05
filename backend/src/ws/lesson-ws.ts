@@ -4007,28 +4007,43 @@ export function attachLessonWS(server: Server): void {
             meta.pendingMicStop             = false
             meta.pendingTranscript          = ''
 
+            // Assign new turn ID and reset Kids STT state before STT readiness check
+            // so the timeout/break path leaves clean state for the subsequent mic_stop.
+            meta.voiceTurnId            = uuid()
+            meta.kidsPartialTranscript  = ''
+            meta.kidsPartialTurnId      = null
+            meta.kidsAudioChunkCount    = 0
+            meta.stt?.clearBuffer()
+
             // Kids: recreate Deepgram connection if it died between turns.
             // The STT instance persists across turns; if the connection drops during idle
             // time (TTS playback + kid preparation, typically 10–45s), send() queues audio
             // on a dead socket — Open never fires, queue is never flushed, Deepgram gets
             // 0 bytes, transcript is lost. Recreating here ensures every turn starts with
-            // a live Deepgram WebSocket. Audio during the ~200ms connect window is buffered
-            // in the queue and flushed when Open fires.
+            // a live Deepgram WebSocket.
+            //
+            // Then we WAIT for Open before setting micActive — the race condition fix.
+            // Previously micActive=true was set immediately after createSTT, before
+            // Deepgram Open, so audio arrived before the connection was ready.
             if ((meta.kidsBrainV1Active || meta.isKidsMode) && meta.stt && !meta.stt.isAlive()) {
-              console.log(`[voice:kids] stt_reconnect reason=connection_dead turnId=${meta.voiceTurnId ?? 'new'}`)
+              console.log(`[voice:kids] stt_reconnect reason=connection_dead turnId=${meta.voiceTurnId}`)
               meta.stt.close()
               meta.stt = null
               meta.stt = createSTT(ws, meta, true)
               console.log(`[voice:kids] stt_reconnected new_conn=true`)
+
+              console.log(JSON.stringify({ event: '[voice:kids]', status: 'stt_wait_ready_start', turnId: meta.voiceTurnId }))
+              const sttReady = await meta.stt.waitUntilReady(2000)
+              if (!sttReady) {
+                console.warn(JSON.stringify({ event: '[voice:kids]', status: 'stt_wait_ready_timeout', turnId: meta.voiceTurnId }))
+                // micActive stays false — audio_chunks will be dropped; mic_stop will
+                // finalize as a silent turn so Kids Brain gives a concrete retry prompt.
+                break
+              }
+              console.log(JSON.stringify({ event: '[voice:kids]', status: 'stt_wait_ready_success', turnId: meta.voiceTurnId }))
             }
 
-            meta.micActive                  = true  // open the gate — accept STT events
-            meta.voiceTurnId                = uuid()  // new turn ID — resets dedup window
-            // Reset Kids STT turn state on each new recording
-            meta.kidsPartialTranscript  = ''
-            meta.kidsPartialTurnId      = null
-            meta.kidsAudioChunkCount    = 0
-            meta.stt?.clearBuffer()
+            meta.micActive = true  // open the gate — accept STT events
             console.log(`[voice] mic_start turnId=${meta.voiceTurnId} micActive=true`)
             break
           }

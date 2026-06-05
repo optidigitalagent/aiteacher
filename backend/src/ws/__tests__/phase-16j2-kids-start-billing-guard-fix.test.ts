@@ -70,10 +70,12 @@ const mocks = vi.hoisted(() => {
   const hashUserIdMock = vi.fn((id: string | null) => (id ? id.slice(0, 8) : null));
 
   const deepgramSTTMock = vi.fn().mockImplementation(() => ({
-    close:       vi.fn(),
-    clearBuffer: vi.fn(),
-    flushBuffer: vi.fn(() => ''),
-    send:        vi.fn(),
+    close:          vi.fn(),
+    clearBuffer:    vi.fn(),
+    flushBuffer:    vi.fn(() => ''),
+    send:           vi.fn(),
+    isAlive:        vi.fn(() => true),
+    waitUntilReady: vi.fn(async () => true),
   }));
 
   return { redisMock, redisStore, queryMock, verifyTokenMock, hashUserIdMock, deepgramSTTMock };
@@ -413,10 +415,12 @@ describe('16J.2 — D: Kids runtime startup crash → KIDS_RUNTIME_START_FAILED 
   afterEach(() => {
     // Restore default STT mock after each test that may have overridden it
     mocks.deepgramSTTMock.mockImplementation(() => ({
-      close:       vi.fn(),
-      clearBuffer: vi.fn(),
-      flushBuffer: vi.fn(() => ''),
-      send:        vi.fn(),
+      close:          vi.fn(),
+      clearBuffer:    vi.fn(),
+      flushBuffer:    vi.fn(() => ''),
+      send:           vi.fn(),
+      isAlive:        vi.fn(() => true),
+      waitUntilReady: vi.fn(async () => true),
     }));
     mocks.queryMock.mockReset();
     mocks.queryMock.mockImplementation(async () => ({ rows: [], rowCount: 0 }));

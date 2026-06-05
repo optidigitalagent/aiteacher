@@ -51,6 +51,9 @@ export class DeepgramSTT {
   // true during intentional close() call — suppresses onConnectionDied callback
   private closing = false
 
+  // Promises waiting for Deepgram Open — resolved true on Open, false on Error/Close/timeout
+  private openResolvers: Array<(v: boolean) => void> = []
+
   // Accumulate final transcript segments until utterance truly ends
   private transcriptBuffer = ''
   // Tracks the last appended is_final segment (normalized) to skip Deepgram duplicates.
@@ -89,6 +92,7 @@ export class DeepgramSTT {
 
     const conn = createClient(API_KEY).listen.live(options)
     console.log(JSON.stringify({ event: '[stt:lifecycle]', status: 'create' }))
+    console.log(JSON.stringify({ event: '[stt:lifecycle]', status: 'connecting' }))
 
     // If Open doesn't fire within 5s, discard queued audio — prevents infinite queue growth.
     this.openTimeoutRef = setTimeout(() => {
@@ -160,6 +164,8 @@ export class DeepgramSTT {
         event: '[stt:lifecycle]', status: 'open', queuedChunks, queuedBytes,
       }))
       this.ready = true
+      const resolvers = this.openResolvers.splice(0)
+      for (const fn of resolvers) fn(true)
       const pending = this.queue.splice(0)
       if (pending.length > 0) {
         const flushedBytes = pending.reduce((sum, b) => sum + b.byteLength, 0)
@@ -243,6 +249,8 @@ export class DeepgramSTT {
       if (this.keepAliveRef) { clearInterval(this.keepAliveRef); this.keepAliveRef = null }
       this.conn  = null
       this.queue = []   // discard stale queued audio — this conn is dead
+      const errResolvers = this.openResolvers.splice(0)
+      for (const fn of errResolvers) fn(false)
     })
 
     conn.on(LiveTranscriptionEvents.Close, (code: unknown, reason: unknown) => {
@@ -268,6 +276,8 @@ export class DeepgramSTT {
       this.ready = false
       this.conn  = null
       this.queue = []   // discard stale queued audio — this conn is dead
+      const closeResolvers = this.openResolvers.splice(0)
+      for (const fn of closeResolvers) fn(false)
       // Notify parent of unexpected close so it can pre-warm the next connection
       // while TTS is playing (before the next mic_start).
       if (!wasIntentional) {
@@ -331,6 +341,27 @@ export class DeepgramSTT {
     this.transcriptBuffer     = ''
     this.lastFinalSegmentNorm = ''
     return text
+  }
+
+  // Resolves true when Deepgram Open fires (or immediately if already ready).
+  // Resolves false on timeout, Error, or Close before Open.
+  // Used by mic_start to gate audio acceptance until the connection is live.
+  waitUntilReady(timeoutMs: number): Promise<boolean> {
+    if (this.ready) return Promise.resolve(true)
+    if (!this.conn) return Promise.resolve(false)
+    return new Promise<boolean>((resolve) => {
+      let done = false
+      const finish = (val: boolean) => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        const idx = this.openResolvers.indexOf(finish)
+        if (idx !== -1) this.openResolvers.splice(idx, 1)
+        resolve(val)
+      }
+      const timer = setTimeout(() => finish(false), timeoutMs)
+      this.openResolvers.push(finish)
+    })
   }
 
   close(): void {

@@ -135,11 +135,12 @@ vi.mock('../../voice/stt.js', () => ({
       mocks.sttState.flushBufferFn = vi.fn(() => '')
       mocks.sttState.isAliveFn     = vi.fn(() => true)
       return {
-        send:        mocks.sttState.sendFn,
-        close:       vi.fn(),
-        clearBuffer: mocks.sttState.clearBufferFn,
-        flushBuffer: mocks.sttState.flushBufferFn,
-        isAlive:     mocks.sttState.isAliveFn,
+        send:           mocks.sttState.sendFn,
+        close:          vi.fn(),
+        clearBuffer:    mocks.sttState.clearBufferFn,
+        flushBuffer:    mocks.sttState.flushBufferFn,
+        isAlive:        mocks.sttState.isAliveFn,
+        waitUntilReady: vi.fn(async () => true),
       }
     }),
 }))
