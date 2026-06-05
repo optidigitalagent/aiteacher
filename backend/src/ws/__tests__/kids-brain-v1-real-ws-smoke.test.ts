@@ -133,6 +133,7 @@ vi.mock('../../voice/stt.js', () => ({
     clearBuffer: vi.fn(),
     flushBuffer: vi.fn(() => ''),
     isConnected: vi.fn(() => false),
+    isAlive:     vi.fn(() => true),
   })),
 }));
 

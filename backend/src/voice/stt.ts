@@ -216,6 +216,12 @@ export class DeepgramSTT {
     }
   }
 
+  // Returns true if the Deepgram WebSocket is open and ready to accept audio.
+  // Used by mic_start to detect a dead connection before the turn begins.
+  isAlive(): boolean {
+    return this.conn !== null && this.ready
+  }
+
   clearBuffer(): void {
     this.transcriptBuffer        = ''
     this.lastFinalSegmentNorm    = ''

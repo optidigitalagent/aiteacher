@@ -3971,6 +3971,22 @@ export function attachLessonWS(server: Server): void {
             meta.kidsAwaitingLateTranscript = false
             meta.pendingMicStop             = false
             meta.pendingTranscript          = ''
+
+            // Kids: recreate Deepgram connection if it died between turns.
+            // The STT instance persists across turns; if the connection drops during idle
+            // time (TTS playback + kid preparation, typically 10–45s), send() queues audio
+            // on a dead socket — Open never fires, queue is never flushed, Deepgram gets
+            // 0 bytes, transcript is lost. Recreating here ensures every turn starts with
+            // a live Deepgram WebSocket. Audio during the ~200ms connect window is buffered
+            // in the queue and flushed when Open fires.
+            if ((meta.kidsBrainV1Active || meta.isKidsMode) && meta.stt && !meta.stt.isAlive()) {
+              console.log(`[voice:kids] stt_reconnect reason=connection_dead turnId=${meta.voiceTurnId ?? 'new'}`)
+              meta.stt.close()
+              meta.stt = null
+              meta.stt = createSTT(ws, meta, true)
+              console.log(`[voice:kids] stt_reconnected new_conn=true`)
+            }
+
             meta.micActive                  = true  // open the gate — accept STT events
             meta.voiceTurnId                = uuid()  // new turn ID — resets dedup window
             // Reset Kids STT turn state on each new recording

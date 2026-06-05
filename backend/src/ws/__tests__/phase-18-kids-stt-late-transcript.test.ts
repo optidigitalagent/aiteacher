@@ -85,6 +85,7 @@ const mocks = vi.hoisted(() => {
     sendFn:        vi.fn(),
     clearBufferFn: vi.fn(),
     flushBufferFn: vi.fn(() => '') as ReturnType<typeof vi.fn>,
+    isAliveFn:     vi.fn(() => true) as ReturnType<typeof vi.fn>,
   }
 
   return {
@@ -132,11 +133,13 @@ vi.mock('../../voice/stt.js', () => ({
       mocks.sttState.sendFn        = vi.fn()
       mocks.sttState.clearBufferFn = vi.fn()
       mocks.sttState.flushBufferFn = vi.fn(() => '')
+      mocks.sttState.isAliveFn     = vi.fn(() => true)
       return {
         send:        mocks.sttState.sendFn,
         close:       vi.fn(),
         clearBuffer: mocks.sttState.clearBufferFn,
         flushBuffer: mocks.sttState.flushBufferFn,
+        isAlive:     mocks.sttState.isAliveFn,
       }
     }),
 }))
