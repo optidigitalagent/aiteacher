@@ -513,6 +513,9 @@ interface ClientMeta {
   // Current target word for Kids Brain V1 — updated after each turn, used for
   // concrete no_transcript recovery messages.
   kidsCurrentTargetWord: string | null
+  // In-memory fallback for Redis failures — holds last known session memory so
+  // exerciseCorrectCount never resets mid-session when Redis is unavailable.
+  kidsMemoryCache: KidsBrainSessionMemory | null
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -1257,6 +1260,7 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
 
   if (existingMemory) {
     meta.kidsSessionId = sessionId
+    meta.kidsMemoryCache = existingMemory
     console.log(`[kids-v1] session_resumed session=${sessionId} item=${existingMemory.currentTargetItemId} activity=${existingMemory.currentActivityId}`)
     const target = existingMemory.currentTargetItemId
     const resumeText = target
@@ -1283,13 +1287,15 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
 
   const startResult = startKidsBrainSession(kidsV1Input)
 
+  // Cache in memory before Redis save so the session survives Redis failures
+  meta.kidsMemoryCache = startResult.sessionMemory
+
   try {
     await store.saveSession(startResult.sessionMemory)
     console.log(`[kids-v1] session_persisted session=${sessionId}`)
   } catch (err) {
-    console.error('[kids-v1] redis_persist_error:', err instanceof Error ? err.message : err)
-    send(ws, { type: 'error', code: 'INTERNAL_ERROR', message: 'Failed to persist kids session.' })
-    return
+    console.warn('[kids-v1] redis_persist_warn (non-fatal, in-memory cache active):', err instanceof Error ? err.message : err)
+    // Continue — session is still functional via kidsMemoryCache for this WS connection
   }
 
   meta.kidsSessionId = sessionId
@@ -1358,22 +1364,37 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
 
   meta.aiCallCount++
 
-  // Load session memory from Redis
+  // Load session memory from Redis, with in-memory fallback for Redis failures
   let sessionMemory: KidsBrainSessionMemory
   try {
     const store = getKidsBrainRedisStore()
     const loaded = await store.getSession(sessionId)
     if (!loaded) {
-      console.error(`[kids-v1] session_memory_not_found session=${sessionId}`)
-      send(ws, { type: 'error', code: 'INVALID_SESSION', message: 'Kids session not found in Redis.' })
+      if (meta.kidsMemoryCache) {
+        console.warn(`[kids-v1] redis_miss_cache_fallback session=${sessionId} target=${meta.kidsMemoryCache.currentTargetItemId ?? 'none'}`)
+        sessionMemory = meta.kidsMemoryCache
+      } else {
+        console.error(`[kids-v1] session_memory_not_found session=${sessionId}`)
+        send(ws, { type: 'error', code: 'INVALID_SESSION', message: 'Kids session not found.' })
+        return
+      }
+    } else {
+      sessionMemory = loaded
+    }
+  } catch (err) {
+    if (meta.kidsMemoryCache) {
+      console.warn('[kids-v1] redis_load_error_cache_fallback:', err instanceof Error ? err.message : err)
+      sessionMemory = meta.kidsMemoryCache
+    } else {
+      console.error('[kids-v1] redis_load_error (no cache):', err instanceof Error ? err.message : err)
+      send(ws, { type: 'error', code: 'INTERNAL_ERROR', message: 'Failed to load kids session.' })
       return
     }
-    sessionMemory = loaded
-  } catch (err) {
-    console.error('[kids-v1] redis_load_error:', err instanceof Error ? err.message : err)
-    send(ws, { type: 'error', code: 'INTERNAL_ERROR', message: 'Failed to load kids session.' })
-    return
   }
+
+  const prevTarget = sessionMemory.currentTargetItemId ?? 'none'
+  const prevCorrectCount = sessionMemory.exerciseCorrectCount ?? 0
+  console.log(`[kids-v1] turn_start session=${sessionId} target=${prevTarget} exerciseCorrectCount=${prevCorrectCount}`)
 
   const sttResult = buildSTTResultFromText(text || null)
 
@@ -1431,11 +1452,23 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
     return
   }
 
+  // Log target progression before saving
+  const newTarget = result.updatedSessionMemory.currentTargetItemId ?? 'none'
+  const newCorrectCount = result.updatedSessionMemory.exerciseCorrectCount ?? 0
+  if (newTarget !== prevTarget) {
+    console.log(`[kids-v1] target_advanced session=${sessionId} from=${prevTarget} to=${newTarget} exerciseCorrectCount=${newCorrectCount}`)
+  } else {
+    console.log(`[kids-v1] turn_complete session=${sessionId} target=${newTarget} exerciseCorrectCount=${newCorrectCount}`)
+  }
+
+  // Always update in-memory cache — survives Redis save failures so exerciseCorrectCount never resets
+  meta.kidsMemoryCache = result.updatedSessionMemory
+
   // Persist updated session memory to Redis
   try {
     await getKidsBrainRedisStore().saveSession(result.updatedSessionMemory)
   } catch (err) {
-    console.error('[kids-v1] redis_save_error (non-fatal):', err instanceof Error ? err.message : err)
+    console.error('[kids-v1] redis_save_error (non-fatal, cache updated):', err instanceof Error ? err.message : err)
   }
 
   // Track current target word for concrete no_transcript recovery messages
@@ -3685,6 +3718,7 @@ export function attachLessonWS(server: Server): void {
         kidsAwaitingLateTranscript: false,
         kidsLateFinalizeRef:        null,
         kidsCurrentTargetWord:      null,
+        kidsMemoryCache:            old.kidsMemoryCache ?? null,
         lastSeen:                   Date.now(),
       }
     } else {
@@ -3730,6 +3764,7 @@ export function attachLessonWS(server: Server): void {
         kidsAwaitingLateTranscript: false,
         kidsLateFinalizeRef:        null,
         kidsCurrentTargetWord:      null,
+        kidsMemoryCache:            null,
       }
     }
 
