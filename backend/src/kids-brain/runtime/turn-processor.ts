@@ -75,6 +75,8 @@ function runExerciseBridge(
 const READINESS_PHRASES = new Set([
   "i'm ready",
   "im ready",
+  "i am ready",
+  "am ready",
   "ready",
   "yes",
   "yep",

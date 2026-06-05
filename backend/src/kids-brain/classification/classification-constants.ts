@@ -68,6 +68,9 @@ export const EXERCISE_READINESS_PHRASES: readonly string[] = [
   "yes ok",
   "i'm ready",
   "im ready",
+  "i am ready",
+  "yes i am ready",
+  "am ready",
   "okay ready",
   "ok ready",
 ];

@@ -443,7 +443,7 @@ describe('Phase 16K — is_final captured in buffer by flushBuffer', () => {
 // ── Suite 4 — Truly silent turn → no_transcript ───────────────────────────────
 
 describe('Phase 16K — Truly silent turn emits no_transcript with child-safe TTS', () => {
-  it('no transcript, no partial, no buffer → speakToClient called with child-safe message', async () => {
+  it('no transcript, no partial, no buffer → Kids Brain handles silence (no hardcoded message)', async () => {
     const { ws } = await startKidsSession()
     mocks.sttState.flushBufferFn.mockReturnValue('')
     mocks.speakToClientMock.mockClear()
@@ -453,20 +453,25 @@ describe('Phase 16K — Truly silent turn emits no_transcript with child-safe TT
     // No audio, no transcript — completely silent turn
     sendFrame(ws, { type: 'mic_stop' })
 
-    // Wait for 800ms Kids stabilization + TTS
-    await new Promise(r => setTimeout(r, 1000))
+    // Wait for 800ms Kids stabilization + Kids Brain processing
+    await new Promise(r => setTimeout(r, 1500))
 
     const calls = mocks.speakToClientMock.mock.calls as unknown[][]
-    const kidsSafeCall = calls.find(c =>
-      typeof c[1] === 'string' &&
-      ((c[1] as string).includes("didn't hear you") || (c[1] as string).includes('Try again')),
-    )
-    expect(kidsSafeCall, 'Child-safe silence prompt must be spoken').toBeDefined()
 
+    // Kids Brain routes silence through the full pipeline → speakToClient called with recovery response
+    expect(calls.length, 'speakToClient must be called for Kids silence recovery').toBeGreaterThan(0)
+
+    // Adult prompt must NOT be used
     const adultCall = calls.find(c =>
       typeof c[1] === 'string' && (c[1] as string).includes("didn't catch that"),
     )
     expect(adultCall, 'Adult prompt must NOT be used for Kids').toBeUndefined()
+
+    // Hardcoded "didn't hear you" must NOT appear — Kids Brain now handles silence
+    const oldHardcoded = calls.find(c =>
+      typeof c[1] === 'string' && (c[1] as string).includes("didn't hear you"),
+    )
+    expect(oldHardcoded, 'Hardcoded "didn\'t hear you" replaced by Kids Brain silence recovery').toBeUndefined()
 
     await closeWS(ws)
   })

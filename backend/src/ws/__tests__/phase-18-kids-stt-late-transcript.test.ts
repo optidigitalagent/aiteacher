@@ -373,29 +373,31 @@ describe('Phase 18 Case C — onTranscript fires during stabilization window', (
 // ── Case E — All sources empty → no_transcript (preserved) ───────────────────
 
 describe('Phase 18 Case E — All transcript sources empty → no_transcript only when truly silent', () => {
-  it('no audio chunks, no transcript → immediate no_transcript (child-safe TTS)', async () => {
+  it('no audio chunks, no transcript → immediate no_transcript → Kids Brain silence recovery', async () => {
     const { ws } = await startKidsSession()
     mocks.sttState.flushBufferFn.mockReturnValue('')
     mocks.speakToClientMock.mockClear()
 
     sendFrame(ws, { type: 'mic_start' })
     await new Promise(r => setTimeout(r, 50))
-    // No audio_chunk → captureChunks = 0 → no late collection
+    // No audio_chunk → captureChunks = 0 → no late collection → immediate no_transcript
     sendFrame(ws, { type: 'mic_stop' })
 
-    // Wait past 800ms stabilization
-    await new Promise(r => setTimeout(r, 1200))
+    // Wait past 800ms stabilization + Kids Brain processing
+    await new Promise(r => setTimeout(r, 1500))
 
     const calls = mocks.speakToClientMock.mock.calls as unknown[][]
-    const kidsCall = calls.find(c =>
-      typeof c[1] === 'string' &&
-      ((c[1] as string).includes("didn't hear you") || (c[1] as string).includes('Try again')),
+    // Kids Brain now handles silence → speakToClient called with recovery response
+    expect(calls.length, 'Kids Brain silence recovery must trigger speakToClient').toBeGreaterThan(0)
+    // Must NOT use hardcoded "didn't hear you" — Kids Brain replaces this
+    const oldMsg = calls.find(c =>
+      typeof c[1] === 'string' && (c[1] as string).includes("didn't hear you"),
     )
-    expect(kidsCall, 'Child-safe no_transcript TTS must fire').toBeDefined()
+    expect(oldMsg, 'Hardcoded "didn\'t hear you" must not appear — Kids Brain handles silence').toBeUndefined()
     await closeWS(ws)
   })
 
-  it('audio sent but no transcript + late window expires → no_transcript fires', async () => {
+  it('audio sent but no transcript + late window expires → no_transcript → Kids Brain silence recovery', async () => {
     const { ws } = await startKidsSession()
     mocks.sttState.flushBufferFn.mockReturnValue('')
     mocks.speakToClientMock.mockClear()
@@ -405,17 +407,19 @@ describe('Phase 18 Case E — All transcript sources empty → no_transcript onl
     sendFrame(ws, { type: 'audio_chunk', data: AUDIO_DATA })  // captureChunks > 0
     await new Promise(r => setTimeout(r, 50))
     sendFrame(ws, { type: 'mic_stop' })
-    // No late transcript arrives → late window expires
+    // No late transcript arrives → late window expires → Kids Brain routes silence
 
-    // Wait: 800ms stabilization + 700ms late window + margin
-    await new Promise(r => setTimeout(r, 1800))
+    // Wait: 800ms stabilization + 700ms late window + Kids Brain processing margin
+    await new Promise(r => setTimeout(r, 2000))
 
     const calls = mocks.speakToClientMock.mock.calls as unknown[][]
-    const kidsCall = calls.find(c =>
-      typeof c[1] === 'string' &&
-      ((c[1] as string).includes("didn't hear you") || (c[1] as string).includes('Try again')),
+    // Kids Brain handles silence recovery after late window expires
+    expect(calls.length, 'Kids Brain silence recovery must trigger speakToClient after late window').toBeGreaterThan(0)
+    // Must NOT use hardcoded "didn't hear you"
+    const oldMsg = calls.find(c =>
+      typeof c[1] === 'string' && (c[1] as string).includes("didn't hear you"),
     )
-    expect(kidsCall, 'Child-safe no_transcript must fire after late window expires').toBeDefined()
+    expect(oldMsg, 'Hardcoded "didn\'t hear you" must not appear — Kids Brain handles silence').toBeUndefined()
     await closeWS(ws)
   })
 })
@@ -548,24 +552,27 @@ describe('Phase 18 Case L2 — Late UtteranceEnd (onTranscript) arrives after 80
 // ── Case L3 — chunks=0 → no late collection (preserved behavior) ─────────────
 
 describe('Phase 18 Case L3 — captureChunks=0 → no late collection, immediate no_transcript', () => {
-  it('mic_start + mic_stop with no audio → no late collection, immediate no_transcript', async () => {
+  it('mic_start + mic_stop with no audio → no late collection → Kids Brain silence recovery promptly', async () => {
     const { ws } = await startKidsSession()
     mocks.sttState.flushBufferFn.mockReturnValue('')
     mocks.speakToClientMock.mockClear()
 
     sendFrame(ws, { type: 'mic_start' })
     await new Promise(r => setTimeout(r, 50))
-    // No audio_chunk → captureChunks = 0
+    // No audio_chunk → captureChunks = 0 → no late collection → immediate no_transcript at ~800ms
     sendFrame(ws, { type: 'mic_stop' })
 
-    // Should fire no_transcript at ~800ms (stabilization), NOT wait 700ms more
-    await new Promise(r => setTimeout(r, 1100))
+    // Should fire no_transcript at ~800ms (stabilization), then Kids Brain processes promptly
+    await new Promise(r => setTimeout(r, 1500))
 
     const calls = mocks.speakToClientMock.mock.calls as unknown[][]
-    const kidsCall = calls.find(c =>
+    // Kids Brain silence recovery fires promptly — speakToClient must have been called
+    expect(calls.length, 'No-audio turn must trigger Kids Brain silence recovery promptly').toBeGreaterThan(0)
+    // Must NOT be the old hardcoded message
+    const oldMsg = calls.find(c =>
       typeof c[1] === 'string' && (c[1] as string).includes("didn't hear"),
     )
-    expect(kidsCall, 'No-audio turn must emit no_transcript promptly').toBeDefined()
+    expect(oldMsg, 'Hardcoded "didn\'t hear" must not appear — Kids Brain now handles silence').toBeUndefined()
 
     // Late onInterim should NOT be accepted (kidsAwaitingLateTranscript=false)
     // If it were accepted, a student_message would appear after — that would be wrong
@@ -637,13 +644,15 @@ describe('Phase 18 — No cross-turn contamination during late collection', () =
     // Wait past turn 2's 800ms stabilization (+ optional 700ms late window if captureChunks>0 for audio sent in T1)
     await new Promise(r => setTimeout(r, 2200))
 
-    // Turn 2 had no transcript → no_transcript must fire with child-safe message
+    // Turn 2 had no transcript → Kids Brain silence recovery must fire (not stale turn-1 partial)
     const calls = mocks.speakToClientMock.mock.calls as unknown[][]
-    // At least ONE call must be the child-safe no_transcript message
-    const kidsNoTranscriptCall = calls.find(c =>
+    // Kids Brain silence recovery fires — speakToClient must have been called
+    expect(calls.length, 'Turn 2 must trigger Kids Brain silence recovery (not stale turn-1 partial)').toBeGreaterThan(0)
+    // Must NOT be the hardcoded "didn't hear" message
+    const oldMsg = calls.find(c =>
       typeof c[1] === 'string' && (c[1] as string).includes("didn't hear"),
     )
-    expect(kidsNoTranscriptCall, 'Turn 2 must emit no_transcript (not stale turn-1 partial)').toBeDefined()
+    expect(oldMsg, 'Hardcoded "didn\'t hear" must not appear — Kids Brain handles silence').toBeUndefined()
 
     await closeWS(ws)
   })

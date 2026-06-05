@@ -363,8 +363,8 @@ describe('Phase 16G — STT transcript routes to processKidsBrainV1Turn', () => 
 // ── Suite 3 — No-transcript fallback uses kidsTtsStream ───────────────────────
 
 describe('Phase 16G — mic_stop no-transcript fallback uses kidsTtsStream', () => {
-  it('no transcript → speakToClient called with kid-safe message, not adult message', async () => {
-    const { ws, messages } = await startKidsSession()
+  it('no transcript → Kids Brain routes silence, speakToClient called (not adult message)', async () => {
+    const { ws } = await startKidsSession()
 
     mocks.speakToClientMock.mockClear()
 
@@ -373,23 +373,26 @@ describe('Phase 16G — mic_stop no-transcript fallback uses kidsTtsStream', () 
     await new Promise(r => setTimeout(r, 60))
     sendFrame(ws, { type: 'mic_stop' })
 
-    // Wait for Kids 800ms stabilization + processing (Kids uses longer window than adults)
-    await new Promise(r => setTimeout(r, 1000))
+    // Wait for Kids 800ms stabilization + Kids Brain processing
+    await new Promise(r => setTimeout(r, 1500))
 
     const calls = mocks.speakToClientMock.mock.calls as unknown[][]
 
-    // kidsTtsStream must have been called with the child-safe silence prompt
-    const kidsSafeCall = calls.find(c =>
-      typeof c[1] === 'string' &&
-      (c[1].includes("didn't hear you") || c[1].includes('Try again')),
-    )
-    expect(kidsSafeCall, 'kidsTtsStream should deliver child-safe silence prompt').toBeDefined()
+    // Kids Brain now handles silence — speakToClient should be called with
+    // a concrete recovery response (silence_long template containing the target word)
+    expect(calls.length, 'speakToClient must be called for Kids silence recovery').toBeGreaterThan(0)
 
-    // Adult prompt must NOT have been used
+    // Adult "didn't catch that" prompt must NOT have been used
     const adultCall = calls.find(c =>
-      typeof c[1] === 'string' && c[1].includes("didn't catch that"),
+      typeof c[1] === 'string' && (c[1] as string).includes("didn't catch that"),
     )
     expect(adultCall, 'Adult ttsStream prompt must not be used in Kids v1 mode').toBeUndefined()
+
+    // Hardcoded "didn't hear you" must NOT appear — Kids Brain replaces this
+    const oldHardcoded = calls.find(c =>
+      typeof c[1] === 'string' && (c[1] as string).includes("didn't hear you"),
+    )
+    expect(oldHardcoded, 'Hardcoded "didn\'t hear you" must not be used — Kids Brain handles silence').toBeUndefined()
 
     await closeWS(ws)
   })

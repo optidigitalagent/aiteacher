@@ -101,10 +101,12 @@ describe('Phase 2 — Perception Layer', () => {
       expect(bundle.transcriptAvailable).toBe(false);
     });
 
-    it('null text: transcriptAvailable=false, isNoResponse=true', () => {
+    it('null text: transcriptAvailable=false, isNoResponse depends on silenceDurationMs', () => {
+      // With silenceDurationMs=0 (default), null transcript does NOT trigger isNoResponse —
+      // only very long silence (>10.5s) does. This enables duration-based silence routing.
       const bundle = buildPerceptionBundle(makeInput({ text: null, audioEnergyLevel: null }));
       expect(bundle.transcriptAvailable).toBe(false);
-      expect(bundle.isNoResponse).toBe(true);
+      expect(bundle.isNoResponse).toBe(false); // 0ms < 10500ms threshold
     });
   });
 
@@ -198,14 +200,18 @@ describe('Phase 2 — Perception Layer', () => {
       expect(silence.isNoResponse).toBe(true);
     });
 
-    it('no transcript → isNoResponse=true regardless of silenceDurationMs', () => {
+    it('short silence (500ms) with no transcript → isNoResponse=false (duration-based ladder)', () => {
+      // After fix: isNoResponse only fires for silenceDurationMs > noResponseThreshold (10500ms for 8-9).
+      // Short silence with no transcript → SILENCE_SHORT, not NO_RESPONSE.
+      // This allows the teacher to give duration-appropriate scaffolding with the target word.
       const silence = analyzeSilence(500, AgeBand.EIGHT_NINE, false);
-      expect(silence.isNoResponse).toBe(true);
+      expect(silence.isNoResponse).toBe(false);
     });
 
-    it('null STT text builds bundle with isNoResponse=true', () => {
+    it('null STT text with silenceDurationMs=0 → isNoResponse=false', () => {
+      // Absent transcript alone does not trigger isNoResponse; only very long silence does.
       const bundle = buildPerceptionBundle(makeInput({ text: null, audioEnergyLevel: null }));
-      expect(bundle.isNoResponse).toBe(true);
+      expect(bundle.isNoResponse).toBe(false);
     });
   });
 

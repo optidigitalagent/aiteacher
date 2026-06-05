@@ -33,7 +33,12 @@ export function analyzeSilence(
 
   const isShortSilence = silenceDurationMs < shortThreshold;
   const isLongSilence = silenceDurationMs >= shortThreshold;
-  const isNoResponse = silenceDurationMs > noResponseThreshold || !transcriptAvailable;
+  // isNoResponse fires only when silence is extremely long (beyond noResponseThreshold).
+  // Deliberately omit !transcriptAvailable here: silence turns always have no transcript
+  // (STT text is null), but that fact alone should not override the duration-based
+  // SILENCE_LONG/MEDIUM/SHORT ladder. Only truly unresponsive children (>10.5s) get
+  // NO_RESPONSE, which gives the "Are you ready?" warm check-in instead of instruction.
+  const isNoResponse = silenceDurationMs > noResponseThreshold;
   const isSilence = !isShortSilence;
 
   return { isSilence, isShortSilence, isLongSilence, isNoResponse };

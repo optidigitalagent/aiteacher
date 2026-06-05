@@ -510,6 +510,9 @@ interface ClientMeta {
   // 700ms more for late is_final/UtteranceEnd events before emitting no_transcript.
   kidsAwaitingLateTranscript: boolean
   kidsLateFinalizeRef:        ReturnType<typeof setTimeout> | null
+  // Current target word for Kids Brain V1 — updated after each turn, used for
+  // concrete no_transcript recovery messages.
+  kidsCurrentTargetWord: string | null
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -1290,6 +1293,7 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
   }
 
   meta.kidsSessionId = sessionId
+  meta.kidsCurrentTargetWord = startResult.sessionMemory.currentTargetItemId ?? null
   console.log(`[kids-v1] session_started user=${userId} session=${sessionId}`)
 
   const adapted = adaptRuntimePackets(startResult.actionPackets)
@@ -1298,7 +1302,7 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
 
 // ── Kids Brain v1 turn processing ─────────────────────────────────────────────
 
-async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: string): Promise<void> {
+async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: string, silenceDurationMs = 0): Promise<void> {
   const sessionId = meta.kidsSessionId
   if (!sessionId) {
     send(ws, { type: 'error', code: 'INVALID_SESSION', message: 'Kids Brain v1 session not initialized.' })
@@ -1379,7 +1383,7 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
       sessionMemory,
       sttResult,
       responseLatencyMs: null,
-      silenceDurationMs: 0,
+      silenceDurationMs,
       attemptCount:      sessionMemory.currentItemAttemptCount,
       // Phase 8.8: derive target word from session memory; fall back to first prototype word.
       // currentTargetItemId is initialized in session-bootstrap from lessonTargetWords[0].
@@ -1433,6 +1437,9 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
   } catch (err) {
     console.error('[kids-v1] redis_save_error (non-fatal):', err instanceof Error ? err.message : err)
   }
+
+  // Track current target word for concrete no_transcript recovery messages
+  meta.kidsCurrentTargetWord = result.updatedSessionMemory.currentTargetItemId ?? null
 
   const adapted = adaptRuntimePackets(result.actionPackets)
   const shouldClose = await processKidsV1Packets(ws, meta, adapted)
@@ -3677,6 +3684,7 @@ export function attachLessonWS(server: Server): void {
         kidsAudioChunkCount:        0,
         kidsAwaitingLateTranscript: false,
         kidsLateFinalizeRef:        null,
+        kidsCurrentTargetWord:      null,
         lastSeen:                   Date.now(),
       }
     } else {
@@ -3721,6 +3729,7 @@ export function attachLessonWS(server: Server): void {
         kidsAudioChunkCount:        0,
         kidsAwaitingLateTranscript: false,
         kidsLateFinalizeRef:        null,
+        kidsCurrentTargetWord:      null,
       }
     }
 
@@ -3965,7 +3974,11 @@ export function attachLessonWS(server: Server): void {
                           return
                         }
                         console.log(`[voice:turn] no_transcript reason=late_empty turnId=${captureTurnId}`)
-                        if (meta.sessionId && meta.lessonId) {
+                        if (meta.kidsBrainV1Active) {
+                          // Pass SILENCE_LONG duration so Kids Brain gives concrete "Say {word}!" recovery
+                          processKidsBrainV1Turn(ws, meta, '', 8000).catch((err: unknown) =>
+                            console.error('[voice] no_transcript_kids_turn error:', err))
+                        } else if (meta.sessionId && meta.lessonId) {
                           kidsTtsStream(ws, meta, "I didn't hear you. Try again!").catch((err: unknown) =>
                             console.error('[voice] no_transcript_tts error:', err))
                         }
@@ -3974,12 +3987,12 @@ export function attachLessonWS(server: Server): void {
                     }
 
                     console.log(`[voice:turn] no_transcript reason=${noReason} turnId=${captureTurnId}`)
-                    if (meta.sessionId && meta.lessonId) {
-                      const noTranscriptMsg = meta.kidsBrainV1Active
-                        ? "I didn't hear you. Try again!"
-                        : "I didn't catch that. Try once more."
-                      const speakNoTranscript = meta.kidsBrainV1Active ? kidsTtsStream : ttsStream
-                      speakNoTranscript(ws, meta, noTranscriptMsg).catch((err: unknown) =>
+                    if (meta.kidsBrainV1Active) {
+                      // Route silence through Kids Brain with SILENCE_LONG duration for concrete "Say {word}!" recovery
+                      processKidsBrainV1Turn(ws, meta, '', 8000).catch((err: unknown) =>
+                        console.error('[voice] no_transcript_kids_turn error:', err))
+                    } else if (meta.sessionId && meta.lessonId) {
+                      ttsStream(ws, meta, "I didn't catch that. Try once more.").catch((err: unknown) =>
                         console.error('[voice] no_transcript_tts error:', err))
                     }
                     return
@@ -4000,12 +4013,13 @@ export function attachLessonWS(server: Server): void {
                       `[voice:turn] rejected kind=${classification.kind} reason=${classification.reason} ` +
                       `preview="${raw.slice(0, 40)}" turnId=${captureTurnId}`,
                     )
-                    if (meta.sessionId && meta.lessonId) {
-                      const noiseMsg = meta.kidsBrainV1Active
-                        ? "I didn't hear you. Try again!"
-                        : "I didn't quite catch that. Could you say that again?"
-                      const speakNoise = meta.kidsBrainV1Active ? kidsTtsStream : ttsStream
-                      speakNoise(ws, meta, noiseMsg).catch((err: unknown) =>
+                    if (meta.kidsBrainV1Active) {
+                      // Route noise through Kids Brain with original text so it can classify
+                      // and respond appropriately (e.g. RANDOM_NONSENSE → warm redirect with word)
+                      processKidsBrainV1Turn(ws, meta, raw).catch((err: unknown) =>
+                        console.error('[voice] noise_kids_turn error:', err))
+                    } else if (meta.sessionId && meta.lessonId) {
+                      ttsStream(ws, meta, "I didn't quite catch that. Could you say that again?").catch((err: unknown) =>
                         console.error('[voice] noise_reject_tts error:', err))
                     }
                     return
