@@ -521,6 +521,11 @@ interface ClientMeta {
   // Timestamp of last proactive STT pre-warm (epoch ms). Guards against rapid-reconnect
   // loops if Deepgram rejects connections repeatedly. Max one pre-warm per 5 seconds.
   kidsPrewarmCooldown: number
+  // Audio chunks buffered while mic_start awaits waitUntilReady (Deepgram reconnect window).
+  // Flushed into STT after Open fires; discarded on timeout. Max 200 chunks.
+  kidsAudioPendingBuffer: string[]
+  // True while mic_start is awaiting waitUntilReady — gates audio buffering vs stale reject.
+  kidsWaitingForSttReady: boolean
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -3815,6 +3820,8 @@ export function attachLessonWS(server: Server): void {
         kidsCurrentTargetWord:      null,
         kidsMemoryCache:            old.kidsMemoryCache ?? null,
         kidsPrewarmCooldown:        0,
+        kidsAudioPendingBuffer:     [],
+        kidsWaitingForSttReady:     false,
         lastSeen:                   Date.now(),
       }
     } else {
@@ -3862,6 +3869,8 @@ export function attachLessonWS(server: Server): void {
         kidsCurrentTargetWord:      null,
         kidsMemoryCache:            null,
         kidsPrewarmCooldown:        0,
+        kidsAudioPendingBuffer:     [],
+        kidsWaitingForSttReady:     false,
       }
     }
 
@@ -4013,6 +4022,8 @@ export function attachLessonWS(server: Server): void {
             meta.kidsPartialTranscript  = ''
             meta.kidsPartialTurnId      = null
             meta.kidsAudioChunkCount    = 0
+            meta.kidsAudioPendingBuffer = []    // reset per-turn audio buffer
+            meta.kidsWaitingForSttReady = false  // will be set true inside isAlive check
             meta.stt?.clearBuffer()
 
             // Kids: recreate Deepgram connection if it died between turns.
@@ -4025,6 +4036,9 @@ export function attachLessonWS(server: Server): void {
             // Then we WAIT for Open before setting micActive — the race condition fix.
             // Previously micActive=true was set immediately after createSTT, before
             // Deepgram Open, so audio arrived before the connection was ready.
+            //
+            // Phase 23: while awaiting waitUntilReady, audio_chunks are buffered (not rejected)
+            // via kidsWaitingForSttReady=true + kidsAudioPendingBuffer. Flushed after Open.
             if ((meta.kidsBrainV1Active || meta.isKidsMode) && meta.stt && !meta.stt.isAlive()) {
               console.log(`[voice:kids] stt_reconnect reason=connection_dead turnId=${meta.voiceTurnId}`)
               meta.stt.close()
@@ -4032,15 +4046,30 @@ export function attachLessonWS(server: Server): void {
               meta.stt = createSTT(ws, meta, true)
               console.log(`[voice:kids] stt_reconnected new_conn=true`)
 
+              meta.kidsWaitingForSttReady = true  // buffer audio_chunks until STT is open
               console.log(JSON.stringify({ event: '[voice:kids]', status: 'stt_wait_ready_start', turnId: meta.voiceTurnId }))
               const sttReady = await meta.stt.waitUntilReady(2000)
+              meta.kidsWaitingForSttReady = false
+
               if (!sttReady) {
-                console.warn(JSON.stringify({ event: '[voice:kids]', status: 'stt_wait_ready_timeout', turnId: meta.voiceTurnId }))
-                // micActive stays false — audio_chunks will be dropped; mic_stop will
-                // finalize as a silent turn so Kids Brain gives a concrete retry prompt.
+                console.warn(JSON.stringify({ event: '[voice:kids]', status: 'stt_wait_ready_timeout', turnId: meta.voiceTurnId, bufferedChunks: meta.kidsAudioPendingBuffer.length }))
+                meta.kidsAudioPendingBuffer = []  // discard — STT unavailable
+                // micActive stays false — mic_stop will finalize as a silent turn.
                 break
               }
+
               console.log(JSON.stringify({ event: '[voice:kids]', status: 'stt_wait_ready_success', turnId: meta.voiceTurnId }))
+
+              // Flush audio chunks that arrived during the wait window into the live STT
+              if (meta.kidsAudioPendingBuffer.length > 0) {
+                const flushCount = meta.kidsAudioPendingBuffer.length
+                console.log(`[voice:kids] stt_buffer_flush chunks=${flushCount} turnId=${meta.voiceTurnId}`)
+                for (const chunk of meta.kidsAudioPendingBuffer) {
+                  meta.stt.send(chunk)
+                  meta.kidsAudioChunkCount++
+                }
+                meta.kidsAudioPendingBuffer = []
+              }
             }
 
             meta.micActive = true  // open the gate — accept STT events
@@ -4244,7 +4273,27 @@ export function attachLessonWS(server: Server): void {
               return
             }
             if (!meta.micActive) {
-              console.log('[ws:audio] stale_chunk_ignored')
+              const isKids = meta.kidsBrainV1Active || meta.isKidsMode
+              // Phase 23: buffer current-turn chunks during Deepgram reconnect wait.
+              // Audio arrives immediately after mic_start; STT may not be Open yet.
+              if (isKids && meta.kidsWaitingForSttReady && meta.kidsAudioPendingBuffer.length < 200) {
+                meta.kidsAudioPendingBuffer.push(msg.data)
+                return  // buffered — not stale
+              }
+              // Determine stale reason for diagnostics
+              const staleReason = !meta.voiceTurnId
+                ? 'no_turn'
+                : (isKids && meta.kidsWaitingForSttReady)
+                  ? 'stt_waiting'  // buffer was full (>200 chunks)
+                  : 'mic_not_active'
+              console.log('[ws:audio] stale_chunk_ignored', JSON.stringify({
+                reason:             staleReason,
+                isKids,
+                micActive:          meta.micActive,
+                waitingForSttReady: meta.kidsWaitingForSttReady,
+                turnId:             meta.voiceTurnId,
+                connectionId:       meta.connectionId,
+              }))
               return
             }
             if (ws.readyState !== WebSocket.OPEN) {
