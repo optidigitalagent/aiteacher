@@ -113,6 +113,8 @@ vi.mock('../../voice/tts.js', () => ({
 // STT mock: captures onTranscript callback + exposes send so tests can
 // verify audio reaches it and trigger synthetic transcripts.
 vi.mock('../../voice/stt.js', () => ({
+  DEEPGRAM_LIVE_OPTIONS:      { model: 'nova-2', language: 'en', encoding: 'linear16', sample_rate: 16000, channels: 1 },
+  DEEPGRAM_KIDS_LIVE_OPTIONS: { model: 'nova-2', language: 'en', encoding: 'linear16', sample_rate: 16000, channels: 1, utterance_end_ms: 700 },
   DeepgramSTT: vi.fn().mockImplementation((onTranscript: (text: string) => void) => {
     mocks.sttState.onTranscript  = onTranscript
     mocks.sttState.sendFn        = vi.fn()

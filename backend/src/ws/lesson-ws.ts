@@ -25,7 +25,8 @@ import { getFocusStudentBookSection } from '../lesson/focus-student-book.js'
 import { getCatalogEntry } from '../lesson/curriculum-catalog.js'
 import { LessonOrchestrator } from '../lesson/orchestrator.js'
 import type { ExerciseErrorData } from '../lesson/orchestrator.js'
-import { DeepgramSTT } from '../voice/stt.js'
+import { DeepgramSTT, DEEPGRAM_KIDS_LIVE_OPTIONS } from '../voice/stt.js'
+import { applyKidsTargetWordCorrection } from './kids-stt-correction.js'
 import { speakToClient } from '../voice/tts.js'
 import { loadExercise, recordAnswer } from '../exercises/exercise-store.js'
 import { validateAnswer } from '../exercises/validator.js'
@@ -1228,7 +1229,7 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
   meta.pendingTranscript = ''
   meta.pendingMicStop    = false
   meta.micActive         = false
-  meta.stt = createSTT(ws, meta)
+  meta.stt = createSTT(ws, meta, true)  // Kids: use shorter utterance_end_ms
 
   meta.maxDurationRef = setTimeout(() => {
     console.log(`[kids-v1] max_duration session=${sessionId}`)
@@ -1306,6 +1307,10 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
   const adapted = adaptRuntimePackets(startResult.actionPackets)
   await processKidsV1Packets(ws, meta, adapted)
 }
+
+// ── Kids target-word STT correction ──────────────────────────────────────────
+// Imported from kids-stt-correction.ts (extracted for unit testability)
+// applyKidsTargetWordCorrection, KIDS_SOCIAL_NEVER_CORRECT
 
 // ── Kids Brain v1 turn processing ─────────────────────────────────────────────
 
@@ -2601,7 +2606,19 @@ async function processInput(
     meta.aiProcessing = true
     try {
       if (meta.kidsBrainV1Active) {
-        await processKidsBrainV1Turn(ws, meta, text)
+        // Apply target-word correction for single-word STT answers (not silence/empty).
+        // Only corrects known phonetic variants (blu→blue, blew→blue, glue→blue).
+        // Social speech (hello, great, yes) is guarded and never corrected.
+        let processText = text
+        if (text.trim() && meta.kidsCurrentTargetWord) {
+          const { correctedText, correctionApplied } = applyKidsTargetWordCorrection(
+            text,
+            meta.kidsCurrentTargetWord,
+            meta.kidsSessionId ?? meta.sessionId ?? 'unknown',
+          )
+          if (correctionApplied) processText = correctedText
+        }
+        await processKidsBrainV1Turn(ws, meta, processText)
       } else {
         await processKidsTurn(ws, meta, text)
       }
@@ -3566,7 +3583,8 @@ function getPhasesUpTo(phase: LessonPhase): LessonPhase[] {
 // lesson start, and resume. Keeps all three paths byte-for-byte identical so
 // a bug fix in callbacks applies everywhere.
 
-function createSTT(ws: WebSocket, meta: ClientMeta): DeepgramSTT {
+function createSTT(ws: WebSocket, meta: ClientMeta, isKids = false): DeepgramSTT {
+  const sttOptions = isKids ? DEEPGRAM_KIDS_LIVE_OPTIONS : undefined
   return new DeepgramSTT(
     // ── onTranscript: fires on UtteranceEnd (silence ≥ UTTERANCE_END_MS) ────
     (transcript) => {
@@ -3665,6 +3683,7 @@ function createSTT(ws: WebSocket, meta: ClientMeta): DeepgramSTT {
         send(ws, { type: 'transcript', text: fullInterim })
       }
     },
+    sttOptions,
   )
 }
 
@@ -3840,8 +3859,8 @@ export function attachLessonWS(server: Server): void {
       // ── Grace-window reattach path ────────────────────────────────────
       console.log(`[ws:ownership] owner_set session=${wsSessionId} connectionId=${meta.connectionId}`)
 
-      // Re-create STT for the new TCP connection
-      meta.stt = createSTT(ws, meta)
+      // Re-create STT for the new TCP connection (preserve Kids config on reconnect)
+      meta.stt = createSTT(ws, meta, meta.kidsBrainV1Active || meta.isKidsMode)
 
       // Re-arm max-duration timeout with the remaining lesson time
       if (meta.lessonStartedAt) {
@@ -4011,6 +4030,21 @@ export function attachLessonWS(server: Server): void {
                     `partialChars=${meta.kidsPartialTranscript.length} finalChars=${raw.length} ` +
                     `source=${transcriptSource} chunks=${captureChunks} stabilizationMs=${STABILIZATION_MS}`,
                   )
+
+                  // Kids STT quality diagnostic — logged for every Kids turn for monitoring
+                  if (isKidsTurn) {
+                    console.log(JSON.stringify({
+                      event:               '[kids-stt-quality]',
+                      sessionId:           meta.kidsSessionId ?? meta.sessionId,
+                      turnId:              captureTurnId,
+                      targetWord:          meta.kidsCurrentTargetWord ?? null,
+                      rawTranscript:       raw || null,
+                      normalizedTranscript: raw ? raw.trim().toLowerCase() : null,
+                      source:              transcriptSource,
+                      chunks:              captureChunks,
+                      stabilizationMs:     STABILIZATION_MS,
+                    }))
+                  }
 
                   if (!raw || !shouldProcessTranscript(raw)) {
                     const noReason = !raw ? 'empty' : 'filter'

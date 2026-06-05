@@ -8,6 +8,10 @@ const API_KEY = process.env.DEEPGRAM_API_KEY ?? ''
 // 1500ms = student can think for 1.5s mid-answer without triggering AI.
 const UTTERANCE_END_MS = 1500
 
+// Kids sessions: tighter window — children say one word and stop.
+// 700ms is enough silence to confirm a single spoken word without clipping.
+const UTTERANCE_END_MS_KIDS = 700
+
 // Exported for unit tests — change here propagates to test assertions automatically.
 // detect_language is a PrerecordedSchema-only field; sending it to the Live API
 // causes HTTP 400. Use explicit language=en instead.
@@ -21,6 +25,15 @@ export const DEEPGRAM_LIVE_OPTIONS: LiveSchema = {
   encoding:         'linear16',
   sample_rate:      16000,
   channels:         1,
+}
+
+// Kids-specific Deepgram options — identical audio format, tighter silence window.
+// Short single-word answers (blue, green, cat) do not need 1.5s of trailing silence.
+// Reducing utterance_end_ms to 700ms makes UtteranceEnd fire faster after the child
+// finishes speaking, reducing the time the connection stays open to pick up echo noise.
+export const DEEPGRAM_KIDS_LIVE_OPTIONS: LiveSchema = {
+  ...DEEPGRAM_LIVE_OPTIONS,
+  utterance_end_ms: UTTERANCE_END_MS_KIDS,
 }
 
 type DgLive = ReturnType<ReturnType<typeof createClient>['listen']['live']>
@@ -43,13 +56,14 @@ export class DeepgramSTT {
   constructor(
     private onTranscript: (text: string) => void,
     private onInterim?: (text: string) => void,
+    options: LiveSchema = DEEPGRAM_LIVE_OPTIONS,
   ) {
     if (!API_KEY) {
       console.warn('[stt] DEEPGRAM_API_KEY not set — voice input disabled')
       return
     }
 
-    const conn = createClient(API_KEY).listen.live(DEEPGRAM_LIVE_OPTIONS)
+    const conn = createClient(API_KEY).listen.live(options)
 
     // ── Phase 16G.3 diagnostic: expose Deepgram WebSocket handshake failure ──
     // ws emits 'unexpected-response' for HTTP 401/402/403 upgrade rejections

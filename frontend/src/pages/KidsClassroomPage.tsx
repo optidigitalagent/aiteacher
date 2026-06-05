@@ -14,6 +14,7 @@ import {
   primeHtmlAudio,
   stopAudioPlayback,
   requestMicPreflight,
+  getScheduledAudioEndMs,
 } from '../features/classroom/services/voiceApi'
 import { useKidsMic, type KidsMicState } from '../features/classroom/hooks/useKidsMic'
 
@@ -873,7 +874,19 @@ export default function KidsClassroomPage() {
         if (!audioStartedRef.current) {
           pendingTurnEnd.current = true
         } else {
-          setKidsState('listening')
+          // Wait for scheduled audio to finish before enabling mic.
+          // teacher_turn_end arrives while Web Audio may still have buffered chunks
+          // playing in the speaker — opening the mic immediately causes echo of the
+          // teacher's voice (e.g., "Hello!") to be captured and misrecognised.
+          // POST_TTS_GUARD_MS adds extra silence for acoustic echo decay.
+          const POST_TTS_GUARD_MS = 400
+          const remainingMs = getScheduledAudioEndMs()
+          const delayMs = remainingMs + POST_TTS_GUARD_MS
+          if (delayMs > POST_TTS_GUARD_MS) {
+            setTimeout(() => setKidsState('listening'), delayMs)
+          } else {
+            setTimeout(() => setKidsState('listening'), POST_TTS_GUARD_MS)
+          }
         }
         break
       }
