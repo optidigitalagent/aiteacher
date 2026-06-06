@@ -9,8 +9,10 @@ const API_KEY = process.env.DEEPGRAM_API_KEY ?? ''
 const UTTERANCE_END_MS = 1500
 
 // Kids sessions: tighter window — children say one word and stop.
-// 700ms is enough silence to confirm a single spoken word without clipping.
-const UTTERANCE_END_MS_KIDS = 700
+// 1000ms is the Deepgram API minimum for utterance_end_ms (values below 1000
+// cause HTTP 400). 1000ms is still 33% faster than adult (1500ms), which is
+// sufficient to confirm single spoken words without clipping.
+const UTTERANCE_END_MS_KIDS = 1000
 
 // Exported for unit tests — change here propagates to test assertions automatically.
 // detect_language is a PrerecordedSchema-only field; sending it to the Live API

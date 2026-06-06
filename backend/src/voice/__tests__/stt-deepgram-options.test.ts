@@ -4,7 +4,7 @@
 // See: https://developers.deepgram.com/docs/language-detection
 
 import { describe, it, expect } from 'vitest'
-import { DEEPGRAM_LIVE_OPTIONS } from '../stt.js'
+import { DEEPGRAM_LIVE_OPTIONS, DEEPGRAM_KIDS_LIVE_OPTIONS } from '../stt.js'
 
 describe('DEEPGRAM_LIVE_OPTIONS — Live API parameter contract', () => {
   // ── Required parameters that must be preserved ────────────────────────────
@@ -70,5 +70,25 @@ describe('DEEPGRAM_LIVE_OPTIONS — Live API parameter contract', () => {
     for (const key of batchOnly) {
       expect(Object.prototype.hasOwnProperty.call(DEEPGRAM_LIVE_OPTIONS, key)).toBe(false)
     }
+  })
+})
+
+// ── utterance_end_ms minimum constraint (HTTP 400 guard) ─────────────────────
+// Deepgram requires utterance_end_ms >= 1000ms. Values below 1000 cause HTTP 400
+// before WebSocket Open. This was the root cause of Kids STT connection failures.
+// See: https://developers.deepgram.com/docs/understanding-end-of-speech-detection
+
+describe('utterance_end_ms minimum constraint — HTTP 400 guard', () => {
+
+  it('adult utterance_end_ms is >= 1000 (Deepgram minimum)', () => {
+    expect(DEEPGRAM_LIVE_OPTIONS.utterance_end_ms).toBeGreaterThanOrEqual(1000)
+  })
+
+  it('Kids utterance_end_ms is >= 1000 (Deepgram minimum — P0 fix: was 700, caused HTTP 400)', () => {
+    expect(DEEPGRAM_KIDS_LIVE_OPTIONS.utterance_end_ms).toBeGreaterThanOrEqual(1000)
+  })
+
+  it('Kids utterance_end_ms (1000) is still faster than adult (1500)', () => {
+    expect(DEEPGRAM_KIDS_LIVE_OPTIONS.utterance_end_ms).toBeLessThan(DEEPGRAM_LIVE_OPTIONS.utterance_end_ms!)
   })
 })

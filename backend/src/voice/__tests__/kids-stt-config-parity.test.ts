@@ -12,8 +12,8 @@ import { DEEPGRAM_LIVE_OPTIONS, DEEPGRAM_KIDS_LIVE_OPTIONS } from '../stt.js'
 
 describe('Kids vs Adult STT config parity', () => {
 
-  it('Kids utterance_end_ms is shorter than adult (700 < 1500)', () => {
-    expect(DEEPGRAM_KIDS_LIVE_OPTIONS.utterance_end_ms).toBe(700)
+  it('Kids utterance_end_ms is 1000 (Deepgram minimum, shorter than adult 1500)', () => {
+    expect(DEEPGRAM_KIDS_LIVE_OPTIONS.utterance_end_ms).toBe(1000)
     expect(DEEPGRAM_LIVE_OPTIONS.utterance_end_ms).toBe(1500)
     expect(DEEPGRAM_KIDS_LIVE_OPTIONS.utterance_end_ms).toBeLessThan(DEEPGRAM_LIVE_OPTIONS.utterance_end_ms!)
   })
