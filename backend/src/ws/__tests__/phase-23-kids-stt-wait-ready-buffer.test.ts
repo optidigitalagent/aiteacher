@@ -651,3 +651,118 @@ describe('Phase 23 — Phase 16K regression: existing STT turn finalization inta
     await closeWS(ws)
   })
 })
+
+// ── Suite 5: mic_stop while waitUntilReady is pending ─────────────────────────
+
+describe('Phase 23 — mic_stop_while_waiting: deferred finalization after buffer flush', () => {
+
+  it('mic_stop during waitUntilReady → Kids Brain receives transcript (finalize_after_wait)', async () => {
+    // Scenario: Deepgram dead → reconnect → waitUntilReady deferred
+    // Frontend sends mic_stop BEFORE waitUntilReady resolves.
+    // Fix: mic_stop sets kidsMicStopDuringWait; mic_start runs finalization after flush.
+    // Kids Brain must respond (not a zombie-open mic or lost turn).
+
+    const { ws, messages } = await startKidsSession()
+    const prevAI = aiTexts(messages).length
+
+    mocks.sttState.isAliveFn.mockReturnValueOnce(false)
+
+    let resolveReady!: (val: boolean) => void
+    mocks.sttState.waitUntilReadyFn.mockImplementationOnce(
+      () => new Promise<boolean>(res => { resolveReady = res }),
+    )
+
+    sendFrame(ws, { type: 'mic_start' })
+    await new Promise(r => setTimeout(r, 30))  // mic_start is now awaiting waitUntilReady
+
+    // Audio chunks arrive during wait
+    const audioChunk = Buffer.from('pcm-during-wait').toString('base64')
+    sendFrame(ws, { type: 'audio_chunk', data: audioChunk })
+    await new Promise(r => setTimeout(r, 20))
+
+    // mic_stop arrives BEFORE waitUntilReady resolves
+    sendFrame(ws, { type: 'mic_stop' })
+    await new Promise(r => setTimeout(r, 30))
+
+    // Now resolve waitUntilReady → mic_start flushes buffer, fires deferred finalize
+    resolveReady(true)
+
+    // Deepgram processes flushed audio and fires transcript
+    await new Promise(r => setTimeout(r, 100))
+    mocks.sttState.onTranscript?.('blue')
+
+    // Kids stabilization (800ms) + processing
+    await waitUntil(messages, msgs => aiTexts(msgs).length > prevAI, 5000)
+
+    const newTexts = aiTexts(messages).slice(prevAI)
+    expect(newTexts.length, 'Kids Brain must respond after deferred finalization').toBeGreaterThan(0)
+    expect(mocks.sttState.sendFn, 'Buffered chunks must reach STT').toHaveBeenCalledWith(audioChunk)
+
+    await closeWS(ws)
+  })
+
+  it('mic_stop during wait (timeout path) → Kids Brain silence recovery, no zombie mic', async () => {
+    // waitUntilReady times out while mic_stop is already deferred.
+    // Buffer discarded; turn routes as silence (no chunks reached STT).
+    // Most importantly: micActive must NOT be left true (no zombie).
+
+    const { ws, messages } = await startKidsSession()
+    const prevAI = aiTexts(messages).length
+
+    mocks.sttState.isAliveFn.mockReturnValueOnce(false)
+    // waitUntilReady resolves false immediately (simulated timeout)
+    mocks.sttState.waitUntilReadyFn.mockResolvedValueOnce(false)
+
+    sendFrame(ws, { type: 'mic_start' })
+    await new Promise(r => setTimeout(r, 30))
+
+    // Send chunk and mic_stop during wait
+    const lostChunk = Buffer.from('lost-in-timeout').toString('base64')
+    sendFrame(ws, { type: 'audio_chunk', data: lostChunk })
+    sendFrame(ws, { type: 'mic_stop' })
+
+    // Wait for Kids silence recovery
+    await waitUntil(messages, msgs => aiTexts(msgs).length > prevAI, 5000)
+
+    expect(mocks.sttState.sendFn, 'Chunk must NOT reach STT on timeout path').not.toHaveBeenCalledWith(lostChunk)
+    expect(aiTexts(messages).slice(prevAI).length, 'Kids Brain must respond to silence').toBeGreaterThan(0)
+
+    await closeWS(ws)
+  })
+
+  it('mic_stop during wait → chunks > 0 counted after flush, not at mic_stop time', async () => {
+    // captureChunks must reflect chunks flushed AFTER wait, not the 0-count at mic_stop time.
+    // This ensures late_collection_start fires (captureChunks > 0) and finalChars can be > 0.
+
+    const { ws } = await startKidsSession()
+
+    mocks.sttState.isAliveFn.mockReturnValueOnce(false)
+
+    let resolveReady!: (val: boolean) => void
+    mocks.sttState.waitUntilReadyFn.mockImplementationOnce(
+      () => new Promise<boolean>(res => { resolveReady = res }),
+    )
+
+    sendFrame(ws, { type: 'mic_start' })
+    await new Promise(r => setTimeout(r, 30))
+
+    // 5 audio chunks during wait
+    const chunks = Array.from({ length: 5 }, (_, i) => Buffer.from(`chunk-${i}`).toString('base64'))
+    for (const c of chunks) sendFrame(ws, { type: 'audio_chunk', data: c })
+    await new Promise(r => setTimeout(r, 30))
+
+    sendFrame(ws, { type: 'mic_stop' })
+    await new Promise(r => setTimeout(r, 20))
+
+    resolveReady(true)
+    await new Promise(r => setTimeout(r, 100))
+
+    // All buffered chunks must have reached stt.send()
+    const sendCalls = (mocks.sttState.sendFn.mock.calls as unknown[][]).map(c => c[0])
+    for (const c of chunks) {
+      expect(sendCalls, `chunk ${c} must reach STT after deferred finalize`).toContain(c)
+    }
+
+    await closeWS(ws)
+  })
+})

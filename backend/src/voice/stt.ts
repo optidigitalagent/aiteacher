@@ -371,6 +371,9 @@ export class DeepgramSTT {
     this.conn  = null     // prevent double-close race
     this.ready = false
     this.queue = []       // discard any queued audio — session is ending
+    // Drain pending waitUntilReady callers immediately — connection is gone.
+    const resolvers = this.openResolvers.splice(0)
+    for (const r of resolvers) r(false)
     if (this.openTimeoutRef) { clearTimeout(this.openTimeoutRef);  this.openTimeoutRef = null }
     if (this.keepAliveRef)   { clearInterval(this.keepAliveRef);   this.keepAliveRef   = null }
     this.transcriptBuffer     = ''
