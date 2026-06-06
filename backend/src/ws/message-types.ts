@@ -178,7 +178,7 @@ export interface OutboundTeacherTurnEnd {
  */
 export interface OutboundVoiceUnavailable {
   type:   'voice_unavailable'
-  reason: 'TTS_PROVIDER_QUOTA' | 'TTS_RATE_LIMITED' | 'TTS_PROVIDER_UNAVAILABLE' | 'TTS_UNKNOWN_ERROR'
+  reason: 'TTS_PROVIDER_QUOTA' | 'TTS_RATE_LIMITED' | 'TTS_PROVIDER_UNAVAILABLE' | 'TTS_UNKNOWN_ERROR' | 'STT_CONNECT_FAILED'
 }
 
 /**

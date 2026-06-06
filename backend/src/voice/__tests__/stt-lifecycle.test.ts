@@ -296,6 +296,94 @@ describe('Fix 4 — Open timeout (5s) discards queue if Open never fires', () =>
   })
 })
 
+// ── P0 Fix: ErrorEvent / CloseEvent format — error detail no longer '{}' ──────
+//
+// Root cause: Deepgram SDK v3 emits ErrorEvent (browser-compatible) as the
+// error arg, not a standard Error.  ErrorEvent properties (message, error,
+// type) are non-enumerable → JSON.stringify always returns '{}'.
+//
+// Same issue for Close: SDK passes CloseEvent as first arg, not (code, reason).
+//
+// After fix: detail = 'type=error msg=<actual message>' instead of '{}',
+// and close code is a numeric string instead of '(object)'.
+
+describe('P0 Fix — ErrorEvent and CloseEvent parsing', () => {
+
+  it('waitUntilReady resolves false when Error fires with an ErrorEvent-like {} before Open', async () => {
+    const stt = makeStt()
+    // Simulate Deepgram SDK emitting ErrorEvent as {} (non-enumerable props)
+    const waitPromise = stt.waitUntilReady(500)
+    mockLive.emit('error', {})  // empty object — ErrorEvent with non-enumerable fields
+    const result = await waitPromise
+    expect(result).toBe(false)
+  })
+
+  it('waitUntilReady resolves false when Close fires with a CloseEvent object before Open', async () => {
+    const stt = makeStt()
+    const waitPromise = stt.waitUntilReady(500)
+    // SDK emits CloseEvent as first arg (not separate code, reason args)
+    mockLive.emit('close', { code: 1006, reason: 'abnormal closure' })
+    const result = await waitPromise
+    expect(result).toBe(false)
+  })
+
+  it('isAlive() returns false after CloseEvent-object close', () => {
+    const stt = makeStt()
+    mockLive.emit('open')
+    expect(stt.isAlive()).toBe(true)
+
+    mockLive.emit('close', { code: 1006, reason: 'server reset' })
+    expect(stt.isAlive()).toBe(false)
+  })
+
+  it('isAlive() returns false after ErrorEvent-like {} error', () => {
+    const stt = makeStt()
+    mockLive.emit('open')
+
+    mockLive.emit('error', { type: 'error', message: 'Unexpected server response: 401' })
+    expect(stt.isAlive()).toBe(false)
+  })
+
+  it('onConnectionDied fires when CloseEvent-object close happens before Open', () => {
+    const onConnectionDied = vi.fn()
+    const stt = makeStt({ onConnectionDied })
+    // Connection rejected before Open (Deepgram 401/400)
+    mockLive.emit('close', { code: 1008, reason: 'policy violation' })
+    expect(onConnectionDied).toHaveBeenCalledTimes(1)
+  })
+
+  it('error logging does not throw on {} ErrorEvent (non-enumerable properties)', () => {
+    const stt = makeStt()
+    // Must not throw — {} has no enumerable properties but typeof is object
+    expect(() => {
+      mockLive.emit('error', {})
+    }).not.toThrow()
+  })
+
+  it('error logging extracts message from ErrorEvent-like object', () => {
+    // Spy must be set up before the error fires
+    const errorSpy = vi.spyOn(console, 'error')
+    const stt = makeStt()
+    const ev = { type: 'error', message: 'Unexpected server response: 401', error: new Error('401') }
+    mockLive.emit('error', ev)
+    // The logged detail should contain the message, not just '{}'
+    const allCalls = errorSpy.mock.calls.flat().join(' ')
+    expect(allCalls).toContain('401')
+    expect(allCalls).not.toContain('"detail":"{}"')
+    expect(allCalls).not.toMatch(/"detail":"\\{\\}"/)
+  })
+
+  it('close logging extracts numeric code from CloseEvent object', () => {
+    const errorSpy = vi.spyOn(console, 'error')
+    const stt = makeStt()
+    mockLive.emit('close', { code: 4401, reason: 'unauthorized' })
+    const allCalls = errorSpy.mock.calls.flat().join(' ')
+    // Code 4401 should appear in the log, not '(object)'
+    expect(allCalls).toContain('4401')
+    expect(allCalls).not.toContain('(object)')
+  })
+})
+
 // ── Fix 5: vad_events in Kids config ─────────────────────────────────────────
 
 describe('Fix 5 — DEEPGRAM_KIDS_LIVE_OPTIONS includes vad_events: true', () => {

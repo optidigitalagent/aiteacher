@@ -231,9 +231,21 @@ export class DeepgramSTT {
 
     conn.on(LiveTranscriptionEvents.Error, (err: unknown) => {
       const isErr = err instanceof Error
-      const detail = isErr
-        ? `${err.name}: ${err.message}`
-        : (typeof err === 'object' && err !== null ? JSON.stringify(err) : String(err))
+      let detail: string
+      if (isErr) {
+        detail = `${err.name}: ${err.message}`
+      } else if (typeof err === 'object' && err !== null) {
+        // Deepgram SDK v3 emits ErrorEvent (browser-compatible WS) as the error arg.
+        // ErrorEvent properties (message, error, type) are non-enumerable —
+        // JSON.stringify(event) always returns '{}'. Extract them explicitly.
+        const e = err as Record<string, unknown>
+        const msg   = typeof e['message'] === 'string' ? e['message'] : ''
+        const inner = e['error'] instanceof Error ? (e['error'] as Error).message : String(e['error'] ?? '')
+        const typ   = typeof e['type']    === 'string' ? e['type']    : ''
+        detail = `type=${typ || 'unknown'} msg=${msg || inner || '(no message)'}`
+      } else {
+        detail = String(err)
+      }
       console.error(JSON.stringify({
         event:        '[stt:lifecycle]',
         status:       'error',
@@ -254,11 +266,22 @@ export class DeepgramSTT {
     })
 
     conn.on(LiveTranscriptionEvents.Close, (code: unknown, reason: unknown) => {
-      const codeStr   = String(code ?? '(none)')
-      const reasonRaw = reason instanceof Buffer
-        ? reason.toString('utf8')
-        : (typeof reason === 'string' ? reason : JSON.stringify(reason))
-      const safeReason = (reasonRaw || '(none)').slice(0, 200)
+      // Deepgram SDK v3 emits CloseEvent as first arg (browser-compatible WS API),
+      // not separate (code, reason) integers/Buffers. Extract .code and .reason explicitly.
+      let codeStr: string
+      let safeReason: string
+      if (typeof code === 'object' && code !== null) {
+        const ev = code as Record<string, unknown>
+        codeStr   = typeof ev['code'] === 'number' ? String(ev['code']) : '(object)'
+        const r   = typeof ev['reason'] === 'string' ? ev['reason'] : ''
+        safeReason = (r || '(none)').slice(0, 200)
+      } else {
+        codeStr = String(code ?? '(none)')
+        const reasonRaw = reason instanceof Buffer
+          ? reason.toString('utf8')
+          : (typeof reason === 'string' ? reason : String(reason ?? ''))
+        safeReason = (reasonRaw || '(none)').slice(0, 200)
+      }
       console.error(JSON.stringify({
         event:          '[stt:lifecycle]',
         status:         'close',

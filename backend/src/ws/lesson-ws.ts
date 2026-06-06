@@ -529,6 +529,10 @@ interface ClientMeta {
   // True if mic_stop arrived while mic_start was still awaiting waitUntilReady.
   // mic_start runs deferred finalization after wait resolves + buffer flush.
   kidsMicStopDuringWait: boolean
+  // True when the Deepgram STT connection failed to open during mic_start.
+  // Prevents scheduleTurnFinalize from routing the empty turn to Kids Brain
+  // as fake silence — instead the client already received voice_unavailable.
+  kidsSTTConnectFailed: boolean
 }
 
 const clients = new Map<WebSocket, ClientMeta>()
@@ -3836,6 +3840,11 @@ function scheduleTurnFinalize(
                 }
                 return
               }
+              if (meta.kidsSTTConnectFailed) {
+                meta.kidsSTTConnectFailed = false
+                console.log(`[voice:turn] no_transcript reason=stt_connect_failed turnId=${captureTurnId} — skipping Kids Brain fake silence`)
+                return
+              }
               console.log(`[voice:turn] no_transcript reason=late_empty turnId=${captureTurnId}`)
               if (meta.kidsBrainV1Active) {
                 processKidsBrainV1Turn(ws, meta, '', 8000).catch((err: unknown) =>
@@ -3848,6 +3857,13 @@ function scheduleTurnFinalize(
             return
           }
 
+          // STT connection failed this turn — voice_unavailable already sent to client.
+          // Do NOT call Kids Brain with fake silence; the client will show a retry UI.
+          if (meta.kidsSTTConnectFailed) {
+            meta.kidsSTTConnectFailed = false
+            console.log(`[voice:turn] no_transcript reason=stt_connect_failed turnId=${captureTurnId} — skipping Kids Brain fake silence`)
+            return
+          }
           console.log(`[voice:turn] no_transcript reason=${noReason} turnId=${captureTurnId}`)
           if (meta.kidsBrainV1Active) {
             processKidsBrainV1Turn(ws, meta, '', 8000).catch((err: unknown) =>
@@ -4008,6 +4024,7 @@ export function attachLessonWS(server: Server): void {
         kidsAudioPendingBuffer:     [],
         kidsWaitingForSttReady:     false,
         kidsMicStopDuringWait:      false,
+        kidsSTTConnectFailed:       false,
         lastSeen:                   Date.now(),
       }
     } else {
@@ -4058,6 +4075,7 @@ export function attachLessonWS(server: Server): void {
         kidsAudioPendingBuffer:     [],
         kidsWaitingForSttReady:     false,
         kidsMicStopDuringWait:      false,
+        kidsSTTConnectFailed:       false,
       }
     }
 
@@ -4241,9 +4259,15 @@ export function attachLessonWS(server: Server): void {
               meta.kidsWaitingForSttReady = false
 
               if (!sttReady) {
-                console.warn(JSON.stringify({ event: '[voice:kids]', status: 'stt_wait_ready_timeout', turnId: meta.voiceTurnId, bufferedChunks: meta.kidsAudioPendingBuffer.length }))
+                // STT connection failed (error/close before Open) — not a timeout.
+                // The actual Deepgram rejection reason is now visible in [stt:lifecycle] status=error logs.
+                console.warn(JSON.stringify({ event: '[voice:kids]', status: 'stt_connect_failed', turnId: meta.voiceTurnId, bufferedChunks: meta.kidsAudioPendingBuffer.length }))
                 meta.kidsAudioPendingBuffer = []  // discard — STT unavailable
-                // micActive stays false — mic_stop will finalize as a silent turn.
+                meta.kidsSTTConnectFailed = true  // suppress fake-silence Kids Brain call in scheduleTurnFinalize
+                // Inform client: STT is down, this turn cannot be transcribed.
+                // Frontend should show a retry indicator rather than treating this as silence.
+                send(ws, { type: 'voice_unavailable', reason: 'STT_CONNECT_FAILED' })
+                // micActive stays false — mic_stop will trigger scheduleTurnFinalize.
                 break
               }
 

@@ -372,36 +372,42 @@ describe('Phase 23 — Audio buffering during stt_wait_ready window', () => {
     await closeWS(ws)
   })
 
-  it('waitUntilReady timeout → buffer discarded, no stale chunks logged for current turn', async () => {
-    // waitUntilReady returns false (timeout) → buffer must be discarded cleanly.
-    // The turn should complete as silent (mic_stop → no_transcript → Kids Brain silence recovery).
+  it('waitUntilReady false → buffer discarded, voice_unavailable sent, no fake Kids Brain silence', async () => {
+    // waitUntilReady returns false (STT connect failed) → buffer discarded cleanly.
+    // NEW (P0 fix): client receives voice_unavailable instead of Kids Brain fake silence recovery.
+    // Kids Brain must NOT be called — the child is not actually silent, STT just failed.
 
     const { ws, messages } = await startKidsSession()
     const prevAI = aiTexts(messages).length
 
     mocks.sttState.isAliveFn.mockReturnValueOnce(false)
-    // waitUntilReady times out immediately
+    // waitUntilReady resolves false (simulates Deepgram connection rejection)
     mocks.sttState.waitUntilReadyFn.mockResolvedValueOnce(false)
 
     sendFrame(ws, { type: 'mic_start' })
     await new Promise(r => setTimeout(r, 80))
 
-    // Send audio chunks — these will be buffered but discarded on timeout
+    // Send audio chunks — these will be buffered but discarded on STT failure
     const chunk = Buffer.from('lost-audio').toString('base64')
     sendFrame(ws, { type: 'audio_chunk', data: chunk })
     await new Promise(r => setTimeout(r, 30))
 
     sendFrame(ws, { type: 'mic_stop' })
-    // Wait for Kids silence recovery (800ms stabilization + processing)
-    await waitUntil(messages, msgs => aiTexts(msgs).length > prevAI, 5000)
+    // Wait for voice_unavailable (sent immediately in mic_start handler on STT failure)
+    await waitUntil(messages, msgs => countOf(msgs, 'voice_unavailable') >= 1, 3000)
 
     // stt.send() must NOT have been called with the discarded chunk
     const sendCalls = (mocks.sttState.sendFn.mock.calls as unknown[][]).map(c => c[0])
-    expect(sendCalls, 'Discarded chunks must not reach stt.send() after timeout').not.toContain(chunk)
+    expect(sendCalls, 'Discarded chunks must not reach stt.send() after STT failure').not.toContain(chunk)
 
-    // Kids Brain received silence → responded (no crash, no error)
+    // voice_unavailable sent to client so frontend can show retry UI
+    const unavailable = messages.filter(m => m['type'] === 'voice_unavailable')
+    expect(unavailable.length, 'voice_unavailable must be sent on STT connect failure').toBeGreaterThan(0)
+    expect((unavailable[0] as Record<string, unknown>)['reason']).toBe('STT_CONNECT_FAILED')
+
+    // Kids Brain must NOT have been called — no fake silence recovery
     const newTexts = aiTexts(messages).slice(prevAI)
-    expect(newTexts.length, 'Kids Brain must respond to silent turn').toBeGreaterThan(0)
+    expect(newTexts.length, 'Kids Brain must NOT respond to STT-failed turn').toBe(0)
 
     await closeWS(ws)
   })
@@ -701,16 +707,16 @@ describe('Phase 23 — mic_stop_while_waiting: deferred finalization after buffe
     await closeWS(ws)
   })
 
-  it('mic_stop during wait (timeout path) → Kids Brain silence recovery, no zombie mic', async () => {
-    // waitUntilReady times out while mic_stop is already deferred.
-    // Buffer discarded; turn routes as silence (no chunks reached STT).
+  it('mic_stop during STT-connect-failed wait → voice_unavailable sent, no zombie mic, no fake silence', async () => {
+    // waitUntilReady resolves false while mic_stop is already deferred.
+    // Buffer discarded; turn emits voice_unavailable (not fake silence).
     // Most importantly: micActive must NOT be left true (no zombie).
 
     const { ws, messages } = await startKidsSession()
     const prevAI = aiTexts(messages).length
 
     mocks.sttState.isAliveFn.mockReturnValueOnce(false)
-    // waitUntilReady resolves false immediately (simulated timeout)
+    // waitUntilReady resolves false immediately (STT rejected)
     mocks.sttState.waitUntilReadyFn.mockResolvedValueOnce(false)
 
     sendFrame(ws, { type: 'mic_start' })
@@ -721,11 +727,14 @@ describe('Phase 23 — mic_stop_while_waiting: deferred finalization after buffe
     sendFrame(ws, { type: 'audio_chunk', data: lostChunk })
     sendFrame(ws, { type: 'mic_stop' })
 
-    // Wait for Kids silence recovery
-    await waitUntil(messages, msgs => aiTexts(msgs).length > prevAI, 5000)
+    // Wait for voice_unavailable (not Kids Brain ai_text)
+    await waitUntil(messages, msgs => countOf(msgs, 'voice_unavailable') >= 1, 3000)
 
-    expect(mocks.sttState.sendFn, 'Chunk must NOT reach STT on timeout path').not.toHaveBeenCalledWith(lostChunk)
-    expect(aiTexts(messages).slice(prevAI).length, 'Kids Brain must respond to silence').toBeGreaterThan(0)
+    expect(mocks.sttState.sendFn, 'Chunk must NOT reach STT on STT-failed path').not.toHaveBeenCalledWith(lostChunk)
+
+    // voice_unavailable must be sent — not fake Kids Brain silence recovery
+    expect(countOf(messages, 'voice_unavailable'), 'voice_unavailable must be sent').toBeGreaterThan(0)
+    expect(aiTexts(messages).slice(prevAI).length, 'Kids Brain must NOT fire fake silence').toBe(0)
 
     await closeWS(ws)
   })
