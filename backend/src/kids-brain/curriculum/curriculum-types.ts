@@ -149,6 +149,7 @@ export enum KidsTextbookActivityType {
   LISTEN_AND_CHOOSE = 'listen_and_choose',
   ASK_AND_ANSWER = 'ask_and_answer',
   CHANT = 'chant',
+  SONG = 'song',
   STORY_LISTEN = 'story_listen',
   REVIEW = 'review',
   PHONICS = 'phonics',
@@ -159,7 +160,9 @@ export enum KidsStudentActionType {
   REPEAT_WORD = 'repeat_word',
   SAY_CHOICE = 'say_choice',
   ANSWER_QUESTION = 'answer_question',
+  ASK_QUESTION = 'ask_question',
   JOIN_CHANT = 'join_chant',
+  JOIN_SONG = 'join_song',
   FREE_PRODUCTION = 'free_production',
   LISTEN_ONLY = 'listen_only',
 }
@@ -228,6 +231,24 @@ export interface KidsRetryPolicy {
   resetOnCorrect: boolean;
 }
 
+// ─── Story panel (Phase 3 — story narration mode) ────────────────────────────
+
+/** One panel in a story narration exercise. Images optional (available: false = voice-only fallback). */
+export interface KidsStoryPanel {
+  panelId: string;
+  /** 1-based display order */
+  order: number;
+  imageAsset?: KidsVisualAssetRef;
+  /** Narrator text spoken by AI teacher */
+  narrationText: string;
+  /** Optional override for TTS (may add SSML/pauses) */
+  ttsText?: string;
+  /** Comprehension check after this panel (null = no check) */
+  comprehensionQuestion?: string;
+  /** Expected answer keywords for comprehension check */
+  comprehensionKeywords?: string[];
+}
+
 // ─── Exercise definition ──────────────────────────────────────────────────────
 
 export interface KidsExerciseDefinition {
@@ -266,6 +287,8 @@ export interface KidsCurriculumLesson {
   activities: KidsActivityDefinition[];
   reviewLinks: KidsReviewLink[];
   exercises?: KidsExerciseDefinition[];
+  /** Story panels for story_listen exercises (Phase 3). Absent on voice-only lessons. */
+  storyPanels?: KidsStoryPanel[];
 }
 
 // ─── Unit ─────────────────────────────────────────────────────────────────────

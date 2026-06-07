@@ -411,9 +411,9 @@ describe('kids-box-unit-01: lesson 2 exercises (Phase 13B)', () => {
     expect(KB1_U01_L02_COLOURS.exercises!.length).toBeGreaterThan(0);
   });
 
-  it('41. exercise count is between 8 and 12', () => {
+  it('41. exercise count is between 8 and 16', () => {
     expect(exercises.length).toBeGreaterThanOrEqual(8);
-    expect(exercises.length).toBeLessThanOrEqual(12);
+    expect(exercises.length).toBeLessThanOrEqual(16);
   });
 
   it('42. exercises are ordered sequentially from 1', () => {

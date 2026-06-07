@@ -4,17 +4,21 @@
  * courseId: cambridge-kids-box-1 | unitId: kb1-unit-01 | lessonId: kb1-u01-l02
  * Target words: blue, green, pink, purple, orange, red, yellow
  *
- * Exercise sequence:
+ * Exercise sequence (14 exercises after Phase 1 curriculum gap fix):
  *   ex-01-readiness (TEACHER_CONTROLLED, maxAttempts:1)
- *   → ex-02-blue  (CORRECT_REPETITIONS, required:2)
- *   → ex-03-green (CORRECT_REPETITIONS, required:2) — includes 1 wrong answer
- *   → ex-04-red   (CORRECT_REPETITIONS, required:2)
- *   → ex-05-yellow (CORRECT_REPETITIONS, required:2)
+ *   → ex-02-blue    (CORRECT_REPETITIONS, required:2)
+ *   → ex-03-green   (CORRECT_REPETITIONS, required:2) — includes 1 wrong answer
+ *   → ex-04-red     (CORRECT_REPETITIONS, required:2)
+ *   → ex-05-yellow  (CORRECT_REPETITIONS, required:2)
+ *   → ex-06b-pink   (CORRECT_REPETITIONS, required:2)   ← Phase 1 new
+ *   → ex-07b-purple (CORRECT_REPETITIONS, required:2)   ← Phase 1 new
+ *   → ex-08b-orange (CORRECT_REPETITIONS, required:2)   ← Phase 1 new
  *   → ex-06-choose-pair-1 (CORRECT_CHOICE, required:1)
  *   → ex-07-choose-pair-2 (CORRECT_CHOICE, required:1)
- *   → ex-08-say-review  (TEACHER_CONTROLLED, maxAttempts:2)
- *   → ex-09-chant       (TEACHER_CONTROLLED, maxAttempts:2)
- *   → ex-10-close       (TEACHER_CONTROLLED, maxAttempts:1)
+ *   → ex-09b-choose-pair-3 (CORRECT_CHOICE, required:1) ← Phase 1 new
+ *   → ex-08-say-review   (TEACHER_CONTROLLED, maxAttempts:2)
+ *   → ex-09-chant        (TEACHER_CONTROLLED, maxAttempts:2)
+ *   → ex-10-close        (TEACHER_CONTROLLED, maxAttempts:1)
  *   → null (lesson complete)
  *
  * Validates: session lifecycle, exercise progression, wrong-answer handling,
@@ -57,16 +61,20 @@ const ANIMAL_WORDS  = ['cat', 'dog', 'lion', 'monkey', 'elephant', 'tiger'];
 const SESSION_ID = 'qa-14j-e2e-001';
 const TIMESTAMP  = '2026-06-01T10:00:00.000Z';
 
-const EX_01 = 'kb1-u01-l02-ex-01-readiness';
-const EX_02 = 'kb1-u01-l02-ex-02-blue';
-const EX_03 = 'kb1-u01-l02-ex-03-green';
-const EX_04 = 'kb1-u01-l02-ex-04-red';
-const EX_05 = 'kb1-u01-l02-ex-05-yellow';
-const EX_06 = 'kb1-u01-l02-ex-06-choose-pair-1';
-const EX_07 = 'kb1-u01-l02-ex-07-choose-pair-2';
-const EX_08 = 'kb1-u01-l02-ex-08-say-review';
-const EX_09 = 'kb1-u01-l02-ex-09-chant';
-const EX_10 = 'kb1-u01-l02-ex-10-close';
+const EX_01   = 'kb1-u01-l02-ex-01-readiness';
+const EX_02   = 'kb1-u01-l02-ex-02-blue';
+const EX_03   = 'kb1-u01-l02-ex-03-green';
+const EX_04   = 'kb1-u01-l02-ex-04-red';
+const EX_05   = 'kb1-u01-l02-ex-05-yellow';
+const EX_06B  = 'kb1-u01-l02-ex-06b-pink';
+const EX_07B  = 'kb1-u01-l02-ex-07b-purple';
+const EX_08B  = 'kb1-u01-l02-ex-08b-orange';
+const EX_06   = 'kb1-u01-l02-ex-06-choose-pair-1';
+const EX_07   = 'kb1-u01-l02-ex-07-choose-pair-2';
+const EX_09B  = 'kb1-u01-l02-ex-09b-choose-pair-3';
+const EX_08   = 'kb1-u01-l02-ex-08-say-review';
+const EX_09   = 'kb1-u01-l02-ex-09-chant';
+const EX_10   = 'kb1-u01-l02-ex-10-close';
 
 // ── STT helpers ───────────────────────────────────────────────────────────────
 
@@ -341,25 +349,68 @@ describe('Phase 14J — Full Lesson Simulation', () => {
 
     const rYellow2 = await processKidsBrainTurn(makeTurn(mem, correctStt('yellow'), 'yellow'));
     assertTeacherQuality(rYellow2.teacherResponsePlan.mainText, 'yellow-2');
-    expect(rYellow2.updatedSessionMemory.currentExerciseId).toBe(EX_06);
+    expect(rYellow2.updatedSessionMemory.currentExerciseId).toBe(EX_06B);
     expect(rYellow2.updatedSessionMemory.completedExerciseIds).toContain(EX_05);
     mem = rYellow2.updatedSessionMemory;
 
-    // ── 7. ex-06-choose-pair-1: 1 correct choice "blue" (CORRECT_CHOICE) ─
+    // ── 6b. ex-06b-pink: 2 correct (CORRECT_REPETITIONS) ────────────────
+    const rPink1 = await processKidsBrainTurn(makeTurn(mem, correctStt('pink'), 'pink'));
+    assertTeacherQuality(rPink1.teacherResponsePlan.mainText, 'pink-1');
+    expect(rPink1.updatedSessionMemory.currentExerciseId).toBe(EX_06B);
+    mem = rPink1.updatedSessionMemory;
+
+    const rPink2 = await processKidsBrainTurn(makeTurn(mem, correctStt('pink'), 'pink'));
+    assertTeacherQuality(rPink2.teacherResponsePlan.mainText, 'pink-2');
+    expect(rPink2.updatedSessionMemory.currentExerciseId).toBe(EX_07B);
+    expect(rPink2.updatedSessionMemory.completedExerciseIds).toContain(EX_06B);
+    mem = rPink2.updatedSessionMemory;
+
+    // ── 7b. ex-07b-purple: 2 correct (CORRECT_REPETITIONS) ──────────────
+    const rPurple1 = await processKidsBrainTurn(makeTurn(mem, correctStt('purple'), 'purple'));
+    assertTeacherQuality(rPurple1.teacherResponsePlan.mainText, 'purple-1');
+    expect(rPurple1.updatedSessionMemory.currentExerciseId).toBe(EX_07B);
+    mem = rPurple1.updatedSessionMemory;
+
+    const rPurple2 = await processKidsBrainTurn(makeTurn(mem, correctStt('purple'), 'purple'));
+    assertTeacherQuality(rPurple2.teacherResponsePlan.mainText, 'purple-2');
+    expect(rPurple2.updatedSessionMemory.currentExerciseId).toBe(EX_08B);
+    expect(rPurple2.updatedSessionMemory.completedExerciseIds).toContain(EX_07B);
+    mem = rPurple2.updatedSessionMemory;
+
+    // ── 8b. ex-08b-orange: 2 correct (CORRECT_REPETITIONS) ──────────────
+    const rOrange1 = await processKidsBrainTurn(makeTurn(mem, correctStt('orange'), 'orange'));
+    assertTeacherQuality(rOrange1.teacherResponsePlan.mainText, 'orange-1');
+    expect(rOrange1.updatedSessionMemory.currentExerciseId).toBe(EX_08B);
+    mem = rOrange1.updatedSessionMemory;
+
+    const rOrange2 = await processKidsBrainTurn(makeTurn(mem, correctStt('orange'), 'orange'));
+    assertTeacherQuality(rOrange2.teacherResponsePlan.mainText, 'orange-2');
+    expect(rOrange2.updatedSessionMemory.currentExerciseId).toBe(EX_06);
+    expect(rOrange2.updatedSessionMemory.completedExerciseIds).toContain(EX_08B);
+    mem = rOrange2.updatedSessionMemory;
+
+    // ── 9. ex-06-choose-pair-1: 1 correct choice "blue" (CORRECT_CHOICE) ─
     const rChoose1 = await processKidsBrainTurn(makeTurn(mem, correctStt('blue'), 'blue'));
     assertTeacherQuality(rChoose1.teacherResponsePlan.mainText, 'choose-1');
     expect(rChoose1.updatedSessionMemory.currentExerciseId).toBe(EX_07);
     expect(rChoose1.updatedSessionMemory.completedExerciseIds).toContain(EX_06);
     mem = rChoose1.updatedSessionMemory;
 
-    // ── 8. ex-07-choose-pair-2: 1 correct choice "pink" (CORRECT_CHOICE) ─
+    // ── 10. ex-07-choose-pair-2: 1 correct choice "pink" (CORRECT_CHOICE) ─
     const rChoose2 = await processKidsBrainTurn(makeTurn(mem, correctStt('pink'), 'pink'));
     assertTeacherQuality(rChoose2.teacherResponsePlan.mainText, 'choose-2');
-    expect(rChoose2.updatedSessionMemory.currentExerciseId).toBe(EX_08);
+    expect(rChoose2.updatedSessionMemory.currentExerciseId).toBe(EX_09B);
     expect(rChoose2.updatedSessionMemory.completedExerciseIds).toContain(EX_07);
     mem = rChoose2.updatedSessionMemory;
 
-    // ── 9. ex-08-say-review: 2 turns (TEACHER_CONTROLLED, maxAttempts:2) ─
+    // ── 11. ex-09b-choose-pair-3: 1 correct choice "red" (CORRECT_CHOICE) ─
+    const rChoose3 = await processKidsBrainTurn(makeTurn(mem, correctStt('red'), 'red'));
+    assertTeacherQuality(rChoose3.teacherResponsePlan.mainText, 'choose-3');
+    expect(rChoose3.updatedSessionMemory.currentExerciseId).toBe(EX_08);
+    expect(rChoose3.updatedSessionMemory.completedExerciseIds).toContain(EX_09B);
+    mem = rChoose3.updatedSessionMemory;
+
+    // ── 12. ex-08-say-review: 2 turns (TEACHER_CONTROLLED, maxAttempts:2) ─
     const rReview1 = await processKidsBrainTurn(makeTurn(mem, correctStt('blue green'), 'blue'));
     assertTeacherQuality(rReview1.teacherResponsePlan.mainText, 'review-1');
     expect(rReview1.updatedSessionMemory.currentExerciseId).toBe(EX_08); // 1 turn, not done
@@ -393,16 +444,23 @@ describe('Phase 14J — Full Lesson Simulation', () => {
     expect(rClose.safeToContinue).toBe(true);
     mem = rClose.updatedSessionMemory;
 
-    // ── 12. All 10 exercises in completedExerciseIds ───────────────────────
-    const ALL_EX_IDS = [EX_01, EX_02, EX_03, EX_04, EX_05, EX_06, EX_07, EX_08, EX_09, EX_10];
+    // ── 15. All 14 exercises in completedExerciseIds ──────────────────────
+    const ALL_EX_IDS = [
+      EX_01, EX_02, EX_03, EX_04, EX_05,
+      EX_06B, EX_07B, EX_08B,
+      EX_06, EX_07, EX_09B,
+      EX_08, EX_09, EX_10,
+    ];
     for (const exId of ALL_EX_IDS) {
       expect(mem.completedExerciseIds, `${exId} missing from completedExerciseIds`).toContain(exId);
     }
-    expect(mem.completedExerciseIds).toHaveLength(10);
+    expect(mem.completedExerciseIds).toHaveLength(14);
 
-    // ── 13. Turn count and cap checks ─────────────────────────────────────
-    // 17 turns total (1 readiness + 2 blue + 3 green + 2 red + 2 yellow + 1 + 1 + 2 + 2 + 1)
-    expect(mem.turnNumber).toBe(17);
+    // ── 16. Turn count and cap checks ─────────────────────────────────────
+    // 24 turns: 1 readiness + 2 blue + 3 green + 2 red + 2 yellow
+    //         + 2 pink + 2 purple + 2 orange + 1 choose1 + 1 choose2 + 1 choose3
+    //         + 2 review + 2 chant + 1 close
+    expect(mem.turnNumber).toBe(24);
     expect(mem.turnNumber).toBeLessThan(60);           // LLM call cap
     expect(mem.costCounters.ttsCharacters).toBeLessThan(8000); // TTS char cap
 
