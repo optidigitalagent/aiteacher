@@ -7,7 +7,18 @@
       "Edit(/**)",
       "Write(/**)",
       "Glob(**)",
-      "Grep(**)"
+      "Grep(**)",
+      "Skill(update-config)",
+      "Skill(schedule)",
+      "WebFetch(domain:developers.deepgram.com)",
+      "WebSearch",
+      "WebFetch(domain:assets.cambridge.org)",
+      "WebFetch(domain:f.eba.gov.tr)",
+      "WebFetch(domain:studylib.net)",
+      "WebFetch(domain:issuu.com)",
+      "WebFetch(domain:www.cambridge.org)",
+      "WebFetch(domain:kidsbox.cambridge.es)",
+      "WebFetch(domain:www.scribd.com)"
     ]
   },
   "disabledMcpjsonServers": [
