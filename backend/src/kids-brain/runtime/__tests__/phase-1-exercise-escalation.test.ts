@@ -34,8 +34,9 @@ import {
 } from '../../curriculum/curriculum-types.js';
 import type { KidsExerciseDefinition } from '../../curriculum/curriculum-types.js';
 import type { SessionMemory } from '../../contracts/session-memory.js';
-import { ClassificationLabel, AgeBand, ActivityType } from '../../shared/enums.js';
+import { ClassificationLabel, AgeBand, ActivityType, LessonPhase, RecoveryState } from '../../shared/enums.js';
 import { AGE_PROFILE_6_7 } from '../../shared/types.js';
+import type { ChildState } from '../../state/child-state.js';
 import { findLessonById } from '../../curriculum/curriculum-loader.js';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -73,24 +74,60 @@ function makeExercise(ladder: KidsRetryEscalationType[], maxAttempts = 4): KidsE
   };
 }
 
+const STUB_CHILD_STATE: ChildState = {
+  comprehensionConfidence: 0.5,
+  productionConfidence: 0.5,
+  pronunciationConfidence: 0.5,
+  emotionalSafety: 0.75,
+  engagementLevel: 0.65,
+  frustrationRisk: 0.05,
+  sessionStamina: 1.0,
+  activityFatigue: 0.0,
+  l1Dependency: 0.2,
+  recentSuccessCount: 0,
+  recentFailureCount: 0,
+  recoveryLevel: RecoveryState.NORMAL,
+  noveltyNeed: 0.0,
+  refusalRisk: 0.0,
+};
+
 function makeMemory(attemptCount: number, correctCount: number): SessionMemory {
   return {
     sessionId: 'test-session',
     userId: 'test-user',
     childId: 'test-child',
+    mode: 'mentium_kids',
     ageBand: AgeBand.SIX_SEVEN,
     ageProfile: AGE_PROFILE_6_7,
-    turnNumber: 1,
+    currentUnitId: null,
     currentActivityId: ActivityType.LISTEN_AND_POINT,
     currentTargetItemId: 'blue',
     currentItemAttemptCount: attemptCount,
-    currentItemCorrectCount: correctCount,
-    masteredItemIds: [],
-    reviewItemIds: [],
+    lessonPhase: LessonPhase.PRACTICE,
+    childState: STUB_CHILD_STATE,
+    recoveryState: RecoveryState.NORMAL,
+    itemState: new Map(),
     recentTurns: [],
+    activityHistory: [],
+    itemsAttempted: [],
+    itemsMastered: [],
     recentPraisePhrases: [],
-    engagementScore: 0.7,
-    confidenceScore: 0.5,
+    l1AnchorUsedItems: [],
+    l1BudgetUsed: false,
+    playAlongCount: 0,
+    costCounters: {
+      tokensGenerated: 0,
+      llmCallsClassification: 0,
+      llmCallsTeacherResponse: 0,
+      sttSeconds: 0,
+      ttsCharacters: 0,
+      turnCount: 0,
+    },
+    autosaveSequenceNumber: 0,
+    startedAt: '2026-06-07T00:00:00.000Z',
+    updatedAt: '2026-06-07T00:00:00.000Z',
+    sessionElapsedMs: 0,
+    turnNumber: 1,
     lessonId: 'kb1-u01-l02',
     currentExerciseId: 'test-ex',
     currentExerciseOrder: 2,
@@ -244,7 +281,7 @@ describe('L — shouldCompleteExercise MOVE_ON forced advance', () => {
   it('returns true at attempt 3 (MOVE_ON rung) even with wrong answer', () => {
     const ex = makeExercise(FULL_LADDER);
     const mem = makeMemory(3, 0); // 3 wrong attempts, MOVE_ON rung
-    expect(shouldCompleteExercise(ex, mem, ClassificationLabel.WRONG_WORD)).toBe(true);
+    expect(shouldCompleteExercise(ex, mem, ClassificationLabel.WRONG_SEMANTIC)).toBe(true);
   });
   it('returns true at attempt 3 with silence', () => {
     const ex = makeExercise(FULL_LADDER);
@@ -259,9 +296,9 @@ describe('M — MOVE_ON fires for any classification label at MOVE_ON rung', () 
   it.each([
     ClassificationLabel.SILENCE_SHORT,
     ClassificationLabel.SILENCE_MEDIUM,
-    ClassificationLabel.WRONG_WORD,
-    ClassificationLabel.L1_DETECTED,
-    ClassificationLabel.NOISE_ONLY,
+    ClassificationLabel.WRONG_SEMANTIC,
+    ClassificationLabel.L1_TRANSLATION,
+    ClassificationLabel.RANDOM_NONSENSE,
   ])('label %s at attempt 3 → forced completion', (label) => {
     const ex = makeExercise(FULL_LADDER);
     const mem = makeMemory(3, 0);
@@ -285,11 +322,11 @@ describe('N — normal completion before MOVE_ON tier', () => {
   it('wrong answer at attempt 0 does not complete', () => {
     const ex = makeExercise(FULL_LADDER);
     const mem = makeMemory(0, 0);
-    expect(shouldCompleteExercise(ex, mem, ClassificationLabel.WRONG_WORD)).toBe(false);
+    expect(shouldCompleteExercise(ex, mem, ClassificationLabel.WRONG_SEMANTIC)).toBe(false);
   });
   it('wrong answer at attempt 2 (ENCOURAGEMENT) does not complete', () => {
     const ex = makeExercise(FULL_LADDER);
     const mem = makeMemory(2, 0);
-    expect(shouldCompleteExercise(ex, mem, ClassificationLabel.WRONG_WORD)).toBe(false);
+    expect(shouldCompleteExercise(ex, mem, ClassificationLabel.WRONG_SEMANTIC)).toBe(false);
   });
 });
