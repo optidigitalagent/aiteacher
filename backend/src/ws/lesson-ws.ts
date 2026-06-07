@@ -1192,6 +1192,7 @@ async function emitKidsExerciseContext(ws: WebSocket, memory: KidsBrainSessionMe
     const targetWords = ctxExercise.targetItemIds
       .map(id => ctxLesson.items.find(item => item.itemId === id)?.targetText ?? '')
       .filter(Boolean)
+    const primaryAsset = ctxExercise.visualPromptPayload?.assets.find(a => a.available && a.url)
     send(ws, {
       type: 'kids_exercise_context',
       exerciseId,
@@ -1201,6 +1202,9 @@ async function emitKidsExerciseContext(ws: WebSocket, memory: KidsBrainSessionMe
       choices: ctxExercise.choices ?? [],
       totalExercises: allReal.length,
       completedCount: completedReal.length,
+      requiresVisualUI: ctxExercise.requiresVisualUI,
+      visualAssetUrl: primaryAsset?.url ?? null,
+      exerciseType: ctxExercise.textbookActivityType,
     })
     console.log(`[kids-v1] exercise_context_sent exercise=${exerciseId} num=${ctxExercise.order - 1}`)
   } catch (err) {

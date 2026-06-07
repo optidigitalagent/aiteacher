@@ -36,7 +36,15 @@ import type { TeacherResponseInput } from '../teacher-response/teacher-response-
 import type { KidsBrainTurnInput, RuntimeActionPacket } from './runtime-types.js';
 import { RuntimeActionPacketType } from './runtime-types.js';
 import type { RuntimeTurnResult } from './runtime-result.js';
-import { applyExerciseBridge, buildExercisePrompt } from './exercise-runner.js';
+import {
+  applyExerciseBridge,
+  buildEscalationTeacherText,
+  buildExercisePrompt,
+  getEscalationTier,
+  isCorrectLabel,
+  resolveItemFirstPhoneme,
+  resolveItemTargetText,
+} from './exercise-runner.js';
 import { findLessonById } from '../curriculum/curriculum-loader.js';
 import {
   buildActivityContext,
@@ -548,6 +556,53 @@ export async function processKidsBrainTurn(
         ? buildExercisePrompt(closingExercise)
         : "Great job today! We're all done!";
       teacherOutput.plan = { ...teacherOutput.plan, mainText: closingPrompt };
+    }
+  }
+
+  // ── Step 6C: escalation ladder text injection ─────────────────────────────────
+  // When the exercise is STILL ACTIVE after the bridge (no advance), inject
+  // scaffolded teacher text based on the current attempt's rung in the escalation
+  // ladder.
+  //
+  // Gate conditions:
+  // 1. Exercise did not advance this turn (prevExerciseId === nextExerciseId).
+  // 2. hasStartedFirstExercise is true.
+  // 3. Classification is NOT correct — escalation is only for wrong/silence turns.
+  // 4. attemptJustMade > 0 — skip the first wrong attempt so the Teacher Response
+  //    Engine's natural response plays; escalation starts from the second failure.
+  if (
+    prevExerciseId !== null &&
+    prevExerciseId === nextExerciseId &&
+    updatedSessionMemory.hasStartedFirstExercise &&
+    !isCorrectLabel(classificationResult.label)
+  ) {
+    const lessonForEsc = memAfterLearning.lessonId ? findLessonById(memAfterLearning.lessonId) : null;
+    const stableExercise = lessonForEsc?.exercises?.find(e => e.exerciseId === prevExerciseId) ?? null;
+
+    if (stableExercise && lessonForEsc) {
+      // attemptCount was incremented by the bridge — subtract 1 to get this turn's index.
+      const attemptJustMade = (updatedSessionMemory.exerciseAttemptCount ?? 1) - 1;
+      // Skip attempt 0: Teacher Response Engine handles the first failure naturally.
+      // Escalation injection begins from the second consecutive failure onwards.
+      if (attemptJustMade > 0) {
+        const tier = getEscalationTier(stableExercise, attemptJustMade);
+
+        if (tier !== null) {
+          const firstItemId = stableExercise.targetItemIds[0] ?? null;
+          const targetWord = firstItemId ? resolveItemTargetText(lessonForEsc, firstItemId) : null;
+          const firstPhoneme = firstItemId ? resolveItemFirstPhoneme(lessonForEsc, firstItemId) : null;
+          const choiceTexts = stableExercise.choices.map(c => c.text);
+          const escalationText = buildEscalationTeacherText(
+            tier,
+            targetWord,
+            firstPhoneme,
+            choiceTexts.length ? choiceTexts : undefined,
+          );
+          if (escalationText !== null) {
+            teacherOutput.plan = { ...teacherOutput.plan, mainText: escalationText };
+          }
+        }
+      }
     }
   }
 

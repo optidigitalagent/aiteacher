@@ -30,13 +30,16 @@ type KidsState =
   | 'error'       // WS error / disconnected
 
 type ExerciseCtx = {
-  exerciseId:     string
-  exerciseNumber: number
-  instruction:    string
-  targetWords:    string[]
-  choices:        { choiceId: string; text: string }[]
-  totalExercises: number
-  completedCount: number
+  exerciseId:       string
+  exerciseNumber:   number
+  instruction:      string
+  targetWords:      string[]
+  choices:          { choiceId: string; text: string }[]
+  totalExercises:   number
+  completedCount:   number
+  requiresVisualUI: boolean
+  visualAssetUrl:   string | null
+  exerciseType:     string
 }
 
 // ── Inline sub-components ─────────────────────────────────────────────────────
@@ -905,13 +908,16 @@ export default function KidsClassroomPage() {
 
       case 'kids_exercise_context': {
         setExerciseCtx({
-          exerciseId:     msg.exerciseId,
-          exerciseNumber: msg.exerciseNumber,
-          instruction:    msg.instruction,
-          targetWords:    msg.targetWords,
-          choices:        msg.choices,
-          totalExercises: msg.totalExercises,
-          completedCount: msg.completedCount,
+          exerciseId:       msg.exerciseId,
+          exerciseNumber:   msg.exerciseNumber,
+          instruction:      msg.instruction,
+          targetWords:      msg.targetWords,
+          choices:          msg.choices,
+          totalExercises:   msg.totalExercises,
+          completedCount:   msg.completedCount,
+          requiresVisualUI: msg.requiresVisualUI ?? false,
+          visualAssetUrl:   msg.visualAssetUrl ?? null,
+          exerciseType:     msg.exerciseType ?? '',
         })
         break
       }
@@ -1100,6 +1106,22 @@ export default function KidsClassroomPage() {
                     </span>
                   </div>
                   <p className="kec-instruction">{exerciseCtx.instruction}</p>
+                  {/* Visual asset panel — shown when exercise requires visual UI */}
+                  {exerciseCtx.requiresVisualUI && (
+                    <div className="kec-visual">
+                      {exerciseCtx.visualAssetUrl ? (
+                        <img
+                          src={exerciseCtx.visualAssetUrl}
+                          alt={exerciseCtx.targetWords.join(', ')}
+                          className="kec-visual-img"
+                        />
+                      ) : (
+                        <div className="kec-visual-placeholder">
+                          🖼️ <span>Listen to the teacher!</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {exerciseCtx.choices.length > 0 ? (
                     <div className="kec-choices">
                       {exerciseCtx.choices.map(c => (

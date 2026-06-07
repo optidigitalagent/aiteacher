@@ -276,14 +276,20 @@ export interface OutboundLessonResync {
  * Frontend renders exercise number, instruction, target words, and progress.
  */
 export interface OutboundKidsExerciseContext {
-  type:           'kids_exercise_context';
-  exerciseId:     string;
-  exerciseNumber: number;
-  instruction:    string;
-  targetWords:    string[];
-  choices:        { choiceId: string; text: string }[];
-  totalExercises: number;
-  completedCount: number;
+  type:             'kids_exercise_context';
+  exerciseId:       string;
+  exerciseNumber:   number;
+  instruction:      string;
+  targetWords:      string[];
+  choices:          { choiceId: string; text: string }[];
+  totalExercises:   number;
+  completedCount:   number;
+  /** True when this exercise type requires a visual UI panel to function correctly. */
+  requiresVisualUI: boolean;
+  /** CDN/asset URL for the primary visual asset, or null when no asset is available. */
+  visualAssetUrl:   string | null;
+  /** Textbook activity type string (e.g. 'listen_and_repeat', 'listen_and_choose'). */
+  exerciseType:     string;
 }
 
 export type OutboundMessage =

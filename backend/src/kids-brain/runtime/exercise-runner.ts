@@ -5,9 +5,15 @@
  * transitions.  No LLM calls, no persistence, no side effects.
  */
 
-import type { KidsCurriculumLesson, KidsExerciseDefinition } from '../curriculum/curriculum-types.js';
+import type {
+  KidsCurriculumLesson,
+  KidsExerciseDefinition,
+  KidsVocabularyItem,
+} from '../curriculum/curriculum-types.js';
 import {
   KidsCompletionRuleType,
+  KidsCurriculumItemType,
+  KidsRetryEscalationType,
   KidsStudentActionType,
 } from '../curriculum/curriculum-types.js';
 import type { SessionMemory } from '../contracts/session-memory.js';
@@ -15,7 +21,7 @@ import { ClassificationLabel } from '../shared/enums.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function isCorrectLabel(label: ClassificationLabel): boolean {
+export function isCorrectLabel(label: ClassificationLabel): boolean {
   return (
     label === ClassificationLabel.CORRECT_CONFIDENT ||
     label === ClassificationLabel.CORRECT_HESITANT ||
@@ -87,8 +93,9 @@ export function shouldCompleteExercise(
     case KidsCompletionRuleType.CORRECT_REPETITIONS:
     case KidsCompletionRuleType.CORRECT_CHOICE: {
       const required = completionRule.requiredCorrectCount ?? 1;
-      // Cumulative correct answers (not reset on wrong): complete when total correct >= required.
-      return isCorrect && (correctCount + 1) >= required;
+      if (isCorrect && (correctCount + 1) >= required) return true;
+      // MOVE_ON tier forces advance when the escalation ladder is exhausted.
+      return getEscalationTier(exercise, attemptCount) === KidsRetryEscalationType.MOVE_ON;
     }
     case KidsCompletionRuleType.TEACHER_CONTROLLED:
     case KidsCompletionRuleType.TIME_OR_TURN_LIMIT:
@@ -98,6 +105,64 @@ export function shouldCompleteExercise(
     default:
       return false;
   }
+}
+
+/**
+ * Returns the escalation tier for the given attempt count, clamped to the last
+ * rung of the ladder.  Returns null when the ladder is empty.
+ */
+export function getEscalationTier(
+  exercise: KidsExerciseDefinition,
+  attemptCount: number,
+): KidsRetryEscalationType | null {
+  const ladder = exercise.retryPolicy.escalationLadder;
+  if (!ladder.length) return null;
+  const index = Math.min(attemptCount, ladder.length - 1);
+  return ladder[index] ?? null;
+}
+
+/**
+ * Builds a TTS-ready teacher scaffold text for the given escalation tier.
+ * Returns null when no special text is needed (caller should use default prompt).
+ */
+export function buildEscalationTeacherText(
+  tier: KidsRetryEscalationType,
+  targetWord: string | null,
+  firstPhoneme: string | null,
+  choices?: string[],
+): string | null {
+  const word = targetWord ?? '…';
+  switch (tier) {
+    case KidsRetryEscalationType.REPEAT_PROMPT:
+      return `Let's try again! Can you say ${word}?`;
+    case KidsRetryEscalationType.MODEL_ANSWER:
+      return firstPhoneme
+        ? `Listen carefully! ${firstPhoneme}… ${word}! Can you say ${word}?`
+        : `Listen — ${word}! Can you say it?`;
+    case KidsRetryEscalationType.ENCOURAGEMENT:
+      return `You can do it! Try one more time — ${word}!`;
+    case KidsRetryEscalationType.SIMPLIFY_CHOICES:
+      return choices?.length
+        ? `Listen carefully — is it ${choices.join(' or ')}?`
+        : `Let's try a simpler version. Can you say ${word}?`;
+    case KidsRetryEscalationType.MOVE_ON:
+      return `Well done for trying! Let's move on.`;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Resolves a curriculum item ID to its firstPhoneme scaffold string.
+ * Returns null when the item is not found or is not a vocabulary item.
+ */
+export function resolveItemFirstPhoneme(
+  lesson: KidsCurriculumLesson,
+  itemId: string,
+): string | null {
+  const item = lesson.items.find(i => i.itemId === itemId);
+  if (!item || item.type !== KidsCurriculumItemType.VOCABULARY) return null;
+  return (item as KidsVocabularyItem).firstPhoneme ?? null;
 }
 
 /**
