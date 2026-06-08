@@ -381,7 +381,7 @@ Key new evidence vs Run 2:
 | BA1 | No unauthenticated resource usage | COMPLETE | require-auth-guard.test.ts 6/6 pass (commit 2e6a0a0, de3e465): no-token → 401, invalid-token → 401. Playwright B1/B2/B3/B4 PASS (.last-run.json "passed"). Production curl: POST /lesson/kids/start (no token) → 401 HTTP. Correct Railway URL: https://aiteacher-production-cae8.up.railway.app. |
 | BA2 | No billing/auth regressions | COMPLETE | Playwright B4 PASS: adult /lesson/start → 401 unchanged. Production curl: POST /lesson/start (no token) → 401 HTTP. Billing code (billing-routes.ts, subscription-service.ts) not modified in any commit d32471b/4b0cdc1/84e0195/2e6a0a0/de3e465. |
 | BA3 | Session ownership protected | PARTIAL | Session ownership code not modified in any commit. lesson-routes.ts:419 INSERT INTO kids_sessions includes user_id. No end-to-end session ownership test (requires PLAYWRIGHT_TEST_TOKEN). |
-| BA4 | Redis TTL set on all lesson keys | PARTIAL | TTL is set: redis-session.store.ts:49 uses EX 1800 (30 min for Kids). Adult lesson keys use EX 14400 (4h). Discrepancy with CLAUDE.md spec (4h for all lesson keys). Criterion technically met (TTL exists), but 30 min may cause premature expiry for longer sessions. |
+| BA4 | Redis TTL set on all lesson keys | COMPLETE | redis-session.store.ts DEFAULT_SESSION_TTL_SECONDS changed 1800→14400 (2026-06-08). Now matches CLAUDE.md backend.md spec (EX 14400 for all lesson keys). infrastructure-contracts.test.ts: 2 new tests "BA4: default TTL is 14400 seconds" and "BA4: saveSession passes EX 14400 to Redis" both PASS. tsc exit 0. 60/60 test files, 1865/1865 pass. |
 | BA5 | No cost-leaking loops | COMPLETE | No new loops in d32471b/4b0cdc1/84e0195/2e6a0a0/de3e465. applyExerciseBridge() terminates at nextExerciseId=null. No unbounded API loops. |
 
 ── QA ──────────────────────────────────────────────────────────
@@ -421,34 +421,29 @@ PARTIAL criteria remaining (all require production voice session evidence):
 4. BA3 — No end-to-end session ownership test
    How to close: D-group Playwright test with PLAYWRIGHT_TEST_TOKEN.
 
-5. BA4 — Kids Brain Redis TTL is 30 min (not 4h per CLAUDE.md spec)
-   Recommend: Update CLAUDE.md backend.md Kids session TTL or increase to 4h.
-   Current 30-min TTL risks premature session expiry for long sessions.
-
 ── INCORRECT COMPLETION CLAIMS ────────────────────────────────
 
 None. All criteria were evaluated with evidence; COMPLETE ratings are supported
 by cited evidence. PARTIAL ratings accurately reflect missing evidence.
 
-── FINAL VERDICT ───────────────────────────────────────────────
+── FINAL VERDICT (Run 3, post-BA4 fix) ────────────────────────
 
 GOAL NOT COMPLETE
 
-Criteria COMPLETE (21):
-  C1, C2, C3, C4, T1, U1, U2, U3, U4, BA1, BA2, BA5, QA1, QA2, QA3, QA4, D1, D2, D3
+Criteria COMPLETE (22):
+  C1, C2, C3, C4, T1, U1, U2, U3, U4, BA1, BA2, BA4, BA5, QA1, QA2, QA3, QA4, D1, D2, D3
   (and no incorrect completion claims)
 
-Criteria PARTIAL (9):
-  T2, T3, T4, V1, V2, V3, V4, BA3, BA4
+Criteria PARTIAL (8):
+  T2, T3, T4, V1, V2, V3, V4, BA3
 
 Evidence gaps:
   - No production Kids voice session log (T2, T3, T4, V1, V2, V3, V4)
   - No end-to-end session ownership test (BA3)
-  - Kids Redis TTL is 30 min vs 4h spec in CLAUDE.md (BA4)
 
-Progress vs Run 2:
-  Upgraded from PARTIAL to COMPLETE: QA1, QA2, QA3, QA4, BA1, BA2, D1, D2, D3, U2, U3, U4, C2
-  Unchanged PARTIAL: T2, T3, T4, V1, V2, V3, V4, BA3, BA4
+Progress vs Run 3 baseline:
+  Upgraded from PARTIAL to COMPLETE: BA4 (Redis TTL 1800→14400, 2 tests added)
+  Unchanged PARTIAL: T2, T3, T4, V1, V2, V3, V4, BA3
 
 All remaining PARTIAL items require either a live production voice session
 or user action (run session, check logs, or update TTL config).

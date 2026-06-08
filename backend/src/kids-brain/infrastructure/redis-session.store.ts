@@ -5,7 +5,7 @@ import type { ItemState } from '../state/item-state.js';
 
 /**
  * Redis key format: kids:session:{sessionId}
- * TTL: configurable; default 30 minutes (1800 seconds).
+ * TTL: configurable; default 4 hours (14400 seconds) per CLAUDE.md backend.md spec.
  * Autosave uses a Lua CAS guard to prevent stale sequence overwriting newer state.
  *
  * Map serialization: SessionMemory.itemState is Map<string, ItemState>.
@@ -13,7 +13,7 @@ import type { ItemState } from '../state/item-state.js';
  */
 
 export const KIDS_SESSION_KEY_PREFIX = 'kids:session:';
-export const DEFAULT_SESSION_TTL_SECONDS = 1800; // 30 minutes
+export const DEFAULT_SESSION_TTL_SECONDS = 14400; // 4 hours — aligns with adult lesson key TTL
 
 export class RedisSessionStoreImpl implements RedisSessionStore {
   private readonly redis: Redis;

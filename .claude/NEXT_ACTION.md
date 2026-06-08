@@ -12,10 +12,14 @@
 **Type:** USER ACTION (requires real mic + browser + authenticated Kids session)
 **Agent:** user / production-log-analyzer
 **Description:**
-  Acceptance auditor Run 3 (2026-06-08) found that 9 criteria remain PARTIAL.
+  BA4 is now COMPLETE: Kids Redis TTL fixed from 1800→14400 (30min→4h).
+  See: backend/src/kids-brain/infrastructure/redis-session.store.ts
+  Tests: infrastructure-contracts.test.ts "BA4: default TTL is 14400 seconds" PASS.
+
+  Acceptance auditor Run 3 (2026-06-08) found that 8 criteria remain PARTIAL.
   All remaining gaps require a live production voice session with a real student.
 
-  21 of 30 criteria are now COMPLETE. The code is correct, deployed, and tested.
+  22 of 30 criteria are now COMPLETE. The code is correct, deployed, and tested.
   The only remaining evidence gaps are observability items that cannot be
   captured without a real voice session.
 
@@ -42,10 +46,6 @@
   **Optional (if available) — closes BA3:**
   - If you have a test JWT token, provide PLAYWRIGHT_TEST_TOKEN and the D-group
     tests can be run to verify session ownership end-to-end.
-
-  **Optional fix — closes BA4:**
-  - Update backend/src/kids-brain/store/redis-session.store.ts:49
-    from `EX', 1800` to `'EX', 14400` if Kids sessions can exceed 30 min.
 
 **Inputs:**
   - Production Kids session logs from Railway

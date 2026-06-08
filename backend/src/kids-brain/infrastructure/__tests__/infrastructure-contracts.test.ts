@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { RedisSessionStoreImpl, KIDS_SESSION_KEY_PREFIX } from '../redis-session.store.js';
+import { RedisSessionStoreImpl, KIDS_SESSION_KEY_PREFIX, DEFAULT_SESSION_TTL_SECONDS } from '../redis-session.store.js';
 import { PostgresProfileStoreImpl } from '../postgres-profile.store.js';
 import { PostgresSafetyEventStoreImpl } from '../postgres-safety-event.store.js';
 import type { SessionMemory } from '../../contracts/session-memory.js';
@@ -203,6 +203,21 @@ describe('RedisSessionStore', () => {
     const session = makeSessionMemory('my-session');
     await store.saveSession(session);
     expect(redisMock.set.mock.calls[0][0]).toBe(`${KIDS_SESSION_KEY_PREFIX}my-session`);
+  });
+
+  it('BA4: default TTL is 14400 seconds (4 hours) per CLAUDE.md spec', () => {
+    expect(DEFAULT_SESSION_TTL_SECONDS).toBe(14400);
+  });
+
+  it('BA4: saveSession passes EX 14400 to Redis', async () => {
+    const redisMock = makeRedisMock();
+    const store = new RedisSessionStoreImpl(redisMock as unknown as import('ioredis').Redis);
+    const session = makeSessionMemory();
+    await store.saveSession(session);
+    const call = redisMock.set.mock.calls[0] as unknown[];
+    // call signature: (key, value, 'EX', ttl)
+    expect(call[2]).toBe('EX');
+    expect(call[3]).toBe(14400);
   });
 
   it('deleteSession removes the key', async () => {

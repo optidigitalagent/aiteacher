@@ -36,6 +36,7 @@ and production-grade QA.
 | 15 | Screenshot all 4 exercise types (C2/U2/U3 evidence) | goal-executor | verify-exercise-panel.png: all 4 types render; script title "All 4 Exercise Types PASSED" | 2026-06-08 |
 | 16 | Fix vi.fn TypeScript type in auth test (QA1) | implementer | commit de3e465; tsc exit 0; 1863/1863 pass | 2026-06-08 |
 | 17 | Acceptance audit Run 3 | acceptance-auditor | REVIEW_REPORT.md updated; 21 COMPLETE, 9 PARTIAL; all remaining require production voice session | 2026-06-08 |
+| 18 | Fix BA4: Kids Redis TTL 1800→14400 (30min→4h) | implementer | redis-session.store.ts DEFAULT_SESSION_TTL_SECONDS=14400; 2 new tests added; tsc exit 0; 60/60, 1865/1865 pass | 2026-06-08 |
 
 ---
 
@@ -54,7 +55,6 @@ and production-grade QA.
 |---|---------|--------|-------------------|
 | 1 | No production Kids voice session log | T2/T3/T4/V1/V2/V3/V4 require real session evidence | Run a live Kids voice session; capture Railway logs |
 | 2 | No end-to-end session ownership test | BA3 requires PLAYWRIGHT_TEST_TOKEN | Provide a test auth token OR verify ownership manually |
-| 3 | Kids Redis TTL is 30 min (BA4) | CLAUDE.md spec says 4h for lesson keys | Update redis-session.store.ts EX 1800 → EX 14400 if longer sessions expected |
 
 ---
 
@@ -117,7 +117,7 @@ Rollback needed:   No
   [x] BA1: No unauthenticated resource usage — requireAuth 6/6 + Playwright B1-B4 PASS
   [x] BA2: No billing/auth regressions — B4 PASS + curl 401 + billing code unchanged
   [~] BA3: Session ownership protected — code unchanged; no e2e test (PARTIAL)
-  [~] BA4: Redis TTL set on all lesson keys — set at 30 min (not 4h, PARTIAL)
+  [x] BA4: Redis TTL set on all lesson keys — EX 14400 (4h); 2 tests confirm; commit pending
   [x] BA5: No cost-leaking loops — no new loops, bounded chain
 
 [x] QA
