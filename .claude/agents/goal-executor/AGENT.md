@@ -70,13 +70,42 @@ After every task:
 ### Step 6 — Decide
 ```
 All acceptance criteria in GLOBAL_GOAL.md satisfied?
-  YES → write final report, notify user, STOP
+  YES → run acceptance-auditor (Step 6a below) — do NOT declare complete yet
   NO  → go to Step 2
 
 Blocked after 3 attempts at same task?
   YES → write blocker to GOAL_PROGRESS.md, notify user, STOP
   NO  → continue loop
 ```
+
+### Step 6a — Mandatory Acceptance Audit (NEVER skip)
+
+Before declaring GOAL COMPLETE, invoke the acceptance-auditor agent:
+
+```
+Read .claude/agents/acceptance-auditor/AGENT.md.
+Act as acceptance-auditor. Audit the current GLOBAL_GOAL against all evidence.
+Produce the full Acceptance Auditor Report. Update REVIEW_REPORT.md and NEXT_ACTION.md
+per your output rules. Return your final verdict.
+```
+
+Then act on the verdict:
+
+```
+Auditor verdict = GOAL COMPLETE?
+  YES → write final report to user, STOP
+  NO  → read auditor's Remaining Work section
+        → write highest-priority remaining task to NEXT_ACTION.md
+        → go to Step 2
+```
+
+**Rules:**
+- You may NEVER declare GOAL COMPLETE without a `GOAL COMPLETE` verdict from
+  acceptance-auditor in the current REVIEW_REPORT.md.
+- A prior "GOAL COMPLETE" entry in NEXT_ACTION.md or GOAL_PROGRESS.md does NOT
+  satisfy this requirement — the auditor must run fresh for the current state.
+- If the auditor returns GOAL NOT COMPLETE, do not re-run the auditor
+  immediately — first complete the remaining work it identified.
 
 ---
 

@@ -58,6 +58,16 @@ Backend/Frontend/Curriculum Reviewer reviews changes
   │
   └── FAIL → Fix failures → re-test → re-review → retry (max 3)
              → If still failing → BLOCKED → notify user
+
+When all criteria appear satisfied:
+  ↓
+Acceptance Auditor runs against GLOBAL_GOAL.md + all evidence
+  ↓
+  ├── GOAL COMPLETE     → Goal Executor reports completion to user → STOP
+  │
+  └── GOAL NOT COMPLETE → Goal Executor reads auditor's Remaining Work
+                          → writes next task to NEXT_ACTION.md
+                          → continues loop from "Implementer writes code"
 ```
 
 ---
