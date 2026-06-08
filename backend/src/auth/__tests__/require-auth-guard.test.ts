@@ -37,6 +37,10 @@ function makeReq(overrides: Partial<Request> = {}): Request {
   return { headers: {}, ...overrides } as unknown as Request
 }
 
+function makeNext() {
+  return vi.fn() as ReturnType<typeof vi.fn> & NextFunction
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
 })
@@ -45,7 +49,7 @@ describe('requireAuth — BA1/BA2 auth guard', () => {
   it('B1: returns 401 when no Authorization header is present', async () => {
     const req = makeReq()
     const res = makeMockRes()
-    const next = vi.fn<Parameters<NextFunction>>()
+    const next = makeNext()
 
     requireAuth(req, res, next)
 
@@ -60,7 +64,7 @@ describe('requireAuth — BA1/BA2 auth guard', () => {
   it('B2: returns 401 when Authorization header is present but not a Bearer token', async () => {
     const req = makeReq({ headers: { authorization: 'Basic dXNlcjpwYXNz' } })
     const res = makeMockRes()
-    const next = vi.fn<Parameters<NextFunction>>()
+    const next = makeNext()
 
     requireAuth(req, res, next)
 
@@ -75,7 +79,7 @@ describe('requireAuth — BA1/BA2 auth guard', () => {
 
     const req = makeReq({ headers: { authorization: 'Bearer invalid.jwt.token' } })
     const res = makeMockRes()
-    const next = vi.fn<Parameters<NextFunction>>()
+    const next = makeNext()
 
     requireAuth(req, res, next)
 
@@ -92,7 +96,7 @@ describe('requireAuth — BA1/BA2 auth guard', () => {
 
     const req = makeReq({ headers: { authorization: 'Bearer malformed' } })
     const res = makeMockRes()
-    const next = vi.fn<Parameters<NextFunction>>()
+    const next = makeNext()
 
     requireAuth(req, res, next)
 
@@ -108,7 +112,7 @@ describe('requireAuth — BA1/BA2 auth guard', () => {
 
     const req = makeReq({ headers: { authorization: 'Bearer valid.token' } })
     const res = makeMockRes()
-    const next = vi.fn<Parameters<NextFunction>>()
+    const next = makeNext()
 
     requireAuth(req, res, next)
 
