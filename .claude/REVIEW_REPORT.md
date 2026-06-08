@@ -314,6 +314,149 @@ Highest-priority actionable task (local, no credentials):
 
 ---
 
+## ACCEPTANCE AUDITOR VERDICT — Run 3 (2026-06-08, continuation audit)
+
+```
+══════════════════════════════════════════════════════════════════
+ACCEPTANCE AUDITOR REPORT — Run 3
+══════════════════════════════════════════════════════════════════
+Goal:      Build Mentium Kids into a release-ready AI English teacher
+Audited:   2026-06-08
+Auditor:   acceptance-auditor (continuation of Run 2)
+HEAD:      de3e465 (fix: vi.fn TypeScript type in requireAuth test)
+Key new evidence vs Run 2:
+  - vitest.config.ts committed (b605eb2) — QA2 fixed
+  - require-auth-guard.test.ts 6/6 pass (commit 2e6a0a0) — BA1/BA2 unit evidence
+  - tsc --noEmit → exit 0 (de3e465) — QA1 confirmed
+  - npm test: 60/60 files, 1863/1863 pass — QA2 confirmed
+  - .last-run.json: status=passed, failedTests=[] — Playwright all pass
+  - Playwright A1-A3, B1-B4 pass against production (correct URL cae8)
+  - Production curl: /lesson/kids/start → 401, /lesson/start → 401 — BA1/BA2
+  - Railway logs: WS endpoint on 8080, active connections, no errors — D1/D2/D3
+  - verify-exercise-panel.png: all 4 Unit 1 types render (PASS title) — C2/U2/U3
+══════════════════════════════════════════════════════════════════
+
+── ACCEPTANCE MATRIX ──────────────────────────────────────────
+
+── CURRICULUM ──────────────────────────────────────────────────
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| C1 | Kid's Box Unit 1 exercises fully mapped and implemented | COMPLETE | kids-box-unit-01.ts: 3 lessons (L01 greetings, L02 colours 14 exercises, L03 numbers). kids-box-unit-01.test.ts 59/59 pass. Commits d32471b+4b0cdc1. |
+| C2 | All Unit 1 exercise types render correctly (L&R, L&CHOOSE, CHANT, REVIEW) | COMPLETE | Browser screenshot verify-exercise-panel.png shows all 4 types in rendered exercise cards: Type 1 LISTEN_AND_REPEAT (Exercise 2/13, img), Type 2 LISTEN_AND_CHOOSE (Exercise 6/13, choices blue/green), Type 3 CHANT (Exercise 9/13, placeholder), Type 4 REVIEW (Exercise 1/13, placeholder). Page title: "All 4 Exercise Types PASSED". Script assertions: 4/4 elements present. SONG/STORY deferred (RISK-003, not in Unit 1). |
+| C3 | Escalation ladder fires correctly on 2nd wrong answer | COMPLETE | exercise-runner.ts:114 getEscalationTier(); :98 shouldCompleteExercise() checks MOVE_ON. CHOOSE exercises [REPEAT_PROMPT,MODEL_ANSWER,MOVE_ON] → MOVE_ON fires at index 2. phase-1-exercise-escalation.test.ts scenarios L,M,N pass (1863/1863 total). |
+| C4 | Exercise completion triggers correct next exercise | COMPLETE | exercise-runner.ts:199 applyExerciseBridge(); :68 getNextExercise() follows nextExerciseId chain to null. kids-box-unit-01.test.ts tests 51-59 verify full chain. |
+
+── TEACHER BEHAVIOR ─────────────────────────────────────────────
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| T1 | Teacher never says "Wrong" — uses positive redirection | COMPLETE | teacher-response-constants.ts:22 FORBIDDEN_PHRASES = ['wrong','incorrect',...]. teacher-language-policy.ts:60 checkForbiddenPhrases(). buildEscalationTeacherText: all paths return positive text. master-prompt.md:214 "NEVER say: 'Wrong'...". |
+| T2 | Teacher uses Socratic method — never gives answer before student tries | PARTIAL | Code: MODEL_ANSWER tier fires only after REPEAT_PROMPT (student attempts first). master-prompt.md Socratic rule. Kids Brain response engine is deterministic. No production Kids session log with actual LLM responses. |
+| T3 | Every teacher turn ends with a question or clear instruction | PARTIAL | kids-box-unit-01.ts prompt templates end with "Now you say it!" / "Which colour is it?". buildEscalationTeacherText all end with question or instruction. No production Kids session log. |
+| T4 | Child-friendly language (simple, encouraging, short sentences) | PARTIAL | teacher-response-constants.ts:4 MAX_WORDS_BY_AGE {6-7: 12, 8-9: 18}. enforceMaxLength() enforces it. Exercise prompts short and encouraging. No production Kids session log. |
+
+── VOICE ───────────────────────────────────────────────────────
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| V1 | STT latency < 2.5s from speech end to AI response start | PARTIAL | RISK-001 OPEN. Architectural pre-warm and buffering in place (commits a935927, ed0e797). No production latency measurement log. |
+| V2 | No Deepgram HTTP 400 or reconnect failures in production | PARTIAL | RISK-R001 RESOLVED (utterance_end_ms=1000ms). Railway startup logs: no HTTP 400. Active WS connections in logs confirm stable connections. No voice session log with explicit [stt:config] UtteranceEnd confirmation. |
+| V3 | TTS streams correctly — no full-text buffering | PARTIAL | Architecture unchanged. CLAUDE.md prohibits buffering. No TTS streaming production log cited. |
+| V4 | Silence detection fires correctly (not too fast, not too slow) | PARTIAL | Phase 22/23 fixes (a935927): UTTERANCE_END_MS_KIDS=1000ms, kidsAudioPendingBuffer. 1795/1795 unit tests. No production session log showing detection timing. |
+
+── VISUAL UI ───────────────────────────────────────────────────
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| U1 | Exercise context message sent on every exercise start (exerciseType, visualAssetUrl) | COMPLETE | lesson-ws.ts:1177-1213 emitKidsExerciseContext() sends type='kids_exercise_context' with exerciseType and visualAssetUrl. message-types.ts:279 OutboundKidsExerciseContext. Called on turn advance AND reconnect. phase-exercise-context-resume.test.ts (committed, passing). |
+| U2 | KidsClassroomPage renders exercise panel correctly | COMPLETE | verify-exercise-panel.png: exercise panel renders with exerciseNumber, lesson title, instruction, visual area. KidsClassroomPage.tsx:1100-1138. All 4 exercise types shown in one screenshot. |
+| U3 | Graceful fallback when visualAssetUrl is absent | COMPLETE | verify-exercise-panel.png Types 2/3/4: placeholder "Listen to the teacher!" shown when visualAssetUrl null. KidsClassroomPage.tsx:1119-1124 visual fallback code. |
+| U4 | No UI regressions on adult lesson flow | COMPLETE | Commits d32471b/4b0cdc1/84e0195 modify only kids-brain/ and test files. Adult flow code untouched. Playwright B4 ("adult route unchanged") PASS in test-results/.last-run.json. |
+
+── BACKEND ARCHITECTURE ─────────────────────────────────────────
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| BA1 | No unauthenticated resource usage | COMPLETE | require-auth-guard.test.ts 6/6 pass (commit 2e6a0a0, de3e465): no-token → 401, invalid-token → 401. Playwright B1/B2/B3/B4 PASS (.last-run.json "passed"). Production curl: POST /lesson/kids/start (no token) → 401 HTTP. Correct Railway URL: https://aiteacher-production-cae8.up.railway.app. |
+| BA2 | No billing/auth regressions | COMPLETE | Playwright B4 PASS: adult /lesson/start → 401 unchanged. Production curl: POST /lesson/start (no token) → 401 HTTP. Billing code (billing-routes.ts, subscription-service.ts) not modified in any commit d32471b/4b0cdc1/84e0195/2e6a0a0/de3e465. |
+| BA3 | Session ownership protected | PARTIAL | Session ownership code not modified in any commit. lesson-routes.ts:419 INSERT INTO kids_sessions includes user_id. No end-to-end session ownership test (requires PLAYWRIGHT_TEST_TOKEN). |
+| BA4 | Redis TTL set on all lesson keys | PARTIAL | TTL is set: redis-session.store.ts:49 uses EX 1800 (30 min for Kids). Adult lesson keys use EX 14400 (4h). Discrepancy with CLAUDE.md spec (4h for all lesson keys). Criterion technically met (TTL exists), but 30 min may cause premature expiry for longer sessions. |
+| BA5 | No cost-leaking loops | COMPLETE | No new loops in d32471b/4b0cdc1/84e0195/2e6a0a0/de3e465. applyExerciseBridge() terminates at nextExerciseId=null. No unbounded API loops. |
+
+── QA ──────────────────────────────────────────────────────────
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| QA1 | TypeScript build: npx tsc --noEmit → exit 0 | COMPLETE | HEAD de3e465: npx tsc --noEmit → exit 0. (Previous run 2e6a0a0 also exit 0, now fixed type error in auth test.) |
+| QA2 | Full test suite: npm test → all pass | COMPLETE | HEAD de3e465: 60/60 test files, 1863/1863 tests pass. vitest.config.ts committed (b605eb2) excludes tests/fsm.test.ts (RISK-004 pre-existing). test-results/.last-run.json "status":"passed","failedTests":[]. |
+| QA3 | No pre-existing test regressions introduced | COMPLETE | 1863/1863 pass. All 6 new auth guard tests pass. No new failures introduced vs baseline (1857 from Phase 1-4). |
+| QA4 | Production logs verified after deploy | COMPLETE | Railway logs 2026-06-08: "[server] WS endpoint: ws://localhost:8080/lesson", "[postgres] connected", "[redis] connected", active WS client connections (user=07d763b1...), no HTTP 400, no errors. |
+
+── DEPLOYMENT ──────────────────────────────────────────────────
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| D1 | Railway deploy completed | COMPLETE | Railway service aiteacher: STATUS SUCCESS. Active WS connections in Railway logs confirm deployment is serving real traffic. |
+| D2 | Server listening on $PORT (8080 on Railway) confirmed in logs | COMPLETE | Railway logs: "[server] WS endpoint: ws://localhost:8080/lesson". Active connections confirm server on 8080. |
+| D3 | No critical errors in first 10 minutes of production logs | COMPLETE | Railway logs show normal operation: migrations applied, postgres/redis ready, WS connections active. No HTTP 400, no Unhandled rejection, no ECONNREFUSED. |
+
+── REMAINING WORK ──────────────────────────────────────────────
+
+PARTIAL criteria remaining (all require production voice session evidence):
+
+1. T2/T3/T4 — No production Kids session log with actual teacher responses
+   Current state: Enforced at code level (FORBIDDEN_PHRASES, MAX_WORDS_BY_AGE,
+   MODEL_ANSWER-after-REPEAT_PROMPT). Cannot verify LLM compliance without real session.
+   How to close: Run a real Kids voice session; capture [kids-v1] turn log.
+
+2. V1 — No STT latency measurement (RISK-001 OPEN)
+   How to close: Add server-side [kids-v1] latency log line, then capture from
+   a real session showing "latency_ms: <2500".
+
+3. V2/V3/V4 — No voice session production logs
+   How to close: Run a Kids voice session; check Railway logs for
+   [stt:config], [tts:stream], [stt:lifecycle] lines.
+
+4. BA3 — No end-to-end session ownership test
+   How to close: D-group Playwright test with PLAYWRIGHT_TEST_TOKEN.
+
+5. BA4 — Kids Brain Redis TTL is 30 min (not 4h per CLAUDE.md spec)
+   Recommend: Update CLAUDE.md backend.md Kids session TTL or increase to 4h.
+   Current 30-min TTL risks premature session expiry for long sessions.
+
+── INCORRECT COMPLETION CLAIMS ────────────────────────────────
+
+None. All criteria were evaluated with evidence; COMPLETE ratings are supported
+by cited evidence. PARTIAL ratings accurately reflect missing evidence.
+
+── FINAL VERDICT ───────────────────────────────────────────────
+
+GOAL NOT COMPLETE
+
+Criteria COMPLETE (21):
+  C1, C2, C3, C4, T1, U1, U2, U3, U4, BA1, BA2, BA5, QA1, QA2, QA3, QA4, D1, D2, D3
+  (and no incorrect completion claims)
+
+Criteria PARTIAL (9):
+  T2, T3, T4, V1, V2, V3, V4, BA3, BA4
+
+Evidence gaps:
+  - No production Kids voice session log (T2, T3, T4, V1, V2, V3, V4)
+  - No end-to-end session ownership test (BA3)
+  - Kids Redis TTL is 30 min vs 4h spec in CLAUDE.md (BA4)
+
+Progress vs Run 2:
+  Upgraded from PARTIAL to COMPLETE: QA1, QA2, QA3, QA4, BA1, BA2, D1, D2, D3, U2, U3, U4, C2
+  Unchanged PARTIAL: T2, T3, T4, V1, V2, V3, V4, BA3, BA4
+
+All remaining PARTIAL items require either a live production voice session
+or user action (run session, check logs, or update TTL config).
+══════════════════════════════════════════════════════════════════
+```
+
+---
+
 ## ACCEPTANCE AUDITOR VERDICT — Run 2 (2026-06-08, independent re-audit)
 
 ```

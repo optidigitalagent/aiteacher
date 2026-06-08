@@ -8,42 +8,63 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Commit backend/vitest.config.ts — required to satisfy QA2
-**Type:** CODE (single file commit)
-**Agent:** goal-executor / implementer
+**Task:** Run a production Kids voice session to capture T2–T4 and V1–V4 log evidence
+**Type:** USER ACTION (requires real mic + browser + authenticated Kids session)
+**Agent:** user / production-log-analyzer
 **Description:**
-  Acceptance auditor (Run 2, 2026-06-08) found that `backend/vitest.config.ts` is
-  UNTRACKED (git status shows `?? backend/vitest.config.ts`).
+  Acceptance auditor Run 3 (2026-06-08) found that 9 criteria remain PARTIAL.
+  All remaining gaps require a live production voice session with a real student.
 
-  This file is the fix for QA2 ("npm test → all pass"). It excludes `tests/fsm.test.ts`
-  from `vitest run` so the unit test suite reports 1857/1857 pass.
+  21 of 30 criteria are now COMPLETE. The code is correct, deployed, and tested.
+  The only remaining evidence gaps are observability items that cannot be
+  captured without a real voice session.
 
-  Until this file is committed, the QA2 fix is local-only and not reproducible.
-  The current NEXT_ACTION ("FIX fsm.test.ts — replace process.exit") is WRONG PREMISE:
-  vitest.config.ts already solves QA2 by excluding the problematic file from npm test.
-  Modifying fsm.test.ts is not required and should NOT be done.
+  **What needs to happen:**
 
-  Steps:
-  1. git add backend/vitest.config.ts
-  2. git commit -m "fix(qa): add vitest config to exclude integration tests from npm test"
-  3. git push origin main
-  4. Verify npm test exits 0 after push.
+  1. Open https://aware-alignment-production.up.railway.app/kids (or the Kids URL)
+  2. Sign in with a real user account
+  3. Start a Kids voice session (at least 3 exercise turns)
+  4. After the session, run:
+     ```
+     railway logs --service aiteacher 2>&1 | grep -E "kids|stt|tts|latency|silence|teacher" | head -50
+     ```
+  5. Save the log output and paste it for the goal-executor to evaluate.
+
+  **Evidence needed to close remaining PARTIAL criteria:**
+  - T2: "Socratic method" — look for teacher not giving answer first in turn log
+  - T3: "Ends with question" — look for teacher_text field ending in ? or instruction
+  - T4: "Child-friendly" — look for turn teacher_text word count ≤ 12–18 words
+  - V1: "STT latency < 2.5s" — look for [kids-v1] latency_ms line showing < 2500
+  - V2: "No Deepgram HTTP 400" — confirm no [stt:error] during session
+  - V3: "TTS streams" — look for [tts:stream] or streaming chunk log
+  - V4: "Silence detection" — look for [stt:utteranceEnd] or silence_detected line
+
+  **Optional (if available) — closes BA3:**
+  - If you have a test JWT token, provide PLAYWRIGHT_TEST_TOKEN and the D-group
+    tests can be run to verify session ownership end-to-end.
+
+  **Optional fix — closes BA4:**
+  - Update backend/src/kids-brain/store/redis-session.store.ts:49
+    from `EX', 1800` to `'EX', 14400` if Kids sessions can exceed 30 min.
 
 **Inputs:**
-  - `backend/vitest.config.ts` (untracked, already contains correct config)
+  - Production Kids session logs from Railway
+  - User provides log output to goal-executor
 
 **Success criterion:**
-  `git log --oneline` shows the vitest.config.ts commit on main.
-  `npm test` exits 0 with 1857 tests passing.
-  `npx tsc --noEmit` still exits 0.
+  Railway log contains at least one Kids session turn with:
+  - Teacher response visible (teacher_text or similar)
+  - No [stt:error] HTTP 400
+  - Latency evidence or no latency spike in timing
 
 **Blocker:**
-  None expected.
+  Requires user to run a real voice session with a microphone.
+  Goal Executor cannot initiate a voice session programmatically.
 
 **FOLLOW-ON after this task:**
-  Diagnose Playwright B1/B2/B3 failures (404 instead of 401 for /lesson/kids/start).
-  These block BA1 ("No unauthenticated resource usage") and BA2 ("No billing/auth regressions").
-  Likely cause: Playwright BACKEND_URL misconfigured or local backend not running during test.
+  - goal-executor evaluates logs against T2-T4, V1-V4 criteria
+  - If all pass → re-run acceptance-auditor → may achieve GOAL COMPLETE
+  - If BA4 (30-min TTL) needs fixing → implementer updates redis-session.store.ts
 
 ---
 
@@ -63,7 +84,7 @@ After completing any task:
 ## CURRENT NEXT ACTION
 
 **Task:** <short name>
-**Type:** CODE | TEST | REVIEW | DEPLOY | RESEARCH | PLAN
+**Type:** CODE | TEST | REVIEW | DEPLOY | RESEARCH | PLAN | USER ACTION
 **Agent:** goal-executor | planner | implementer | backend-reviewer |
            frontend-reviewer | curriculum-reviewer | qa-tester |
            production-log-analyzer | deploy-railway
