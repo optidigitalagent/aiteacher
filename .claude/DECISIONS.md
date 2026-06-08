@@ -74,4 +74,33 @@
 
 ---
 
+### 2026-06-07 — Fix test fixture instead of simplifying SessionMemory
+
+**Decision:** Updated phase-1-exercise-escalation test fixture to use correct
+  SessionMemory fields rather than simplifying the SessionMemory type.
+**Reason:** SessionMemory is a production contract used by Redis storage and
+  multiple agents. Loosening required fields to fix a test would create false
+  confidence that partial memory objects are safe.
+**Alternatives rejected:** Making SessionMemory fields optional — would weaken
+  type safety across all callers. Using `as unknown as SessionMemory` cast —
+  would hide real type errors.
+**Reversible:** Yes (test-only change)
+**Risk:** Low
+
+---
+
+### 2026-06-07 — Map non-existent ClassificationLabel values to nearest semantic equivalents
+
+**Decision:** In test, replaced WRONG_WORD→WRONG_SEMANTIC, L1_DETECTED→L1_TRANSLATION,
+  NOISE_ONLY→RANDOM_NONSENSE. These are the closest semantic equivalents.
+**Reason:** The test is verifying that MOVE_ON fires for "any non-correct label".
+  The exact label doesn't matter for this test — what matters is that it's non-correct.
+  Any wrong/L1/noise label serves the same purpose.
+**Alternatives rejected:** Adding the removed labels back to the enum — would create
+  duplicates and confusion in the classification system.
+**Reversible:** Yes (test-only change)
+**Risk:** Low
+
+---
+
 > Append new decisions below as autonomous work progresses.

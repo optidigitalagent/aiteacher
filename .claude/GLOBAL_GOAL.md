@@ -15,7 +15,8 @@ The goal is NOT complete until ALL of the following are satisfied:
 
 ### Curriculum
 - [ ] Kid's Box Unit 1 exercises fully mapped and implemented
-- [ ] All exercise types render correctly (L&R, CHANT, SONG, CHOOSE, SPEAK, STORY)
+- [ ] All Unit 1 exercise types render correctly (LISTEN_AND_REPEAT, LISTEN_AND_CHOOSE, CHANT, REVIEW)
+  Note: SONG and STORY_LISTEN are not used in Unit 1 (RISK-003, deferred to future units)
 - [ ] Escalation ladder fires correctly on 2nd wrong answer
 - [ ] Exercise completion triggers correct next exercise
 
@@ -52,7 +53,7 @@ The goal is NOT complete until ALL of the following are satisfied:
 
 ### Deployment
 - [ ] Railway deploy completed
-- [ ] Server listening on port 4000 confirmed in logs
+- [ ] Server listening on $PORT (8080 on Railway) confirmed in logs
 - [ ] No critical errors in first 10 minutes of production logs
 
 ---

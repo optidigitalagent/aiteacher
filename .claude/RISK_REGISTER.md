@@ -95,17 +95,15 @@
 
 ### RISK-005 — Railway deploy not verified post Phase 1–3
 
-**Status:** OPEN
+**Status:** RESOLVED
 **Severity:** P1
 **Area:** deploy
-**Description:** Phase 1–3 changes (exercise architecture) committed locally
-  but Railway deploy not confirmed. Production may still run older code.
-**Trigger:** Any production Kids session
-**Mitigation:** git status shows commits ready to push.
-**Resolution:** git push origin main → Railway deploy → verify
-  [server] listening on port 4000 in Railway logs.
-**Opened:** 2026-06-07
-**Updated:** 2026-06-07
+**Evidence:** Commit 84e0195 pushed 2026-06-07. Railway deployment 80dd54bf
+  succeeded at 12:25:03 +03:00. Logs confirm:
+  [server] listening on 0.0.0.0:8080 ✅
+  [postgres] connected ✅ | [redis] connected ✅
+  No HTTP 400, no unhandled rejections, no ECONNREFUSED.
+**Resolved:** 2026-06-07
 
 ---
 
