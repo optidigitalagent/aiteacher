@@ -10,7 +10,8 @@
     "seed": "tsx src/db/seed.ts",
     "ingest": "tsx src/scripts/ingest-textbook.ts",
     "parse-textbook": "tsx src/scripts/parse-textbook.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "vitest run tests/fsm.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
