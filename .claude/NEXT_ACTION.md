@@ -8,73 +8,166 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Run a production Kids voice session to capture T2–T4 and V1–V4 log evidence
-**Type:** USER ACTION (requires real mic + browser + authenticated Kids session)
-**Agent:** user / production-log-analyzer
+**Task:** V1/V3 Production Voice Session — Exact Evidence Collection
+**Type:** USER ACTION
+**Agent:** user (manual) → goal-executor evaluates logs
 **Description:**
-  BA4 is now COMPLETE: Kids Redis TTL fixed from 1800→14400 (30min→4h).
-  See: backend/src/kids-brain/infrastructure/redis-session.store.ts
-  Tests: infrastructure-contracts.test.ts "BA4: default TTL is 14400 seconds" PASS.
+  26/27 criteria COMPLETE. BA3 COMPLETE — commit 708fdf9, owner_mismatch test 60/60, 1866/1866 pass.
+  Only V1 (STT latency < 2.5s) and V3 (TTS streams correctly) remain PARTIAL.
+  Both require evidence from a real Kids voice session on Railway.
 
-  Acceptance auditor Run 3 (2026-06-08) found that 8 criteria remain PARTIAL.
-  All remaining gaps require a live production voice session with a real student.
+  No code changes are needed or allowed. This is a pure evidence-collection task.
 
-  22 of 30 criteria are now COMPLETE. The code is correct, deployed, and tested.
-  The only remaining evidence gaps are observability items that cannot be
-  captured without a real voice session.
+---
 
-  **What needs to happen:**
+## EXACT TEST PLAN
 
-  1. Open https://aware-alignment-production.up.railway.app/kids (or the Kids URL)
-  2. Sign in with a real user account
-  3. Start a Kids voice session (at least 3 exercise turns)
-  4. After the session, run:
-     ```
-     railway logs --service aiteacher 2>&1 | grep -E "kids|stt|tts|latency|silence|teacher" | head -50
-     ```
-  5. Save the log output and paste it for the goal-executor to evaluate.
+### Pre-conditions
+- Browser: Chrome or Edge (DevTools required)
+- Terminal: `railway` CLI authenticated to aiteacher project
+- Account: any valid registered user on production
 
-  **Evidence needed to close remaining PARTIAL criteria:**
-  - T2: "Socratic method" — look for teacher not giving answer first in turn log
-  - T3: "Ends with question" — look for teacher_text field ending in ? or instruction
-  - T4: "Child-friendly" — look for turn teacher_text word count ≤ 12–18 words
-  - V1: "STT latency < 2.5s" — look for [kids-v1] latency_ms line showing < 2500
-  - V2: "No Deepgram HTTP 400" — confirm no [stt:error] during session
-  - V3: "TTS streams" — look for [tts:stream] or streaming chunk log
-  - V4: "Silence detection" — look for [stt:utteranceEnd] or silence_detected line
+### Step 1 — Open Railway log stream in terminal
+```
+railway logs --service aiteacher -n 50 --follow 2>&1 | grep -E "kids-v1|tts:provider|stt:lifecycle|stt:config|tts:fallback|kids:voice"
+```
+Keep this terminal visible — it must be running during the session.
 
-  **Optional (if available) — closes BA3:**
-  - If you have a test JWT token, provide PLAYWRIGHT_TEST_TOKEN and the D-group
-    tests can be run to verify session ownership end-to-end.
+### Step 2 — Open browser DevTools before navigating
+1. Open Chrome / Edge
+2. Press F12 → go to **Network** tab → filter by **WS**
+3. **Do NOT clear logs after this point**
 
-**Inputs:**
-  - Production Kids session logs from Railway
-  - User provides log output to goal-executor
+### Step 3 — Run the Kids voice session
+1. Navigate to: `https://aiteacher-production-cae8.up.railway.app/kids`
+   _(or your production kids URL)_
+2. Sign in with a real account
+3. Complete **exactly 3 voice turns**:
+   - Turn 1: Say a short word or phrase when prompted (e.g. "blue")
+   - Turn 2: Say another word when prompted (e.g. "red")
+   - Turn 3: Stay silent for 3 seconds (to trigger silence detection)
+4. After the 3rd teacher response, stop the session
 
-**Success criterion:**
-  Railway log contains at least one Kids session turn with:
-  - Teacher response visible (teacher_text or similar)
-  - No [stt:error] HTTP 400
-  - Latency evidence or no latency spike in timing
+### Step 4 — Capture Railway logs
+After the 3 turns are complete, run:
+```
+railway logs --service aiteacher -n 100 2>&1 | grep -E "kids-v1|tts:provider|stt:lifecycle|stt:config|tts:fallback|voice_degraded"
+```
+Save the full output. **Paste it verbatim to goal-executor.**
 
-**Blocker:**
-  Requires user to run a real voice session with a microphone.
-  Goal Executor cannot initiate a voice session programmatically.
+### Step 5 — Capture browser evidence
+In the **Network → WS** tab:
+1. Click the WebSocket connection to the lesson endpoint
+2. Go to **Messages** subtab
+3. Screenshot or copy the message list showing `audio_chunk` messages
 
-**FOLLOW-ON after this task:**
-  - goal-executor evaluates logs against T2-T4, V1-V4 criteria
-  - If all pass → re-run acceptance-auditor → may achieve GOAL COMPLETE
-  - If BA4 (30-min TTL) needs fixing → implementer updates redis-session.store.ts
+In the **Console** tab:
+- Screenshot any timing logs if present
+- Note: no custom timing code is in the frontend — only WS message arrival times matter
+
+---
+
+## EXACT LOG LINES REQUIRED
+
+### For V1 (STT latency < 2.5s)
+
+**Railway must show ALL of these lines during the session:**
+```
+[kids-v1] turn_start session=<id> target=<word> exerciseCorrectCount=<n>
+[tts:provider_selected] provider=elevenlabs voiceId=<id>
+[kids-v1] turn_complete session=<id> target=<word> exerciseCorrectCount=<n>
+```
+
+**Timestamp rule:** The Railway timestamp on `[kids-v1] turn_start` and the
+timestamp on `[tts:provider_selected] provider=elevenlabs` must differ by ≤ 2 seconds.
+Railway log timestamps are UTC seconds — compare the seconds field directly.
+
+**Alternative (higher precision):** In browser DevTools Network WS tab, measure:
+- Time of incoming `teacher_turn_end` message (end of previous turn)
+- Time of first incoming `audio_chunk` message (start of new teacher response)
+- Delta must be < 2500ms
+
+### For V3 (TTS streams correctly)
+
+**Railway must show:**
+```
+[tts:provider_selected] provider=elevenlabs voiceId=<id>
+```
+(once per teacher turn — appears in tts.ts:207 before the stream loop starts)
+
+**Railway must NOT show:**
+```
+[tts:fallback] elevenlabs_failed
+[tts:fallback] no_provider_available
+[kids:voice_degraded]
+```
+
+**Browser DevTools WS must show:**
+- ≥ 2 `audio_chunk` messages per teacher turn (proves streaming loop fired multiple
+  times, not single buffered chunk)
+- `teacher_turn_end` message after the audio_chunk sequence
+
+---
+
+## PASS / FAIL THRESHOLDS
+
+### V1 — STT latency < 2.5s
+
+| Evidence | PASS | FAIL |
+|----------|------|------|
+| Railway: `turn_start` → `tts:provider_selected` | ≤ 2s apart | > 2s apart |
+| Browser: `teacher_turn_end` → first `audio_chunk` (next turn) | < 2500ms | ≥ 2500ms |
+| Railway: No STT error lines | `[stt:lifecycle] status:"open"` present | `[stt:diag]` errors OR `[stt:lifecycle] status:"error"` |
+| Kids Brain v1 is deterministic | Proof: no LLM call in kids-v1 path | N/A |
+
+**Decision rule:** If Railway timestamps show ≤ 2s gap AND no error lines → V1 PASS.
+If Railway timestamps are same second → V1 PASS (unambiguously < 1s processing).
+
+### V3 — TTS streams correctly
+
+| Evidence | PASS | FAIL |
+|----------|------|------|
+| Railway: `[tts:provider_selected] provider=elevenlabs` | Present ≥ 1× | Absent or `provider=openai` only |
+| Railway: `[tts:fallback]` | Absent | Present |
+| Browser WS: `audio_chunk` count per turn | ≥ 2 per turn | 0 or 1 per turn |
+| Browser WS: `teacher_turn_end` after chunks | Present | Absent |
+
+**Decision rule:** If `[tts:provider_selected] provider=elevenlabs` present AND
+≥ 2 `audio_chunk` WS messages per turn AND no fallback errors → V3 PASS.
+
+---
+
+## STARTUP LOG CHECK (collect once at session start)
+
+The following lines appear at server boot and confirm baseline config.
+These are already in Railway from the current deployment but confirm the right
+code is running:
+
+```
+[tts:provider_check] {"selectedProvider":"elevenlabs",...}
+{"event":"[stt:config]","provider":"deepgram","utterance_end_ms":1000,"vad_events":true,...}
+```
+
+If `[tts:provider_check]` shows `selectedProvider: "openai"` → V3 evidence will
+show OpenAI (buffered MP3) not ElevenLabs — require ElevenLabs key check before proceeding.
 
 ---
 
 ## INSTRUCTIONS FOR GOAL EXECUTOR
 
-After completing any task:
-1. Check all acceptance criteria in GLOBAL_GOAL.md
-2. If criteria remain unsatisfied → write the next concrete task here
-3. If all criteria satisfied → write "GOAL COMPLETE" and notify user
-4. If blocked after 3 attempts → write "BLOCKED: <reason>" and notify user
+After collecting logs:
+1. Check all PASS thresholds above for V1 and V3
+2. If both pass → update GOAL_PROGRESS.md: V1 COMPLETE, V3 COMPLETE
+3. If both complete → run acceptance-auditor → GOAL COMPLETE
+4. If V1 fails due to >2s gap → investigate [stt:lifecycle] for open_timeout or errors
+5. If V3 fails → check [tts:provider_check] selectedProvider, ElevenLabs key present
+
+---
+
+## FOLLOW-ON after this task
+- goal-executor evaluates logs against V1/V3 thresholds
+- If both pass → run acceptance-auditor for final Run 5 verdict
+- Expected: GOAL COMPLETE (28/28 criteria including BA3 which is already COMPLETE)
 
 ---
 

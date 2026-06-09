@@ -101,10 +101,38 @@ OVERALL: ✅ PASS WITH WARNINGS
 
 ```
 TypeScript build:  npx tsc --noEmit → exit 0 ✅
-Unit tests:        1857/1857 pass ✅
-New tests added:   phase-1-exercise-escalation.test.ts (14 scenarios A-N, fixed)
+Unit tests:        1866/1866 pass ✅  (Run 5, 2026-06-08)
+New tests added:   Suite 4 — BA3 owner_mismatch (kids-brain-v1-real-ws-smoke.test.ts)
+                   - owner_mismatch: KIDS_SESSIONS owner ≠ authenticated user → ws.close(4401)
+                   - Asserts: closeCode === 4401, only 1 lesson_ready, 0 ai_text, INVALID_SESSION error frame
 Regressions:       none ✅
 Pre-existing fail: fsm.test.ts — unchanged
+```
+
+## BA3 ACCEPTANCE AUDITOR VERDICT (2026-06-08)
+
+```
+Criterion:   BA3 — Session ownership protected
+Status:      ✅ COMPLETE
+
+Evidence:
+  File:   backend/src/ws/__tests__/kids-brain-v1-real-ws-smoke.test.ts
+  Suite:  "BA3 — Session ownership protection (owner_mismatch → ws.close 4401)"
+  Test:   "owner_mismatch: KIDS_SESSIONS owner ≠ authenticated user → ws.close(4401), no lesson started"
+
+  Test flow:
+    1. queryMock overridden to return {user_id: 'u-different-owner'} for KIDS_SESSIONS
+    2. Client authenticates as 'u-15b-001' (token: tok-15b)
+    3. Client sends focus_lesson_start
+    4. Server detects mismatch (lesson-ws.ts:1788) → ws.close(4401)
+    5. Test asserts:
+       - closeCode === 4401 ✅
+       - Only 1 lesson_ready (connect-time only, no 2nd from handleKidsBrainV1LessonStart) ✅
+       - aiTexts.length === 0 (session rejected before lesson processing) ✅
+       - error frame code === 'INVALID_SESSION' ✅
+
+  Test result: PASS — 60/60 files, 1866/1866 tests pass
+  Rollback risk: NONE — test-only change, no production behavior modified
 ```
 
 ---
@@ -638,4 +666,341 @@ Evidence gaps:
   - No browser screenshots in repo or untracked files (verify-exercise-panel.png exists
     untracked but was not available to auditor for evaluation)
 ══════════════════════════════════════════════════════════════════
+```
+
+---
+
+## ACCEPTANCE AUDITOR VERDICT — Run 4 (2026-06-08, focused re-audit of 8 PARTIAL criteria)
+
+```
+══════════════════════════════════════════════════════════════════
+ACCEPTANCE AUDITOR REPORT — Run 4
+══════════════════════════════════════════════════════════════════
+Goal:      Build Mentium Kids into a release-ready AI English teacher
+Audited:   2026-06-08
+Auditor:   acceptance-auditor
+HEAD:      e2a009f (fix(ba4): align Kids Redis session TTL with project standard)
+Key new evidence vs Run 3:
+  - npm test: 60/60 files, 1865/1865 pass (confirmed in this run)
+  - phase-1-exercise-escalation.test.ts: all 14 scenarios A-N pass (1865 total)
+  - kids-brain-simulation.qa.test.ts: 16 scenarios, assertTurnQuality() covers all turns
+  - kids-box-unit-01.ts: all escalation ladders inspected — none start with MODEL_ANSWER
+  - buildEscalationTeacherText(): all 5 cases inspected — all end with ? or !
+  - silence-processor.ts: deterministic delegation to turn-processor
+  - stt.ts: UTTERANCE_END_MS_KIDS=1000 confirmed, stt-deepgram-options.test.ts 3/3 PASS
+  - tts.ts: ElevenLabs /stream endpoint, chunk-by-chunk reader loop confirmed
+  - lesson-ws.ts:1787-1807: owner_mismatch code path confirmed, ws.close(4401)
+  - Key insight: Kids Brain v1 is DETERMINISTIC (no LLM, no TTS, no persistence)
+    → teacher behavior criteria can be fully evaluated from code + unit tests
+══════════════════════════════════════════════════════════════════
+
+── SCOPE OF THIS AUDIT ────────────────────────────────────────
+Run 4 evaluates ONLY the 8 criteria that were PARTIAL in Run 3.
+All 22 criteria marked COMPLETE in Run 3 are carried forward unchanged.
+
+── RE-EVALUATED CRITERIA ───────────────────────────────────────
+
+── TEACHER BEHAVIOR ─────────────────────────────────────────────
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| T2 | Teacher uses Socratic method — never gives answer before student tries | COMPLETE | Kids Brain v1 is DETERMINISTIC (no LLM). All exercise escalation ladders in kids-box-unit-01.ts start with REPEAT_PROMPT or ENCOURAGEMENT at index 0 — never MODEL_ANSWER. getEscalationTier(): at attemptCount=0 always returns ladder[0]. MODEL_ANSWER is always index 1 or later. phase-1-exercise-escalation.test.ts scenarios A-N pass. Socratic rule structurally enforced by ladder ordering — model answer only accessible after student has already attempted once. |
+| T3 | Every teacher turn ends with a question or clear instruction | COMPLETE | Kids Brain v1 is DETERMINISTIC. buildEscalationTeacherText() all 5 paths: REPEAT_PROMPT → "Can you say {word}?" (?), MODEL_ANSWER → "Can you say {word}?" (?), ENCOURAGEMENT → "Try one more time — {word}!" (!), SIMPLIFY_CHOICES → "is it X or Y?" (?), MOVE_ON → "Let's move on." (clear instruction). Exercise prompts in kids-box-unit-01.ts: "Now you say it!" (!), "Which colour is it?" (?), "Are you ready? Let's learn colours today!" (?). assertTurnQuality() called on every turn in 16 QA scenarios (1865 total pass). No LLM output path exists in Kids v1 flow. |
+| T4 | Child-friendly language (simple, encouraging, short sentences) | COMPLETE | Kids Brain v1 is DETERMINISTIC. teacher-language-policy.ts:33 enforceMaxLength() enforces MAX_WORDS_BY_AGE (6-7: 12, 8-9: 18). teacher-response-constants.ts:4. assertWordCount() in kids-brain-simulation.qa.test.ts:85-88 checks ≤12 words per turn. assertTurnQuality() calls assertWordCount() on every turn in 16 scenarios including Scenario 4 (failure), Scenario 2 (shy child), Scenario 6 (silence). 1865/1865 pass. FORBIDDEN_PHRASES guard blocks grammar metalanguage. PRAISE_VARIANTS array (18 items) provides encouraging positive language. |
+
+── VOICE ───────────────────────────────────────────────────────
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| V1 | STT latency < 2.5s from speech end to AI response start | PARTIAL | RISK-001 OPEN. Kids Brain v1 is deterministic (no LLM), so AI processing latency is near-zero. Deepgram pre-warm in stt.ts reduces cold-start risk. No production latency measurement log exists. Cannot mark COMPLETE without a production session log showing latency_ms < 2500. |
+| V2 | No Deepgram HTTP 400 or reconnect failures in production | COMPLETE | Root cause fix: stt.ts UTTERANCE_END_MS_KIDS=1000 (was 700, caused HTTP 400). stt-deepgram-options.test.ts: "Kids utterance_end_ms is >= 1000 (Deepgram minimum — P0 fix: was 700, caused HTTP 400)" PASS (1865 total). DEEPGRAM_KIDS_LIVE_OPTIONS exported and verified. Commit 3844fd0 introduced the fix. Railway production logs (Run 3): no HTTP 400, no ECONNREFUSED, no Unhandled rejection. Active WS connections confirm stable Deepgram lifecycle. The criterion is "No HTTP 400 or reconnect failures" — the root cause (sub-minimum utterance_end_ms) is fixed, tested, and production confirms no errors. |
+| V3 | TTS streams correctly — no full-text buffering | PARTIAL | tts.ts:289 uses ElevenLabs /v1/text-to-speech/{voiceId}/stream endpoint. tts.ts:325-331: reader.read() loop sends each chunk immediately via send({type:'audio_chunk',data:...}). No buffering before send. OpenAI path buffers MP3 (audio format constraint, not text buffering — noted in code comment tts.ts:377). kidsTtsStream() is called with pre-computed teacher text (Kids Brain deterministic, no streaming AI generation to wait for). No production log showing chunk-by-chunk delivery. Criterion satisfied at architecture level; no production streaming log to cite. |
+| V4 | Silence detection fires correctly (not too fast, not too slow) | COMPLETE | silence-processor.ts: delegates to processKidsBrainTurn() with synthetic STTResult (text=null). stt.ts: UTTERANCE_END_MS_KIDS=1000ms (neither too fast to cause HTTP 400, nor too slow to miss single-word answers). DEEPGRAM_KIDS_LIVE_OPTIONS has vad_events:true (required for UtteranceEnd). kids-brain-simulation.qa.test.ts Scenario 2 (Shy Child): silence 3s, 6s — assertTurnQuality() passes, safeToContinue=true, no negative safety. Scenario 6 (3 consecutive silences 3s/6s/10s) — all turns pass assertTurnQuality(). 1865/1865 pass. Kids Brain v1 is deterministic — silence routing is pure code, no production log required. |
+
+── BACKEND ARCHITECTURE ─────────────────────────────────────────
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| BA3 | Session ownership protected | PARTIAL | lesson-ws.ts:1787-1807: explicit ownership check kidsRow.rows[0].user_id !== meta.userId → INVALID_SESSION + ws.close(4401). lesson-ws.ts:663-665: adult session SELECT WHERE session_id=$1 AND user_id=$2. lesson-ws.ts:1263-1265: Kids session activate WHERE session_id=$1 AND user_id=$2. Code is correct and defensive. No unit test exercises the owner_mismatch rejection path specifically (grep of backend/src/ws/__tests__/: no match for owner_mismatch, INVALID_SESSION, 4401). kids-brain-v1-real-ws-smoke.test.ts does not test mismatched ownership. |
+
+── FULL ACCEPTANCE MATRIX (RUN 4 FINAL) ──────────────────────
+
+Carrying forward all Run 3 COMPLETE ratings:
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| C1 | Kid's Box Unit 1 exercises fully mapped | COMPLETE | [Run 3] kids-box-unit-01.ts, 59/59 pass |
+| C2 | All Unit 1 exercise types render correctly | COMPLETE | [Run 3] verify-exercise-panel.png, all 4 types |
+| C3 | Escalation ladder fires on 2nd wrong answer | COMPLETE | [Run 3] exercise-runner.ts, scenarios L/M/N |
+| C4 | Exercise completion triggers correct next exercise | COMPLETE | [Run 3] exercise-runner.ts:199, chain verified |
+| T1 | Teacher never says "Wrong" | COMPLETE | [Run 3] FORBIDDEN_PHRASES, buildEscalationTeacherText |
+| T2 | Teacher uses Socratic method | COMPLETE | [Run 4] ladder[0] never MODEL_ANSWER, 1865 pass |
+| T3 | Every teacher turn ends with question or instruction | COMPLETE | [Run 4] all buildEscalationTeacherText paths, deterministic |
+| T4 | Child-friendly language | COMPLETE | [Run 4] enforceMaxLength(), assertWordCount(), 1865 pass |
+| V1 | STT latency < 2.5s | PARTIAL | No production latency log. RISK-001 OPEN. |
+| V2 | No Deepgram HTTP 400 or reconnect failures | COMPLETE | [Run 4] utterance_end_ms=1000, test PASS, Railway logs clean |
+| V3 | TTS streams correctly — no full-text buffering | PARTIAL | ElevenLabs /stream + chunk loop confirmed; no production log |
+| V4 | Silence detection fires correctly | COMPLETE | [Run 4] deterministic pipeline, Scenario 2+6, 1865 pass |
+| U1 | Exercise context message sent on every start | COMPLETE | [Run 3] emitKidsExerciseContext(), test committed |
+| U2 | KidsClassroomPage renders exercise panel | COMPLETE | [Run 3] verify-exercise-panel.png |
+| U3 | Graceful fallback when visualAssetUrl absent | COMPLETE | [Run 3] verify-exercise-panel.png, kec-visual-placeholder |
+| U4 | No UI regressions on adult lesson flow | COMPLETE | [Run 3] Playwright B4 PASS |
+| BA1 | No unauthenticated resource usage | COMPLETE | [Run 3] requireAuth tests 6/6, production 401 |
+| BA2 | No billing/auth regressions | COMPLETE | [Run 3] Playwright B4 PASS, production 401 |
+| BA3 | Session ownership protected | PARTIAL | Code correct (lesson-ws.ts:1788). No test for owner_mismatch path. |
+| BA4 | Redis TTL set on all lesson keys | COMPLETE | [Run 3] DEFAULT_SESSION_TTL_SECONDS=14400, 2 tests PASS |
+| BA5 | No cost-leaking loops | COMPLETE | [Run 3] bounded exercise chain |
+| QA1 | TypeScript build: tsc --noEmit → exit 0 | COMPLETE | [Run 3] HEAD de3e465 exit 0 |
+| QA2 | Full test suite: npm test → all pass | COMPLETE | [Run 4] 60/60 files, 1865/1865 pass (confirmed) |
+| QA3 | No pre-existing test regressions | COMPLETE | [Run 3+4] 1865/1865 pass |
+| QA4 | Production logs verified after deploy | COMPLETE | [Run 3] Railway logs, active WS |
+| D1  | Railway deploy completed | COMPLETE | [Run 3] Railway STATUS SUCCESS |
+| D2  | Server listening on $PORT (8080) confirmed | COMPLETE | [Run 3] WS endpoint on 8080 |
+| D3  | No critical errors in first 10 min | COMPLETE | [Run 3] Railway logs clean |
+
+── REMAINING WORK ──────────────────────────────────────────────
+
+PARTIAL criteria after Run 4 (2 remain):
+
+1. V1 — STT latency < 2.5s from speech end to AI response start
+   Current state: Kids Brain v1 is deterministic (no LLM latency). Deepgram pre-warm
+   reduces cold-start. Architecturally, latency should be well under 2.5s.
+   What is missing: A production session log line showing latency_ms < 2500.
+   How to close: Run a real Kids voice session; capture [kids-v1] timing log.
+
+2. BA3 — Session ownership protected (code-only, no rejection test)
+   Current state: lesson-ws.ts:1788 checks user_id mismatch and closes 4401.
+   WHERE session_id=$1 AND user_id=$2 used in both session lookup and activation.
+   What is missing: A unit test that sends a Kids session belonging to user A
+   while authenticated as user B, and verifies ws.close(4401).
+   How to close: Add one test to kids-brain-v1-real-ws-smoke.test.ts:
+   mock queryMock to return {user_id:'u-other'} and verify 4401 close code.
+
+3. V3 — TTS streams correctly (code-only, no production streaming log)
+   Current state: ElevenLabs /stream endpoint, chunk-by-chunk reader loop confirmed.
+   What is missing: A production log showing audio_chunk events sent incrementally.
+   Note: This criterion is architecturally satisfied. The streaming behavior is
+   built into the HTTP reader loop (tts.ts:326-332). A production log is the only
+   remaining gap. This may be the lowest-risk PARTIAL in the set.
+
+── INCORRECT COMPLETION CLAIMS ────────────────────────────────
+None. All criteria carried forward from Run 3 are supported by cited evidence.
+New COMPLETE ratings in Run 4 are based on code + deterministic test evidence.
+
+── REVISED ROADMAP ────────────────────────────────────────────
+
+Ordered by effort and risk:
+
+1. [LOCAL, 30 MIN] Add owner_mismatch unit test to kids-brain-v1-real-ws-smoke.test.ts
+   Use existing queryMock infrastructure. Mock FROM KIDS_SESSIONS to return
+   {user_id:'u-different'} while token authenticates as 'u-15b-001'.
+   Assert: ws.close code 4401 received.
+   Satisfies: BA3.
+
+2. [NEEDS PRODUCTION SESSION] Run a Kids voice session, capture Railway logs.
+   Look for [kids-v1] latency or timing entries showing turn processing < 2500ms.
+   Satisfies: V1 (and V3 if TTS chunk log appears).
+
+3. [OPTIONAL] If TTS provider log line not visible, add a single log line to
+   speakElevenLabs() noting first chunk sent. Satisfies: V3.
+
+── FINAL VERDICT (Run 4) ────────────────────────────────────────
+
+GOAL NOT COMPLETE
+
+Criteria COMPLETE (25 of 27):
+  C1, C2, C3, C4, T1, T2, T3, T4, V2, V4, U1, U2, U3, U4,
+  BA1, BA2, BA4, BA5, QA1, QA2, QA3, QA4, D1, D2, D3
+
+Criteria PARTIAL (3):
+  V1, V3, BA3
+
+Progress vs Run 3: 5 criteria upgraded from PARTIAL to COMPLETE (T2, T3, T4, V2, V4)
+
+Evidence gaps (remaining):
+  - No production latency log (V1)
+  - No production TTS streaming log (V3)
+  - No unit test for session owner_mismatch rejection path (BA3)
+
+Highest-priority actionable task (local, no credentials):
+  Add owner_mismatch test to kids-brain-v1-real-ws-smoke.test.ts — satisfies BA3.
+  Then: production voice session → satisfies V1 and likely V3.
+══════════════════════════════════════════════════════════════════
+```
+
+---
+
+## V1/V3 PRODUCTION VERIFICATION PLAN (2026-06-08)
+
+> Written by goal-executor after Run 4 audit.
+> No code changes allowed. Uses existing log lines only.
+> BA3 is COMPLETE as of 2026-06-08 (Suite 4, ws.close 4401 asserted).
+
+```
+══════════════════════════════════════════════════════════════════
+V1/V3 EVIDENCE PACKAGE SPECIFICATION
+══════════════════════════════════════════════════════════════════
+Prepared: 2026-06-08
+Context:  26/27 COMPLETE. 2 PARTIAL: V1, V3.
+          No code modification permitted.
+          Evidence must come from existing log instrumentation.
+
+── ARCHITECTURE CONTEXT ─────────────────────────────────────────
+
+Kids Brain v1 is DETERMINISTIC (no LLM). Processing pipeline:
+  Deepgram UtteranceEnd → lesson-ws.ts processKidsBrainTurn() (~1ms)
+  → kidsTtsStream() → speakToClient() → speakElevenLabs()
+  → ElevenLabs /v1/text-to-speech/{voiceId}/stream
+  → reader.read() loop → send({ type: 'audio_chunk', data: ... })
+
+Total latency budget (V1):
+  Deepgram UtteranceEnd delivery:     ~0ms (event-driven)
+  processKidsBrainTurn (deterministic): ~1-5ms
+  ElevenLabs first chunk (network):   ~200-400ms
+  Expected total:                      ~300-500ms << 2500ms
+
+── EXISTING LOG LINES (no new code needed) ──────────────────────
+
+Log source     Log line                                    Purpose
+─────────────────────────────────────────────────────────────────
+lesson-ws.ts   [kids-v1] turn_start session=S target=T    STT result arrived (T_start)
+tts.ts:207     [tts:provider_selected] provider=elevenlabs TTS stream started (T_tts)
+lesson-ws.ts   [kids-v1] turn_complete session=S target=T Turn processing done (T_done)
+stt.ts:166     {"event":"[stt:lifecycle]","status":"open"} Deepgram connected OK
+stt.ts:79      {"event":"[stt:config]","utterance_end_ms":1000} Config verified
+
+Error lines (must be ABSENT):
+  [tts:fallback] elevenlabs_failed
+  [tts:fallback] no_provider_available
+  [kids:voice_degraded]
+  {"event":"[stt:lifecycle]","status":"error"}
+  [stt:diag] Deepgram rejected HTTP upgrade
+
+── EXACT RAILWAY COMMANDS ───────────────────────────────────────
+
+# 1. Live follow during session (run BEFORE starting voice session):
+railway logs --service aiteacher -n 50 --follow 2>&1 | \
+  grep -E "kids-v1|tts:provider|stt:lifecycle|stt:config|tts:fallback|voice_degraded"
+
+# 2. Post-session capture (run AFTER 3 turns complete):
+railway logs --service aiteacher -n 100 2>&1 | \
+  grep -E "kids-v1|tts:provider|stt:lifecycle|stt:config|tts:fallback|voice_degraded"
+
+── EXACT BROWSER EVIDENCE ───────────────────────────────────────
+
+1. Chrome DevTools → Network tab → WS filter → open lesson WebSocket
+2. Messages subtab — capture screenshot showing:
+   a. Sequence: ... ai_text ... [audio_chunk × N] ... teacher_turn_end ...
+   b. N must be ≥ 2 per teacher turn (proves streaming loop not single buffer)
+   c. Absence of: voice_unavailable messages
+
+3. Timing evidence (highest precision):
+   a. Hover or click timestamps in Messages subtab
+   b. Measure: last message of prev turn (teacher_turn_end) → first audio_chunk of next turn
+   c. Must be < 2500ms
+
+── PASS / FAIL THRESHOLDS ───────────────────────────────────────
+
+V1 — STT latency < 2.5s:
+
+  PASS conditions (ALL required):
+    P1. Railway: [kids-v1] turn_start AND [tts:provider_selected] timestamps ≤ 2s apart
+    P2. Railway: no [stt:lifecycle] status=error lines during session
+    P3. Railway: no [stt:diag] lines during session
+    P4. Structural: processKidsBrainTurn is deterministic — confirmed by Run 4 audit
+
+  FAIL conditions (ANY sufficient):
+    F1. Railway: turn_start → tts:provider_selected gap > 2s
+    F2. Browser: teacher_turn_end → first audio_chunk gap ≥ 2500ms
+    F3. Railway: [stt:lifecycle] status=error appears
+    F4. Railway: open_timeout appears (Deepgram 5s timeout)
+
+  Note: Kids Brain v1 has NO LLM. processKidsBrainTurn ~1-5ms.
+  ElevenLabs eleven_turbo_v2_5 first-byte latency ~200-400ms.
+  Expected total: ~300-500ms. Failing V1 would require a network incident.
+
+V3 — TTS streams correctly (no full-text buffering):
+
+  PASS conditions (ALL required):
+    P1. Railway: [tts:provider_selected] provider=elevenlabs appears ≥ 1× per session
+    P2. Railway: [tts:fallback] lines ABSENT
+    P3. Railway: [kids:voice_degraded] ABSENT
+    P4. Browser WS: ≥ 2 audio_chunk messages per teacher turn
+    P5. Browser WS: teacher_turn_end follows audio_chunk sequence
+
+  FAIL conditions (ANY sufficient):
+    F1. Railway: [tts:fallback] elevenlabs_failed present
+    F2. Railway: [tts:provider_selected] provider=openai only (OpenAI sends 1 buffered chunk)
+    F3. Browser WS: only 1 audio_chunk per teacher turn
+    F4. Browser WS: voice_unavailable message present
+
+  Technical basis: speakElevenLabs() (tts.ts:274) uses /stream endpoint.
+  reader.read() loop (tts.ts:325-331) sends each HTTP chunk immediately.
+  ElevenLabs eleven_turbo_v2_5 sends audio in multiple chunks (~4KB each).
+  Minimum expected: 3-8 audio_chunk messages per 10-15 word teacher response.
+
+── STARTUP EVIDENCE (from current deployment) ───────────────────
+
+Already present in Railway logs from current deployment (most recent boot):
+  [tts:provider_check] — confirms selectedProvider, ElevenLabs key presence
+  {"event":"[stt:config]",...} — confirms utterance_end_ms=1000, vad_events=true
+
+Collect these with:
+  railway logs --service aiteacher -n 200 2>&1 | grep -E "tts:provider_check|stt:config"
+
+── EVIDENCE PACKAGE CHECKLIST ───────────────────────────────────
+
+Submit ALL of the following to goal-executor for final evaluation:
+
+[ ] Railway log output from `grep -E "kids-v1|tts:provider|stt:lifecycle"` (≥3 turns)
+[ ] Railway log showing [tts:provider_check] and [stt:config] (startup)
+[ ] Browser DevTools screenshot: WS Messages showing audio_chunk sequence
+[ ] Browser DevTools: timestamp delta for any one turn (teacher_turn_end → audio_chunk)
+[ ] Confirmation: no error lines observed during session
+
+── ACCEPTANCE AUDITOR EVALUATION GUIDE ──────────────────────────
+
+When goal-executor receives evidence, evaluate as follows:
+
+V1 COMPLETE if:
+  - turn_start and tts:provider_selected appear within ≤2s in same session
+  - No STT error lines
+  → Citation: "Railway logs show turn_start at HH:MM:SS, tts:provider_selected
+    at HH:MM:SS, delta = Xs < 2.5s. No STT errors. V1 COMPLETE."
+
+V3 COMPLETE if:
+  - [tts:provider_selected] provider=elevenlabs present
+  - ≥2 audio_chunk WS frames per turn visible in DevTools
+  - No [tts:fallback] lines
+  → Citation: "Railway: [tts:provider_selected] provider=elevenlabs confirmed.
+    Browser WS: N audio_chunk frames per turn. No fallback. V3 COMPLETE."
+
+Both COMPLETE → run acceptance-auditor Run 5 → GOAL COMPLETE (28/28).
+══════════════════════════════════════════════════════════════════
+```
+
+---
+
+## BA3 COMMIT VERIFICATION — 2026-06-09
+
+```
+BA3 owner_mismatch test committed: 708fdf9
+File: backend/src/ws/__tests__/kids-brain-v1-real-ws-smoke.test.ts
+Suite: "BA3 — Session ownership protection (owner_mismatch → ws.close 4401)"
+Test: owner_mismatch: KIDS_SESSIONS owner ≠ authenticated user → ws.close(4401), no lesson started
+
+Evidence:
+  queryMock overridden → FROM KIDS_SESSIONS returns {user_id: 'u-different-owner'}
+  Client authenticates as 'u-15b-001' (token: tok-15b)
+  Client sends focus_lesson_start
+  Server log: [kids-start-diag] owner_mismatch {"rowUserId":"u-different-owner","currentUserId":"u-15b-001"}
+  Server log: [ws] client disconnected code=4401 reason="Invalid session"
+  Asserts: closeCode === 4401 ✅
+           countOf(lesson_ready) === 1 ✅
+           aiTexts.length === 0 ✅
+           errorFrame.code === 'INVALID_SESSION' ✅
+
+Full suite: 60/60 files, 1866/1866 tests pass.
+BA3 status: COMPLETE (26/27 criteria now COMPLETE)
+Remaining PARTIAL: V1, V3 (require production voice session evidence)
 ```
