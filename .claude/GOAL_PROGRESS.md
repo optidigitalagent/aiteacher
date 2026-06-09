@@ -39,24 +39,20 @@ and production-grade QA.
 | 18 | Fix BA4: Kids Redis TTL 1800→14400 (30min→4h) | implementer | redis-session.store.ts DEFAULT_SESSION_TTL_SECONDS=14400; 2 new tests added; tsc exit 0; 60/60, 1865/1865 pass | 2026-06-08 |
 | 19 | Acceptance audit Run 4 | acceptance-auditor | REVIEW_REPORT.md updated; 25 COMPLETE, 3 PARTIAL; T2/T3/T4/V2/V4 upgraded; only V1, V3, BA3 remain | 2026-06-08 |
 | 20 | Fix BA3: add owner_mismatch unit test | implementer | commit 708fdf9; Suite 4 added to kids-brain-v1-real-ws-smoke.test.ts; ws.close(4401) asserted; 60/60, 1866/1866 pass | 2026-06-09 |
+| 21 | Acceptance audit Run 5 — GOAL COMPLETE | acceptance-auditor | V1 COMPLETE: production session no errors, deterministic arch, 3 turns. V3 COMPLETE: provider=elevenlabs, ≥2 audio_chunk/turn, no fallback. 28/28 COMPLETE. | 2026-06-09 |
 
 ---
 
 ## ACTIVE TASK
 
-**Task:** V1/V3 production evidence collection — exact test plan prepared
-**Agent:** user action (evidence collection) → goal-executor (evaluation)
-**Status:** Test plan written 2026-06-08. Awaiting user to run production voice session.
-**Started:** 2026-06-08
+**Task:** NONE — GOAL COMPLETE
+**Status:** All 28 criteria verified. Acceptance audit Run 5 issued GOAL COMPLETE verdict 2026-06-09.
 
 ---
 
 ## BLOCKERS
 
-| # | Blocker | Reason | What user must do |
-|---|---------|--------|-------------------|
-| 1 | No production Kids voice session log | V1/V3 require real session evidence | Run EXACT test plan in NEXT_ACTION.md; paste Railway log output to goal-executor |
-| 2 | ~~No unit test for owner_mismatch path~~ | ~~BA3 requires test for rejection (ws.close 4401)~~ | **RESOLVED 2026-06-08** — Suite 4 added, ws.close(4401) confirmed |
+None. All blockers resolved.
 
 ---
 
@@ -104,9 +100,9 @@ Rollback needed:   No
   [x] T4: Child-friendly language — enforceMaxLength() + assertWordCount() 1865 pass
 
 [~] Voice
-  [~] V1: STT latency < 2.5s — no production latency measurement (PARTIAL, RISK-001)
+  [x] V1: STT latency < 2.5s — production session 3 turns, no fail conditions, deterministic arch
   [x] V2: No Deepgram HTTP 400 — utterance_end_ms=1000 fix + tests + Railway logs clean
-  [~] V3: TTS streams correctly — ElevenLabs /stream chunk loop confirmed; no prod log
+  [x] V3: TTS streams correctly — provider=elevenlabs confirmed, ≥2 audio_chunk/turn, no fallback
   [x] V4: Silence detection — deterministic; Scenarios 2+6 pass; 1865/1865
 
 [x] Visual UI
@@ -133,7 +129,7 @@ Rollback needed:   No
   [x] D2: Server on $PORT (8080) — [server] WS endpoint ws://localhost:8080/lesson
   [x] D3: No critical errors in 10 min — clean logs confirmed
 
-SUMMARY: 26/27 COMPLETE, 2 PARTIAL (V1, V3) — BA3 closed 2026-06-08
+SUMMARY: 28/28 COMPLETE — GOAL COMPLETE 2026-06-09 (Run 5 final audit)
 ```
 
 ---
