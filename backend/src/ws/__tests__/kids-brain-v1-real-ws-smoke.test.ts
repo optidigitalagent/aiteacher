@@ -527,3 +527,75 @@ describe('Phase 15B — Analytics Guard & Protocol Integrity', () => {
     expect(true, 'Analytics limitation documented').toBe(true);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Suite 4 — BA3: Session Ownership Protection
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('BA3 — Session ownership protection (owner_mismatch → ws.close 4401)', () => {
+
+  it('owner_mismatch: KIDS_SESSIONS owner ≠ authenticated user → ws.close(4401), no lesson started', async () => {
+    // Temporarily override queryMock so KIDS_SESSIONS returns a different user_id
+    // than the authenticated user ('u-15b-001' via TOKEN 'tok-15b').
+    // This exercises the owner_mismatch branch in handleFocusLessonStart (lesson-ws.ts ~line 1788).
+    mocks.queryMock.mockImplementation(async (sql: string) => {
+      const s = sql.trim().toUpperCase();
+      if (s.includes('FROM KIDS_SESSIONS')) {
+        return { rows: [{ user_id: 'u-different-owner', status: 'created', mode: 'mentium_kids' }], rowCount: 1 };
+      }
+      if (s.includes('SELECT LESSON_ID FROM LESSON_SESSIONS')) {
+        return { rows: [], rowCount: 0 };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    try {
+      const messages: Msg[] = [];
+      const ws = new WebSocket(
+        `ws://localhost:${port}/lesson?token=${TOKEN}&sessionId=sess-ba3-mismatch`,
+      );
+      ws.on('message', (raw) => {
+        try { messages.push(JSON.parse(raw.toString()) as Msg); } catch { /* skip */ }
+      });
+      await new Promise<void>((resolve, reject) => {
+        ws.once('open', resolve);
+        ws.once('error', reject);
+      });
+
+      // Wait for the connect-time lesson_ready (initial handshake)
+      await waitUntil(messages, msgs => countOf(msgs, 'lesson_ready') >= 1);
+
+      // Send focus_lesson_start and wait for the server to close the connection
+      const closeCode = await new Promise<number>(resolve => {
+        ws.once('close', code => resolve(code));
+        sendFrame(ws, { type: 'focus_lesson_start', payload: { unit: 1 } });
+      });
+
+      // BA3: server must reject with close code 4401 (owner mismatch)
+      expect(closeCode).toBe(4401);
+
+      // The owner check fires before handleKidsBrainV1LessonStart, so no second lesson_ready
+      expect(countOf(messages, 'lesson_ready')).toBe(1);
+
+      // No teacher response — session rejected before any lesson processing
+      expect(aiTexts(messages)).toHaveLength(0);
+
+      // Server sends INVALID_SESSION error frame before closing
+      const errorFrame = messages.find(m => m['type'] === 'error');
+      expect(errorFrame).toBeDefined();
+      expect(errorFrame?.['code']).toBe('INVALID_SESSION');
+    } finally {
+      // Restore original queryMock implementation so subsequent tests are unaffected
+      mocks.queryMock.mockImplementation(async (sql: string) => {
+        const s = sql.trim().toUpperCase();
+        if (s.includes('FROM KIDS_SESSIONS')) {
+          return { rows: [{ user_id: 'u-15b-001', status: 'created', mode: 'mentium_kids' }], rowCount: 1 };
+        }
+        if (s.includes('SELECT LESSON_ID FROM LESSON_SESSIONS')) {
+          return { rows: [], rowCount: 0 };
+        }
+        return { rows: [], rowCount: 0 };
+      });
+    }
+  });
+});
