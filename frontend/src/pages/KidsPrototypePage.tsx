@@ -117,7 +117,7 @@ const CSS = `
 
 export default function KidsPrototypePage() {
   const navigate = useNavigate()
-  const { isAuthenticated, isAuthLoading, user } = useAuth()
+  const { isAuthenticated, isAuthLoading } = useAuth()
   const [profile,  setProfile]  = useState<ChildProfile | null | 'loading'>('loading')
   const [starting, setStarting] = useState(false)
   const [error,    setError]    = useState<string | null>(null)
