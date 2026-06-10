@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
 const CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -188,6 +189,52 @@ const CSS = `
     .hp-hero-badge { font-size: 11px; padding: 5px 11px; }
     .hp-btn-primary, .hp-btn-secondary { font-size: 14px; padding: 11px 20px; }
   }
+
+  /* Kids Mode section */
+  .hp-kids-block {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center;
+  }
+  .hp-kids-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 5px 14px; border-radius: 999px; margin-bottom: 18px;
+    background: rgba(255,179,140,0.12); border: 1px solid rgba(255,179,140,0.3);
+    font-size: 12px; font-weight: 700; color: #E07040; letter-spacing: 0.04em;
+    font-family: var(--font-heading);
+  }
+  .hp-kids-title {
+    font-family: var(--font-heading); font-size: 34px; font-weight: 800;
+    color: var(--text-main); line-height: 1.15; margin-bottom: 14px;
+  }
+  .hp-kids-sub { font-size: 16px; color: var(--text-muted); line-height: 1.65; margin-bottom: 28px; max-width: 400px; }
+  .hp-kids-cta {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 26px; border-radius: 14px; border: none; cursor: pointer;
+    background: linear-gradient(135deg, #FFB38C 0%, #FF8C5A 100%); color: white;
+    font-family: var(--font-heading); font-weight: 700; font-size: 15px;
+    box-shadow: 0 8px 28px rgba(255,140,90,0.38); text-decoration: none;
+    transition: transform 180ms ease-out, box-shadow 180ms ease-out;
+  }
+  .hp-kids-cta:hover { transform: scale(1.02); box-shadow: 0 12px 36px rgba(255,140,90,0.48); }
+  .hp-kids-visual {
+    background: linear-gradient(135deg, #FFF4EE 0%, #F0F4FF 100%);
+    border-radius: 28px; padding: 40px; display: flex; flex-direction: column;
+    align-items: center; gap: 18px;
+    border: 1px solid rgba(255,179,140,0.2);
+    box-shadow: 0 12px 32px rgba(255,140,90,0.10);
+  }
+  .hp-kids-emoji-row { display: flex; gap: 16px; font-size: 36px; }
+  .hp-kids-pillars { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .hp-kids-pillar {
+    display: flex; align-items: center; gap: 7px;
+    background: white; border: 1px solid rgba(230,234,242,0.9);
+    border-radius: 22px; padding: 8px 14px;
+    font-size: 13px; font-weight: 600; color: #475569;
+    box-shadow: var(--shadow-low);
+  }
+  @media (max-width: 768px) {
+    .hp-kids-block { grid-template-columns: 1fr; gap: 32px; }
+    .hp-kids-title { font-size: 26px; }
+  }
 `
 
 function useReveal() {
@@ -314,6 +361,7 @@ function AIBrainVisual() {
 }
 
 export default function HomePage() {
+  const { isAuthenticated } = useAuth()
   return (
     <>
       <style>{CSS}</style>
@@ -430,8 +478,43 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* KIDS MODE */}
+        <section id="kids-mode" className="hp-section hp-section-warm">
+          <div className="hp-container">
+            <RevealSection>
+              <div className="hp-kids-block">
+                <div>
+                  <div className="hp-kids-badge">New ✦ Kids Mode</div>
+                  <h2 className="hp-kids-title">
+                    English for kids —<br />fun and interactive.
+                  </h2>
+                  <p className="hp-kids-sub">
+                    Based on Kid's Box by Cambridge. An AI teacher guides your child
+                    through voice lessons, games, and exercises — personalized to their
+                    favourite topics.
+                  </p>
+                  <Link to="/kids" className="hp-kids-cta">
+                    {isAuthenticated ? 'Open Kids Mode →' : 'Try Kids Mode →'}
+                  </Link>
+                </div>
+                <div className="hp-kids-visual">
+                  <div className="hp-kids-emoji-row">
+                    <span>🦁</span><span>🎨</span><span>🚀</span>
+                  </div>
+                  <div className="hp-kids-pillars">
+                    <div className="hp-kids-pillar"><span>📚</span> Kid's Box curriculum</div>
+                    <div className="hp-kids-pillar"><span>🎙️</span> Voice lessons</div>
+                    <div className="hp-kids-pillar"><span>⭐</span> Personalized</div>
+                    <div className="hp-kids-pillar"><span>🔒</span> Safe for children</div>
+                  </div>
+                </div>
+              </div>
+            </RevealSection>
+          </div>
+        </section>
+
         {/* FINAL CTA */}
-        <section className="hp-section hp-section-warm">
+        <section className="hp-section hp-section-alt">
           <div className="hp-container">
             <RevealSection>
               <div className="hp-cta-block">

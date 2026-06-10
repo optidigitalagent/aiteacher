@@ -14,6 +14,7 @@ import ClassroomLayout from './features/classroom/components/ClassroomLayout'
 import DemoSetup from './components/demo/DemoSetup'
 import KidsPrototypePage from './pages/KidsPrototypePage'
 import KidsClassroomPage from './pages/KidsClassroomPage'
+import KidsOnboardingPage from './pages/KidsOnboardingPage'
 
 export default function App() {
   return (
@@ -46,8 +47,9 @@ export default function App() {
           <Route path="/demo/setup" element={<DemoSetup />} />
           <Route path="/demo/classroom/:demoId" element={<ClassroomLayout mode="demo" />} />
 
-          {/* Mentium Kids prototype — experimental authenticated mode */}
+          {/* Mentium Kids — authenticated, requires child profile */}
           <Route path="/kids" element={<KidsPrototypePage />} />
+          <Route path="/kids/onboarding" element={<KidsOnboardingPage />} />
           <Route path="/kids/classroom/:sessionId" element={<KidsClassroomPage />} />
 
           {/* Fallback */}

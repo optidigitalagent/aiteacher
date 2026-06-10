@@ -30,9 +30,10 @@ import { initObservability, flushObservability } from './observability/index.js'
 import apiRoutes      from './api/routes.js'
 import authRoutes     from './api/auth-routes.js'
 import demoRoutes     from './api/demo-routes.js'
-import lessonRoutes   from './api/lesson-routes.js'
-import billingRoutes  from './billing/billing-routes.js'
-import telegramRoutes from './api/telegram-routes.js'
+import lessonRoutes      from './api/lesson-routes.js'
+import billingRoutes     from './billing/billing-routes.js'
+import telegramRoutes    from './api/telegram-routes.js'
+import kidsProfileRoutes from './api/kids-profile-routes.js'
 
 const REQUIRED_ENV = [
   'DATABASE_URL', 'REDIS_URL', 'JWT_SECRET',
@@ -107,7 +108,7 @@ async function main(): Promise<void> {
   const corsOptions: cors.CorsOptions = {
     origin: corsOriginHandler,
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     optionsSuccessStatus: 204,
   }
@@ -122,6 +123,7 @@ async function main(): Promise<void> {
   app.use(lessonRoutes)
   app.use(billingRoutes)
   app.use(telegramRoutes)
+  app.use(kidsProfileRoutes)
   app.use(apiRoutes)
 
   const server = createServer(app)

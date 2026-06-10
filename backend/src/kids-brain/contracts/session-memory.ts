@@ -69,6 +69,12 @@ export interface SessionMemory {
   exerciseCorrectCount?: number;
   completedExerciseIds?: string[];
 
+  // Child profile snapshot (Phase 4 — loaded at session start from DB)
+  // Optional for backward compat with sessions created before Phase 4.
+  childName?: string;
+  teacherId?: string;
+  interests?: string[];
+
   // Autosave
   autosaveSequenceNumber: number; // Monotonic; increments on each write
 

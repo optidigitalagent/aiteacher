@@ -89,7 +89,7 @@ import {
 import type { AdaptedKidsMessage } from '../kids-brain/adapters/index.js'
 import { RedisSessionStoreImpl, PostgresProfileStoreImpl } from '../kids-brain/infrastructure/index.js'
 import { AgeBand } from '../kids-brain/shared/enums.js'
-import { AGE_PROFILE_6_7 } from '../kids-brain/shared/types.js'
+import { AGE_PROFILE_6_7, AGE_PROFILE_8_9 } from '../kids-brain/shared/types.js'
 import type { SessionMemory as KidsBrainSessionMemory } from '../kids-brain/contracts/session-memory.js'
 import { getVocabularyWords } from '../kids-brain/curriculum/index.js'
 import { findLessonById } from '../kids-brain/curriculum/curriculum-loader.js'
@@ -1303,6 +1303,36 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
 
   send(ws, { type: 'lesson_ready', sessionId })
 
+  // Load child profile for personalization (Phase 4).
+  // Non-fatal: defaults are used when profile is missing or DB is unavailable.
+  const KIDS_REQUIRE_PROFILE = process.env.KIDS_REQUIRE_PROFILE !== 'false'
+  let childProfile: {
+    child_name: string | null
+    child_age_years: number | null
+    teacher_id: string
+    high_engagement_topics: string[] | null
+  } | null = null
+  try {
+    const profileResult = await query<{
+      child_name: string | null
+      child_age_years: number | null
+      teacher_id: string
+      high_engagement_topics: string[] | null
+    }>(
+      'SELECT child_name, child_age_years, teacher_id, high_engagement_topics FROM kids_brain_child_profiles WHERE user_id = $1',
+      [userId],
+    )
+    childProfile = profileResult.rows[0] ?? null
+  } catch {
+    // Non-fatal — fall through to defaults
+  }
+
+  if (!childProfile && KIDS_REQUIRE_PROFILE) {
+    send(ws, { type: 'error', code: 'NO_CHILD_PROFILE', message: 'Please complete the child profile before starting a lesson.' })
+    ws.close(4403, 'No child profile')
+    return
+  }
+
   // Reconnect guard (Phase 11K): resume existing session if one exists in Redis.
   // Prevents session reset on page reload / WS reconnect.
   const store = getKidsBrainRedisStore()
@@ -1328,13 +1358,20 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
   }
 
   // Cold start — no prior session in Redis for this user; create fresh.
+  const childFirstName     = childProfile?.child_name ?? 'friend'
+  const childAgeYears      = childProfile?.child_age_years ?? 7
+  const profileInterests   = childProfile?.high_engagement_topics ?? []
+  const profileTeacherId   = childProfile?.teacher_id ?? 'lucy'
+  const resolvedAgeBand    = childAgeYears <= 7 ? AgeBand.SIX_SEVEN : AgeBand.EIGHT_NINE
+  const resolvedAgeProfile = childAgeYears <= 7 ? AGE_PROFILE_6_7 : AGE_PROFILE_8_9
+
   const kidsV1Input: KidsBrainSessionStartInput = {
     sessionId,
     userId,
-    childId:         userId,
-    childFirstName:  'friend',
-    ageBand:         AgeBand.SIX_SEVEN,
-    ageProfile:      AGE_PROFILE_6_7,
+    childId:           userId,
+    childFirstName,
+    ageBand:           resolvedAgeBand,
+    ageProfile:        resolvedAgeProfile,
     lessonTargetWords: KIDS_LESSON_TARGET_WORDS,
     unitReviewWords:   [],
     characterNames:    ['milo'],
@@ -1342,6 +1379,11 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
   }
 
   const startResult = startKidsBrainSession(kidsV1Input)
+
+  // Attach profile snapshot so it persists in Redis alongside session state.
+  startResult.sessionMemory.childName = childFirstName
+  startResult.sessionMemory.teacherId = profileTeacherId
+  startResult.sessionMemory.interests = profileInterests
 
   // Cache in memory before Redis save so the session survives Redis failures
   meta.kidsMemoryCache = startResult.sessionMemory
