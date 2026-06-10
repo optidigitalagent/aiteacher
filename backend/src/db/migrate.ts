@@ -30,6 +30,7 @@ const MIGRATIONS = [
   '020_kids_mastery_records.sql',
   '021_kids_session_summaries.sql',
   '022_kids_safety_events.sql',
+  '023_kids_onboarding_fields.sql',
 ]
 
 async function migrate(): Promise<void> {
