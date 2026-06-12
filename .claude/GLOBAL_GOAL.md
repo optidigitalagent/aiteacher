@@ -51,8 +51,8 @@ Kid's Box curriculum fully authoritative.
 | 4 | Interest-Aware Recovery | ✅ COMPLETE — review PASS 2026-06-10 |
 | 5 | Micro-Dialogues | ✅ COMPLETE — review PASS 2026-06-10 |
 | 6 | Teacher Personas | ✅ COMPLETE — review PASS 2026-06-12 |
-| 7 | Safety | 🔲 NEXT |
-| 8 | Testing | 🔲 PENDING |
+| 7 | Safety | ✅ COMPLETE — review PASS 2026-06-12 |
+| 8 | Testing | 🔲 NEXT |
 | 9 | Deployment | 🔲 PENDING |
 
 ---

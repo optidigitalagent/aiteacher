@@ -74,6 +74,9 @@ const MAX_TEXT_WORDS = 15
 export const WARMUP_TIMEOUT_MS = 15_000
 export const WARMUP_MAX_TURNS = 2
 export const MICRO_DIALOGUE_COOLDOWN_EXERCISES = 3
+// Engine-local cap mirroring the profile API limit (kids-profile-routes), so
+// the spoken-text guarantee does not depend on every write path validating.
+export const MAX_CHILD_NAME_CHARS = 100
 
 // ── Warmup templates ─────────────────────────────────────────────────────────
 
@@ -562,8 +565,12 @@ export function isMicroDialogueInProgress(state: KidsSessionPersonalizationState
 
 /** Replace every [childName] placeholder; empty/missing name → "friend". */
 function substituteChildName(template: string, childName: string | null): string {
-  const name =
-    childName && childName.trim().length > 0 ? childName.trim() : 'friend'
+  // Whitespace (incl. newlines/tabs) collapsed and length capped so a single
+  // unvalidated write path can never blow up the spoken greeting.
+  const cleaned = childName
+    ? childName.trim().replace(/\s+/g, ' ').slice(0, MAX_CHILD_NAME_CHARS)
+    : ''
+  const name = cleaned.length > 0 ? cleaned : 'friend'
   // Function replacer: the name is inserted as plain text — String.replace
   // must never interpret $-sequences ($&, $', $`, $$) from a profile name.
   return template.replace(/\[childName\]/g, () => name)

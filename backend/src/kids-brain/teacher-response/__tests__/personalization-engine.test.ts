@@ -30,6 +30,7 @@ import {
   isInterestRecoveryEnabled,
   isMicroDialogueEnabled,
   isTeacherPersonaEnabled,
+  MAX_CHILD_NAME_CHARS,
   PRAISE_ELIGIBLE_LABELS,
   WARMUP_TIMEOUT_MS,
   WARMUP_MAX_TURNS,
@@ -1489,5 +1490,160 @@ describe('persona greeting/closing — fallback, budget, error handling', () => 
     withPersonaFlags()
     expect(buildPersonaGreeting('lucy', 'Misha')?.toLowerCase()).toContain('ready')
     expect(buildPersonaGreeting('tom', 'Misha')?.toLowerCase()).toContain('ready')
+  })
+})
+
+// ── Phase 7: Safety (S1–S5 + Section 4.2/4.3 hardening) ──────────────────────
+
+function enableAllFlags() {
+  process.env.KIDS_PERSONALIZATION_V2 = 'true'
+  process.env.KIDS_WARMUP_ENABLED = 'true'
+  process.env.KIDS_INTEREST_EXAMPLES_V2 = 'true'
+  process.env.KIDS_INTEREST_PRAISE = 'true'
+  process.env.KIDS_INTEREST_RECOVERY_V2 = 'true'
+  process.env.KIDS_MICRO_DIALOGUE_ENABLED = 'true'
+  process.env.KIDS_TEACHER_PERSONA_V2 = 'true'
+}
+
+/** Every text the engine can ever speak, collected via the public API only. */
+function collectAllEngineTexts(): string[] {
+  enableAllFlags()
+  const texts: string[] = []
+  const dialogueState = freshState({ microDialogueCooldown: 3 })
+  for (const interest of ALL_INTERESTS) {
+    texts.push(buildWarmupTurn([interest], freshState())!.text)
+    texts.push(buildWarmupReturnPhrase(interest)!)
+    texts.push(buildExampleContext([interest], 'blue', freshState())!.text)
+    texts.push(buildInterestPraise([interest], 'correct_confident', 'lucy', freshState())!.text)
+    texts.push(buildInterestPraise([interest], 'correct_confident', 'tom', freshState())!.text)
+    texts.push(buildInterestRecovery([interest], 'blue', freshState())!.text)
+    texts.push(buildMicroDialogueTurn([interest], dialogueState)!.text)
+  }
+  texts.push(buildMicroDialogueReturnPhrase('blue'))
+  texts.push(buildMicroDialogueReturnPhrase(null))
+  for (const teacher of ['lucy', 'tom']) {
+    texts.push(buildPersonaGreeting(teacher, 'Anya')!)
+    texts.push(buildPersonaClosing(teacher, 'Anya')!)
+  }
+  return texts
+}
+
+describe('S1 — templates are static and deterministic (no generation)', () => {
+  afterEach(clearFlags)
+
+  it('every engine text is identical across repeated calls with the same input', () => {
+    const first = collectAllEngineTexts()
+    const second = collectAllEngineTexts()
+    expect(first.length).toBeGreaterThanOrEqual(88) // 12 interests × 7 + 2 + 4
+    expect(second).toEqual(first)
+  })
+})
+
+describe('S3 — no engine text asks for personal information', () => {
+  afterEach(clearFlags)
+
+  it('no text asks for real name, school, address, age, phone, or location', () => {
+    const forbidden =
+      /your (real )?name|school|address|where (do you|you) live|how old|phone|email|street|city you/i
+    for (const text of collectAllEngineTexts()) {
+      expect(text, `personal-info pattern in: "${text}"`).not.toMatch(forbidden)
+    }
+  })
+})
+
+describe('S4 — no copyrighted-character roleplay in any engine text', () => {
+  afterEach(clearFlags)
+
+  it('no text uses a "you are <character>" roleplay framing', () => {
+    for (const text of collectAllEngineTexts()) {
+      expect(text, `roleplay framing in: "${text}"`).not.toMatch(/\byou are\b/i)
+      expect(text, `roleplay framing in: "${text}"`).not.toMatch(/\bpretend to be\b/i)
+    }
+  })
+})
+
+describe('Section 4.3 — 15-word truncation enforced through the public API', () => {
+  afterEach(clearFlags)
+
+  it('recovery output is truncated at a word boundary when the input would exceed 15 words', () => {
+    withRecoveryFlags()
+    // space template is "Try again! Like an astronaut! Say <w>!" (6 words + w)
+    const longWord = 'one two three four five six seven eight nine ten'
+    const result = buildInterestRecovery(['space'], longWord, freshState())
+    expect(result).not.toBeNull()
+    const words = result!.text.trim().split(/\s+/)
+    expect(words.length).toBe(15)
+    expect(result!.text.startsWith('Try again! Like an astronaut! Say one two')).toBe(true)
+  })
+
+  it('micro-dialogue return phrase is truncated when the target word is degenerate', () => {
+    const longWord = Array.from({ length: 30 }, (_, i) => `w${i}`).join(' ')
+    const phrase = buildMicroDialogueReturnPhrase(longWord)
+    expect(phrase.trim().split(/\s+/).length).toBeLessThanOrEqual(15)
+  })
+
+  it('example output never exceeds 15 words even with a multi-word target', () => {
+    withExampleFlags()
+    const longWord = 'a b c d e f g h i j k l m n o p'
+    const result = buildExampleContext(['minecraft'], longWord, freshState())
+    expect(result!.text.trim().split(/\s+/).length).toBeLessThanOrEqual(15)
+  })
+})
+
+describe('Section 4 hardening — childName length cap and whitespace collapse', () => {
+  afterEach(clearFlags)
+
+  it(`caps the inserted name at ${MAX_CHILD_NAME_CHARS} characters`, () => {
+    withPersonaFlags()
+    const hugeName = 'A'.repeat(500)
+    const greeting = buildPersonaGreeting('lucy', hugeName)
+    expect(greeting).not.toBeNull()
+    expect(greeting!).not.toContain('A'.repeat(MAX_CHILD_NAME_CHARS + 1))
+    expect(greeting!).toContain('A'.repeat(MAX_CHILD_NAME_CHARS))
+  })
+
+  it('collapses internal newlines/tabs/multi-spaces in the name to single spaces', () => {
+    withPersonaFlags()
+    const greeting = buildPersonaGreeting('lucy', 'Anna\n\nMaria\t Jo')
+    expect(greeting).toContain('Anna Maria Jo')
+    expect(greeting).not.toMatch(/[\n\t]/)
+  })
+
+  it('a name that is whitespace after collapsing still falls back to "friend"', () => {
+    withPersonaFlags()
+    expect(buildPersonaGreeting('lucy', ' \n\t ')).toContain('friend')
+  })
+
+  it('MAX_CHILD_NAME_CHARS mirrors the profile API limit (100)', () => {
+    expect(MAX_CHILD_NAME_CHARS).toBe(100)
+  })
+})
+
+describe('S5 — fallback chain returns null/safe text for every public builder', () => {
+  afterEach(clearFlags)
+
+  it('all builders return null (or safe generic) when the master flag is off, regardless of tier flags', () => {
+    enableAllFlags()
+    process.env.KIDS_PERSONALIZATION_V2 = 'false'
+    const dialogueState = freshState({ microDialogueCooldown: 3 })
+    expect(buildWarmupTurn(['space'], freshState())).toBeNull()
+    expect(buildExampleContext(['space'], 'blue', freshState())).toBeNull()
+    expect(buildInterestPraise(['space'], 'correct_confident', 'lucy', freshState())).toBeNull()
+    expect(buildInterestRecovery(['space'], 'blue', freshState())).toBeNull()
+    expect(buildMicroDialogueTurn(['space'], dialogueState)).toBeNull()
+    expect(buildPersonaGreeting('lucy', 'Anya')).toBeNull()
+    expect(buildPersonaClosing('lucy', 'Anya')).toBeNull()
+    // return phrases are close-out paths and must still produce safe text
+    expect(typeof buildMicroDialogueReturnPhrase('blue')).toBe('string')
+  })
+
+  it('all builders return null for an unknown interest (no template → standard text)', () => {
+    enableAllFlags()
+    const dialogueState = freshState({ microDialogueCooldown: 3 })
+    expect(buildWarmupTurn(['knitting'], freshState())).toBeNull()
+    expect(buildExampleContext(['knitting'], 'blue', freshState())).toBeNull()
+    expect(buildInterestPraise(['knitting'], 'correct_confident', 'lucy', freshState())).toBeNull()
+    expect(buildInterestRecovery(['knitting'], 'blue', freshState())).toBeNull()
+    expect(buildMicroDialogueTurn(['knitting'], dialogueState)).toBeNull()
   })
 })

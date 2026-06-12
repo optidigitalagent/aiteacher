@@ -1,7 +1,7 @@
 # GOAL_PROGRESS.md
 
 ## CURRENT PHASE
-Phase: **Phase 7 — Safety**
+Phase: **Phase 8 — Testing**
 Started: 2026-06-12
 Last updated: 2026-06-12
 
@@ -50,14 +50,17 @@ Previous goals complete:
 | 13 | Phase 5 review gate | backend-reviewer + curriculum-reviewer + qa-tester | M1–M5 verified (reply intercepted before Kids Brain — never scored; 1 interest sentence/turn; example suppressed on dialogue turn); tsc exit 0; 167/167 engine tests; full suite 1995 pass / 63 pre-existing (= baseline + 34); RISK-013 → MITIGATED; W-020/W-021 logged | 2026-06-10 |
 | 14 | Phase 6 implementation (teacher personas) | goal-executor (implementer role) | isTeacherPersonaEnabled/substituteChildName/buildPersonaGreeting/buildPersonaClosing in engine + lesson-ws greeting packet override + maybeSpeakKidsPersonaClosing on natural close + 19 tests T1–T6; interrupted by session limit, reconstructed 2026-06-12 from code | 2026-06-10/12 |
 | 15 | Phase 6 review gate | backend-reviewer + curriculum-reviewer + kids-safety-monitor + qa-tester + acceptance-auditor | T1/T2/T5 + C1/C3/C4/C5 verified; safety FAIL on $-sequence interpretation in substituteChildName → fixed with function replacer + 2 regression tests → safety re-review PASS by execution; tsc exit 0; 188/188 engine tests; full suite 2016 pass / 63 pre-existing (= baseline + 21); W-022/023/024/025 logged | 2026-06-12 |
+| 16 | Per-phase commit baseline | goal-executor | Phases 1–6 committed as 659d95a (acceptance-auditor recommendation: per-phase commits enable precise scope audits) | 2026-06-12 |
+| 17 | Phase 7 implementation (safety) | goal-executor (implementer role) | substituteChildName hardening (trim → collapse \s+ → slice(0,100), MAX_CHILD_NAME_CHARS=100) + 12 safety tests: S1 determinism (90 texts), S3/S4 template sweeps, Section 4.3 truncation via public API, name cap/collapse, S5 fallback chain | 2026-06-12 |
+| 18 | Phase 7 review gate | backend-reviewer + curriculum-reviewer + kids-safety-monitor + qa-tester + acceptance-auditor | S1–S5 verified by code audit + executed adversarial name attacks (500-char, $-sequences, [childName], BOM/whitespace); all 4.2 budgets enforced + pinned; diff scope exactly 2 files; tsc exit 0; 200/200 engine tests; full suite 2028 pass / 63 pre-existing (= baseline + 12); W-026/W-027 logged | 2026-06-12 |
 
 ---
 
 ## ACTIVE TASK
 
-**Task:** Phase 7 — Safety
+**Task:** Phase 8 — Testing
 **Status:** IN PROGRESS
-**Next:** Phase 7 review after implementation + tests
+**Next:** Phase 8 review after implementation + tests
 
 ---
 
@@ -141,10 +144,15 @@ None.
   [x] Unit tests: T1–T6 + fallback/budget/error + $-injection regression
        (21 new, 188/188 total)
 
-[ ] Phase 7 — Safety
-  [ ] All budget enforcement verified in tests
-  [ ] Template safety review (no PII, no copyrighted characters)
-  [ ] Error catch tests (S1–S5)
+[x] Phase 7 — Safety — REVIEW PASS 2026-06-12
+  [x] All budget enforcement verified in tests (4.2: warmup 2-turn/15s/once,
+       micro-dialogue cooldown 3, 15-word truncation pinned via public API)
+  [x] Template safety review (S3 no-PII sweep + S4 no-roleplay sweep over
+       all 90 speakable engine texts; safety monitor read all templates)
+  [x] Error catch tests S1–S5 (S1 determinism; S5 master-off kills all 7
+       builders, unknown interest → null ×5)
+  [x] Hardening: substituteChildName name cap (100 chars) + whitespace
+       collapse; adversarial attacks executed and verified
 
 [ ] Phase 8 — Testing
   [ ] personalization-engine.test.ts (≥40 tests)
@@ -192,6 +200,12 @@ Phase 6 (Teacher Personas — 2026-06-12):
   Engine tests:      188/188 pass (= 167 + 19 persona + 2 injection-fix tests)
   Wiring guards:     64/64 pass (session-analytics + phase-16b-runtime-safety)
   Full suite:        2016 pass / 63 pre-existing STT failures (= 1995 + 21)
+
+Phase 7 (Safety — 2026-06-12):
+  TypeScript build:  npx tsc --noEmit → exit 0   ✅
+  Engine tests:      200/200 pass (= 188 + 12 safety tests)
+  Wiring guards:     64/64 pass
+  Full suite:        2028 pass / 63 pre-existing STT failures (= 2016 + 12)
 ```
 
 ---

@@ -156,3 +156,28 @@ spoken verbatim exactly once (no re-expansion).
 **Reversible:** Yes (but do not — this is a safety contract).
 **Risk:** None known; blast radius of the original bug was bounded to fragments
 of the approved template (API caps names at 1–100 chars).
+
+### 2026-06-12 — Persona greeting/closing exempt from the 15-word truncator
+
+**Decision:** buildPersonaGreeting/buildPersonaClosing do NOT pass through
+truncateAtWordBudget. Their bound is: template text pinned ≤20 words by test
++ childName capped at 100 chars (MAX_CHILD_NAME_CHARS).
+**Why:** Design Section 4.1 scopes the 15-word budget to INTEREST sentences;
+the greeting constraint is "template-based only". Truncating the greeting
+could cut the readiness cue ("are you ready?") that the curriculum handshake
+relies on.
+**Recorded at:** Phase 7 review (QA W-027 asked for an explicit decision).
+**Reversible:** Yes.
+**Risk:** A many-word 100-char name yields a ~29-word greeting worst-case —
+bounded and TTS-safe.
+
+### 2026-06-12 — buildWarmupReturnPhrase intentionally has no flag gate
+
+**Decision:** buildWarmupReturnPhrase stays ungated by feature flags.
+**Why:** It is a close-out path: a warmup already in progress must always be
+closeable, even if flags are flipped off mid-session (same rationale as
+isMicroDialogueInProgress not being flag-gated, Phase 5). A null here would
+strand the child in warmup state.
+**Recorded at:** Phase 7 review (QA W-027 flagged the asymmetry).
+**Reversible:** Yes (but do not without handling the mid-session flag flip).
+**Risk:** None — it only fires when lesson-ws is already draining a warmup.

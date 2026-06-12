@@ -8,20 +8,21 @@
 ## CURRENT REVIEW
 
 ```
-Review type:     PHASE 6 IMPLEMENTATION REVIEW — Teacher Personas
+Review type:     PHASE 7 IMPLEMENTATION REVIEW — Safety
 Reviewer agents: backend-reviewer, curriculum-reviewer, kids-safety-monitor,
                  qa-tester, acceptance-auditor
-Reviewed at:     2026-06-12 (state reconstruction after session-limit
-                 interruption; code verified as source of truth)
-Files reviewed:
-  - personalization-engine.ts (isTeacherPersonaEnabled, substituteChildName,
-    buildPersonaGreeting, buildPersonaClosing — KIDS_TEACHER_PERSONA_V2 flag)
-  - teacher-personas.ts (Lucy/Tom tables, getTeacherPersona default fallback)
-  - lesson-ws.ts (persona greeting override at session start;
-    maybeSpeakKidsPersonaClosing on natural close)
-  - personalization-engine.test.ts (19 new tests T1–T6 + 2 injection
-    regression tests added during review = 21 total Phase 6 tests)
-Previous phases: Phases 1–5 review PASS
+Reviewed at:     2026-06-12
+Pre-phase state: commit 659d95a (phases 1–6 committed before this phase —
+                 first per-phase commit baseline, per Phase 6 auditor advice)
+Files reviewed (entire Phase 7 diff):
+  - personalization-engine.ts (+11/−2): MAX_CHILD_NAME_CHARS=100 +
+    substituteChildName hardening (trim → collapse \s+ → slice(0,100);
+    function replacer preserved)
+  - personalization-engine.test.ts (+156): Phase 7 Safety block — S1
+    determinism (90 texts via public API), S3 personal-info sweep, S4
+    roleplay sweep, Section 4.3 truncation via public API, name cap/
+    collapse tests, S5 fallback chain (12 new tests)
+Previous phases: Phases 1–6 review PASS
 ```
 
 ---
@@ -29,12 +30,206 @@ Previous phases: Phases 1–5 review PASS
 ## VERDICT
 
 ```
-OVERALL: ✅ PASS — Phase 6 COMPLETE (after 1 fix iteration)
-         T1/T2/T5 + C1/C3/C4/C5 verified. Safety monitor initially FAILED on
-         $-sequence interpretation in substituteChildName (String.replace
-         string-replacement); FIXED with function replacer + 2 regression
-         tests; safety re-review PASS by execution. Flags correct, default
-         off. tsc clean. 0 new test failures. Phase 7 (Safety) may begin.
+OVERALL: ✅ PASS — Phase 7 COMPLETE (no fix iterations)
+         S1–S5 verified by code audit + executed adversarial attacks.
+         Section 4.2 budgets all enforced and test-pinned; 4.3 fallback
+         chain pinned incl. word-boundary truncation through the public
+         API. Diff scope: exactly 2 engine files, zero curriculum/wiring
+         impact. tsc clean. 0 new test failures. Phase 8 (Testing) may begin.
+```
+
+---
+
+## BACKEND REVIEWER — Phase 7
+
+```
+Verdict: ✅ PASS
+
+[x] substituteChildName cleaning order correct: trim → collapse \s+ →
+    slice(0, MAX_CHILD_NAME_CHARS=100); empty-after-cleaning → 'friend';
+    $-injection function replacer preserved (engine 567–577)
+[x] Word budget intact: all 7 truncateAtWordBudget call sites present
+    (warmup q/return, recovery, praise, example, micro-dialogue q/return);
+    MAX_TEXT_WORDS=15 unchanged
+[x] collectAllEngineTexts uses only public exports; non-null asserts safe —
+    all 5 template tables contain exactly the 12 ALL_INTERESTS keys;
+    engine purity means the shared cooldown-3 state is never mutated mid-loop
+[x] Diff scope: only personalization-engine.ts + test file within backend
+[x] tsc exit 0; engine suite 200/200
+```
+
+---
+
+## CURRICULUM REVIEWER — Phase 7
+
+```
+Verdict: ✅ PASS
+
+[x] Zero curriculum impact: diff touches exactly 2 files; lesson-ws,
+    turn-processor, session-memory byte-identical; targetWord handling,
+    selectInterest, all builders unchanged
+[x] Section 4.2 budgets enforced + pinned: warmup ≤2 turns (engine:263, W4),
+    ≤15s (WARMUP_TIMEOUT_MS + isWarmupTimedOut, W5 fake-timer), once/session
+    (engine:262, W3); micro-dialogue cooldown 3 (engine:500, M1/M2);
+    ≤15 words in all 7 text producers (+3 new public-API truncation tests)
+[x] Section 4.3 fallback chain pinned: no interest → null; unknown interest
+    ('knitting') → null across all 5 tier builders (new); master off → null
+    for all 7 builders (new); throw → catch/log/null; >15 words → word-
+    boundary truncate (recovery: exactly 15 words + prefix assertion)
+[x] S3/S4 sweep covers every speakable text: 90 texts = 12 interests × 7 +
+    2 micro returns + 4 persona phrases; default persona is byte-identical
+    to swept Lucy strings — nothing speakable missed
+[x] Name cap cannot break the readiness handshake — cue is static template
+    text outside the placeholder; pinned by existing readiness-cue test
+
+Findings (non-blocking):
+[w] S1 test comment says "× 7 + 2 + 4" → 90 actual (assertion ≥88 still
+    correct)
+[w] Persona greeting/closing bypass the 15-word truncator by design
+    (design 4.1: greeting constraint is "template-based only"); bounded by
+    20-word template test + 100-char name cap — decision recorded
+[w] slice(0,100) can split a surrogate pair at the exact boundary
+    (pathological; harmless to curriculum)
+```
+
+---
+
+## KIDS SAFETY MONITOR — Phase 7
+
+```
+Verdict: ✅ PASS
+
+[x] S1 — no open-ended generation: all 5 tier tables + persona texts are
+    static strings / pure targetWord interpolations; no Math.random, no
+    async, no LLM/network imports; determinism test pins 90 texts
+[x] S2 — warmup ≤2 turns: engine guards + lesson-ws sets warmupUsed/
+    turnsUsed=2 on both reply and timeout paths — no third turn reachable
+[x] S3 — all 52 speakable templates independently read: every question is
+    about the interest, none asks for personal info
+[x] S4 — all character-adjacent texts are similes ("Like a Pokémon
+    trainer!") or comparisons — no identity assignment to the child
+[x] S5 — all 9 public builders wrapped in try/catch; all catch blocks log
+    err.message only (verified: bare TypeErrors, no PII)
+[x] Flags: all 7 require exact string 'true'; none set in .env.example or
+    any config — default OFF everywhere; zero STT/TTS code in diff
+
+Adversarial name attacks (executed against the real function):
+[x] 500×"A" → exactly 100 chars inserted (cap holds)
+[x] newlines/tabs collapsed; whitespace-only and BOM-only → "friend"
+[x] $&, $$, $`, $', $1 → inserted verbatim (replacer holds)
+[x] "[childName]" ×1 and ×3 → spoken verbatim, no re-expansion
+
+Findings (non-blocking, accepted):
+[w] slice(0,100) cuts UTF-16 units — astral char straddling index 100
+    leaves a lone surrogate (requires ≥100-char name with emoji at exact
+    boundary; JSON stays well-formed; TTS renders replacement glyph at worst)
+[w] zero-width-only names (U+200B not \s) pass emptiness check → "Hi !"
+    audibly (cosmetic)
+[w] Test-regex breadth: S3 pattern misses surname/birthday/grade/city
+    phrasings; S4 misses "you're <X>"/"act like" contractions — tripwire
+    weakness for FUTURE templates only, no current violation (→ W-026)
+```
+
+---
+
+## QA TESTER — Phase 7
+
+```
+Verdict: ✅ PASS
+
+Test evidence (re-run independently 2026-06-12):
+[x] tsc --noEmit → exit 0
+[x] Engine suite: 200/200 (= 188 + 12 new Phase 7 safety tests)
+[x] Wiring guards: 64/64 (engine-only change did not disturb runtime wiring)
+[x] S1 determinism: 90 texts, deep-equal across two collections
+[x] S2: W4 block (4 tests incl. constant pin)
+[x] S3/S4 sweeps reasonable as regression guards over human-reviewed strings
+[x] 4.3 truncation: recovery exactly 15 words + word-boundary prefix;
+    micro return ≤15 (30-word degenerate input); example ≤15 (16-word target)
+[x] Name hardening: 100-char cap, collapse, whitespace-only → friend,
+    MAX_CHILD_NAME_CHARS pinned to 100 (mirrors profile API)
+[x] S5: master-off kills all 7 builders; unknown interest → null ×5;
+    return phrase still safe text
+[x] Full suite: 2028 pass / 63 pre-existing STT failures (= 2016 + 12,
+    zero new failures)
+
+Gaps (carry to Phase 8):
+[w] W-026: extend S3/S4 sweep regexes (surname/birthday/grade/city;
+    "you're <X>", "pretend you're", "act like")
+[w] W-027: buildWarmupReturnPhrase has no flag gate (defensible close-out
+    asymmetry — assert as intentional or align); persona word-budget
+    exemption now recorded in DECISIONS.md
+```
+
+---
+
+## ACCEPTANCE AUDITOR — Phase 7
+
+```
+Verdict: ✅ PASS
+
+[x] NEXT_ACTION item 1 — budget audit: all 7 Section 4.2 rules enforced
+    in code with test evidence (table verified rule-by-rule)
+[x] NEXT_ACTION item 2 — fallback chain: truncation correctly judged
+    already-present (truncateAtWordBudget pre-existing, unchanged) and
+    newly pinned via 3 public-API tests; catch/log/null verified, no PII
+[x] NEXT_ACTION item 3 — name cap delivered (the one engine change)
+[x] NEXT_ACTION item 4 — template safety sweep delivered (≥88 texts)
+[x] NEXT_ACTION item 5 — S1–S5 coverage delivered (new + pre-existing)
+[x] Scope discipline: code diff = exactly 2 files; everything else is
+    tracking .md files
+[x] Hard rules: no lesson-ws/turn-processor/session-memory changes; flags
+    default OFF; no STT/TTS; no master-prompt.md; no model/max_tokens;
+    micro-dialogue never open chat; no copyrighted teaching characters
+[x] QA gates: tsc 0; engine 200/200; full suite 2028/63 (+12, 0 new failures)
+
+Findings (non-blocking):
+[w] "1 interest sentence per turn" enforced at lesson-ws call site — no
+    direct unit test possible without touching wiring (Phase 8 integration
+    assertion recommended)
+```
+
+---
+
+## FINDINGS SUMMARY
+
+### Critical (❌ — must fix before next phase)
+
+None.
+
+### Warnings (⚠️ — non-blocking, logged for Phase 8)
+
+| # | Area | Issue | Phase to address |
+|---|------|-------|-----------------|
+| W-019 | QA | No integration test for ENCOURAGEMENT-rung recovery injection (Phase 4) | Phase 8 |
+| W-020 | QA | No integration test for micro-dialogue fire→reply→return flow | Phase 8 |
+| W-021 | Backend | processKidsBrainV1Turn at 11,599/12,000 chars of wiring-test regex window (RISK-016) | Monitor |
+| W-022 | QA | No integration test for persona greeting packet override | Phase 8 |
+| W-023 | QA | No integration test for persona closing (order vs lesson_end) | Phase 8 |
+| W-024 | QA | Multi-placeholder substitution only indirectly pinned | Phase 8 |
+| W-025 | Design | energyLevel/warmupStyle/recoveryStyle persona fields unconsumed | Phase 8 or doc amend |
+| W-026 | Safety | S3/S4 sweep regex breadth (surname/birthday/grade/city; "you're X"/"act like") | Phase 8 |
+| W-027 | Backend | buildWarmupReturnPhrase flag-gate asymmetry; 1-sentence/turn lacks direct test | Phase 8 |
+
+---
+
+## DECISION
+
+```
+Phase 7 is COMPLETE — review PASS (no fix iterations).
+Next phase: Phase 8 — Testing
+Scope (GOAL_PROGRESS checklist + carried warnings):
+  - Integration tests through processKidsBrainV1Turn / session start:
+    warmup interception (W-019 pattern), micro-dialogue fire→reply→return
+    (W-020), persona greeting override (W-022), persona closing ordering
+    (W-023), 1-interest-sentence-per-turn assertion (W-027)
+  - Curriculum integrity tests C1–C6 at integration level
+  - Extend interest-personalizer.test.ts (V1 module untouched by V2)
+  - Sweep-regex hardening (W-026); multi-placeholder pin (W-024)
+  - Decide W-025: implement persona warmup/recovery styles or amend design
+Files to modify:
+  new integration test file(s) under src/kids-brain or src/ws __tests__;
+  personalization-engine.test.ts (sweep regexes); docs if W-025 → amend
 ```
 
 ---
@@ -65,47 +260,7 @@ lesson-ws.ts:
 [x] Not called on safety close or TTS-cap close paths
 [x] Logs contain sessionId + teacherId only — child name never logged
 [x] processKidsBrainV1Turn at 11,599/12,000 chars of wiring-test regex
-    window — Phase 6 closing is a single helper call (W-021/RISK-016:
-    ~400 chars headroom remaining, monitor)
-
-Warnings (non-blocking):
-[w] maybeSpeakKidsPersonaClosing has no outer try/catch (cannot throw in
-    practice — engine catches internally, kidsTtsStream wraps its await;
-    consistent with sibling helpers)
-```
-
----
-
-## CURRICULUM REVIEWER — Phase 6
-
-```
-Verdict: ✅ PASS
-
-[x] T1 — Lucy greeting distinct: high-energy, exclamatory, self-identifies
-    ("I'm Lucy! … Let's GO!") — matches design Section 3 verbatim
-[x] T2 — Tom greeting distinct: calm, measured, period-terminated
-    ("I'm Tom. … Let's start."); closings likewise distinct
-[x] T5 — personas are text-style only: builders take (teacherId, childName)
-    only; no curriculum/exercise/scoring parameters exist; greeting override
-    leaves waitMs, teacherActionCode, ttsVoiceId, START_LISTENING untouched
-[x] C1 — targetWord never received or modified by persona functions
-[x] C3 — zero references to exerciseCorrectCount/exerciseAttemptCount
-[x] C4 — zero references to escalationLadder; closing fires only AFTER
-    shouldCloseSession already decided — additive speech, not flow control
-[x] C5 — adult flow untouched: persona functions invoked only in Kids
-    cold-start and Kids natural-close paths; adult lessons use separate
-    teacherDisplayName/buildFocusGreeting
-[x] Age-appropriate, ≤ 20 words per phrase, no PII, no copyrighted
-    characters, TTS-friendly length
-
-Warnings (non-blocking):
-[w] W-025: energyLevel/warmupStyle/recoveryStyle persona fields declared but
-    unconsumed — design Section 3.5 overstates Phase 6 scope (persona
-    recovery prefix, warmup style, micro-dialogue framing not implemented);
-    implement later or amend design doc
-[w] Cosmetic: persona greeting says "learn English" and loses the standard
-    greeting's lesson-topic preview ("Today we're learning colours!");
-    exercise context packet still instructs the child — no functional issue
+    window — Phase 6 closing is a single helper call (W-021/RISK-016)
 ```
 
 ---
@@ -115,235 +270,30 @@ Warnings (non-blocking):
 ```
 Initial verdict: ❌ FAIL → fix applied → re-review: ✅ PASS
 
-[x] All persona text age-appropriate (5–10): no scary/violent/romantic
-    content, no links/apps, no personal-info requests, no pressure tactics
 [!]→[x] childName injection: String.replace with STRING replacement
-    interpreted $-sequences — demonstrated by execution: name "$'" duplicated
-    the template tail, "$`" duplicated the prefix, "$&" leaked literal
-    [childName] into spoken output, "$$" greeted the child as "$".
-    Blast radius bounded (only fragments of the approved template; API caps
-    names at 1–100 chars) — no unsafe content could reach a child, but the
-    "plain text, never interpreted" contract was violated.
-    FIX: function replacer () => name (personalization-engine.ts:570) +
-    2 regression tests ($-sequences literal; "[childName]" name spoken
-    verbatim exactly once, no re-expansion).
-    RE-VERIFIED BY EXECUTION 2026-06-12: all five hostile names insert
-    literally. 188/188 engine tests pass.
-[x] Deterministic templates only — no LLM in the persona path
-[x] Flags default OFF (both env vars must be exactly 'true'); instant
-    kill-switch via either flag
-[x] Failure mode: silent fallback to standard scripted greeting/close —
-    no path produces a broken or missing greeting
-[x] No PII in logs (diff-wide scan: no console.* with childName)
-[x] TTS receives only composed text; no voice ID / STT / TTS config changes
-
-Note (non-blocking): name length capped only at the profile API (1–100);
-a defensive slice in the engine would keep the guarantee local.
+    interpreted $-sequences — demonstrated by execution. Blast radius
+    bounded (only fragments of the approved template; API caps names at
+    1–100 chars). FIX: function replacer () => name + 2 regression tests.
+    RE-VERIFIED BY EXECUTION 2026-06-12. 188/188 engine tests passed.
+[x] All other items (age-appropriateness, deterministic templates, flags
+    default OFF, silent fallback, no PII logs, TTS text-only) PASS.
 ```
 
 ---
 
-## QA TESTER — Phase 6
+## QA TESTER + CURRICULUM + ACCEPTANCE — Phase 6 (condensed)
 
 ```
-Verdict: ✅ PASS
-
-Test evidence (run fresh 2026-06-12, post-interruption reconstruction):
-[x] Engine suite: 186/186 at reconstruction → 188/188 after safety fix
-    (167 + 19 persona tests + 2 injection regression tests)
-[x] T1/T2: Lucy greeting contains "Lucy"+name; Tom contains "Tom"+name;
-    greeting AND closing string-diff Lucy≠Tom
-[x] T3: substitution in greeting+closing, no leftover placeholder;
-    null → "friend"; whitespace → "friend"; trimming; $-sequence names
-    literal; "[childName]" name not re-expanded
-[x] T4: Lucy≠Tom praise — covered at runtime (P4/T4, all interests) and
-    at persona-definition level
-[x] T5: explicit test asserts no targetWord/acceptedAnswers/escalationLadder
-    keys in LUCY_PERSONA/TOM_PERSONA; readiness-cue guard test
-[x] T6: flag unset/set; master off + persona on → null; persona off +
-    master on → null; both off → null; both on → fires
-[x] Error handling: null teacherId no-throw; unknown teacherId → Lucy
-    fallback; empty teacherId; 20-word budget on all 4 persona texts
-[x] Wiring guard suites: 64/64 (session-analytics + phase-16b-runtime-safety)
-[x] TypeScript: npx tsc --noEmit → exit 0
-[x] Full suite: 2016 pass / 63 pre-existing STT failures (= 1995 + 21).
-    Zero new failures.
-
-Gaps noted (carry to Phase 8):
-[w] W-022: no lesson-ws integration test for the greeting packet override
-[w] W-023: no integration test for maybeSpeakKidsPersonaClosing
-    (spoken-before-lesson_end ordering, no-op-when-null path)
-[w] W-024: multi-placeholder substitution implemented (/g) but only pinned
-    indirectly; templates currently have one placeholder each
+All ✅ PASS. T1–T6 verified (Lucy≠Tom greeting/closing diff, childName
+substitution incl. $-injection regression, flag gating, no curriculum
+fields in personas, readiness-cue preserved, unknown-teacher fallback).
+C1/C3/C4/C5 verified by diff greps. Evidence: tsc 0; engine 188/188;
+full suite 2016/63 (= 1995 + 21). W-022..W-025 logged.
 ```
 
 ---
 
-## ACCEPTANCE AUDITOR — Phase 6
-
-```
-Verdict: ✅ PASS
-
-[x] T1/T2 — distinct persona greetings verified in code + tests
-[x] T5 — same curriculum: TeacherPersona interface has only text/style
-    fields; explicit absence test for curriculum keys
-[x] Flag gating per NEXT_ACTION spec: KIDS_PERSONALIZATION_V2 AND
-    KIDS_TEACHER_PERSONA_V2, strict 'true' check, default OFF
-[x] C1/C3/C4/C5 — diff greps zero hits for curriculum-field writes;
-    adult lesson_end paths untouched
-[x] Scope discipline: Phase 6 footprint = teacher-personas.ts,
-    personalization-engine.ts, lesson-ws.ts, engine test file, tracking .md
-[x] Forbidden changes respected: master-prompt.md untouched; no model or
-    max_tokens changes anywhere in diff; no LLM-generated persona content
-
-Findings (non-blocking):
-[w] Working tree is cumulative (Phases 1–6 uncommitted on top of 0639b6d) —
-    per-phase scope audit relied on code attribution, not commit diffs.
-    Recommend committing per-phase going forward.
-```
-
----
-
-## FINDINGS SUMMARY
-
-### Critical (❌ — must fix before next phase)
-
-None remaining. (1 safety finding found and FIXED during this review:
-$-sequence interpretation in substituteChildName — see safety section.)
-
-### Warnings (⚠️ — non-blocking, logged in RISK_REGISTER)
-
-| # | Area | Issue | Phase to address |
-|---|------|-------|-----------------|
-| W-019 | QA | No integration test for ENCOURAGEMENT-rung recovery injection (Phase 4) | Phase 8 |
-| W-020 | QA | No integration test for micro-dialogue fire→reply→return flow | Phase 8 |
-| W-021 | Backend | processKidsBrainV1Turn at 11,599/12,000 chars of wiring-test regex window (RISK-016) | Monitor |
-| W-022 | QA | No integration test for persona greeting packet override | Phase 8 |
-| W-023 | QA | No integration test for persona closing (order vs lesson_end) | Phase 8 |
-| W-024 | QA | Multi-placeholder substitution only indirectly pinned | Phase 8 |
-| W-025 | Design | energyLevel/warmupStyle/recoveryStyle persona fields unconsumed — design Section 3.5 overstates Phase 6 | Phase 8 or doc amend |
-
----
-
-## DECISION
-
-```
-Phase 6 is COMPLETE — review PASS (1 fix iteration: childName $-injection).
-Next phase: Phase 7 — Safety
-Scope (design Section 4 — Safe Personalization Rules):
-  Verify/enforce the boundary contract, budget constraints (4.2), and
-  fallback chain (4.3) across ALL tiers; add the 15-word truncation-at-
-  word-boundary fallback if missing; defensive name-length cap (safety
-  monitor note); audit every tier for: 1 interest sentence/turn, ≤15 words,
-  catch-log-null error path, no-PII logging.
-Files to modify:
-  personalization-engine.ts (shared budget/truncation/fallback helpers)
-  personalization-engine.test.ts (safety-rule tests per tier)
-```
-
----
-
-## BACKEND REVIEWER — Phase 5
-
-```
-Verdict: ✅ PASS
-
-personalization-engine.ts:
-[x] buildMicroDialogueTurn pure; null on: flags off, empty interests,
-    cooldown < 3, dialogue already in progress, warmup in progress,
-    unknown interest, any error (try/catch, S5 pattern)
-[x] buildMicroDialogueReturnPhrase always returns a string (dialogue can
-    always be closed); target-word re-invitation when word active
-[x] isMicroDialogueInProgress treats undefined as false (pre-Phase-5
-    Redis blobs safe)
-[x] createInitialPersonalizationState: microDialogueCooldown 0 (count-up,
-    DECISIONS.md entry), microDialogueInProgress false
-
-lesson-ws.ts:
-[x] Interception placed after warmup interception, BEFORE
-    buildSTTResultFromText/processKidsBrainTurn → reply never scored
-[x] State cleared + kidsMemoryCache updated + Redis save BEFORE sending
-    return phrase (consistent with warmup pattern)
-[x] maybeFireKidsMicroDialogue mutates state before the caller's Redis
-    save (same save persists it — single JSON blob, atomic)
-[x] Dialogue question sent AFTER advance packets; suppressed on closing
-    turns (!shouldCloseSession && !shouldClose)
-[x] Silence turn while dialogue in progress → interception accepts and
-    returns to curriculum (no stuck dialogue)
-[x] Flags turned off mid-dialogue → interception still drains the
-    in-progress state gracefully (isMicroDialogueInProgress is not
-    flag-gated by design)
-[x] Helpers extracted to keep processKidsBrainV1Turn within the 12,000-char
-    wiring-test regex window (12,255 → 11,520 chars; guard tests NOT
-    weakened) — RISK-016 logged for future growth
-
-session-memory.ts:
-[x] microDialogueInProgress optional — old sessions deserialize cleanly
-```
-
----
-
-## CURRICULUM REVIEWER — Phase 5
-
-```
-Verdict: ✅ PASS
-
-[x] M1 — fires only when ≥3 exercises completed since last dialogue:
-    engine guard cooldown >= 3; fresh state 0 → first dialogue after 3
-    advances (GLOBAL_GOAL M1 honored; design-doc ambiguity resolved,
-    DECISIONS.md)
-[x] M2 — at most once per 3 exercises: caller resets cooldown to 0 on fire;
-    verified by tests
-[x] M3 — one turn only: interception immediately sends curriculum return
-    phrase with target-word re-invitation; never an open chat (RISK-013)
-[x] M4 — any reply accepted (TEACHER_CONTROLLED): interception runs before
-    Kids Brain; silence also accepted
-[x] M5 — never scores: turn returns before processKidsBrainTurn;
-    exerciseCorrectCount/attempt counters untouched
-[x] Budget: max 1 interest sentence per teacher turn — EXAMPLE lead-in
-    suppressed when dialogue fires (buildKidsTurnPersonalization)
-[x] All 12 templates generic, no PII, no copyrighted-character roleplay,
-    ≤ 15 words (verified by tests)
-[x] princesses "favourite story" long-response concern (W-015): mitigated —
-    any response (even long/partial STT) triggers return to curriculum
-
-RISK-013 (open chat mode): MITIGATED — interception is deterministic,
-flag KIDS_MICRO_DIALOGUE_ENABLED allows instant disable.
-```
-
----
-
-## QA TESTER — Phase 5
-
-```
-Verdict: ✅ PASS
-
-Test evidence (run fresh 2026-06-10):
-[x] Engine suite: 167/167 pass (133 + 34 new)
-[x] M1: cooldown 0/1/2 → null; 3 and 7 → result; constant === 3;
-    fresh state not eligible
-[x] M2: engine pure (no self-reset); caller-reset behavior; in-progress → null
-[x] M3: shouldContinue true; return phrase contains target word + "lesson";
-    generic fallback; ≤ 15 words
-[x] M4: in-progress detection incl. undefined field (pre-Phase-5 session)
-[x] M5: state/interests not mutated; no curriculum fields in result
-[x] Templates: 12 interests produce questions, ≤ 15 words, non-empty
-[x] Flags: master off → null; dialogue flag off → null; both on → fires
-[x] Guards: empty interests, unknown interest, warmup in progress,
-    null state, null interests
-[x] TypeScript: npx tsc --noEmit → exit 0
-[x] Full suite: 1995 pass / 63 pre-existing STT failures (= 1961 + 34).
-    Two wiring tests (session-analytics, phase-16b-runtime-safety) broke
-    mid-implementation due to function-size regex window; FIXED by helper
-    extraction (not by weakening the tests). Zero new failures at review.
-
-Gaps noted (carry to Phase 8):
-[w] W-020: no integration test driving the full fire→reply→return flow
-    through lesson-ws (engine unit-tested; wiring code-reviewed)
-```
-
----
-
+## ARCHIVED: Phase 5 review — PASS 2026-06-10 (micro-dialogues; M1–M5; 167/167 engine tests; suite 1995/63; RISK-013 MITIGATED; W-020/W-021)
 ## ARCHIVED: Phase 4 review — PASS 2026-06-10 (recovery; R1–R4; tier gate turn-processor:610; 133/133 engine tests; suite 1961/63; W-019)
 ## ARCHIVED: Phase 1 review — PASS 2026-06-10 (warmups; W1–W7; 62 tests; RISK-010/011/012 closed)
 ## ARCHIVED: Phase 2 review — PASS 2026-06-10 (examples; E1–E5; 86/86 engine tests; suite 1914/63)

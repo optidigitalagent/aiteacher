@@ -8,53 +8,50 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Phase 7 Implementation — Safety
-**Type:** CODE
-**Phase:** Phase 7 — Safety
+**Task:** Phase 8 Implementation — Testing
+**Type:** CODE (tests only — no production-code changes unless a test
+  exposes a real bug; helper-extract if lesson-ws must change, RISK-016)
+**Phase:** Phase 8 — Testing
 **Agent:** goal-executor (implementer role)
 **Description:**
-  Verify and enforce the design Section 4 boundary contract across ALL
-  personalization tiers; close the gaps the contract requires but the code
-  does not yet enforce. No new features — hardening + safety tests only.
+  Close the carried integration-test warnings and harden the safety sweeps.
 
-  1. Budget enforcement audit (Section 4.2) — verify each rule is enforced
-     in code, add a test where missing: warmup ≤2 turns, ≤15s, once/session;
-     micro-dialogue cooldown 3 / 1-per-3; 1 interest sentence per turn;
-     ≤15 words per interest sentence.
-  2. Fallback chain (Section 4.3) — verify per tier: no interest → null,
-     no template → null, throw → catch+log(no PII)+null, budget exceeded →
-     skip. Add the "result > 15 words → truncate at word boundary" fallback
-     if not implemented (check whether any current template path can exceed
-     it; persona open/close are exempt — they use a 20-word budget per tests).
-  3. Defensive name-length cap in substituteChildName (safety-monitor note:
-     name.slice(0, 100) keeps the guarantee local to the engine, today only
-     enforced at the profile API).
-  4. Template safety sweep: no PII, no copyrighted characters, all 5 tiers
-     (warmup, example, praise, recovery, micro-dialogue) + persona texts.
-  5. Error-catch tests S1–S5 for every public engine function not yet
-     covered.
+  1. Integration tests through the Kids WS layer (mock ws/meta/Redis as the
+     existing wiring guard suites do):
+     - W-019: ENCOURAGEMENT-rung recovery injection (turn-processor path)
+     - W-020: micro-dialogue fire→reply→return; exerciseCorrectCount
+       unchanged after the dialogue turn
+     - W-022: session start with persona flags on → first teacher_text
+       packet carries persona openingPhrase; flags off → standard greeting
+     - W-023: natural close → persona closing ai_text sent BEFORE lesson_end
+     - W-027: one teacher turn never carries two interest sentences
+  2. Curriculum integrity C1–C6 at integration level (C6 = Kids Brain V1
+     suite still green — already evidenced by the full-suite runs; assert
+     explicitly in the report).
+  3. W-026: extend the S3/S4 sweep regexes (surname/birthday/grade/city;
+     "you're <X>", "pretend you're", "act like").
+  4. W-024: pin multi-placeholder [childName] substitution directly.
+  5. W-025 decision: amend design Section 3.5 to match delivered Phase 6
+     scope (persona styles for warmup/recovery/micro-dialogue deferred) OR
+     implement the styles. Default: amend the doc — no new features in
+     Phase 8.
+  6. Q4 check: interest personalization suite ≥40 tests (already 200 — assert).
 
 **Inputs:**
-  - docs/kids-personalization-v2.md Section 4 (4.1 contract, 4.2 budgets,
-    4.3 fallback chain)
-  - personalization-engine.ts (all tiers), teacher-personas.ts
-  - REVIEW_REPORT.md Phase 6 warnings (W-022..W-025 are Phase 8 scope —
-    do NOT pull integration tests into Phase 7)
-
-**Constraints:**
-  - Engine + tests only; do NOT touch lesson-ws wiring unless a budget rule
-    can only be enforced there (and then helper-extract — RISK-016 window
-    has ~400 chars headroom).
-  - No curriculum/scoring/STT/TTS changes. Flags stay default OFF.
+  - REVIEW_REPORT.md Phase 7 FINDINGS SUMMARY (W-019..W-027)
+  - existing wiring-guard suites as integration-test templates:
+    src/kids-brain/analytics/__tests__/session-analytics.test.ts,
+    src/kids-brain/runtime/__tests__/phase-16b-runtime-safety.test.ts
+  - docs/kids-personalization-v2.md Sections 3.5, 9.7, 9.9
 
 **Success criterion:**
-  - npx tsc --noEmit → exit 0; new safety tests pass; no new failures in
-    full suite (baseline: 2016 pass / 63 pre-existing STT failures)
+  - npx tsc --noEmit → exit 0; new integration tests pass; no new failures
+    (baseline: 2028 pass / 63 pre-existing STT failures)
 
 **Blocker:**
   None expected.
 
-**On PASS (tests green):** Write Phase 7 REVIEW task here → run review gate.
+**On PASS (tests green):** Write Phase 8 REVIEW task here → run review gate.
 **On FAIL:** Fix findings, re-test (max 3 attempts). BLOCKED only after 3 failures.
 
 ---
