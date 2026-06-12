@@ -34,7 +34,7 @@
   (microphone → STT → AI → TTS → speaker) is only verified manually in production.
   A regression in pre-warm, buffering, or UtteranceEnd could go undetected.
 **Trigger:** Any change to stt.ts, lesson-ws.ts mic_start/audio_chunk handlers
-**Mitigation:** 1866 unit tests cover most code paths. Railway logs contain
+**Mitigation:** 1828 unit tests cover most code paths. Railway logs contain
   detailed diagnostics ([stt:config], [stt:lifecycle], [stt:audio]).
 **Resolution:** Integration test that starts a real Deepgram connection
   (test API key) and verifies Open → audio → UtteranceEnd → transcript.
@@ -86,28 +86,24 @@
   environment. This failure existed before Phase 1 and is unrelated to Kids.
 **Trigger:** npm test (full suite) without vitest.config.ts exclusion
 **Mitigation:** vitest.config.ts excludes tests/fsm.test.ts from npm test.
-  All other 1866 tests pass.
+  All other 1828 tests pass.
 **Resolution:** Fix fsm.test.ts to not call process.exit in test mode,
   or mock process.exit in the test environment.
 **Opened:** 2026-06-07
-**Updated:** 2026-06-07
+**Updated:** 2026-06-10
 
 ---
 
-### RISK-006 — New goal: No child profile → Kids session blocked
+### RISK-006 — No child profile → Kids session blocked (feature flag)
 
-**Status:** OPEN
+**Status:** MITIGATED
 **Severity:** P1
 **Area:** backend
-**Description:** Planned feature: Kids sessions require a child profile.
-  If lesson-ws.ts profile check blocks users with pre-existing Kids sessions
-  (created before onboarding feature), those users cannot start lessons.
-**Trigger:** Deploy of Phase 4 (lesson-ws.ts profile load) before all users
-  have profiles. Any user with an old kids_session but no kids_brain_child_profiles row.
-**Mitigation:** KIDS_REQUIRE_PROFILE env var (feature flag). When false,
-  profile check is skipped — backwards-compatible operation.
-**Resolution:** After all users complete onboarding (or admin creates profiles),
-  set KIDS_REQUIRE_PROFILE=true permanently and remove flag.
+**Description:** Kids sessions require a child profile. Users without profiles
+  cannot start lessons. Feature flag KIDS_REQUIRE_PROFILE=true enforces this.
+**Trigger:** Deploy before all users have profiles.
+**Mitigation:** KIDS_REQUIRE_PROFILE=true in production (set). Feature works.
+**Resolution:** After 1 week stable, remove flag (permanent enforcement).
 **Opened:** 2026-06-10
 **Updated:** 2026-06-10
 
@@ -115,35 +111,19 @@
 
 ### RISK-007 — Interest personalization curriculum integrity
 
-**Status:** OPEN
+**Status:** MITIGATED
 **Severity:** P1
 **Area:** curriculum
 **Description:** Interest personalization text injected into teacher turns could,
-  if implemented incorrectly, change exercise correctness evaluation or escalation
-  ladder behavior. A bug in interest-personalizer.ts could affect curriculum.
+  if implemented incorrectly, change exercise correctness evaluation or escalation.
 **Trigger:** buildPersonalizedContext() called with incorrect arguments or
-  return value used in wrong place (e.g., passed to exercise evaluator).
+  return value used in wrong place.
 **Mitigation:** Design specifies buildPersonalizedContext() is a pure function.
-  It receives targetWord READ-ONLY and returns optional string only.
-  Never passed to classification engine or completionRule evaluator.
-**Resolution:** Unit tests confirm function is pure, does not mutate state,
-  and interest context never reaches classification/escalation logic.
+  Returns optional string only. Never passed to classification/escalation.
+  V2 extends this with PersonalizationEngine pure module pattern.
+**Resolution:** Unit tests C1–C6 confirm no state mutation across all V2 tiers.
 **Opened:** 2026-06-10
 **Updated:** 2026-06-10
-
----
-
-### RISK-008 — Child profile table UNIQUE constraint missing
-
-**Status:** RESOLVED
-**Severity:** P2
-**Area:** backend
-**Description:** Existing kids_brain_child_profiles table (migration 019) had
-  an INDEX on user_id but no UNIQUE constraint.
-**Evidence:** Migration 023 applied in production 2026-06-10. DB confirms
-  `uq_child_profile_user UNIQUE (user_id)` constraint active.
-  Railway log: `[migrate] running 023_kids_onboarding_fields.sql...done`
-**Resolved:** 2026-06-10
 
 ---
 
@@ -152,19 +132,194 @@
 **Status:** OPEN
 **Severity:** P2
 **Area:** backend / voice
-**Description:** 63 tests failing in 3 STT timing test files:
-  - stt-reconnect-dead-connection.test.ts (phase 17B)
-  - phase-18-kids-stt-late-transcript.test.ts
-  - phase-23-kids-stt-wait-ready-buffer.test.ts
-  All failures are `Test timed out in 5000ms` — inherently timing-sensitive tests.
-  These files were NOT touched by the Kids onboarding phases 1–5 commit (2aa5dfa).
-  Last modified by commits: a935927, dd35a9a, 6b768bb, ed0e797, 831effa.
-**Trigger:** npm test full suite (these fail intermittently on CI-like environments)
-**Mitigation:** 1828 other tests pass. Production voice flow working (Deepgram OK in prod).
-  Failures are test environment timing, not production behavior.
+**Description:** 63 tests failing in 3 STT timing test files (timeout-sensitive).
+  These files were NOT touched by the Kids onboarding phases 1–5.
+  All failures are `Test timed out in 5000ms`.
+**Trigger:** npm test full suite (intermittent on CI-like environments)
+**Mitigation:** 1828 other tests pass. Production voice flow working.
 **Resolution:** Increase testTimeout for these files to 15000ms, or use fake timers.
 **Opened:** 2026-06-10
 **Updated:** 2026-06-10
+
+---
+
+### RISK-010 — V2: warmupStartTime Redis serialization
+
+**Status:** RESOLVED
+**Severity:** P2
+**Area:** backend
+**Description:** warmupStartTime is stored in Redis as part of KidsSessionMemory JSON.
+  If serialized as a Date object instead of Unix ms number, Redis JSON round-trip
+  may lose type information (Date → string → NaN on parse).
+**Trigger:** Implementation stores new Date() instead of Date.now() in Redis
+**Mitigation:** TypeScript type enforces number (warmupStartTime: number | null).
+  Strict TypeScript mode prevents Date assignment to number field.
+**Resolution:** Phase 1 implemented Date.now() (number) — TypeScript type is
+  `number | null`. Serialization test in personalization-engine.test.ts verifies
+  JSON round-trip preserves numeric timestamps. tsc --noEmit passes.
+**Opened:** 2026-06-10
+**Updated:** 2026-06-10
+
+---
+
+### RISK-011 — V2: personalizationState update atomicity
+
+**Status:** MITIGATED
+**Severity:** P2
+**Area:** backend
+**Description:** personalizationState is a nested sub-object in KidsSessionMemory.
+  If existing MULTI/EXEC session save pattern does not handle nested JSON updates
+  atomically, interestRotationIndex or microDialogueCooldown could be stale.
+**Trigger:** Concurrent turn processing (extremely unlikely in single-child session)
+**Mitigation:** Kids sessions are single-user; concurrent turns are architecturally
+  impossible (WebSocket is serial). Phase 1 implementation saves entire sessionMemory
+  (including nested personalization sub-object) as a single JSON blob — atomic.
+**Resolution:** Verified in Phase 1 code review. Nested object saved as part of
+  full KidsSessionMemory JSON blob in a single Redis SET call.
+**Opened:** 2026-06-10
+**Updated:** 2026-06-10
+
+---
+
+### RISK-012 — V2: warmup timeout enforced client vs server
+
+**Status:** RESOLVED
+**Severity:** P1
+**Area:** backend
+**Description:** warmupStartTime timeout (15s) must be enforced server-side.
+  If enforcement is client-side only, a slow or malicious client could hold
+  the teacher in warmup mode indefinitely, consuming lesson budget.
+**Trigger:** Client delays sending warmup response beyond 15 seconds.
+**Mitigation:** Design specifies server-side enforcement in lesson-ws.ts.
+  Existing silence detection (SILENCE_LONG > 3s → escalation) already handles
+  long silences — warmup timeout is an additional guard.
+**Resolution:** Phase 1 isWarmupTimedOut() called in processKidsBrainV1Turn
+  before any warmup return phrase is sent. Timeout path falls through to normal
+  Kids Brain processing. W5 test with vi.useFakeTimers() verifies server-side
+  enforcement. Evidence: 62/62 tests pass.
+**Opened:** 2026-06-10
+**Updated:** 2026-06-10
+
+---
+
+### RISK-013 — V2: micro-dialogue creates open chat mode
+
+**Status:** MITIGATED (Phase 5 implemented 2026-06-10: reply intercepted in
+  handleKidsMicroDialogueReply before Kids Brain — deterministic single-turn
+  return to curriculum; silence also drains the dialogue; flag
+  KIDS_MICRO_DIALOGUE_ENABLED allows instant disable. Full resolution after
+  Phase 8 integration test W-020.)
+**Severity:** P1
+**Area:** curriculum / safety
+**Description:** Micro-dialogue fires between exercises. If TEACHER_CONTROLLED
+  completion does not advance reliably, teacher could stay in micro-dialogue
+  loop, creating an uncontrolled chat mode outside curriculum.
+**Trigger:** Micro-dialogue completion logic has a bug (child response
+  not triggering TEACHER_CONTROLLED advance).
+**Mitigation:** Design specifies TEACHER_CONTROLLED (any response = advance).
+  microDialogueCooldown resets to 0 immediately on fire.
+  Feature flag KIDS_MICRO_DIALOGUE_ENABLED=false for instant disable.
+**Resolution:** Phase 5 integration test M3–M4: verify micro-dialogue advance
+  and curriculum return. Unit test M5: verify no scoring during micro-dialogue.
+**Opened:** 2026-06-10
+**Updated:** 2026-06-10
+
+---
+
+### RISK-014 — V2: teacher persona TTS voice same for all (Phase 6 limitation)
+
+**Status:** OPEN
+**Severity:** P3
+**Area:** frontend / UX
+**Description:** Phase 6 teacher persona differentiation affects text only.
+  Lucy and Tom use the same ElevenLabs TTS voice. A child who chose Tom
+  expecting a different voice will hear the same audio as Lucy.
+  This reduces persona distinctiveness.
+**Trigger:** Any user who chose Tom expecting a different voice
+**Mitigation:** Design document (Section 3.5) explicitly documents this limitation.
+  Text-level persona difference (calm vs enthusiastic) still provides value.
+  Future phase can add per-persona voice IDs (KIDS_TEACHER_VOICE_MAP env var).
+**Resolution:** Implement per-persona ElevenLabs voice IDs in a future phase.
+**Opened:** 2026-06-10
+**Updated:** 2026-06-10
+
+---
+
+### RISK-015 — V2: recovery injection lacks turn-processor integration test (W-019)
+
+**Status:** OPEN
+**Severity:** P3
+**Area:** backend / curriculum
+**Description:** Phase 4 ENCOURAGEMENT-rung recovery injection in
+  turn-processor.ts is unit-tested at the engine level and code-reviewed,
+  but no integration test drives a full turn through the escalation path
+  with KIDS_INTEREST_RECOVERY_V2 enabled.
+**Trigger:** Refactor of turn-processor Step 6 escalation block.
+**Mitigation:** Flag default-off; existing escalation tests cover the
+  standard path; engine eligibility fully unit-tested (133/133).
+**Resolution:** Phase 8 adds integration test: ENCOURAGEMENT tier turn with
+  flags on → mainText is the interest recovery line; ladder unchanged.
+**Opened:** 2026-06-10
+**Updated:** 2026-06-10
+
+---
+
+### RISK-016 — wiring tests cap processKidsBrainV1Turn at 12,000 chars
+
+**Status:** OPEN
+**Severity:** P3
+**Area:** backend
+**Description:** session-analytics.test.ts and phase-16b-runtime-safety.test.ts
+  extract processKidsBrainV1Turn with regex window [\s\S]{1,12000}. The function
+  is at 11,599 chars after Phase 6 (closing added as a single helper call) —
+  ~400 chars of headroom. Any future inline addition will silently break both
+  guard tests.
+**Trigger:** Code added inside processKidsBrainV1Turn.
+**Mitigation:** Phase 5/6 logic extracted to helpers (handleKidsMicroDialogueReply,
+  maybeFireKidsMicroDialogue, buildKidsTurnPersonalization,
+  maybeSpeakKidsPersonaClosing). Pattern documented in DECISIONS.md.
+**Resolution:** Refactor processKidsBrainV1Turn into smaller functions, or
+  switch the guard tests to AST-based extraction.
+**Opened:** 2026-06-10
+**Updated:** 2026-06-12 (Phase 6: 11,520 → 11,599)
+
+---
+
+### RISK-017 — V2: micro-dialogue lacks lesson-ws integration test (W-020)
+
+**Status:** OPEN
+**Severity:** P3
+**Area:** backend / curriculum
+**Description:** The fire→reply→return flow (maybeFireKidsMicroDialogue →
+  handleKidsMicroDialogueReply) is unit-tested at engine level and code-reviewed,
+  but not driven end-to-end through processKidsBrainV1Turn.
+**Trigger:** Refactor of lesson-ws personalization wiring.
+**Mitigation:** Flag default-off; engine fully unit-tested (167/167).
+**Resolution:** Phase 8 integration test: advance 3 exercises with flags on →
+  dialogue fires; child reply → return phrase, exerciseCorrectCount unchanged.
+**Opened:** 2026-06-10
+**Updated:** 2026-06-10
+
+---
+
+### RISK-018 — V2: persona greeting/closing lack lesson-ws integration tests (W-022/W-023)
+
+**Status:** OPEN
+**Severity:** P3
+**Area:** backend / curriculum
+**Description:** The persona greeting packet override (lesson-ws.ts ~1408) and
+  maybeSpeakKidsPersonaClosing ordering vs lesson_end (~1809) are engine-unit-
+  tested and code-reviewed by 5 reviewers, but not driven through the WS layer.
+  Also W-024: multi-placeholder [childName] substitution only indirectly pinned.
+**Trigger:** Refactor of session-bootstrap packet order or the natural-close path.
+**Mitigation:** Flags default-off; engine fully unit-tested (188/188 incl.
+  $-injection regression tests); greeting override no-ops when no teacher_text
+  packet found.
+**Resolution:** Phase 8 integration tests: session start with flags on →
+  first teacher_text packet carries persona openingPhrase; natural close →
+  persona closing ai_text sent before lesson_end; flags off → byte-identical flow.
+**Opened:** 2026-06-12
+**Updated:** 2026-06-12
 
 ---
 
@@ -175,11 +330,18 @@
 **Status:** RESOLVED
 **Severity:** P1
 **Evidence:** Commit 84e0195 pushed 2026-06-07. Railway deployment 80dd54bf
-  succeeded at 12:25:03 +03:00. Logs confirm:
-  [server] listening on 0.0.0.0:8080 ✅
-  [postgres] connected ✅ | [redis] connected ✅
-  No HTTP 400, no unhandled rejections, no ECONNREFUSED.
+  succeeded at 12:25:03 +03:00. Logs confirm server listening on 0.0.0.0:8080.
 **Resolved:** 2026-06-07
+
+---
+
+### RISK-008 — Child profile table UNIQUE constraint missing
+
+**Status:** RESOLVED
+**Severity:** P2
+**Evidence:** Migration 023 applied in production 2026-06-10. DB confirms
+  `uq_child_profile_user UNIQUE (user_id)` constraint active.
+**Resolved:** 2026-06-10
 
 ---
 

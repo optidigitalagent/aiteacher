@@ -2,14 +2,58 @@
 
 ## ACTIVE GOAL
 
-**GOAL COMPLETE — 2026-06-10**
+**Kids Personalization V2 — STARTED 2026-06-10**
 
-Build a full Kids Mode entry, onboarding, child profile, teacher selection, and
-interest-personalization flow integrated into the main authenticated platform.
+Make Kids lessons feel personally tailored to each child while keeping
+Kid's Box curriculum fully authoritative.
 
-**This goal COMPLETE:** Kids Mode Onboarding + Profile + Brain Integration — all criteria verified.
-**Previous goal COMPLETE:** Kids Brain V1 — 28/28 criteria verified (Run 5, 2026-06-09).
+**Previous goal COMPLETE:** Kids Mode Onboarding V1 — all 23 ACs verified (2026-06-10)
+**Previous goal COMPLETE:** Kids Brain V1 — 28/28 criteria verified (Run 5, 2026-06-09)
 **Tags:** kids-brain-v1-complete, kids-onboarding-v1-complete
+
+---
+
+## CORE RULE (IMMUTABLE)
+
+> **Curriculum controls everything that matters educationally.
+> Interests control only how the teacher talks, not what the teacher teaches.**
+
+### What curriculum controls (CANNOT be changed by personalization):
+- progression
+- correctness
+- target words
+- exercise order
+- mastery
+- escalation ladder
+- scoring
+- accepted answers
+
+### What interests control (ALLOWED):
+- examples (context phrases during teacher model)
+- warmups (1-2 turns before lesson content)
+- encouragement (at ENCOURAGEMENT tier)
+- recovery prompts (at ENCOURAGEMENT tier)
+- micro-dialogues (1 turn between exercises, ≥3 exercise cooldown)
+- imagination prompts ("Imagine a blue Minecraft block!")
+- contextual references in praise
+- teacher greeting style (persona-based)
+
+---
+
+## PHASE SEQUENCE
+
+| Phase | Name | Status |
+|-------|------|--------|
+| 0 | Design | ✅ COMPLETE — docs/kids-personalization-v2.md APPROVED |
+| 1 | Interest-Aware Warmups | ✅ COMPLETE — review PASS 2026-06-10 |
+| 2 | Interest-Aware Examples | ✅ COMPLETE — review PASS 2026-06-10 |
+| 3 | Interest-Aware Praise | ✅ COMPLETE — review PASS 2026-06-10 |
+| 4 | Interest-Aware Recovery | ✅ COMPLETE — review PASS 2026-06-10 |
+| 5 | Micro-Dialogues | ✅ COMPLETE — review PASS 2026-06-10 |
+| 6 | Teacher Personas | ✅ COMPLETE — review PASS 2026-06-12 |
+| 7 | Safety | 🔲 NEXT |
+| 8 | Testing | 🔲 PENDING |
+| 9 | Deployment | 🔲 PENDING |
 
 ---
 
@@ -17,92 +61,87 @@ interest-personalization flow integrated into the main authenticated platform.
 
 The goal is NOT complete until ALL of the following are satisfied:
 
-### Entry Point
-- [x] Authenticated main platform (HomePage or LearningPage) has visible Kids Mode entry — HomePage.tsx modified (2aa5dfa)
-- [x] Unauthenticated user visiting /kids is redirected to login — App.tsx route guard (2aa5dfa)
-- [x] Unauthenticated API calls to /api/kids/* return 401 — VERIFIED prod (2026-06-10)
+### Warmup (Phase 1)
+- [ ] Warmup fires once per session when interests are set (W1)
+- [ ] Warmup does NOT fire if no interests set (W2)
+- [ ] Warmup max 2 turns enforced server-side (W4)
+- [ ] Warmup auto-ends after 15s (W5)
+- [ ] Warmup returns to curriculum after completion (W7)
 
-### Onboarding
-- [x] New user entering Kids Mode is shown the onboarding wizard — KidsOnboardingPage.tsx (2aa5dfa)
-- [x] Returning user with existing profile skips onboarding and goes to lobby — KidsPrototypePage.tsx profile check (2aa5dfa)
-- [x] Onboarding collects: child name, age, teacher choice, interests (up to 5) — KidsOnboardingPage.tsx (2aa5dfa)
-- [x] Completed onboarding saves child profile to backend — POST /api/kids/child-profile 201 VERIFIED
+### Interest-Aware Examples (Phase 2)
+- [ ] Example context appears in teacher model when interests set (E1)
+- [ ] Example is ≤ 15 words (E2)
+- [ ] targetWord not modified by example function (E4)
 
-### Backend
-- [x] GET /api/kids/child-profile: returns profile or 404 (requireAuth) — VERIFIED prod HTTP 200
-- [x] POST /api/kids/child-profile: creates profile (requireAuth) — VERIFIED prod HTTP 201
-- [x] PUT /api/kids/child-profile: updates profile (requireAuth) — VERIFIED prod HTTP 200
-- [x] User cannot access another user's child profile (404, not 403) — WHERE user_id=$1 enforced, architecture-verified
-- [x] Migration 023 applied (child_name, child_age_years, teacher_id columns) — VERIFIED prod logs + DB
+### Interest-Aware Praise (Phase 3)
+- [ ] Praise fires after CORRECT_* labels (P1)
+- [ ] Lucy praise measurably different from Tom praise (P4/T4)
 
-### Kids Brain Integration
-- [x] Kids lesson cannot start without a child profile (ws.close 4403) — lesson-ws.ts:1330-1332 code present
-- [x] Kids session state includes interests[] after lesson start — lesson-ws.ts:1386, DB confirmed (2026-06-10)
-- [x] Kids Brain receives child interests at session start — same evidence
-- [x] Teacher text may include ONE interest reference per ENCOURAGEMENT/RECOVERY turn — interest-personalizer.ts (2aa5dfa)
-- [x] Interest personalization NEVER modifies targetWord or curriculum progression — design contract + code review
-- [x] buildPersonalizedContext() is a pure function with no side effects — code review confirmed
+### Interest-Aware Recovery (Phase 4)
+- [ ] Recovery fires at ENCOURAGEMENT tier (R1)
+- [ ] Recovery ends with target word invitation (R2)
 
-### Regression / Safety
-- [x] All 28 Kids Brain V1 Run 5 criteria remain COMPLETE (no regression) — test files not touched by phases 1–5
-- [x] Adult lesson flow has no regression — VERIFIED prod: auth/me, continuation-status, api/me all 200
-- [x] No unauthenticated STT/TTS usage possible — VERIFIED: all endpoints return 401 without token
-- [x] No billing/auth regressions — VERIFIED prod
+### Micro-Dialogues (Phase 5)
+- [ ] Micro-dialogue fires after ≥3 exercises (M1)
+- [ ] Micro-dialogue is 1 turn only (M3)
+- [ ] Micro-dialogue does NOT score the child (M5)
 
-### QA
-- [x] TypeScript build: npx tsc --noEmit → exit 0 — VERIFIED backend + frontend
-- [x] Full test suite: 1828/1891 pass; 63 failures pre-existing (phases 17B/18/23) — no new regressions
-- [x] No pre-existing test regressions introduced — confirmed by git log (failing files not in 2aa5dfa)
+### Teacher Personas (Phase 6)
+- [ ] Lucy and Tom greeting phrases are distinct (T1, T2)
+- [ ] Both personas use same curriculum (T5)
 
-### Deployment
-- [x] Railway deploy completed — backend 22973e11 SUCCESS, frontend 6efa0204 SUCCESS
-- [x] Server listening on $PORT (8080 on Railway) confirmed in logs — health endpoint returns 200
-- [x] No critical errors in first 10 minutes of production logs — postgres:ok redis:ok verified
+### Curriculum Integrity (all phases)
+- [ ] targetWord not modified by any V2 function (C1)
+- [ ] exerciseCorrectCount not modified (C3)
+- [ ] escalationLadder not modified (C4)
+- [ ] Adult flow unaffected (C5)
+- [ ] Kids Brain V1 28/28 criteria still pass (C6)
 
----
+### QA (Phase 8)
+- [ ] TypeScript build: npx tsc --noEmit → exit 0 (Q1)
+- [ ] npm test → all pass, no new failures (Q2)
+- [ ] Interest personalization test suite: ≥40 tests green (Q4)
 
-## KIDS BRAIN V1 GUARANTEES (must NOT regress)
-
-These 28 criteria were verified in Run 5 (2026-06-09). Do not reopen unless
-a regression is observed.
-
-```
-C1–C4  Curriculum (Unit 1 mapped, escalation, completion)
-T1–T4  Teacher behavior (no "Wrong", Socratic, ends with question, child-friendly)
-V1–V4  Voice (STT latency, no HTTP 400, TTS streaming, silence detection)
-U1–U4  Visual UI (exercise context sent, panel renders, fallback, no adult regression)
-BA1–BA5 Backend arch (auth, billing, ownership, Redis TTL, no loops)
-QA1–QA4 QA (tsc, tests, no regressions, prod logs)
-D1–D3  Deploy (Railway, port, no errors)
-```
+### Deployment (Phase 9)
+- [ ] Railway deploy successful
+- [ ] All feature flags tested in production
+- [ ] No critical errors in first 10 min of production logs
+- [ ] Acceptance auditor final verdict: PASS
 
 ---
 
 ## CONSTRAINTS (do NOT touch unless goal explicitly requires it)
 
 - docs/master-prompt.md — only via update-prompt skill
-- billing / payment / auth logic (except the new /api/kids/* routes)
+- billing / payment / auth logic
 - Adult lesson flow (non-Kids WebSocket path)
-- STT/TTS configuration
-- Railway env variables — only if deploy goal requires it
+- STT/TTS configuration (Deepgram, ElevenLabs voice IDs)
+- Railway env variables — only for feature flags specified in this goal
 - Kids Brain V1 exercise logic — personalization adds to, never replaces
+- Kids Onboarding V1 code — personalization integrates with, never replaces
+- V1 interest-personalizer.ts — extend, do not remove
 
 ---
 
-## PERSONALIZATION HARD RULES
+## PERSONALIZATION HARD RULES (NOT NEGOTIABLE)
 
-These rules are NOT negotiable. Any code review must reject violations.
+Any code review must reject violations of these rules.
 
-**ALLOWED:** interests as optional context in teacher speech at ENCOURAGEMENT/RECOVERY tiers.
 **FORBIDDEN:**
-- changing targetWord
-- changing acceptedAnswers[]
-- changing completionRule
-- changing escalation ladder
-- changing exerciseCorrectCount
+- changing `targetWord` in any exercise
+- changing `acceptedAnswers[]`
+- changing `completionRule.type`
+- changing `exerciseCorrectCount`
+- changing `exerciseAttemptCount`
+- changing `escalationLadder[]` items or order
 - skipping curriculum steps
 - using copyrighted characters as core teaching characters
+- using LLM to generate interest content (templates only)
 - unauthenticated usage of any Kids resource
+- warmup > 2 turns
+- warmup > 15 seconds
+- micro-dialogue responding to child as if in open chat
+- micro-dialogue > 1 turn
 
 ---
 

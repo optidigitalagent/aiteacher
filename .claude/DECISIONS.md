@@ -104,3 +104,55 @@
 ---
 
 > Append new decisions below as autonomous work progresses.
+
+### 2026-06-10 — Micro-dialogue cooldown: count-up from 0 (design doc was internally inconsistent)
+
+**Decision:** `createInitialPersonalizationState().microDialogueCooldown` changed 3 → 0.
+  Semantics: counts exercises completed since the last micro-dialogue (count-up);
+  engine eligibility requires `>= MICRO_DIALOGUE_COOLDOWN_EXERCISES (3)`;
+  lesson-ws increments on each exercise advance and resets to 0 on fire.
+**Reason:** docs/kids-personalization-v2.md was internally inconsistent: it specified
+  initial value 3 with the comment "so first dialogue can fire after 3 exercises",
+  but also M1 ("fires after ≥3 exercises", unit test "cooldown < 3 → no dialogue"),
+  "cooldown++ after each exercise advance", and "on fire: cooldown = 0" — which is
+  count-up arithmetic. Initial value 3 under count-up would make the first dialogue
+  eligible after exercise 1, violating M1. GLOBAL_GOAL acceptance criterion M1 is
+  authoritative → initial 0.
+**Alternatives rejected:** keep initial 3 (violates M1 for the first dialogue);
+  countdown semantics (contradicts M1's unit-test wording and the design's
+  "cooldown++" / "reset to 0" rules).
+**Reversible:** Yes (single constant in createInitialPersonalizationState)
+**Risk:** Low — flag default-off; only affects when the FIRST dialogue may fire.
+
+### 2026-06-10 — Phase 5 logic extracted to helpers to respect wiring-test regex window
+
+**Decision:** Micro-dialogue interception/fire logic lives in helpers
+  (handleKidsMicroDialogueReply, maybeFireKidsMicroDialogue,
+  buildKidsTurnPersonalization) outside processKidsBrainV1Turn.
+**Reason:** session-analytics.test.ts and phase-16b-runtime-safety.test.ts extract
+  processKidsBrainV1Turn with regex window [\s\S]{1,12000} — inlining Phase 5 code
+  pushed the function to 12,255 chars and broke both guard tests. Extracting helpers
+  (now 11,520 chars) fixes the tests without weakening them, and matches the
+  30-line-function rule in .claude/rules/backend.md.
+**Alternatives rejected:** widening the regex in the guard tests (weakens
+  pre-existing safety tests to accommodate new code).
+**Reversible:** Yes
+**Risk:** Low — future growth of processKidsBrainV1Turn will re-break the window
+  (logged as RISK-016).
+
+### 2026-06-12 — substituteChildName: function replacer (safety fix)
+
+**Decision:** `substituteChildName` uses a function replacer
+`template.replace(/\[childName\]/g, () => name)` instead of a string
+replacement.
+**Why:** JavaScript `String.replace` interprets `$`-sequences (`$&`, `$'`,
+`` $` ``, `$$`) in STRING replacements. The kids-safety-monitor demonstrated by
+execution that profile names containing `$` produced garbled spoken greetings
+(template fragments duplicated, placeholder leaking into TTS). A function
+replacer returns the name verbatim — the profile name is never interpreted.
+**Pinned by:** 2 regression tests in personalization-engine.test.ts (T3 block):
+$-sequence names render literally; a name that is literally "[childName]" is
+spoken verbatim exactly once (no re-expansion).
+**Reversible:** Yes (but do not — this is a safety contract).
+**Risk:** None known; blast radius of the original bug was bounded to fragments
+of the approved template (API caps names at 1–100 chars).

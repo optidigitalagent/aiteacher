@@ -8,90 +8,61 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Phase 6 — QA + Railway deploy
-**Type:** DEPLOY
-**Agent:** deploy-railway
+**Task:** Phase 7 Implementation — Safety
+**Type:** CODE
+**Phase:** Phase 7 — Safety
+**Agent:** goal-executor (implementer role)
 **Description:**
-  Phases 1-5 are complete and committed (commit 2aa5dfa).
-  Remaining steps:
-  1. git push origin main → triggers Railway deploy
-  2. Monitor Railway build log — look for migration 023 run or run manually
-  3. GET /health → expect 200
-  4. GET /api/kids/child-profile with no token → expect 401
-  5. POST /api/kids/child-profile with valid token → verify 201
-  6. Start Kids lesson session without profile (KIDS_REQUIRE_PROFILE=true) → expect 4403
-  7. Confirm no new errors in Railway log for 10 min
+  Verify and enforce the design Section 4 boundary contract across ALL
+  personalization tiers; close the gaps the contract requires but the code
+  does not yet enforce. No new features — hardening + safety tests only.
+
+  1. Budget enforcement audit (Section 4.2) — verify each rule is enforced
+     in code, add a test where missing: warmup ≤2 turns, ≤15s, once/session;
+     micro-dialogue cooldown 3 / 1-per-3; 1 interest sentence per turn;
+     ≤15 words per interest sentence.
+  2. Fallback chain (Section 4.3) — verify per tier: no interest → null,
+     no template → null, throw → catch+log(no PII)+null, budget exceeded →
+     skip. Add the "result > 15 words → truncate at word boundary" fallback
+     if not implemented (check whether any current template path can exceed
+     it; persona open/close are exempt — they use a 20-word budget per tests).
+  3. Defensive name-length cap in substituteChildName (safety-monitor note:
+     name.slice(0, 100) keeps the guarantee local to the engine, today only
+     enforced at the profile API).
+  4. Template safety sweep: no PII, no copyrighted characters, all 5 tiers
+     (warmup, example, praise, recovery, micro-dialogue) + persona texts.
+  5. Error-catch tests S1–S5 for every public engine function not yet
+     covered.
 
 **Inputs:**
-  - commit 2aa5dfa (all 13 changed/created files)
-  - backend/migrations/023_kids_onboarding_fields.sql (must run on prod DB)
+  - docs/kids-personalization-v2.md Section 4 (4.1 contract, 4.2 budgets,
+    4.3 fallback chain)
+  - personalization-engine.ts (all tiers), teacher-personas.ts
+  - REVIEW_REPORT.md Phase 6 warnings (W-022..W-025 are Phase 8 scope —
+    do NOT pull integration tests into Phase 7)
+
+**Constraints:**
+  - Engine + tests only; do NOT touch lesson-ws wiring unless a budget rule
+    can only be enforced there (and then helper-extract — RISK-016 window
+    has ~400 chars headroom).
+  - No curriculum/scoring/STT/TTS changes. Flags stay default OFF.
 
 **Success criterion:**
-  Railway live, migration applied, all AC verified, no critical errors.
+  - npx tsc --noEmit → exit 0; new safety tests pass; no new failures in
+    full suite (baseline: 2016 pass / 63 pre-existing STT failures)
 
 **Blocker:**
-  Migration 023 must run on production PostgreSQL — can be applied via Railway CLI or psql.
+  None expected.
+
+**On PASS (tests green):** Write Phase 7 REVIEW task here → run review gate.
+**On FAIL:** Fix findings, re-test (max 3 attempts). BLOCKED only after 3 failures.
 
 ---
 
-## PHASE SEQUENCE (after sign-off)
-
-```
-Phase 1 — Entry Point
-  Add Kids Mode button/section to authenticated platform (HomePage + LearningPage)
-  Auth guard: unauthenticated → redirect to login
-  Estimated: 1–2h
-
-Phase 2 — Onboarding Wizard
-  KidsOnboardingPage.tsx (new)
-  KidsPrototypePage.tsx (refactor: check profile, show lobby)
-  App.tsx: add /kids/onboarding route
-  Estimated: 3–4h
-
-Phase 3 — Backend API + Migration
-  backend/migrations/023_kids_onboarding_fields.sql
-  backend/src/api/kids-profile-routes.ts
-  backend/src/api/routes.ts or server.ts (mount new routes)
-  Estimated: 2–3h
-
-Phase 4 — Kids Brain Integration
-  backend/src/ws/lesson-ws.ts (load profile at focus_lesson_start)
-  backend/src/kids-brain/teacher-response/interest-personalizer.ts (new)
-  KidsSessionMemory type extension
-  Estimated: 2–3h
-
-Phase 5 — Tests
-  backend/src/api/__tests__/kids-child-profile-api.test.ts
-  backend/src/kids-brain/teacher-response/__tests__/interest-personalizer.test.ts
-  kids-brain-v1-real-ws-smoke.test.ts (new: no-profile → 4403)
-  Estimated: 2–3h
-
-Phase 6 — QA + Deploy
-  tsc --noEmit, npm test, Railway deploy, production verification
-  Estimated: 1h
-```
-
----
-
-## TEMPLATE FOR NEXT TASK ENTRY
-
-```
-## CURRENT NEXT ACTION
-
-**Task:** <short name>
-**Type:** CODE | TEST | REVIEW | DEPLOY | RESEARCH | PLAN | USER ACTION
-**Agent:** goal-executor | planner | implementer | backend-reviewer |
-           frontend-reviewer | curriculum-reviewer | qa-tester |
-           production-log-analyzer | deploy-railway
-**Description:**
-  <what exactly to do — concrete, not vague>
-
-**Inputs:**
-  - <files to read>
-
-**Success criterion:**
-  <how to verify the task is done — testable, not vague>
-
-**Blocker:**
-  <what could block this, or "None expected">
-```
+### Phase-advance rule (ALWAYS included after REVIEW tasks)
+After a REVIEW PASS, Goal Executor MUST:
+1. Mark phase ✅ in `GLOBAL_GOAL.md` phase table
+2. Append completion entry to `GOAL_PROGRESS.md`
+3. Detect next `🔲 NEXT` or `🔲 PENDING` phase from `GLOBAL_GOAL.md`
+4. Write that phase's CODE task here
+5. Continue immediately — no user confirmation required

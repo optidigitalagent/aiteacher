@@ -99,6 +99,20 @@ import {
   KIDS_MAX_LLM_CALLS,
   KIDS_MAX_TTS_CHARS,
 } from '../kids-brain/runtime/runtime-caps.js'
+import {
+  buildExampleContext,
+  buildInterestPraise,
+  buildMicroDialogueReturnPhrase,
+  buildMicroDialogueTurn,
+  buildPersonaClosing,
+  buildPersonaGreeting,
+  buildWarmupTurn,
+  buildWarmupReturnPhrase,
+  createInitialPersonalizationState,
+  isMicroDialogueInProgress,
+  isWarmupInProgress,
+  isWarmupTimedOut,
+} from '../kids-brain/teacher-response/personalization-engine.js'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 const INACTIVITY_TIMEOUT_MS = 45 * 60 * 1000
@@ -1385,6 +1399,23 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
   startResult.sessionMemory.teacherId = profileTeacherId
   startResult.sessionMemory.interests = profileInterests
 
+  // V2: Initialize personalization state for new session.
+  startResult.sessionMemory.personalization = createInitialPersonalizationState()
+
+  // V2 (Phase 6): persona greeting replaces the scripted opening text when
+  // KIDS_TEACHER_PERSONA_V2 is on. Text-only — packets, curriculum, and TTS
+  // voice are untouched. null (flags off / error) keeps the standard greeting.
+  const personaGreeting = buildPersonaGreeting(profileTeacherId ?? '', childFirstName ?? null)
+  if (personaGreeting) {
+    const greetingPacket = startResult.actionPackets.find(
+      p => p.packetType === 'teacher_text' && typeof p.teacherText === 'string',
+    )
+    if (greetingPacket) {
+      greetingPacket.teacherText = personaGreeting
+      console.log(`[kids-v1] persona_greeting session=${sessionId} teacher=${profileTeacherId ?? 'default'}`)
+    }
+  }
+
   // Cache in memory before Redis save so the session survives Redis failures
   meta.kidsMemoryCache = startResult.sessionMemory
 
@@ -1402,6 +1433,27 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
 
   const adapted = adaptRuntimePackets(startResult.actionPackets)
   await processKidsV1Packets(ws, meta, adapted)
+
+  // V2: Fire interest-aware warmup AFTER greeting, before first exercise.
+  // Warmup asks one question about the child's interest then returns to curriculum.
+  // Feature-flagged: no-op when KIDS_PERSONALIZATION_V2 or KIDS_WARMUP_ENABLED are not 'true'.
+  const personState = startResult.sessionMemory.personalization
+  if (personState && profileInterests.length > 0) {
+    const warmupResult = buildWarmupTurn(profileInterests, personState)
+    if (warmupResult) {
+      // Advance warmup state before persisting
+      personState.warmupTurnsUsed = 1
+      personState.warmupStartTime = Date.now()
+      personState.lastInterestUsed = warmupResult.interestUsed
+      personState.interestRotationIndex++
+      try {
+        await store.saveSession(startResult.sessionMemory)
+      } catch { /* non-fatal — state held in kidsMemoryCache */ }
+      console.log(`[kids-v1] warmup_fired session=${sessionId} interest=${warmupResult.interestUsed}`)
+      send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: warmupResult.text })
+      await kidsTtsStream(ws, meta, warmupResult.text)
+    }
+  }
 }
 
 // ── Kids target-word STT correction ──────────────────────────────────────────
@@ -1409,6 +1461,114 @@ async function handleKidsBrainV1LessonStart(ws: WebSocket, meta: ClientMeta): Pr
 // applyKidsTargetWordCorrection, KIDS_SOCIAL_NEVER_CORRECT
 
 // ── Kids Brain v1 turn processing ─────────────────────────────────────────────
+
+// V2 personalization (Phases 2–3): build the interest lead-in spoken before the
+// teacher model packets. EXAMPLE fires on exercise-advance turns; PRAISE fires
+// after CORRECT_* labels on non-advance turns only (max one interest sentence
+// per teacher turn; readiness turns always advance, so they stay praise-free).
+// Mutates rotation state on memory.personalization (engine is pure) so the
+// caller's Redis save persists it. Returns the lead-in text or null.
+function buildKidsPersonalizationLeadIn(
+  sessionId: string,
+  exerciseAdvanced: boolean,
+  memory: KidsBrainSessionMemory,
+  classificationLabel: string,
+): string | null {
+  const v2State = memory.personalization
+  if (!v2State) return null
+  if (exerciseAdvanced) {
+    const exampleResult = buildExampleContext(memory.interests ?? [], memory.currentTargetItemId ?? '', v2State)
+    if (!exampleResult) return null
+    v2State.lastInterestUsed = exampleResult.interestUsed
+    v2State.interestRotationIndex++
+    console.log(`[kids-v1] example_fired session=${sessionId} interest=${exampleResult.interestUsed} exercise=${memory.currentExerciseId ?? 'none'}`)
+    return exampleResult.text
+  }
+  const praiseResult = buildInterestPraise(memory.interests ?? [], classificationLabel, memory.teacherId ?? '', v2State)
+  if (!praiseResult) return null
+  v2State.lastInterestUsed = praiseResult.interestUsed
+  v2State.interestRotationIndex++
+  console.log(`[kids-v1] praise_fired session=${sessionId} interest=${praiseResult.interestUsed} label=${classificationLabel}`)
+  return praiseResult.text
+}
+
+// V2 micro-dialogue (Phase 5) — child's reply to the dialogue question.
+// Any reply (including silence) is accepted (TEACHER_CONTROLLED) — it never
+// reaches Kids Brain, so nothing is scored (M4, M5). The teacher returns to
+// curriculum immediately with a target-word re-invitation (M3).
+async function handleKidsMicroDialogueReply(
+  ws: WebSocket,
+  meta: ClientMeta,
+  sessionId: string,
+  sessionMemory: KidsBrainSessionMemory,
+  personState: NonNullable<KidsBrainSessionMemory['personalization']>,
+): Promise<void> {
+  const returnText = buildMicroDialogueReturnPhrase(sessionMemory.currentTargetItemId ?? null)
+  personState.microDialogueInProgress = false
+  meta.kidsMemoryCache = sessionMemory
+  try {
+    await getKidsBrainRedisStore().saveSession(sessionMemory)
+  } catch { /* non-fatal */ }
+  console.log(`[kids-v1] micro_dialogue_return session=${sessionId} target=${sessionMemory.currentTargetItemId ?? 'none'}`)
+  send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: returnText })
+  await kidsTtsStream(ws, meta, returnText)
+}
+
+// V2 persona (Phase 6) — closing line spoken before lesson_end on natural
+// session close. No-op when persona flags are off or the engine returns null.
+async function maybeSpeakKidsPersonaClosing(
+  ws: WebSocket,
+  meta: ClientMeta,
+  memory: KidsBrainSessionMemory,
+): Promise<void> {
+  const closing = buildPersonaClosing(memory.teacherId ?? '', memory.childName ?? null)
+  if (!closing) return
+  console.log(`[kids-v1] persona_closing session=${memory.sessionId} teacher=${memory.teacherId ?? 'default'}`)
+  send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: closing })
+  await kidsTtsStream(ws, meta, closing)
+}
+
+// V2 micro-dialogue (Phase 5) — fire decision on exercise advance. Cooldown
+// counts completed exercises since the last dialogue (M1); fires at most once
+// per 3 (M2). Mutates personalization state (engine is pure) so the caller's
+// Redis save persists it. Returns the question text or null.
+function maybeFireKidsMicroDialogue(
+  sessionId: string,
+  memory: KidsBrainSessionMemory,
+): string | null {
+  const v2State = memory.personalization
+  if (!v2State) return null
+  v2State.microDialogueCooldown = (v2State.microDialogueCooldown ?? 0) + 1
+  const dialogue = buildMicroDialogueTurn(memory.interests ?? [], v2State)
+  if (!dialogue) return null
+  v2State.microDialogueCooldown = 0
+  v2State.microDialogueInProgress = true
+  v2State.lastInterestUsed = dialogue.interestUsed
+  v2State.interestRotationIndex++
+  console.log(`[kids-v1] micro_dialogue_fired session=${sessionId} interest=${dialogue.interestUsed}`)
+  return dialogue.text
+}
+
+// V2 (Phases 2–5): per-turn personalization texts. A micro-dialogue (fired on
+// exercise advance, at most once per 3 exercises) takes the turn's single
+// interest-sentence budget; otherwise the example/praise lead-in applies.
+// The dialogue question is sent AFTER the advance packets so the next child
+// turn is the reply, which handleKidsMicroDialogueReply accepts unscored.
+function buildKidsTurnPersonalization(
+  sessionId: string,
+  exerciseAdvanced: boolean,
+  result: Awaited<ReturnType<typeof processKidsBrainTurn>>,
+): { leadText: string | null; microDialogueText: string | null } {
+  const microDialogueText = exerciseAdvanced && !result.shouldCloseSession
+    ? maybeFireKidsMicroDialogue(sessionId, result.updatedSessionMemory)
+    : null
+  const leadText = microDialogueText
+    ? null
+    : buildKidsPersonalizationLeadIn(
+        sessionId, exerciseAdvanced, result.updatedSessionMemory, result.classificationResult.label,
+      )
+  return { leadText, microDialogueText }
+}
 
 async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: string, silenceDurationMs = 0): Promise<void> {
   const sessionId = meta.kidsSessionId
@@ -1498,6 +1658,46 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
   const prevCorrectCount = sessionMemory.exerciseCorrectCount ?? 0
   console.log(`[kids-v1] turn_start session=${sessionId} target=${prevTarget} exerciseCorrectCount=${prevCorrectCount}`)
 
+  // V2 warmup: intercept child's response to the warmup question.
+  // Any response is accepted (TEACHER_CONTROLLED) — not scored by Kids Brain.
+  const personState = sessionMemory.personalization
+  if (personState && isWarmupInProgress(personState)) {
+    const timedOut = isWarmupTimedOut(personState)
+    if (!timedOut) {
+      // Build the curriculum return phrase for warmup turn 2.
+      const returnPhrase = buildWarmupReturnPhrase(personState.lastInterestUsed ?? '')
+      const returnText = returnPhrase ?? "Great! Now let's learn some English!"
+      // Mark warmup done before sending
+      personState.warmupUsed = true
+      personState.warmupTurnsUsed = 2
+      personState.warmupStartTime = null
+      meta.kidsMemoryCache = sessionMemory
+      try {
+        await getKidsBrainRedisStore().saveSession(sessionMemory)
+      } catch { /* non-fatal */ }
+      console.log(`[kids-v1] warmup_return session=${sessionId} interest=${personState.lastInterestUsed ?? 'none'}`)
+      send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: returnText })
+      await kidsTtsStream(ws, meta, returnText)
+      return
+    }
+    // Timeout: mark warmup done and fall through to normal turn processing
+    personState.warmupUsed = true
+    personState.warmupTurnsUsed = 2
+    personState.warmupStartTime = null
+    meta.kidsMemoryCache = sessionMemory
+    try {
+      await getKidsBrainRedisStore().saveSession(sessionMemory)
+    } catch { /* non-fatal */ }
+    console.log(`[kids-v1] warmup_timeout session=${sessionId}`)
+  }
+
+  // V2 micro-dialogue (Phase 5): intercept the child's reply to the dialogue
+  // question — accepted as any-response, never scored (M3, M4, M5).
+  if (personState && isMicroDialogueInProgress(personState)) {
+    await handleKidsMicroDialogueReply(ws, meta, sessionId, sessionMemory, personState)
+    return
+  }
+
   const sttResult = buildSTTResultFromText(text || null)
 
   let result: Awaited<ReturnType<typeof processKidsBrainTurn>>
@@ -1563,6 +1763,14 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
     console.log(`[kids-v1] turn_complete session=${sessionId} target=${newTarget} exerciseCorrectCount=${newCorrectCount}`)
   }
 
+  // V2 (Phases 2–5): per-turn personalization. State mutations happen before
+  // the Redis save below so they persist.
+  const prevExerciseId = sessionMemory.currentExerciseId ?? null
+  const newExerciseId = result.updatedSessionMemory.currentExerciseId ?? null
+  const exerciseAdvanced = !!newExerciseId && newExerciseId !== prevExerciseId
+  const { leadText: personalizedLeadText, microDialogueText } =
+    buildKidsTurnPersonalization(sessionId, exerciseAdvanced, result)
+
   // Always update in-memory cache — survives Redis save failures so exerciseCorrectCount never resets
   meta.kidsMemoryCache = result.updatedSessionMemory
 
@@ -1577,17 +1785,28 @@ async function processKidsBrainV1Turn(ws: WebSocket, meta: ClientMeta, text: str
   meta.kidsCurrentTargetWord = result.updatedSessionMemory.currentTargetItemId ?? null
 
   // Emit exercise context when exercise advances so frontend can display exercise info
-  const prevExerciseId = sessionMemory.currentExerciseId ?? null
-  const newExerciseId = result.updatedSessionMemory.currentExerciseId ?? null
-  if (newExerciseId && newExerciseId !== prevExerciseId) {
+  if (exerciseAdvanced) {
     await emitKidsExerciseContext(ws, result.updatedSessionMemory)
+  }
+
+  // V2 lead-in (Phases 2–3): example or praise speaks before the teacher model packets
+  if (personalizedLeadText) {
+    send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: personalizedLeadText })
+    await kidsTtsStream(ws, meta, personalizedLeadText)
   }
 
   const adapted = adaptRuntimePackets(result.actionPackets)
   const shouldClose = await processKidsV1Packets(ws, meta, adapted)
 
+  // V2 (Phase 5): dialogue question goes after the advance packets, never on closing turns.
+  if (microDialogueText && !result.shouldCloseSession && !shouldClose) {
+    send(ws, { type: 'ai_text', phase: 'DIAGNOSTIC', text: microDialogueText })
+    await kidsTtsStream(ws, meta, microDialogueText)
+  }
+
   if (result.shouldCloseSession || shouldClose) {
     console.log(`[kids-v1] session_closed_naturally session=${sessionId}`)
+    await maybeSpeakKidsPersonaClosing(ws, meta, result.updatedSessionMemory)
     if (!meta.kidsAnalyticsFinalized) {
       meta.kidsAnalyticsFinalized = true
       await persistKidsBrainAnalytics(result.updatedSessionMemory, 'completed', getKidsProfileStore())

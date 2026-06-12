@@ -5,6 +5,23 @@ import type { ItemState } from '../state/item-state.js';
 import type { AgeProfile, CostCounters } from '../shared/types.js';
 
 /**
+ * Personalization session state — Kids Personalization V2, Phase 1+.
+ * Stored as part of SessionMemory in Redis (4h TTL).
+ * Updated atomically in lesson-ws.ts after each personalization event.
+ */
+export interface KidsSessionPersonalizationState {
+  warmupUsed: boolean
+  warmupTurnsUsed: number          // 0 | 1 | 2
+  warmupStartTime: number | null   // Unix ms timestamp; null when not in progress
+  microDialogueCooldown: number    // exercises elapsed since last micro-dialogue
+  interestRotationIndex: number    // increments per interest use to avoid repeats
+  lastInterestUsed: string | null  // prevents same interest on consecutive turns
+  // Phase 5: question asked, awaiting child reply (optional — absent on
+  // sessions persisted before Phase 5; readers must treat undefined as false)
+  microDialogueInProgress?: boolean
+}
+
+/**
  * Full session memory stored in Redis (Patch 1 §1.2).
  * Key: `kids-brain:session:{sessionId}`
  * TTL: session duration + 15 minutes grace.
@@ -74,6 +91,9 @@ export interface SessionMemory {
   childName?: string;
   teacherId?: string;
   interests?: string[];
+
+  // V2 personalization state (optional — absent on sessions created before V2)
+  personalization?: KidsSessionPersonalizationState;
 
   // Autosave
   autosaveSequenceNumber: number; // Monotonic; increments on each write

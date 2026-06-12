@@ -32,6 +32,7 @@ import type { LearningEngineInput } from '../learning-engine/learning-engine-typ
 
 import { runTeacherResponseEngine } from '../teacher-response/teacher-response-engine.js';
 import type { TeacherResponseInput } from '../teacher-response/teacher-response-types.js';
+import { buildInterestRecovery } from '../teacher-response/personalization-engine.js';
 
 import type { KidsBrainTurnInput, RuntimeActionPacket } from './runtime-types.js';
 import { RuntimeActionPacketType } from './runtime-types.js';
@@ -46,6 +47,7 @@ import {
   resolveItemTargetText,
 } from './exercise-runner.js';
 import { findLessonById } from '../curriculum/curriculum-loader.js';
+import { KidsRetryEscalationType } from '../curriculum/curriculum-types.js';
 import {
   buildActivityContext,
   buildPromptContext,
@@ -599,7 +601,21 @@ export async function processKidsBrainTurn(
             choiceTexts.length ? choiceTexts : undefined,
           );
           if (escalationText !== null) {
-            teacherOutput.plan = { ...teacherOutput.plan, mainText: escalationText };
+            // V2 (Phase 4): at the ENCOURAGEMENT rung only, an interest-aware
+            // recovery line may replace the standard encouragement text.
+            // Read-only and flag-gated — null keeps standard text (R1, R3, R4).
+            // The ladder itself is never modified (C4).
+            let textToInject = escalationText;
+            const persState = updatedSessionMemory.personalization;
+            if (tier === KidsRetryEscalationType.ENCOURAGEMENT && persState) {
+              const recovery = buildInterestRecovery(
+                updatedSessionMemory.interests ?? [],
+                targetWord ?? '',
+                persState,
+              );
+              if (recovery !== null) textToInject = recovery.text;
+            }
+            teacherOutput.plan = { ...teacherOutput.plan, mainText: textToInject };
           }
         }
       }

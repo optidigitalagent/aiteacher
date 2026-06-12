@@ -8,12 +8,20 @@
 ## CURRENT REVIEW
 
 ```
-Review type:     ACCEPTANCE AUDITOR — POST-DEPLOY VERIFICATION
-Reviewer agent:  goal-executor (autonomous deployment + verification run)
-Reviewed at:     2026-06-10
-Commits verified: 2aa5dfa + fb26bb0 + ad49dbc + b2357eb
-Railway backend:  22973e11 — SUCCESS
-Railway frontend: 6efa0204 — SUCCESS
+Review type:     PHASE 6 IMPLEMENTATION REVIEW — Teacher Personas
+Reviewer agents: backend-reviewer, curriculum-reviewer, kids-safety-monitor,
+                 qa-tester, acceptance-auditor
+Reviewed at:     2026-06-12 (state reconstruction after session-limit
+                 interruption; code verified as source of truth)
+Files reviewed:
+  - personalization-engine.ts (isTeacherPersonaEnabled, substituteChildName,
+    buildPersonaGreeting, buildPersonaClosing — KIDS_TEACHER_PERSONA_V2 flag)
+  - teacher-personas.ts (Lucy/Tom tables, getTeacherPersona default fallback)
+  - lesson-ws.ts (persona greeting override at session start;
+    maybeSpeakKidsPersonaClosing on natural close)
+  - personalization-engine.test.ts (19 new tests T1–T6 + 2 injection
+    regression tests added during review = 21 total Phase 6 tests)
+Previous phases: Phases 1–5 review PASS
 ```
 
 ---
@@ -21,317 +29,324 @@ Railway frontend: 6efa0204 — SUCCESS
 ## VERDICT
 
 ```
-OVERALL: ✅ PASS — GOAL COMPLETE
-         Kids Mode entry / onboarding / child profile / personalization
-         phases 1–5 deployed and verified in production.
+OVERALL: ✅ PASS — Phase 6 COMPLETE (after 1 fix iteration)
+         T1/T2/T5 + C1/C3/C4/C5 verified. Safety monitor initially FAILED on
+         $-sequence interpretation in substituteChildName (String.replace
+         string-replacement); FIXED with function replacer + 2 regression
+         tests; safety re-review PASS by execution. Flags correct, default
+         off. tsc clean. 0 new test failures. Phase 7 (Safety) may begin.
 ```
 
 ---
 
-## ACCEPTANCE AUDITOR RUN — 2026-06-10
-
-### Pre-flight
-| Check | Result | Evidence |
-|-------|--------|----------|
-| PostgreSQL version ≥ 14 | PASS | PostgreSQL 18.4 on Railway |
-| Duplicate user_id audit | PASS | 0 rows returned |
-| Migration 023 registered | PASS | commit ad49dbc |
-| Migration 023 applied | PASS | logs: `[migrate] running 023_kids_onboarding_fields.sql...done` |
-
-### Deployment
-| Service | Status | Deploy ID |
-|---------|--------|-----------|
-| Backend (aiteacher) | SUCCESS | 22973e11 |
-| Frontend (aware-alignment) | SUCCESS | 6efa0204 (after TS fix b2357eb) |
-| Backend health | PASS | postgres:ok redis:ok uptimeSeconds>0 |
-
-### Fixes applied during this run
-| Commit | Fix |
-|--------|-----|
-| ad49dbc | migration 023 not registered in migrate.ts runner — added |
-| b2357eb | unused `user` variable in KidsPrototypePage.tsx — removed (unblocked frontend build) |
-
-### API Verification (production)
-| AC | Check | HTTP | Result |
-|----|-------|------|--------|
-| AC17 | GET /api/kids/child-profile (no auth) | 401 | PASS |
-| AC17 | POST /api/kids/child-profile (no auth) | 401 | PASS |
-| AC17 | PUT /api/kids/child-profile (no auth) | 401 | PASS |
-| AC17 | POST /lesson/kids/start (no auth) | 401 | PASS |
-| AC18 | POST /api/kids/child-profile (auth) | 201 | PASS — childId returned |
-| AC19 | GET /api/kids/child-profile (auth) | 200 | PASS — profile returned |
-| AC20 | PUT /api/kids/child-profile (auth) | 200 | PASS — ageBand recalculated |
-| AC21 | GET /api/kids/child-profile (post-update) | 200 | PASS — persistence confirmed |
-| AC22 | POST /lesson/kids/start (auth) | 200 | PASS — sessionId returned |
-| AC23 | interests in DB → session memory | — | PASS — high_engagement_topics=["animals","space","dinosaurs"], lesson-ws.ts line 1386 confirmed injection |
-
-### Adult Flow Regression
-| Endpoint | HTTP | Result |
-|----------|------|--------|
-| GET /auth/me | 200 | PASS |
-| GET /lesson/continuation-status | 200 | PASS |
-| GET /api/me | 200 | PASS |
-
-### TypeScript Build
-| Target | Result |
-|--------|--------|
-| backend npx tsc --noEmit | exit 0 — PASS |
-| frontend npx tsc --noEmit | exit 0 — PASS |
-
-### Test Suite
-```
-Test Files: 6 failed | 56 passed (62)
-Tests:      63 failed | 1828 passed (1891)
-```
-Pre-existing failures confirmed: phase-18, phase-23, stt-reconnect-dead-connection
-test files last modified by commits predating 2aa5dfa (phases 1–5 commit).
-Phase 1–5 commit (2aa5dfa) did NOT touch any of the 6 failing test files.
-New test count: 1891 (was 1866) — 25 new passing tests added.
-No regressions introduced.
-
----
-
-> Goal Executor rule:
-> - ✅ PASS → proceed to next task
-> - ⚠️ PASS WITH WARNINGS → proceed but log warnings in RISK_REGISTER.md
-> - ❌ FAIL → do NOT implement, fix all ❌ items, re-review
-
----
-
-## PLANNER REVIEW
+## BACKEND REVIEWER — Phase 6
 
 ```
 Verdict: ✅ PASS
 
-Architecture:
-[x] Phase ordering is correct: design → entry → onboarding → backend → brain → tests → deploy
-[x] Each phase has clear inputs and outputs
-[x] No circular dependencies between phases
-[x] Feature flag (KIDS_REQUIRE_PROFILE) is correct safety net for Phase 4 rollout
-[x] Additive migration (023) is safe — no DROP TABLE, no ALTER COLUMN TYPE
-[x] Auth gate is first in every path (consistent with existing architecture)
+personalization-engine.ts:
+[x] buildPersonaGreeting/buildPersonaClosing pure; null on: master flag off,
+    KIDS_TEACHER_PERSONA_V2 off, any error (try/catch, S5 pattern,
+    non-fatal console.error — lines 576–592, 598–614)
+[x] substituteChildName: regex /\[childName\]/g correctly escaped (not a
+    character class); global flag replaces all occurrences; null/empty/
+    whitespace name → "friend"; FIXED during review: function replacer
+    () => name so $-sequences in profile names are never interpreted
+[x] Unknown/empty teacherId → DEFAULT_PERSONA (Lucy) via switch default;
+    callers pass teacherId ?? ''
 
-Gaps noted (non-blocking):
-[w] Multi-child profile support deferred — single child per account acceptable for V1
-[w] Teacher persona voice differentiation deferred — consistent with "smallest safe slice" rule
-[w] Profile deletion not in scope — acceptable for V1; admin DB access is sufficient
-```
-
----
-
-## BACKEND REVIEWER
-
-```
-Verdict: ✅ PASS
-
-API Design:
-[x] GET/POST/PUT /api/kids/child-profile — correct REST semantics
-[x] requireAuth on all endpoints — matches existing auth pattern
-[x] 409 CONFLICT for duplicate profile — correct (better than silent upsert)
-[x] Backend validates interest tags against closed taxonomy — prevents injection
-
-Schema:
-[x] Migration 023 is additive (IF NOT EXISTS) — safe to re-run
-[x] UNIQUE constraint on user_id added — closes RISK-008
-[x] child_name TEXT (not BYTEA) — pragmatic for Phase 1; encrypted version deferred
-[x] child_age_years INTEGER with check constraint — correct
-
-Auth enforcement:
-[x] All queries include WHERE user_id = req.userId — ownership enforced
-[x] No cross-user access possible via API (returns 404 not 403 — hides existence)
-[x] ws.close(4403) for no-profile — new code constant, does not conflict with existing 4401
-
-Risks flagged (added to RISK_REGISTER as RISK-006, RISK-007, RISK-008):
-[w] KIDS_REQUIRE_PROFILE feature flag needed for backwards compatibility — already in design
-[w] interest-personalizer.ts must be pure function — enforced by design contract
-[w] UNIQUE constraint missing in migration 019 — fixed in migration 023
-```
-
----
-
-## FRONTEND REVIEWER
-
-```
-Verdict: ✅ PASS
-
-UX Flow:
-[x] Three flows covered: new user, returning user, edit profile
-[x] Unauthenticated user redirected to login (not shown an error page)
-[x] Onboarding wizard step sequence is logical: name → age → teacher → interests → confirm
-[x] Profile edit reuses onboarding form UI (no duplicate components needed)
-[x] App.tsx route additions are minimal: /kids/onboarding only
-
-Component plan:
-[x] KidsOnboardingPage.tsx — new, isolated
-[x] KidsPrototypePage.tsx — refactor (profile check + lobby)
-[x] HomePage.tsx + LearningPage.tsx — Kids Mode CTA button (small, targeted)
-[x] No redesign of existing adult flow pages
-
-Auth gate approach:
-[x] Frontend AuthContext check is first; backend 401 is second line of defense
-[x] No client-side trust for profile data — always fetched from backend
+lesson-ws.ts:
+[x] Greeting wiring mutates ONLY teacherText of the existing teacher_text
+    packet (find on packetType); flags off / error → block skipped, standard
+    flow byte-identical; no packets added/removed/reordered (1408–1417)
+[x] maybeSpeakKidsPersonaClosing: no-op on null; ai_text + TTS; called only
+    inside the natural-close branch (shouldCloseSession || shouldClose),
+    BEFORE analytics finalization; close semantics untouched (1519–1529, 1809)
+[x] Not called on safety close or TTS-cap close paths
+[x] Logs contain sessionId + teacherId only — child name never logged
+[x] processKidsBrainV1Turn at 11,599/12,000 chars of wiring-test regex
+    window — Phase 6 closing is a single helper call (W-021/RISK-016:
+    ~400 chars headroom remaining, monitor)
 
 Warnings (non-blocking):
-[w] Interest chip emoji should be configurable server-side eventually
-[w] Teacher persona card images will be placeholders in Phase 1
-    (acceptable — persona is text-driven in Phase 1)
+[w] maybeSpeakKidsPersonaClosing has no outer try/catch (cannot throw in
+    practice — engine catches internally, kidsTtsStream wraps its await;
+    consistent with sibling helpers)
 ```
 
 ---
 
-## CURRICULUM REVIEWER
+## CURRICULUM REVIEWER — Phase 6
 
 ```
 Verdict: ✅ PASS
 
-Personalization rules (Section 11):
-[x] ALLOWED/FORBIDDEN table is complete and unambiguous
-[x] buildPersonalizedContext() is a pure function — cannot mutate session state
-[x] Interest context is optional (returns null when no interests or no mapping)
-[x] Interest mention is capped at 1 sentence per turn — prevents teacher babbling
-[x] Interests only at ENCOURAGEMENT and RECOVERY tiers — not at REPEAT_PROMPT or MODEL_ANSWER
-[x] targetWord is never modified — confirmed in implementation spec
+[x] T1 — Lucy greeting distinct: high-energy, exclamatory, self-identifies
+    ("I'm Lucy! … Let's GO!") — matches design Section 3 verbatim
+[x] T2 — Tom greeting distinct: calm, measured, period-terminated
+    ("I'm Tom. … Let's start."); closings likewise distinct
+[x] T5 — personas are text-style only: builders take (teacherId, childName)
+    only; no curriculum/exercise/scoring parameters exist; greeting override
+    leaves waitMs, teacherActionCode, ttsVoiceId, START_LISTENING untouched
+[x] C1 — targetWord never received or modified by persona functions
+[x] C3 — zero references to exerciseCorrectCount/exerciseAttemptCount
+[x] C4 — zero references to escalationLadder; closing fires only AFTER
+    shouldCloseSession already decided — additive speech, not flow control
+[x] C5 — adult flow untouched: persona functions invoked only in Kids
+    cold-start and Kids natural-close paths; adult lessons use separate
+    teacherDisplayName/buildFocusGreeting
+[x] Age-appropriate, ≤ 20 words per phrase, no PII, no copyrighted
+    characters, TTS-friendly length
 
-Curriculum integrity:
-[x] Kid's Box Unit 1 exercises are unchanged — interests add context only
-[x] Escalation ladder is unchanged — interests never trigger or skip tiers
-[x] Exercise completion rules are unchanged — interests have no effect on correctness
-
-Interest taxonomy (Section 8):
-[x] 12 closed-list interest tags — no open-ended strings accepted
-[x] All 12 interests have safe, curriculum-appropriate context phrases
-[x] "Imagine" framing used where possible to reduce IP exposure
-
-One flag (non-blocking):
-[w] INTEREST_CONTEXT_MAP phrases should be reviewed by a native English teacher
-    before production deploy (e.g., "Stars in space can be blue!" is simplistic)
-    → Acceptable for Phase 1; refine in Phase 5 QA
+Warnings (non-blocking):
+[w] W-025: energyLevel/warmupStyle/recoveryStyle persona fields declared but
+    unconsumed — design Section 3.5 overstates Phase 6 scope (persona
+    recovery prefix, warmup style, micro-dialogue framing not implemented);
+    implement later or amend design doc
+[w] Cosmetic: persona greeting says "learn English" and loses the standard
+    greeting's lesson-topic preview ("Today we're learning colours!");
+    exercise context packet still instructs the child — no functional issue
 ```
 
 ---
 
-## KIDS SAFETY MONITOR
+## KIDS SAFETY MONITOR — Phase 6
 
 ```
-Verdict: ✅ PASS
+Initial verdict: ❌ FAIL → fix applied → re-review: ✅ PASS
 
-Auth enforcement:
-[x] No path exists for unauthenticated STT/TTS (existing Kids Brain V1 gate preserved)
-[x] No path exists for unauthenticated child profile access
-[x] No child data visible to unauthenticated users
-[x] ws.close(4403) before any Kids Brain processing — safe
+[x] All persona text age-appropriate (5–10): no scary/violent/romantic
+    content, no links/apps, no personal-info requests, no pressure tactics
+[!]→[x] childName injection: String.replace with STRING replacement
+    interpreted $-sequences — demonstrated by execution: name "$'" duplicated
+    the template tail, "$`" duplicated the prefix, "$&" leaked literal
+    [childName] into spoken output, "$$" greeted the child as "$".
+    Blast radius bounded (only fragments of the approved template; API caps
+    names at 1–100 chars) — no unsafe content could reach a child, but the
+    "plain text, never interpreted" contract was violated.
+    FIX: function replacer () => name (personalization-engine.ts:570) +
+    2 regression tests ($-sequences literal; "[childName]" name spoken
+    verbatim exactly once, no re-expansion).
+    RE-VERIFIED BY EXECUTION 2026-06-12: all five hostile names insert
+    literally. 188/188 engine tests pass.
+[x] Deterministic templates only — no LLM in the persona path
+[x] Flags default OFF (both env vars must be exactly 'true'); instant
+    kill-switch via either flag
+[x] Failure mode: silent fallback to standard scripted greeting/close —
+    no path produces a broken or missing greeting
+[x] No PII in logs (diff-wide scan: no console.* with childName)
+[x] TTS receives only composed text; no voice ID / STT / TTS config changes
 
-Content safety:
-[x] Interest taxonomy is closed list — no arbitrary strings accepted
-[x] Interest context phrases are pre-written templates — no LLM generation of interest content
-[x] No copyrighted character roleplay in interest context
-[x] Teacher never says "sing" for CHANT fallback (existing RISK-003 rule preserved)
-[x] child_name not logged in production logs (specified in design, Section 13)
-[x] interests not logged as PII (specified in design, Section 13)
-
-Unauthenticated paths checked:
-[x] GET /api/kids/child-profile (no token) → 401 ✓
-[x] POST /api/kids/child-profile (no token) → 401 ✓
-[x] POST /lesson/kids/start (no token) → 401 (existing) ✓
-[x] WS focus_lesson_start (no token) → 4401 (existing) ✓
-[x] WS focus_lesson_start (no profile) → 4403 (new) ✓
-
-Warning (non-blocking):
-[w] Child name storage: plain text in DB in Phase 1.
-    Design acknowledges this and defers encryption to Phase 8 (per original migration 019 comment).
-    Acceptable for Phase 1. Add to risk register as future work.
+Note (non-blocking): name length capped only at the profile API (1–100);
+a defensive slice in the engine would keep the guarantee local.
 ```
 
 ---
 
-## QA TESTER
+## QA TESTER — Phase 6
 
 ```
 Verdict: ✅ PASS
 
-Test plan coverage:
-[x] All acceptance criteria (AC1–AC17) have testable verification methods
-[x] Unit tests: profile CRUD, validation, ownership, interest-personalizer
-[x] Integration tests: WS flow with/without profile
-[x] Regression tests: 1866 existing tests must continue to pass
-[x] Frontend: onboarding flow, edit flow, auth redirect
+Test evidence (run fresh 2026-06-12, post-interruption reconstruction):
+[x] Engine suite: 186/186 at reconstruction → 188/188 after safety fix
+    (167 + 19 persona tests + 2 injection regression tests)
+[x] T1/T2: Lucy greeting contains "Lucy"+name; Tom contains "Tom"+name;
+    greeting AND closing string-diff Lucy≠Tom
+[x] T3: substitution in greeting+closing, no leftover placeholder;
+    null → "friend"; whitespace → "friend"; trimming; $-sequence names
+    literal; "[childName]" name not re-expanded
+[x] T4: Lucy≠Tom praise — covered at runtime (P4/T4, all interests) and
+    at persona-definition level
+[x] T5: explicit test asserts no targetWord/acceptedAnswers/escalationLadder
+    keys in LUCY_PERSONA/TOM_PERSONA; readiness-cue guard test
+[x] T6: flag unset/set; master off + persona on → null; persona off +
+    master on → null; both off → null; both on → fires
+[x] Error handling: null teacherId no-throw; unknown teacherId → Lucy
+    fallback; empty teacherId; 20-word budget on all 4 persona texts
+[x] Wiring guard suites: 64/64 (session-analytics + phase-16b-runtime-safety)
+[x] TypeScript: npx tsc --noEmit → exit 0
+[x] Full suite: 2016 pass / 63 pre-existing STT failures (= 1995 + 21).
+    Zero new failures.
 
-Test plan gaps (acceptable for Phase 5):
-[w] No E2E test for full onboarding wizard (frontend) — manual test in Phase 6 OK
-[w] buildPersonalizedContext rotation logic (hash-based) — add to unit tests
-[w] Interest context phrases not tested for character count constraint
-    → Add assertion: len(buildPersonalizedContext()) ≤ 60 chars
+Gaps noted (carry to Phase 8):
+[w] W-022: no lesson-ws integration test for the greeting packet override
+[w] W-023: no integration test for maybeSpeakKidsPersonaClosing
+    (spoken-before-lesson_end ordering, no-op-when-null path)
+[w] W-024: multi-placeholder substitution implemented (/g) but only pinned
+    indirectly; templates currently have one placeholder each
+```
 
-Baseline to protect:
-[x] Kids Brain V1 Run 5: 28/28 COMPLETE — must not regress
-[x] npm test: 1866/1866 pass baseline — must not regress
-[x] tsc --noEmit: exit 0 — must not regress
+---
+
+## ACCEPTANCE AUDITOR — Phase 6
+
+```
+Verdict: ✅ PASS
+
+[x] T1/T2 — distinct persona greetings verified in code + tests
+[x] T5 — same curriculum: TeacherPersona interface has only text/style
+    fields; explicit absence test for curriculum keys
+[x] Flag gating per NEXT_ACTION spec: KIDS_PERSONALIZATION_V2 AND
+    KIDS_TEACHER_PERSONA_V2, strict 'true' check, default OFF
+[x] C1/C3/C4/C5 — diff greps zero hits for curriculum-field writes;
+    adult lesson_end paths untouched
+[x] Scope discipline: Phase 6 footprint = teacher-personas.ts,
+    personalization-engine.ts, lesson-ws.ts, engine test file, tracking .md
+[x] Forbidden changes respected: master-prompt.md untouched; no model or
+    max_tokens changes anywhere in diff; no LLM-generated persona content
+
+Findings (non-blocking):
+[w] Working tree is cumulative (Phases 1–6 uncommitted on top of 0639b6d) —
+    per-phase scope audit relied on code attribution, not commit diffs.
+    Recommend committing per-phase going forward.
 ```
 
 ---
 
 ## FINDINGS SUMMARY
 
-### Critical (❌ — must fix before implementation)
+### Critical (❌ — must fix before next phase)
 
-None.
+None remaining. (1 safety finding found and FIXED during this review:
+$-sequence interpretation in substituteChildName — see safety section.)
 
-### Warnings (⚠️ — non-blocking, log and address in relevant phase)
+### Warnings (⚠️ — non-blocking, logged in RISK_REGISTER)
 
 | # | Area | Issue | Phase to address |
 |---|------|-------|-----------------|
-| W-001 | Curriculum | Interest context phrases need native English review | Phase 5 QA |
-| W-002 | Frontend | Teacher persona card images will be placeholders in Phase 1 | Phase 2 |
-| W-003 | Backend | child_name stored as plain text; encryption deferred | Future phase |
-| W-004 | QA | No automated E2E for onboarding wizard | Phase 6 manual |
-| W-005 | QA | buildPersonalizedContext() char limit not in test plan | Phase 5 |
-
-All warnings are added to RISK_REGISTER.md.
-
----
-
-## SECURITY CHECK
-
-```
-[x] No API keys or secrets in design document
-[x] No new unauthenticated endpoints — all use requireAuth
-[x] No billing/auth logic weakened
-[x] No raw SQL in business logic spec — parameterised queries specified
-[x] Child name and interests marked as privacy-sensitive (not to be logged)
-[x] Interest taxonomy is a closed list — no injection vector
-```
-
----
-
-## ARCHITECTURE CHECK
-
-```
-[x] Backend remains authoritative (frontend collects, backend validates+stores)
-[x] Kids Brain not bypassed — interests are additional context, not replacement
-[x] STT/TTS cost controls intact — no new API calls for personalization
-[x] Redis TTL rules preserved — no new Redis keys without TTL
-[x] WebSocket messages validated before processing — profile check at session start
-[x] No new cost-leaking loops — buildPersonalizedContext is pure, no async calls
-[x] Feature flag (KIDS_REQUIRE_PROFILE) enables safe rollout and rollback
-```
+| W-019 | QA | No integration test for ENCOURAGEMENT-rung recovery injection (Phase 4) | Phase 8 |
+| W-020 | QA | No integration test for micro-dialogue fire→reply→return flow | Phase 8 |
+| W-021 | Backend | processKidsBrainV1Turn at 11,599/12,000 chars of wiring-test regex window (RISK-016) | Monitor |
+| W-022 | QA | No integration test for persona greeting packet override | Phase 8 |
+| W-023 | QA | No integration test for persona closing (order vs lesson_end) | Phase 8 |
+| W-024 | QA | Multi-placeholder substitution only indirectly pinned | Phase 8 |
+| W-025 | Design | energyLevel/warmupStyle/recoveryStyle persona fields unconsumed — design Section 3.5 overstates Phase 6 | Phase 8 or doc amend |
 
 ---
 
 ## DECISION
 
 ```
-Phase 0 design document is APPROVED.
-Implementation may begin at Phase 1.
-
-Phase 1 start: Kids Mode entry point on main authenticated platform.
-Files: frontend/src/pages/HomePage.tsx, frontend/src/pages/LearningPage.tsx
-Target: Kids Mode button/section visible to logged-in users, hidden from guests.
+Phase 6 is COMPLETE — review PASS (1 fix iteration: childName $-injection).
+Next phase: Phase 7 — Safety
+Scope (design Section 4 — Safe Personalization Rules):
+  Verify/enforce the boundary contract, budget constraints (4.2), and
+  fallback chain (4.3) across ALL tiers; add the 15-word truncation-at-
+  word-boundary fallback if missing; defensive name-length cap (safety
+  monitor note); audit every tier for: 1 interest sentence/turn, ≤15 words,
+  catch-log-null error path, no-PII logging.
+Files to modify:
+  personalization-engine.ts (shared budget/truncation/fallback helpers)
+  personalization-engine.test.ts (safety-rule tests per tier)
 ```
 
 ---
 
-## ARCHIVED: Kids Brain V1 ACCEPTANCE AUDITOR VERDICT — Run 5 (FINAL)
+## BACKEND REVIEWER — Phase 5
 
-> Kids Brain V1 goal COMPLETE — 28/28 criteria — 2026-06-09
-> Full audit report archived. Not reopened for new goal unless regression observed.
-> See git history for full Run 1–5 audit trail.
+```
+Verdict: ✅ PASS
+
+personalization-engine.ts:
+[x] buildMicroDialogueTurn pure; null on: flags off, empty interests,
+    cooldown < 3, dialogue already in progress, warmup in progress,
+    unknown interest, any error (try/catch, S5 pattern)
+[x] buildMicroDialogueReturnPhrase always returns a string (dialogue can
+    always be closed); target-word re-invitation when word active
+[x] isMicroDialogueInProgress treats undefined as false (pre-Phase-5
+    Redis blobs safe)
+[x] createInitialPersonalizationState: microDialogueCooldown 0 (count-up,
+    DECISIONS.md entry), microDialogueInProgress false
+
+lesson-ws.ts:
+[x] Interception placed after warmup interception, BEFORE
+    buildSTTResultFromText/processKidsBrainTurn → reply never scored
+[x] State cleared + kidsMemoryCache updated + Redis save BEFORE sending
+    return phrase (consistent with warmup pattern)
+[x] maybeFireKidsMicroDialogue mutates state before the caller's Redis
+    save (same save persists it — single JSON blob, atomic)
+[x] Dialogue question sent AFTER advance packets; suppressed on closing
+    turns (!shouldCloseSession && !shouldClose)
+[x] Silence turn while dialogue in progress → interception accepts and
+    returns to curriculum (no stuck dialogue)
+[x] Flags turned off mid-dialogue → interception still drains the
+    in-progress state gracefully (isMicroDialogueInProgress is not
+    flag-gated by design)
+[x] Helpers extracted to keep processKidsBrainV1Turn within the 12,000-char
+    wiring-test regex window (12,255 → 11,520 chars; guard tests NOT
+    weakened) — RISK-016 logged for future growth
+
+session-memory.ts:
+[x] microDialogueInProgress optional — old sessions deserialize cleanly
+```
+
+---
+
+## CURRICULUM REVIEWER — Phase 5
+
+```
+Verdict: ✅ PASS
+
+[x] M1 — fires only when ≥3 exercises completed since last dialogue:
+    engine guard cooldown >= 3; fresh state 0 → first dialogue after 3
+    advances (GLOBAL_GOAL M1 honored; design-doc ambiguity resolved,
+    DECISIONS.md)
+[x] M2 — at most once per 3 exercises: caller resets cooldown to 0 on fire;
+    verified by tests
+[x] M3 — one turn only: interception immediately sends curriculum return
+    phrase with target-word re-invitation; never an open chat (RISK-013)
+[x] M4 — any reply accepted (TEACHER_CONTROLLED): interception runs before
+    Kids Brain; silence also accepted
+[x] M5 — never scores: turn returns before processKidsBrainTurn;
+    exerciseCorrectCount/attempt counters untouched
+[x] Budget: max 1 interest sentence per teacher turn — EXAMPLE lead-in
+    suppressed when dialogue fires (buildKidsTurnPersonalization)
+[x] All 12 templates generic, no PII, no copyrighted-character roleplay,
+    ≤ 15 words (verified by tests)
+[x] princesses "favourite story" long-response concern (W-015): mitigated —
+    any response (even long/partial STT) triggers return to curriculum
+
+RISK-013 (open chat mode): MITIGATED — interception is deterministic,
+flag KIDS_MICRO_DIALOGUE_ENABLED allows instant disable.
+```
+
+---
+
+## QA TESTER — Phase 5
+
+```
+Verdict: ✅ PASS
+
+Test evidence (run fresh 2026-06-10):
+[x] Engine suite: 167/167 pass (133 + 34 new)
+[x] M1: cooldown 0/1/2 → null; 3 and 7 → result; constant === 3;
+    fresh state not eligible
+[x] M2: engine pure (no self-reset); caller-reset behavior; in-progress → null
+[x] M3: shouldContinue true; return phrase contains target word + "lesson";
+    generic fallback; ≤ 15 words
+[x] M4: in-progress detection incl. undefined field (pre-Phase-5 session)
+[x] M5: state/interests not mutated; no curriculum fields in result
+[x] Templates: 12 interests produce questions, ≤ 15 words, non-empty
+[x] Flags: master off → null; dialogue flag off → null; both on → fires
+[x] Guards: empty interests, unknown interest, warmup in progress,
+    null state, null interests
+[x] TypeScript: npx tsc --noEmit → exit 0
+[x] Full suite: 1995 pass / 63 pre-existing STT failures (= 1961 + 34).
+    Two wiring tests (session-analytics, phase-16b-runtime-safety) broke
+    mid-implementation due to function-size regex window; FIXED by helper
+    extraction (not by weakening the tests). Zero new failures at review.
+
+Gaps noted (carry to Phase 8):
+[w] W-020: no integration test driving the full fire→reply→return flow
+    through lesson-ws (engine unit-tested; wiring code-reviewed)
+```
+
+---
+
+## ARCHIVED: Phase 4 review — PASS 2026-06-10 (recovery; R1–R4; tier gate turn-processor:610; 133/133 engine tests; suite 1961/63; W-019)
+## ARCHIVED: Phase 1 review — PASS 2026-06-10 (warmups; W1–W7; 62 tests; RISK-010/011/012 closed)
+## ARCHIVED: Phase 2 review — PASS 2026-06-10 (examples; E1–E5; 86/86 engine tests; suite 1914/63)
+## ARCHIVED: Phase 3 review — PASS 2026-06-10 (praise; P1–P5; Lucy≠Tom diff; 115/115 engine tests; suite 1943/63)
+## ARCHIVED: Kids Mode Onboarding V1 — GOAL COMPLETE (23/23 ACs, Railway 22973e11/6efa0204)
+## ARCHIVED: Kids Brain V1 — GOAL COMPLETE (Run 5, 28/28 criteria, 2026-06-09)
