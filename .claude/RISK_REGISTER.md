@@ -287,7 +287,10 @@
 
 ### RISK-017 — V2: micro-dialogue lacks lesson-ws integration test (W-020)
 
-**Status:** OPEN
+**Status:** RESOLVED 2026-06-12 (Phase 8: phase-8-personalization-integration.test.ts
+  — engine+caller-contract chain tests mirroring lesson-ws mutations exactly,
+  plus static wiring asserts: interception before processKidsBrainTurn, reply
+  unscored, cooldown reset after fire)
 **Severity:** P3
 **Area:** backend / curriculum
 **Description:** The fire→reply→return flow (maybeFireKidsMicroDialogue →
@@ -304,7 +307,10 @@
 
 ### RISK-018 — V2: persona greeting/closing lack lesson-ws integration tests (W-022/W-023)
 
-**Status:** OPEN
+**Status:** RESOLVED 2026-06-12 (Phase 8: static wiring asserts — greeting after
+  startKidsBrainSession, assignment only to .teacherText, null-guarded; closing
+  inside natural-close branch before persistKidsBrainAnalytics and lesson_end.
+  W-024 multi-placeholder pinned directly via exported substituteChildName)
 **Severity:** P3
 **Area:** backend / curriculum
 **Description:** The persona greeting packet override (lesson-ws.ts ~1408) and
@@ -318,6 +324,27 @@
 **Resolution:** Phase 8 integration tests: session start with flags on →
   first teacher_text packet carries persona openingPhrase; natural close →
   persona closing ai_text sent before lesson_end; flags off → byte-identical flow.
+**Opened:** 2026-06-12
+**Updated:** 2026-06-12
+
+---
+
+### RISK-019 — static wiring-guard robustness (W-028/W-029)
+
+**Status:** OPEN
+**Severity:** P3
+**Area:** backend / testing
+**Description:** Two soft anchors in the Phase 8 static guards:
+  (a) W-028 — the "interception returns before scoring" assert uses
+  toContain('return'), which any 'returnText' substring would also satisfy;
+  (b) W-029 — extractFunctionBody lazy-matches to the first column-0 '}',
+  so a future column-0 brace inside a guarded function (e.g. template
+  literal) would silently truncate the analyzed body.
+**Trigger:** Refactors of lesson-ws personalization wiring or guarded helpers.
+**Mitigation:** Anchors currently match the real code exactly; guards fail
+  loudly (in the safe direction) on most drift.
+**Resolution:** Harden to bare-statement regex / brace-balanced extraction
+  in a maintenance pass.
 **Opened:** 2026-06-12
 **Updated:** 2026-06-12
 

@@ -564,7 +564,7 @@ export function isMicroDialogueInProgress(state: KidsSessionPersonalizationState
 // ── Persona greeting/closing (Phase 6) ───────────────────────────────────────
 
 /** Replace every [childName] placeholder; empty/missing name → "friend". */
-function substituteChildName(template: string, childName: string | null): string {
+export function substituteChildName(template: string, childName: string | null): string {
   // Whitespace (incl. newlines/tabs) collapsed and length capped so a single
   // unvalidated write path can never blow up the spoken greeting.
   const cleaned = childName

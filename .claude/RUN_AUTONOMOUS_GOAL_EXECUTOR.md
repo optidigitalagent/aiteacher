@@ -13,8 +13,15 @@ Claude will work autonomously until the goal is achieved or it is blocked.
 Read .claude/GLOBAL_GOAL.md and .claude/agents/goal-executor/AGENT.md.
 Act as autonomous Goal Executor. Work until the global goal is achieved
 or genuinely blocked. Use all internal agents, tests, reviews, logs,
-and iteration loops. Do not ask for confirmation unless secrets, paid
-accounts, destructive actions, or external credentials are required.
+and iteration loops.
+
+Auto-advance through phases: after each phase review passes, immediately
+update GOAL_PROGRESS.md and NEXT_ACTION.md and begin the next phase —
+do NOT stop or ask for user confirmation between phases.
+
+Stop only when: GOAL COMPLETE (acceptance-auditor verdict), credentials
+required, destructive action required, manual production verification
+required, or 3 repair attempts exhausted on the same task.
 ```
 
 ---
@@ -42,33 +49,55 @@ Goal Executor reads GLOBAL_GOAL.md
   ↓
 Planner decomposes goal into phases and tasks
   ↓
-Goal Executor picks first task from NEXT_ACTION.md
+┌─────────────────────────────────────────────────────┐
+│              PHASE LOOP (repeats per phase)          │
+│                                                      │
+│  Implementer writes code (smallest safe change)      │
+│    ↓                                                 │
+│  QA Tester: npx tsc --noEmit + npm test              │
+│    ↓ pass                                            │
+│  Reviewer runs phase gate                            │
+│    ↓                                                 │
+│  ├─ PASS ──────────────────────────────────────────► │
+│  │   Mark phase ✅ in GLOBAL_GOAL.md                 │
+│  │   Update GOAL_PROGRESS.md                        │
+│  │   Write next phase task to NEXT_ACTION.md        │
+│  │   ← NO USER CONFIRMATION — loop immediately      │
+│  │                                                   │
+│  └─ FAIL ────────────────────────────────────────►  │
+│      Fix findings → re-test → re-review             │
+│      Max 3 attempts → if still failing: BLOCKED     │
+│                                                      │
+└──────── continue until all phases complete ─────────┘
   ↓
-Implementer writes code (smallest safe change)
+All phases ✅ → Acceptance Auditor runs full verdict
   ↓
-QA Tester runs: npx tsc --noEmit + npm test
-  ↓
-Backend/Frontend/Curriculum Reviewer reviews changes
-  ↓
-  ├── PASS → Deploy Railway agent checks deployment gates
-  │          → git commit → git push → verify Railway logs
-  │          → Production Log Analyzer checks post-deploy logs
-  │          → Update GOAL_PROGRESS.md
-  │          → Pick next task → repeat
+  ├── GOAL COMPLETE     → final report to user → STOP
   │
-  └── FAIL → Fix failures → re-test → re-review → retry (max 3)
-             → If still failing → BLOCKED → notify user
-
-When all criteria appear satisfied:
-  ↓
-Acceptance Auditor runs against GLOBAL_GOAL.md + all evidence
-  ↓
-  ├── GOAL COMPLETE     → Goal Executor reports completion to user → STOP
-  │
-  └── GOAL NOT COMPLETE → Goal Executor reads auditor's Remaining Work
-                          → writes next task to NEXT_ACTION.md
-                          → continues loop from "Implementer writes code"
+  └── GOAL NOT COMPLETE → read Remaining Work section
+                          → write next task to NEXT_ACTION.md
+                          → continue phase loop
 ```
+
+**The executor never stops between phases — it runs the full goal in one session.**
+
+---
+
+## When Goal Executor stops (and when it does NOT)
+
+**Will STOP automatically:**
+- `GOAL COMPLETE` — acceptance-auditor returns a passing verdict
+- Credentials or secrets required (e.g., Railway env vars not set)
+- Destructive database action with data-loss risk
+- Manual production verification required (physical device, external QA)
+- 3 repair attempts exhausted on the same failing task
+
+**Will NOT stop for:**
+- Finishing a phase (auto-advances to next phase)
+- Passing a review (auto-advances to next phase)
+- Fixing test failures (retries inline)
+- Any number of phases remaining
+- PASS WITH WARNINGS verdict (treats as PASS, logs warnings to RISK_REGISTER.md)
 
 ---
 

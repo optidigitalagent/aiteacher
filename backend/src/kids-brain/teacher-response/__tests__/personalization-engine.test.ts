@@ -23,6 +23,7 @@ import {
   isWarmupInProgress,
   isWarmupTimedOut,
   selectInterest,
+  substituteChildName,
   isPersonalizationV2Enabled,
   isWarmupEnabled,
   isInterestExamplesEnabled,
@@ -1424,6 +1425,40 @@ describe('T3 — childName substitution', () => {
   })
 })
 
+// ── W-024: substituteChildName multi-placeholder pin (direct unit tests) ──────
+// Persona templates currently carry one [childName] each — these tests pin the
+// global-replace + literal-insertion guarantees with synthetic two-placeholder
+// templates so a future template change cannot silently regress them.
+
+describe('W-024 — substituteChildName replaces EVERY placeholder (multi-placeholder pin)', () => {
+  it('a synthetic template with two [childName] placeholders gets both replaced', () => {
+    const result = substituteChildName('Hi [childName]! Great job, [childName]!', 'Anya')
+    expect(result).toBe('Hi Anya! Great job, Anya!')
+    expect(result).not.toContain('[childName]')
+  })
+
+  it('three placeholders are all replaced (global regex, not first-only)', () => {
+    const result = substituteChildName('[childName], [childName] and [childName]', 'Misha')
+    expect(result).toBe('Misha, Misha and Misha')
+  })
+
+  it('a $-sequence name stays literal in BOTH placeholders of a two-placeholder template', () => {
+    expect(substituteChildName('Hi [childName]! Bye [childName]!', '$&')).toBe('Hi $&! Bye $&!')
+    expect(substituteChildName('Hi [childName]! Bye [childName]!', '$$')).toBe('Hi $$! Bye $$!')
+    expect(substituteChildName('Hi [childName]! Bye [childName]!', "$'")).toBe("Hi $'! Bye $'!")
+    expect(substituteChildName('Hi [childName]! Bye [childName]!', '$`')).toBe('Hi $`! Bye $`!')
+  })
+
+  it('null/empty name falls back to "friend" in every placeholder', () => {
+    expect(substituteChildName('Hi [childName]! Bye [childName]!', null)).toBe('Hi friend! Bye friend!')
+    expect(substituteChildName('Hi [childName]! Bye [childName]!', '   ')).toBe('Hi friend! Bye friend!')
+  })
+
+  it('a template without placeholders is returned unchanged', () => {
+    expect(substituteChildName('No placeholders here!', 'Anya')).toBe('No placeholders here!')
+  })
+})
+
 describe('T6 — persona feature flag gating', () => {
   afterEach(clearFlags)
 
@@ -1549,6 +1584,16 @@ describe('S3 — no engine text asks for personal information', () => {
       expect(text, `personal-info pattern in: "${text}"`).not.toMatch(forbidden)
     }
   })
+
+  // W-026: extended personal-info patterns — surname, birthday, grade,
+  // city/town/country questions, parents' phone numbers.
+  it('no text asks for surname, birthday, grade, city/town/country, or a parent\'s number (W-026)', () => {
+    const forbiddenExtended =
+      /last name|surname|birthday|birth ?date|what grade|which grade|what (city|town|country)|which (city|town|country)|(mom|mum|dad|mommy|daddy)'?s? (number|phone)/i
+    for (const text of collectAllEngineTexts()) {
+      expect(text, `extended personal-info pattern in: "${text}"`).not.toMatch(forbiddenExtended)
+    }
+  })
 })
 
 describe('S4 — no copyrighted-character roleplay in any engine text', () => {
@@ -1558,6 +1603,19 @@ describe('S4 — no copyrighted-character roleplay in any engine text', () => {
     for (const text of collectAllEngineTexts()) {
       expect(text, `roleplay framing in: "${text}"`).not.toMatch(/\byou are\b/i)
       expect(text, `roleplay framing in: "${text}"`).not.toMatch(/\bpretend to be\b/i)
+    }
+  })
+
+  // W-026: extended roleplay framings — "you're <Character>", "pretend you're",
+  // "act like a <Character>". Capitalisation marks a proper-noun character
+  // assignment ("you're Spiderman") vs ordinary praise ("you're doing great").
+  // [Yy]/[Aa] classes catch sentence-initial forms ("You're Pikachu now!")
+  // while keeping the proper-noun [A-Z] anchor case-sensitive.
+  it('no text uses "you\'re <Character>", "pretend you\'re", or "act like a <Character>" framing (W-026)', () => {
+    for (const text of collectAllEngineTexts()) {
+      expect(text, `roleplay framing in: "${text}"`).not.toMatch(/\b[Yy]ou'?re\s+[A-Z][a-zA-Z]+/)
+      expect(text, `roleplay framing in: "${text}"`).not.toMatch(/\bpretend you'?re\b/i)
+      expect(text, `roleplay framing in: "${text}"`).not.toMatch(/\b[Aa]ct like (a |an )?[A-Z]/)
     }
   })
 })

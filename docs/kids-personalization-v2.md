@@ -375,6 +375,16 @@ Same as Lucy. `id: 'default'` maps to Lucy behavior in all template lookups.
 | Exercise selection | **NO** | Same curriculum for all |
 | Mastery rules | **NO** | Same thresholds for all |
 
+> **Phase 6 delivered scope (W-025):** the persona influence actually consumed by
+> builders today is: `openingPhrase` / `closingPhrase` (Phase 6 —
+> `buildPersonaGreeting` / `buildPersonaClosing`) and `praiseStyle` (Phase 3 —
+> praise variant selection in `buildInterestPraise`). `warmupStyle`,
+> `recoveryStyle`, `energyLevel`, and micro-dialogue framing are declared in the
+> persona tables above but **deferred** — no builder consumes them yet. The
+> "Persona controls" table rows for energy prefix on recovery, warmup opener
+> style, and micro-dialogue framing therefore describe design intent, not
+> current runtime behavior.
+
 ---
 
 ## 4. Safe Personalization Rules

@@ -8,51 +8,49 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Phase 8 Implementation — Testing
-**Type:** CODE (tests only — no production-code changes unless a test
-  exposes a real bug; helper-extract if lesson-ws must change, RISK-016)
-**Phase:** Phase 8 — Testing
-**Agent:** goal-executor (implementer role)
+**Task:** Phase 9 — Deployment
+**Type:** DEPLOY (external — requires user confirmation: paid Railway account
+  + production feature-flag changes are outside the autonomous-action boundary)
+**Phase:** Phase 9 — Deployment
+**Agent:** goal-executor → deploy-railway + production-log-analyzer + acceptance-auditor
 **Description:**
-  Close the carried integration-test warnings and harden the safety sweeps.
+  Ship Kids Personalization V2 to production and verify it. All 7 feature flags
+  ship DEFAULT OFF, then are enabled one phase at a time with verification
+  between each.
 
-  1. Integration tests through the Kids WS layer (mock ws/meta/Redis as the
-     existing wiring guard suites do):
-     - W-019: ENCOURAGEMENT-rung recovery injection (turn-processor path)
-     - W-020: micro-dialogue fire→reply→return; exerciseCorrectCount
-       unchanged after the dialogue turn
-     - W-022: session start with persona flags on → first teacher_text
-       packet carries persona openingPhrase; flags off → standard greeting
-     - W-023: natural close → persona closing ai_text sent BEFORE lesson_end
-     - W-027: one teacher turn never carries two interest sentences
-  2. Curriculum integrity C1–C6 at integration level (C6 = Kids Brain V1
-     suite still green — already evidenced by the full-suite runs; assert
-     explicitly in the report).
-  3. W-026: extend the S3/S4 sweep regexes (surname/birthday/grade/city;
-     "you're <X>", "pretend you're", "act like").
-  4. W-024: pin multi-placeholder [childName] substitution directly.
-  5. W-025 decision: amend design Section 3.5 to match delivered Phase 6
-     scope (persona styles for warmup/recovery/micro-dialogue deferred) OR
-     implement the styles. Default: amend the doc — no new features in
-     Phase 8.
-  6. Q4 check: interest personalization suite ≥40 tests (already 200 — assert).
+  Pre-deploy (no credentials needed — can run now):
+  1. Final green gate on the deploy branch: npx tsc --noEmit → exit 0;
+     full suite 2060 pass / 63 pre-existing STT failures.
+  2. Confirm .env.example documents all 7 flags (KIDS_PERSONALIZATION_V2,
+     KIDS_WARMUP_ENABLED, KIDS_INTEREST_EXAMPLES_V2, KIDS_INTEREST_PRAISE,
+     KIDS_INTEREST_RECOVERY_V2, KIDS_MICRO_DIALOGUE_ENABLED,
+     KIDS_TEACHER_PERSONA_V2) — values default OFF.
+  3. Confirm Phase 8 work is committed and the branch is push-ready.
+
+  Deploy (REQUIRES USER GO-AHEAD — secrets / paid account):
+  4. Railway deploy via deploy-railway skill/agent.
+  5. Production verification: no critical errors in first 10 min of logs
+     (production-log-analyzer).
+  6. Enable flags one phase at a time in production, re-verifying logs between
+     each (master KIDS_PERSONALIZATION_V2 first, then per-tier).
+  7. Acceptance auditor FINAL verdict → goal COMPLETE; tag the release.
 
 **Inputs:**
-  - REVIEW_REPORT.md Phase 7 FINDINGS SUMMARY (W-019..W-027)
-  - existing wiring-guard suites as integration-test templates:
-    src/kids-brain/analytics/__tests__/session-analytics.test.ts,
-    src/kids-brain/runtime/__tests__/phase-16b-runtime-safety.test.ts
-  - docs/kids-personalization-v2.md Sections 3.5, 9.7, 9.9
+  - GLOBAL_GOAL.md "Deployment (Phase 9)" acceptance criteria
+  - docs/kids-personalization-v2.md rollback plan (7 feature flags)
+  - .claude/agents/deploy-railway, production-log-analyzer, acceptance-auditor
 
 **Success criterion:**
-  - npx tsc --noEmit → exit 0; new integration tests pass; no new failures
-    (baseline: 2028 pass / 63 pre-existing STT failures)
+  - Railway deploy SUCCESS; all 7 flags tested in production; no critical
+    errors in first 10 min; acceptance-auditor final verdict PASS.
 
 **Blocker:**
-  None expected.
+  Phase 9 deploy steps (4–7) need a paid Railway account + production env
+  access. Per GLOBAL_GOAL "HOW TO RUN", the autonomous executor must NOT
+  self-authorize secrets / paid accounts / deploys — surface to the user.
 
-**On PASS (tests green):** Write Phase 8 REVIEW task here → run review gate.
-**On FAIL:** Fix findings, re-test (max 3 attempts). BLOCKED only after 3 failures.
+**On PASS:** Tag release; mark Phase 9 ✅ and the global goal COMPLETE.
+**On FAIL:** Roll back via feature flags (set to OFF); diagnose; re-deploy.
 
 ---
 

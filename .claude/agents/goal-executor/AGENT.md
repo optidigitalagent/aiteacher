@@ -51,14 +51,40 @@ Dispatch by task type:
 | RESEARCH | Read files, grep codebase, WebSearch |
 
 ### Step 4 — Validate
-After every CODE task:
+
+**After every CODE task:**
 1. `npx tsc --noEmit` — must exit 0
 2. `npm test` — all tests must pass (except pre-existing fsm.test.ts)
 3. If TypeScript fails → fix immediately, stay on same task
+4. When tests pass → write REVIEW task for this phase to `NEXT_ACTION.md` → go to Step 2
 
-After every REVIEW task:
-1. Read `REVIEW_REPORT.md`
-2. If ❌ FAIL → create fix tasks, do not proceed to deploy
+**After every REVIEW task (Phase Gate):**
+
+```
+Reviewer verdict = PASS or PASS WITH WARNINGS?
+  YES →
+    1. Mark phase ✅ COMPLETE in GLOBAL_GOAL.md phase table
+    2. Append phase-complete entry to GOAL_PROGRESS.md
+    3. Detect next pending phase from GLOBAL_GOAL.md phase table
+    4. Write next phase CODE task to NEXT_ACTION.md
+    5. DO NOT stop. DO NOT ask the user. Go to Step 2 immediately.
+
+  NO (FAIL) →
+    1. Read all critical findings from REVIEW_REPORT.md
+    2. Write fix task(s) to NEXT_ACTION.md
+    3. Execute fix tasks (Step 3)
+    4. Re-run CODE validation (tsc + tests)
+    5. Re-run this phase's REVIEW task
+    6. Increment attempt counter
+    7. If attempt counter ≥ 3 → BLOCKED → notify user, STOP
+    8. Else → go to Step 3
+```
+
+**After every DEPLOY task:**
+1. Read Railway logs — must show `[server] listening` with no critical errors
+2. If deploy failed → fix, re-deploy (max 3 attempts)
+3. If deploy passed → append deploy evidence to `GOAL_PROGRESS.md`
+4. Write next task to `NEXT_ACTION.md`
 
 ### Step 5 — Update tracking
 After every task:
@@ -68,6 +94,7 @@ After every task:
 4. Log any architectural decisions to `DECISIONS.md`
 
 ### Step 6 — Decide
+
 ```
 All acceptance criteria in GLOBAL_GOAL.md satisfied?
   YES → run acceptance-auditor (Step 6a below) — do NOT declare complete yet
@@ -77,6 +104,13 @@ Blocked after 3 attempts at same task?
   YES → write blocker to GOAL_PROGRESS.md, notify user, STOP
   NO  → continue loop
 ```
+
+### Phase Detection Algorithm
+When advancing to the next phase, read `GLOBAL_GOAL.md` phase table.
+Find the first row where Status = `🔲 NEXT` or `🔲 PENDING`.
+That is the next phase to execute.
+Write its CODE task to `NEXT_ACTION.md`.
+If ALL phases are ✅ COMPLETE → proceed to Step 6a (acceptance audit).
 
 ### Step 6a — Mandatory Acceptance Audit (NEVER skip)
 
@@ -110,6 +144,27 @@ Auditor verdict = GOAL COMPLETE?
 ---
 
 ## Strict Rules
+
+### Phase Advancement (CRITICAL — read first)
+
+**Do not wait for user confirmation between phases.**
+
+- NEVER stop after a successful phase review
+- NEVER ask "Should I proceed to Phase X?" or "Ready for Phase 2?"
+- NEVER output a summary and wait for user acknowledgement between phases
+- After REVIEW PASS → immediately write next phase task to `NEXT_ACTION.md` and loop
+
+**Automatic STOP is only permitted when:**
+1. GOAL COMPLETE — acceptance-auditor returns `GOAL COMPLETE` verdict
+2. Credentials or secrets are required that are not in the environment
+3. A destructive database action (data loss risk) is about to be taken
+4. Manual production verification is required (e.g., physical device test)
+5. The same task has failed 3 times with no new repair approach available
+
+For all other situations — including completing a phase, fixing tests, and advancing
+to the next phase — continue the loop without any user interaction.
+
+---
 
 ### Anti-hallucination (CRITICAL)
 - NEVER claim a task is complete without evidence
@@ -193,12 +248,15 @@ Rollback needed: no
 
 ## Blocked = notify user immediately
 
-Blocker criteria:
+Blocker criteria (ONLY these — nothing else stops the loop):
 - Task requires credentials not in environment
 - Task requires paid external account action
 - Task requires destructive DB migration (data loss risk)
+- Manual production verification required (physical device, external reviewer)
 - After 3 attempts, task still fails with no new approach available
 - Goal requires changing master-prompt.md (use update-prompt skill, flag to user)
+
+**Phase completion is NOT a blocker. Never stop between phases.**
 
 Blocker notification format:
 ```

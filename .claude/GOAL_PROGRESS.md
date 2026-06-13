@@ -1,9 +1,17 @@
 # GOAL_PROGRESS.md
 
 ## CURRENT PHASE
-Phase: **Phase 8 — Testing**
-Started: 2026-06-12
-Last updated: 2026-06-12
+Phase: **Phase 9 — Deployment**
+Started: 2026-06-13
+Last updated: 2026-06-13
+
+> State reconstruction 2026-06-13: previous run completed Phase 8 implementation
+> (integration test file + W-024/W-026 engine tests + W-025 doc amend) AND ran
+> the 5-reviewer gate, but the session died on an API 401 before the Phase 8
+> verdicts were persisted to REVIEW_REPORT.md or the tracking files advanced.
+> This run reconciled: re-ran the review gate (all 5 PASS), recorded verdicts,
+> marked Phase 8 COMPLETE, committed, advanced to Phase 9. Code was source of
+> truth: tsc 0; engine+integration 284/284; full suite 2060/63 pre-existing.
 
 > State reconstruction 2026-06-12: previous run hit the session limit mid
 > Phase 6 (after implementation + tests were written; the engine test run
@@ -53,14 +61,17 @@ Previous goals complete:
 | 16 | Per-phase commit baseline | goal-executor | Phases 1–6 committed as 659d95a (acceptance-auditor recommendation: per-phase commits enable precise scope audits) | 2026-06-12 |
 | 17 | Phase 7 implementation (safety) | goal-executor (implementer role) | substituteChildName hardening (trim → collapse \s+ → slice(0,100), MAX_CHILD_NAME_CHARS=100) + 12 safety tests: S1 determinism (90 texts), S3/S4 template sweeps, Section 4.3 truncation via public API, name cap/collapse, S5 fallback chain | 2026-06-12 |
 | 18 | Phase 7 review gate | backend-reviewer + curriculum-reviewer + kids-safety-monitor + qa-tester + acceptance-auditor | S1–S5 verified by code audit + executed adversarial name attacks (500-char, $-sequences, [childName], BOM/whitespace); all 4.2 budgets enforced + pinned; diff scope exactly 2 files; tsc exit 0; 200/200 engine tests; full suite 2028 pass / 63 pre-existing (= baseline + 12); W-026/W-027 logged | 2026-06-12 |
+| 19 | Phase 8 implementation (testing) | goal-executor (implementer role) | NEW phase-8-personalization-integration.test.ts (25 tests): W-019 runtime recovery injection + C1–C6 flags-on-vs-off curriculum equivalence (full fingerprint, multi-turn) + W-020 micro-dialogue chain + W-022/023 persona wiring + W-027 single-sentence (static); engine test +58 (W-024 multi-placeholder ×5, W-026 S3/S4 sweep ×2); substituteChildName exported (1-line, test-enablement); docs W-025 amend | 2026-06-12 |
+| 20 | Phase 8 review gate | backend-reviewer + curriculum-reviewer + kids-safety-monitor + qa-tester + acceptance-auditor | ALL 5 PASS. W-019 + C1–C6 proven at TRUE RUNTIME (processKidsBrainTurn, identical curriculum fingerprint flags-on/off); W-020/022/023/027 static wiring; W-024/026 pinned; W-025 doc amended; scope = exactly 1 production line (export); tsc exit 0; teacher-response 284/284; full suite 2060 pass / 63 pre-existing (= baseline + 32, 0 new); W-028/029 (RISK-019) logged. Gate re-run + recorded this session after prior session's API-401 loss | 2026-06-13 |
 
 ---
 
 ## ACTIVE TASK
 
-**Task:** Phase 8 — Testing
-**Status:** IN PROGRESS
-**Next:** Phase 8 review after implementation + tests
+**Task:** Phase 9 — Deployment
+**Status:** NOT STARTED — requires user confirmation (paid Railway account / deploy)
+**Next:** Surface deployment plan to user; on go-ahead, deploy via deploy-railway,
+  enable flags one phase at a time, verify production logs, final acceptance audit
 
 ---
 
@@ -154,11 +165,11 @@ None.
   [x] Hardening: substituteChildName name cap (100 chars) + whitespace
        collapse; adversarial attacks executed and verified
 
-[ ] Phase 8 — Testing
-  [ ] personalization-engine.test.ts (≥40 tests)
-  [ ] Extend interest-personalizer.test.ts
-  [ ] Integration tests for warmup + micro-dialogue
-  [ ] Curriculum integrity tests (C1–C6)
+[x] Phase 8 — Testing — REVIEW PASS 2026-06-13
+  [x] personalization-engine.test.ts (≥40 tests) — 207 engine + 25 integration = 232
+  [x] Extend interest-personalizer.test.ts — V1 module untouched; W-024/W-026 added to engine suite
+  [x] Integration tests for recovery (runtime) + micro-dialogue (chain + static wiring)
+  [x] Curriculum integrity tests (C1–C6) — flags-on-vs-off identical fingerprint, runtime
 
 [ ] Phase 9 — Deployment
   [ ] tsc --noEmit → exit 0
@@ -206,6 +217,13 @@ Phase 7 (Safety — 2026-06-12):
   Engine tests:      200/200 pass (= 188 + 12 safety tests)
   Wiring guards:     64/64 pass
   Full suite:        2028 pass / 63 pre-existing STT failures (= 2016 + 12)
+
+Phase 8 (Testing — 2026-06-13):
+  TypeScript build:  npx tsc --noEmit → exit 0   ✅
+  Engine tests:      207/207 pass (= 200 + 7: W-024 ×5, W-026 ×2)
+  Integration tests: 25/25 pass (phase-8-personalization-integration.test.ts)
+  teacher-response:  284/284 pass (4 files)
+  Full suite:        2060 pass / 63 pre-existing STT failures (= 2028 + 32, 0 new)
 ```
 
 ---

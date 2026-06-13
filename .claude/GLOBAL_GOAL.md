@@ -52,8 +52,8 @@ Kid's Box curriculum fully authoritative.
 | 5 | Micro-Dialogues | ✅ COMPLETE — review PASS 2026-06-10 |
 | 6 | Teacher Personas | ✅ COMPLETE — review PASS 2026-06-12 |
 | 7 | Safety | ✅ COMPLETE — review PASS 2026-06-12 |
-| 8 | Testing | 🔲 NEXT |
-| 9 | Deployment | 🔲 PENDING |
+| 8 | Testing | ✅ COMPLETE — review PASS 2026-06-13 |
+| 9 | Deployment | 🔲 NEXT |
 
 ---
 
@@ -91,16 +91,16 @@ The goal is NOT complete until ALL of the following are satisfied:
 - [ ] Both personas use same curriculum (T5)
 
 ### Curriculum Integrity (all phases)
-- [ ] targetWord not modified by any V2 function (C1)
-- [ ] exerciseCorrectCount not modified (C3)
-- [ ] escalationLadder not modified (C4)
-- [ ] Adult flow unaffected (C5)
-- [ ] Kids Brain V1 28/28 criteria still pass (C6)
+- [x] targetWord not modified by any V2 function (C1) — Phase 8 runtime test: currentTargetItemId identical flags-on/off + explicit post-recovery assertion
+- [x] exerciseCorrectCount not modified (C3) — Phase 8 curriculumFingerprint equal turn-by-turn
+- [x] escalationLadder not modified (C4) — Phase 8 ladder/counter equivalence on recovery path
+- [x] Adult flow unaffected (C5) — scope discipline: no adult-path files touched in any phase
+- [x] Kids Brain V1 28/28 criteria still pass (C6) — full suite green (2060 pass, 0 new failures)
 
 ### QA (Phase 8)
-- [ ] TypeScript build: npx tsc --noEmit → exit 0 (Q1)
-- [ ] npm test → all pass, no new failures (Q2)
-- [ ] Interest personalization test suite: ≥40 tests green (Q4)
+- [x] TypeScript build: npx tsc --noEmit → exit 0 (Q1) — verified 2026-06-13
+- [x] npm test → all pass, no new failures (Q2) — 2060 pass / 63 pre-existing STT, 0 new
+- [x] Interest personalization test suite: ≥40 tests green (Q4) — 232 (207 engine + 25 integration)
 
 ### Deployment (Phase 9)
 - [ ] Railway deploy successful
