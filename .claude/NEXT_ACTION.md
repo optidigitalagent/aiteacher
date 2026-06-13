@@ -8,49 +8,63 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Phase 9 — Deployment
-**Type:** DEPLOY (external — requires user confirmation: paid Railway account
-  + production feature-flag changes are outside the autonomous-action boundary)
+**Task:** Phase 9 — Production flag enablement + live behavioral verification (one phase at a time)
+**Type:** DEPLOY-VERIFY (external — REQUIRES USER GO-AHEAD: mutating production
+  Railway env variables on a paid account is outside the autonomous-action
+  boundary per GLOBAL_GOAL "HOW TO RUN")
 **Phase:** Phase 9 — Deployment
 **Agent:** goal-executor → deploy-railway + production-log-analyzer + acceptance-auditor
+
+**Why this is next (acceptance-auditor verdict 2026-06-13):**
+  GOAL NOT COMPLETE. Code, unit/integration tests, and the flags-OFF deploy are
+  all verified (HEAD=origin/main=a637c55 deployed SUCCESS as `aiteacher`; tsc 0;
+  V2 suite 284/284; full suite 2060/63 pre-existing, 0 new; /health 200; logs
+  clean). The ONLY gating deficiency: all 7 KIDS_* V2 flags are OFF in production
+  (verified via `railway variables --service aiteacher`), so NO V2 behavior has
+  ever run in prod. This makes:
+    - D2 "All feature flags tested in production" → NOT COMPLETE
+    - D4 "Acceptance auditor final verdict: PASS" → NOT COMPLETE
+    - D3 "no critical errors in first 10 min" → PARTIAL (only the no-op deploy)
+    - all behavioral criteria (W*/E*/P*/R*/M*/T*) → PARTIAL (impl+tested, not
+      prod-executed — conservatism rule).
+
 **Description:**
-  Ship Kids Personalization V2 to production and verify it. All 7 feature flags
-  ship DEFAULT OFF, then are enabled one phase at a time with verification
-  between each.
-
-  Pre-deploy (no credentials needed — can run now):
-  1. Final green gate on the deploy branch: npx tsc --noEmit → exit 0;
-     full suite 2060 pass / 63 pre-existing STT failures.
-  2. Confirm .env.example documents all 7 flags (KIDS_PERSONALIZATION_V2,
-     KIDS_WARMUP_ENABLED, KIDS_INTEREST_EXAMPLES_V2, KIDS_INTEREST_PRAISE,
-     KIDS_INTEREST_RECOVERY_V2, KIDS_MICRO_DIALOGUE_ENABLED,
-     KIDS_TEACHER_PERSONA_V2) — values default OFF.
-  3. Confirm Phase 8 work is committed and the branch is push-ready.
-
-  Deploy (REQUIRES USER GO-AHEAD — secrets / paid account):
-  4. Railway deploy via deploy-railway skill/agent.
-  5. Production verification: no critical errors in first 10 min of logs
-     (production-log-analyzer).
-  6. Enable flags one phase at a time in production, re-verifying logs between
-     each (master KIDS_PERSONALIZATION_V2 first, then per-tier).
-  7. Acceptance auditor FINAL verdict → goal COMPLETE; tag the release.
+  Enable the 7 feature flags ONE PHASE AT A TIME in production
+  (`railway variables --service aiteacher --set KEY=true`), verifying logs +
+  a live Kids voice session between each. Order (master first, then per-tier):
+  1. KIDS_PERSONALIZATION_V2 (master) — verify curriculum unchanged, logs 10 min, /health.
+  2. KIDS_WARMUP_ENABLED — live: W1 fires once, W2 no-interests→no-warmup,
+     W4 ≤2 turns, W5 15s auto-end, W7 returns to curriculum.
+  3. KIDS_INTEREST_EXAMPLES_V2 — live: E1 example in model turn, E2 ≤15 words.
+  4. KIDS_INTEREST_PRAISE — live: P1 praise after CORRECT_*, P4 Lucy≠Tom.
+  5. KIDS_INTEREST_RECOVERY_V2 — live ENCOURAGEMENT turn: R1/R2 + progression/
+     counters unchanged (C1/C3/C4 confirmed in prod).
+  6. KIDS_MICRO_DIALOGUE_ENABLED — live after ≥3 exercises: M1 fires, M3 one turn,
+     M5 unscored, returns to curriculum.
+  7. KIDS_TEACHER_PERSONA_V2 — live: T1/T2 distinct greeting (Lucy & Tom), T5
+     same curriculum.
+  After EACH enablement: production-log-analyzer confirms no critical errors in
+  the first 10 min (D3). Then re-run acceptance-auditor for the FINAL verdict.
 
 **Inputs:**
-  - GLOBAL_GOAL.md "Deployment (Phase 9)" acceptance criteria
+  - GLOBAL_GOAL.md "Deployment (Phase 9)" acceptance criteria (D2/D3/D4)
+  - .claude/REVIEW_REPORT.md → Acceptance Auditor Verdict (revised roadmap, steps 1–10)
   - docs/kids-personalization-v2.md rollback plan (7 feature flags)
   - .claude/agents/deploy-railway, production-log-analyzer, acceptance-auditor
+  - backend/.env.example (all 7 flags documented, default OFF)
 
 **Success criterion:**
-  - Railway deploy SUCCESS; all 7 flags tested in production; no critical
-    errors in first 10 min; acceptance-auditor final verdict PASS.
+  All 7 flags enabled + live-verified in production; no critical errors in the
+  first 10 min after each; every behavioral criterion (W*/E*/P*/R*/M*/T*) plus
+  D2/D3/D4 verified live; acceptance-auditor FINAL verdict PASS.
 
 **Blocker:**
-  Phase 9 deploy steps (4–7) need a paid Railway account + production env
-  access. Per GLOBAL_GOAL "HOW TO RUN", the autonomous executor must NOT
-  self-authorize secrets / paid accounts / deploys — surface to the user.
+  Production env mutation + live voice verification on a paid Railway account.
+  The autonomous executor MUST NOT self-authorize this — surface to the user for
+  go-ahead before touching prod variables.
 
 **On PASS:** Tag release; mark Phase 9 ✅ and the global goal COMPLETE.
-**On FAIL:** Roll back via feature flags (set to OFF); diagnose; re-deploy.
+**On FAIL:** Roll back the offending flag to OFF (instant, no redeploy); diagnose; retry.
 
 ---
 

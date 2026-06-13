@@ -69,9 +69,32 @@ Previous goals complete:
 ## ACTIVE TASK
 
 **Task:** Phase 9 — Deployment
-**Status:** NOT STARTED — requires user confirmation (paid Railway account / deploy)
-**Next:** Surface deployment plan to user; on go-ahead, deploy via deploy-railway,
-  enable flags one phase at a time, verify production logs, final acceptance audit
+**Status:** CODE DEPLOYED + VERIFIED (flags OFF). Flag-enablement + production
+  behavioral verification PENDING USER GO-AHEAD (manual prod verification +
+  prod env mutation — outside autonomous boundary).
+
+**Deploy evidence (2026-06-13):**
+- Pre-deploy gates: tsc --noEmit → exit 0; npm test → 2060 pass / 63 pre-existing
+  STT failures (0 new); git tree clean, HEAD = origin/main = a637c55, 0 ahead.
+- Railway (auto-deploy on push, GitHub-linked, project thriving-balance/production):
+  - service `aiteacher` (Node backend): commit a637c55, status SUCCESS, 2026-06-13T16:14:06Z
+  - service `aware-alignment` (Caddy frontend): commit a637c55, status SUCCESS, 2026-06-13T16:14:06Z
+- Backend startup logs (commit a637c55): `[server] listening on 0.0.0.0:8080`;
+  `[postgres] connected` → tables ready (23 migrations incl. kids 019-023);
+  `[redis] connected`; `[tts:provider_check]`; `[ws] LessonWS attached`; Langfuse active.
+  No HTTP 400 / no unhandled rejection / no ECONNREFUSED / no missing-module.
+  (One benign `[server] Redis startup error ... already connecting` race — self-heals;
+   redis confirmed connected.)
+- Smoke checks: GET /health → HTTP 200 {postgres:ok, redis:ok} uptime 94s;
+  frontend GET / → HTTP 200.
+- Feature flags: `railway variables` → NONE of the 7 KIDS_* V2 flags set = ALL DEFAULT OFF.
+  Engine confirms each builder gates on master AND per-tier flag (engine.ts 259-614),
+  so flags-OFF = zero behavior change vs pre-V2.
+
+**Blocked next steps (need user go-ahead):**
+  Enable 7 flags one phase at a time in prod env (master KIDS_PERSONALIZATION_V2 first),
+  verify logs between each, run a live Kids voice session per tier to satisfy
+  "All feature flags tested in production", then acceptance-auditor FINAL verdict.
 
 ---
 

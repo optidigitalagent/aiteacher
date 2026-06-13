@@ -11,7 +11,7 @@
 ```powershell
 npx tsc --noEmit
 ```
-Result: `[ ] exit 0` | `[ ] errors (list below)`
+Result: `[x] exit 0` | `[ ] errors (list below)`  — verified 2026-06-13 (TSC_EXIT=0)
 
 Errors (if any):
 ```
@@ -24,11 +24,15 @@ Errors (if any):
 ```powershell
 npm test
 ```
-Result: `[ ] all pass` | `[ ] failures (list below)`
+Result: `[x] all pass (0 new failures)` | `[ ] failures (list below)`  — verified 2026-06-13
+
+2060 pass / 63 fail (2123 total). All 63 failures pre-existing STT timing suites:
+src/ws/__tests__/phase-16k-kids-stt-turn-finalization.test.ts,
+phase-18-kids-stt-late-transcript.test.ts, phase-23-kids-stt-wait-ready-buffer.test.ts.
 
 Failures (if any):
 ```
-Pre-existing: tests/fsm.test.ts (process.exit — not new)
+Pre-existing: 63 STT fake-timer/timing tests (= documented baseline, unrelated to V2)
 New failures: (none)
 ```
 
@@ -52,10 +56,10 @@ git diff --stat HEAD
 ```
 Result:
 ```
-[ ] No unintended files staged
-[ ] No .env files staged
-[ ] No secrets in diff
-[ ] Only targeted files changed
+[x] No unintended files staged   — working tree clean
+[x] No .env files staged         — only .env.example (template, no secrets) in last commit
+[x] No secrets in diff
+[x] Only targeted files changed  — HEAD = origin/main = a637c55, 0 ahead
 ```
 
 ---
@@ -73,7 +77,8 @@ EOF
 )"
 ```
 
-Commit SHA: `[ ] <fill after commit>`
+Commit SHA: `[x] a637c55d3fcb74508ae54d82c729182def53d607` (Phase 9 pre-deploy: document V2 flags in .env.example)
+Prior phase commits already on main: 1acfd57 (Phase 8), ff67d30 (Phase 7), 659d95a (Phases 1-6)
 
 ---
 
@@ -81,19 +86,23 @@ Commit SHA: `[ ] <fill after commit>`
 ```powershell
 git push origin main
 ```
-Result: `[ ] pushed` | `[ ] rejected (resolve conflict first)`
+Result: `[x] pushed` | `[ ] rejected (resolve conflict first)`  — origin/main = a637c55, branch up to date, 0 commits ahead
 
 ---
 
 ### 7. Railway Deploy Confirmation
 ```powershell
-railway logs --tail 50
+railway logs --service aiteacher
 ```
+Auto-deployed on push to main (GitHub-linked). `railway status --json` 2026-06-13:
+- service `aiteacher` (Node backend): commit a637c55, status SUCCESS, 2026-06-13T16:14:06Z
+- service `aware-alignment` (Caddy frontend): commit a637c55, status SUCCESS, 2026-06-13T16:14:06Z
+
 Look for:
 ```
-[ ] [server] listening on port 4000
-[ ] No startup errors
-[ ] No missing env variable errors
+[x] [server] listening on 0.0.0.0:8080   (Railway maps PORT→8080; "4000" is local-dev port)
+[x] No startup errors    (one benign Redis "already connecting" race — self-heals; [redis] connected confirmed)
+[x] No missing env variable errors   (auth/TTS/OpenAI/Langfuse all loaded)
 ```
 
 ---
@@ -103,26 +112,27 @@ Look for:
 ### 8. Voice System Health
 Railway logs to check:
 ```
-[ ] {"event":"[stt:config]",...}  ← Kids STT initialized correctly
-[ ] {"event":"[stt:lifecycle]","status":"open",...}  ← Deepgram connected
-[ ] No HTTP 400 errors
-[ ] No unhandled rejection errors
+[x] [tts:provider_check] logged at startup (openai selected, elevenlabs key present)
+[~] {"event":"[stt:config]"} / [stt:lifecycle] open  ← appears only on a live Kids session;
+     NOT observable from startup logs alone — requires manual live verification (see PENDING below)
+[x] No HTTP 400 errors (startup logs clean)
+[x] No unhandled rejection errors (startup logs clean)
 ```
 
 ### 9. Lesson Flow Health
 Railway logs to check:
 ```
-[ ] Kids session connects without error
-[ ] Exercise context message sent (type: exercise_context)
-[ ] No WebSocket disconnects within first 30s
+[~] Kids session connects without error  ← requires a live session; not exercised by startup logs
+[~] Exercise context message sent        ← requires a live session
+[x] No WebSocket disconnects (WS endpoint attached: [ws] LessonWS attached at ws://localhost/lesson)
 ```
+Health endpoint (live): GET /health → HTTP 200 {postgres:ok, redis:ok}, uptime 94s, 2026-06-13T16:17:53Z.
 
 ### 10. Frontend Health
 Browser console to check:
 ```
-[ ] No uncaught errors
-[ ] WebSocket connects successfully
-[ ] Exercise panel renders (or graceful placeholder shown)
+[x] Frontend serves: GET https://aware-alignment-production.up.railway.app/ → HTTP 200
+[~] No uncaught errors / WS connects / exercise panel renders ← requires browser; manual verification PENDING
 ```
 
 ---
@@ -153,7 +163,12 @@ Or via Railway dashboard: Deployments → previous deploy → Redeploy.
 ## CHECKLIST STATUS
 
 ```
-Last completed deploy: Phase 22/23 (commit a935927)
-Pending deploy:        Phase 1–3 (exercise architecture)
-Deployment status:     NOT DEPLOYED
+Last completed deploy: Kids Personalization V2 Phases 1-8 (commit a637c55) — 2026-06-13
+Deployment status:     DEPLOYED (code live, ALL 7 V2 flags OFF in production = no behavior change)
+Production flags:       railway variables → none of the 7 KIDS_* V2 flags set = default OFF (verified)
+
+PENDING (requires user go-ahead — manual production verification + prod env mutation):
+  - Enable 7 V2 flags one phase at a time (master KIDS_PERSONALIZATION_V2 first), verifying logs between each
+  - Live Kids voice session per tier to satisfy "All feature flags tested in production"
+  - Browser-side frontend verification (console / WS / exercise panel)
 ```

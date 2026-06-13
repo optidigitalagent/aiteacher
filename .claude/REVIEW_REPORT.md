@@ -251,6 +251,151 @@ Note: Phase 9 requires external credentials / paid Railway account — this is
 
 ---
 
+## ═══════════════════════════════════════════════════════════════════════════
+## ACCEPTANCE AUDITOR VERDICT — PHASE 9 (DEPLOYMENT) FINAL AUDIT
+## ═══════════════════════════════════════════════════════════════════════════
+
+```
+══════════════════════════════════════════
+ACCEPTANCE AUDITOR REPORT
+══════════════════════════════════════════
+Goal: Kids Personalization V2
+Audited at: 2026-06-13T16:25Z
+Auditor: acceptance-auditor (independent, evidence-only)
+
+── INDEPENDENTLY VERIFIED EVIDENCE BASE ───
+git:    HEAD = origin/main = a637c55; working tree clean except .claude tracking
+        files (DEPLOYMENT_CHECKLIST.md, GOAL_PROGRESS.md) — no product-code drift.
+tsc:    cd backend && npx tsc --noEmit → exit 0 (re-run this audit).
+tests:  V2 suite re-run — src/kids-brain/teacher-response/__tests__: 4 files,
+        284/284 pass (207 engine + 25 integration + 44 response-engine + 8 V1
+        interest-personalizer). Full suite re-run: 2060 pass / 63 fail / 6 files
+        (121s) — identical to the documented pre-existing STT baseline; the V2
+        files are 100% green so all 63 failures are outside V2 (RISK-009:
+        Deepgram/STT timing files). 0 NEW failures.
+prod:   railway status --json → service `aiteacher` (backend) commit a637c55
+        status SUCCESS branch main; `aware-alignment` (frontend) a637c55 SUCCESS.
+        Deployed SHA == audited SHA.
+logs:   railway logs --service aiteacher → "[server] listening on 0.0.0.0:8080";
+        "[postgres] connected" + "[postgres] tables ready" (migrations through
+        023 incl. kids 018–023); "[redis] connected"; "[ws] LessonWS attached";
+        TTS provider check OK; Langfuse active. One benign self-healing
+        "Redis is already connecting/connected" race (redis confirmed connected).
+        No unhandled rejection / ECONNREFUSED / missing-module / HTTP 4xx-5xx.
+live:   curl /health → 200 {"status":"ok","checks":{"postgres":"ok","redis":"ok"}}
+        uptime 294s.
+flags:  railway variables --service aiteacher (grepped, not dumped) → NONE of the
+        7 KIDS_* V2 flags are set ⇒ ALL DEFAULT OFF in production.
+engine: personalization-engine.ts — every behavioral builder gates on
+        isPersonalizationV2Enabled() (master) AND its per-tier flag
+        (lines 43–69, 258–623). Flags OFF ⇒ all builders return null ⇒ zero
+        behavior change. This simultaneously (a) proves curriculum-integrity
+        non-interference in prod and (b) means NO V2 behavior has ever executed
+        in production.
+
+── ACCEPTANCE MATRIX ──────────────────────
+
+| # | Criterion | Status | Evidence |
+|---|-----------|--------|----------|
+| W1 | Warmup fires once per session when interests set | PARTIAL | Impl personalization-engine.ts:254 buildWarmupTurn (warmupUsed/budget guards); engine test "W1" + "W3" pass. NOT executed in prod (KIDS_WARMUP_ENABLED unset). |
+| W2 | Warmup does NOT fire if no interests set | PARTIAL | Impl engine.ts:261 (`interests.length===0 → null`); engine test "W2" pass. Not prod-verified. |
+| W4 | Warmup max 2 turns enforced server-side | PARTIAL | Impl engine.ts:263 (WARMUP_MAX_TURNS=2) + lesson-ws interception; engine test "W4" pass. Not prod-verified. |
+| W5 | Warmup auto-ends after 15s | PARTIAL | Impl engine.ts:629 isWarmupTimedOut (WARMUP_TIMEOUT_MS=15000); engine test "W5" (fake timers) pass; RISK-012 RESOLVED. Not prod-verified. |
+| W7 | Warmup returns to curriculum after completion | PARTIAL | Impl engine.ts:299 buildWarmupReturnPhrase + lesson-ws return; engine test "W7" pass. Not prod-verified. |
+| E1 | Example context appears in teacher model when interests set | PARTIAL | Impl engine.ts:438 buildExampleContext + lesson-ws inject before model; engine test "E1" pass. KIDS_INTEREST_EXAMPLES_V2 unset in prod. |
+| E2 | Example is ≤ 15 words | PARTIAL | Impl truncateAtWordBudget(MAX_TEXT_WORDS=15) engine.ts:459; engine test "E2"/"P5"/Section 4.3 pass. Not prod-verified. |
+| E4 | targetWord not modified by example function | COMPLETE | Pure fn engine.ts:438–473 (read-only interpolation); engine test "E4 — targetWord and inputs not modified (pure)" + RUNTIME C1–C6 curriculumFingerprint identical flags-on/off (phase-8 integration, 284/284). Holds regardless of flag state. |
+| P1 | Praise fires after CORRECT_* labels | PARTIAL | Impl engine.ts:383 buildInterestPraise gated on PRAISE_ELIGIBLE_LABELS (engine.ts:186); engine test "P1"+"P4" pass. KIDS_INTEREST_PRAISE unset in prod. |
+| P4/T4 | Lucy praise measurably different from Tom praise | PARTIAL | Impl PRAISE_TEMPLATES persona pairs engine.ts:170 + getTeacherPersona praiseStyle; engine test "P2/P3 persona variants" asserts Lucy≠Tom string. Not prod-verified. |
+| R1 | Recovery fires at ENCOURAGEMENT tier | PARTIAL | Impl turn-processor.ts:610 (tier===ENCOURAGEMENT gate) → buildInterestRecovery; RUNTIME integration test W-019 (processKidsBrainTurn) proves ENCOURAGEMENT-rung text = interest recovery flags-on / standard flags-off. NOT executed in prod (KIDS_INTEREST_RECOVERY_V2 unset). |
+| R2 | Recovery ends with target word invitation | PARTIAL | Impl RECOVERY_TEMPLATES all end "Say ${w}!" engine.ts:129; engine test "R2" pass. Not prod-verified. |
+| M1 | Micro-dialogue fires after ≥3 exercises | PARTIAL | Impl engine.ts:500 (cooldown ≥ MICRO_DIALOGUE_COOLDOWN_EXERCISES=3); engine test "M1" + integration W-020 logic chain pass. KIDS_MICRO_DIALOGUE_ENABLED unset in prod. |
+| M3 | Micro-dialogue is 1 turn only | PARTIAL | Impl buildMicroDialogueReturnPhrase + microDialogueInProgress single-turn return; engine test "M3" + W-020 chain pass. WS wiring is STATIC-regex (not runtime). Not prod-verified. |
+| M5 | Micro-dialogue does NOT score the child | PARTIAL | Impl handleKidsMicroDialogueReply intercepts reply before processKidsBrainTurn; engine test "M5" + STATIC wiring assert "interception returns before scoring" (W-028 soft anchor). Not runtime-WS / not prod-verified. |
+| T1,T2 | Lucy and Tom greeting phrases are distinct | PARTIAL | Impl teacher-personas.ts:33/44 distinct openingPhrase; engine test "T1/T2 persona greetings distinct" pass. KIDS_TEACHER_PERSONA_V2 unset in prod. |
+| T5 | Both personas use same curriculum | COMPLETE | personas carry no curriculum fields (teacher-personas.ts:15–24 text/style only); RUNTIME C1–C6 fingerprint identical flags-on/off. Holds regardless of flag state. |
+| C1 | targetWord not modified by any V2 function | COMPLETE | RUNTIME phase-8 integration: currentTargetItemId==='blue' after recovery injection + targetItemId in turn-by-turn fingerprint identical flags-on/off (curriculum-reviewer Phase 8). |
+| C3 | exerciseCorrectCount not modified | COMPLETE | RUNTIME curriculumFingerprint (incl. correct/attempt counts) .toEqual() turn-by-turn flags-on vs off (phase-8 integration). |
+| C4 | escalationLadder not modified | COMPLETE | RUNTIME dedicated C4 test: ladder position/counters/exerciseId identical flags-on/off; turn-processor.ts:608 reassigns mainText only. |
+| C5 | Adult flow unaffected | COMPLETE | Scope: git diff shows no adult-path files touched; V2 code confined to kids-brain/* + ws/lesson-ws.ts kids path. |
+| C6 | Kids Brain V1 28/28 criteria still pass | COMPLETE | Full suite re-run 2060 pass / 63 pre-existing STT, 0 new — Kids Brain V1 test files green within the 2060. |
+| Q1 | tsc --noEmit → exit 0 | COMPLETE | Re-run this audit → exit 0. |
+| Q2 | npm test → all pass, no new failures | COMPLETE | Re-run this audit → 2060 pass / 63 pre-existing (identical baseline), 0 new. |
+| Q4 | Interest personalization suite ≥40 tests green | COMPLETE | V2 suite re-run 284/284 (engine 207 + integration 25 ≫ 40). |
+| D1 | Railway deploy successful | COMPLETE | railway status: aiteacher a637c55 SUCCESS (== HEAD); logs show clean startup; /health 200. |
+| D2 | All feature flags tested in production | NOT COMPLETE | All 7 V2 flags are OFF in prod (railway variables grep → none set). No flag has ever been enabled in production; zero live behavioral execution. |
+| D3 | No critical errors in first 10 min of production logs | PARTIAL | Logs at flags-OFF show clean startup, no critical errors (uptime 294s, /health ok). But this only evidences the flags-OFF (no-op) deploy; the "first 10 min" with V2 behavior ACTIVE has not occurred. |
+| D4 | Acceptance auditor final verdict: PASS | NOT COMPLETE | This audit returns GOAL NOT COMPLETE (D2 unmet; behavioral criteria PARTIAL). |
+
+── REMAINING WORK ─────────────────────────
+
+The implementation, unit/integration tests, and the flags-OFF production deploy
+are all genuinely COMPLETE and independently verified. What remains is exclusively
+PRODUCTION BEHAVIORAL VERIFICATION, blocked because all 7 V2 flags are OFF in prod:
+
+- D2 (NOT COMPLETE): no V2 flag has been enabled in production → "all feature
+  flags tested in production" is unsatisfied.
+- D3 (PARTIAL): "first 10 min" is only evidenced for the no-op (flags-OFF) deploy;
+  not for any tier with behavior active.
+- D4 (NOT COMPLETE): final auditor PASS cannot be issued while D2 is open.
+- All behavioral criteria W1/W2/W4/W5/W7, E1/E2, P1/P4(T4), R1/R2, M1/M3/M5,
+  T1/T2 are PARTIAL: implemented + unit/integration-tested, but never executed
+  in production (conservatism rule — implemented-but-not-prod-verified = PARTIAL).
+- Per-criterion test-rigor notes (non-blocking, carried): M3/M5, T1/T2 wiring,
+  W-027 are proven by STATIC source-regex asserts, not runtime WS-mock
+  (W-028/W-029 soft anchors, RISK-019). R1 + C1–C6 ARE runtime-proven.
+
+── INCORRECT COMPLETION CLAIMS ────────────
+
+None material. GOAL_PROGRESS.md and NEXT_ACTION.md HONESTLY mark Phase 9 as
+"CODE DEPLOYED + VERIFIED (flags OFF) — flag-enablement + production behavioral
+verification PENDING USER GO-AHEAD" and do NOT claim the goal is COMPLETE. The
+prior tracking is consistent with this audit. The GLOBAL_GOAL phase table shows
+Phase 9 as 🔲 NEXT (not complete). No false COMPLETE claim detected.
+
+── REVISED ROADMAP ────────────────────────
+
+1. Enable master flag KIDS_PERSONALIZATION_V2=true in prod (railway variables).
+   Verify logs (10 min) + /health; run one live Kids voice session — confirm
+   curriculum behavior unchanged (no tier flag on yet).
+2. Enable KIDS_WARMUP_ENABLED → live session with interests set: verify W1
+   (fires once), W2 (no interests → no warmup), W4 (≤2 turns), W5 (15s auto-end),
+   W7 (returns to curriculum). Watch logs 10 min.
+3. Enable KIDS_INTEREST_EXAMPLES_V2 → verify E1/E2 in a live model turn.
+4. Enable KIDS_INTEREST_PRAISE → verify P1/P4 (Lucy vs Tom) live.
+5. Enable KIDS_INTEREST_RECOVERY_V2 → drive an ENCOURAGEMENT-tier turn live; verify
+   R1/R2 and that progression/counters are unchanged (C1/C3/C4 in prod).
+6. Enable KIDS_MICRO_DIALOGUE_ENABLED → after ≥3 exercises verify M1/M3/M5 live
+   (one turn, unscored, returns to curriculum).
+7. Enable KIDS_TEACHER_PERSONA_V2 → verify T1/T2 distinct greeting + T5 same
+   curriculum, for both Lucy and Tom.
+8. Confirm no critical errors in the first 10 min after EACH enablement (D3).
+9. Re-run acceptance-auditor → D2/D3/D4 + all behavioral criteria → COMPLETE.
+10. Tag the release; mark Phase 9 ✅ and the global goal COMPLETE.
+Rollback at any step: set the offending flag OFF (instant, no redeploy).
+
+── FINAL VERDICT ──────────────────────────
+
+GOAL NOT COMPLETE
+
+Criteria failed: 2 NOT COMPLETE — D2 (all feature flags tested in production),
+  D4 (acceptance-auditor final PASS). 16 PARTIAL — behavioral W1/W2/W4/W5/W7,
+  E1/E2, P1/P4(T4), R1/R2, M1/M3/M5, T1/T2 (implemented + tested, not
+  prod-executed) and D3 (clean only at flags-OFF).
+Criteria passed: 12 COMPLETE — E4, T5, C1, C3, C4, C5, C6, Q1, Q2, Q4, D1.
+Evidence gaps: zero production execution of any V2 tier (all 7 flags OFF in
+  prod, verified via railway variables); no live "flags-ON" 10-minute log window;
+  M3/M5/T1/T2 wiring proven by static-regex rather than runtime WS (carried,
+  non-blocking).
+
+Note: code + tests + flags-OFF deploy are sound and verified. The single gating
+deficiency is the deliberately-deferred production flag enablement (a user-gated
+action per GLOBAL_GOAL "HOW TO RUN": secrets/paid-account/prod-env mutation).
+══════════════════════════════════════════
+```
+
+---
+
 ## ARCHIVED: Phase 7 review — PASS 2026-06-12 (safety hardening; S1–S5; substituteChildName name-cap 100 + \s collapse; adversarial name attacks executed; 200/200 engine tests; suite 2028/63; W-026/W-027 logged)
 
 ## BACKEND REVIEWER — Phase 6
