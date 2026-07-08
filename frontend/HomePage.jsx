@@ -594,6 +594,8 @@ function TikTokIcon() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="rgba(255,255,255,0.6)"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.18 8.18 0 0 0 4.79 1.54V6.78a4.85 4.85 0 0 1-1.02-.09z"/></svg>;
 }
 
+const INSTAGRAM_URL = "https://www.instagram.com/bella.dent.clinic";
+
 export default function HomePage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -742,7 +744,15 @@ export default function HomePage() {
                 <p className="footer-tagline">The future of learning<br/>is one-on-one with AI.</p>
                 <div className="footer-socials">
                   <div className="social-icon"><TwitterIcon /></div>
-                  <div className="social-icon"><InstagramIcon /></div>
+                  <a
+                    href={INSTAGRAM_URL}
+                    className="social-icon"
+                    aria-label="Instagram"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <InstagramIcon />
+                  </a>
                   <div className="social-icon"><YoutubeIcon /></div>
                   <div className="social-icon"><TikTokIcon /></div>
                 </div>

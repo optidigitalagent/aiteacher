@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom'
 
+const INSTAGRAM_URL = 'https://www.instagram.com/bella.dent.clinic'
+
 const CSS = `
   .site-footer { background: #0F172A; color: rgba(255,255,255,0.6); padding: 64px 0 32px; }
   .site-footer .fc { max-width: 1200px; margin: 0 auto; padding: 0 48px; }
@@ -103,7 +105,15 @@ export default function Footer() {
               <p className="site-footer-tagline">The future of learning<br />is one-on-one with AI.</p>
               <div className="site-footer-socials">
                 <a href="#" className="site-footer-social">𝕏</a>
-                <a href="#" className="site-footer-social">in</a>
+                <a
+                  href={INSTAGRAM_URL}
+                  className="site-footer-social"
+                  aria-label="Instagram"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  in
+                </a>
                 <a href="#" className="site-footer-social">▶</a>
               </div>
             </div>
