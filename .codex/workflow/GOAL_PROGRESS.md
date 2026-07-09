@@ -288,9 +288,34 @@ Previous goals complete:
     safety behavior changed.
   - QA tester: RUN -> PASS; build and browser reproduction both green.
   - acceptance auditor: NOT APPLICABLE -> not a final goal-completion claim.
-- Commit: pending at time of checkpoint.
-- Production state: not deployed yet. This frontend fix must be deployed and
-  verified before enabling `KIDS_WARMUP_ENABLED`.
+- Commit: `b0d56e95237051cef498835ec072ec02f9bd5294`
+  (`fix(kids): handle missing child profile`).
+- Deployment evidence:
+  - `git push origin main` -> success (`0b82f7d..b0d56e9 main -> main`).
+  - Railway frontend service `aware-alignment`, deployment
+    `4d0a2e07-305a-4c6d-9b5c-8a66be13fc73`, commit `b0d56e9`, created
+    `2026-07-09T07:46:01.033Z`, status `SUCCESS`.
+  - Railway backend service `aiteacher`, deployment
+    `b8021d98-70a7-49cf-b9d5-653c715af410`, commit `b0d56e9`, created
+    `2026-07-09T07:46:00.568Z`, status `SUCCESS` (auto-deployed on push; no
+    backend product code changed in this repair).
+  - Frontend HTTP: `curl https://aware-alignment-production.up.railway.app/`
+    -> HTTP 200; `curl https://aware-alignment-production.up.railway.app/kids`
+    -> HTTP 200; Caddy logs show handled `/` and `/kids` requests with status
+    200 and no startup errors.
+  - Backend health: `curl https://aiteacher-production-cae8.up.railway.app/health`
+    -> HTTP 200; `status=ok`; `checks.postgres=ok`; `checks.redis=ok`;
+    uptime `110`.
+  - Backend logs after deploy: migrations applied, `[server] listening on
+    0.0.0.0:8080`, PostgreSQL ready, Redis ready, WS attached, no startup crash.
+  - Production frontend browser verification with deployed asset:
+    Playwright opened real production `/kids`, mocked authenticated `/api/me`,
+    mocked `/api/kids/child-profile -> 404`; final URL
+    `https://aware-alignment-production.up.railway.app/kids/onboarding`;
+    heading `"What's your child's name?"`; `pageErrors: []`. Console resource
+    errors were only the expected mocked 404 child-profile responses.
+- Production state: frontend no-profile crash fix deployed and verified.
+  Resume `KIDS_WARMUP_ENABLED` live mic/STT verification next.
 
 ---
 

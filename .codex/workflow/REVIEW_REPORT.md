@@ -12,7 +12,7 @@
 Cycle ID: prod-kids-no-profile-frontend-crash/2026-07-09
 Scope: frontend /kids route null-profile handling
 Base commit: 3bd24a8
-Commit created: pending
+Commit created: b0d56e95237051cef498835ec072ec02f9bd5294
 Production symptom:
   User opened https://aware-alignment-production.up.railway.app/kids and saw a
   blank screen. Browser console showed GET /api/kids/child-profile -> 404 and
@@ -53,12 +53,29 @@ QA tester:
       `/api/kids/child-profile -> 404`; opened `/kids`; observed final URL
       `/kids/onboarding`; `pageErrors: []`; command exit 0.
 
+Deploy / production-log verification:
+  Verdict: PASS
+  Evidence:
+    - `git push origin main` -> success.
+    - Railway `aware-alignment` deployment
+      4d0a2e07-305a-4c6d-9b5c-8a66be13fc73 reached SUCCESS at commit b0d56e9.
+    - Railway `aiteacher` deployment b8021d98-70a7-49cf-b9d5-653c715af410
+      reached SUCCESS at commit b0d56e9 (auto-deployed; no backend code changed).
+    - Frontend `/` and `/kids` -> HTTP 200.
+    - Backend `/health` -> HTTP 200, status ok, postgres ok, redis ok.
+    - Frontend Caddy logs: startup clean, `/` and `/kids` status 200.
+    - Backend logs: migrations applied, server listening on 0.0.0.0:8080,
+      PostgreSQL ready, Redis ready, WS attached; no startup crash.
+    - Production frontend browser verification on deployed asset:
+      authenticated `/api/me` mocked, `/api/kids/child-profile -> 404` mocked;
+      final URL `/kids/onboarding`; heading `What's your child's name?`;
+      `pageErrors: []`. Console errors were the expected mocked 404 resource
+      messages only.
+
 Final verdict:
-  PASS for code repair.
-  Production deployment and verification are still pending. Next action is to
-  deploy this frontend fix, verify production `/kids` redirects to onboarding
-  without a page error for an authenticated user without child profile, then
-  resume `KIDS_WARMUP_ENABLED` live mic/STT verification.
+  PASS. Code repair, deploy, health, logs, and production frontend browser
+  verification are complete. Next action returns to `KIDS_WARMUP_ENABLED` live
+  mic/STT verification.
 ```
 
 ---

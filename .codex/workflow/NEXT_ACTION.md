@@ -8,59 +8,81 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Deploy and production-verify `/kids` no-profile crash fix
-**Type:** DEPLOY-VERIFY
+**Task:** Phase 9 step 2 - enable `KIDS_WARMUP_ENABLED` in production and live-verify warmups
+**Type:** DEPLOY-VERIFY (external production verification)
 **Phase:** Phase 9 - Deployment
-**Agent:** goal-executor -> deploy-railway + production-log-analyzer + QA tester
+**Agent:** goal-executor -> deploy-railway + production-log-analyzer + QA tester + acceptance-auditor later
 
 **Why this is next:**
-  The planned `KIDS_WARMUP_ENABLED` live mic/STT verification is blocked because
-  the user opened production `/kids` and hit a blank screen before onboarding.
-  Browser console evidence showed `GET /api/kids/child-profile -> 404` followed
-  by `TypeError: Cannot read properties of null (reading 'teacherId')`.
-  The frontend repair is implemented and locally verified, but it is not yet
-  deployed to production.
+  The local Kids WS/STT test breakage is fixed and the full backend suite is
+  green. The Phase 9 master flag is live in production:
+  `KIDS_PERSONALIZATION_V2=true`, `USE_KIDS_BRAIN_V1=true`.
+  The blocking production `/kids` blank screen for users without child profile
+  is fixed and deployed at commit `b0d56e95237051cef498835ec072ec02f9bd5294`.
+  Production `/kids` now serves HTTP 200 and the deployed frontend bundle routes
+  authenticated `NO_CHILD_PROFILE` state to `/kids/onboarding` without React
+  page errors.
 
 **Description:**
-  Deploy commit containing `frontend/src/pages/KidsPrototypePage.tsx` null-profile
-  guard, then verify production:
-  1. Commit the repair and workflow checkpoint.
-  2. Deploy the frontend service `aware-alignment` to Railway.
-  3. Wait for Railway deployment `SUCCESS`.
-  4. Verify production `/` and `/kids` return HTTP 200.
-  5. For an authenticated user without child profile, verify `/kids` redirects
-     to `/kids/onboarding` and does not throw a React page error.
-  6. Check production logs for critical frontend/backend errors relevant to this
-     flow.
-  7. Update workflow evidence. On pass, restore next action to
-     `KIDS_WARMUP_ENABLED` production enablement and live warmup mic/STT test.
+  Continue Phase 9 one tier at a time. The next tier is `KIDS_WARMUP_ENABLED`.
+  Before enabling it, ensure a live voice/STT-capable verification channel is
+  available (manual browser/microphone run or a repository-backed automated
+  audio/STT smoke). Then:
+  1. Set `KIDS_WARMUP_ENABLED=true` on Railway service `aiteacher`.
+  2. Wait for the Railway redeploy to reach `SUCCESS`.
+  3. Verify `/health` returns HTTP 200 with PostgreSQL and Redis OK.
+  4. Run a live Kids voice session with a prepared child profile and interests.
+  5. Verify W1/W2/W4/W5/W7 in production:
+     W1 warmup fires once, W2 no-interests -> no warmup, W4 <=2 turns,
+     W5 15s auto-end, W7 returns to curriculum.
+  6. Run production-log-analyzer for the first 10 minutes after enablement.
+  7. If clean, update workflow evidence and advance to
+     `KIDS_INTEREST_EXAMPLES_V2`. If not clean, roll back only
+     `KIDS_WARMUP_ENABLED=false`, diagnose, and retry.
 
-**Latest verified local evidence (2026-07-09):**
-  - `cd frontend; npm run build` -> exit 0; TypeScript + Vite production build
-    passed; Vite chunk-size warning only.
-  - Local production-build browser reproduction:
-    Vite preview on `127.0.0.1:4173` + Playwright with mocked authenticated
-    `/api/me` and mocked `/api/kids/child-profile -> 404` -> exit 0; final URL
-    `/kids/onboarding`; `pageErrors: []`.
+**Latest verified evidence (2026-07-09):**
+  - `cd backend; npx tsc --noEmit` -> exit 0.
+  - `cd backend; npm test -- --reporter=dot --silent` -> exit 0;
+    64 files passed; 2123 tests passed.
+  - `cd frontend; npm run build` -> exit 0.
+  - Kids no-profile frontend fix:
+    - commit `b0d56e95237051cef498835ec072ec02f9bd5294`;
+    - Railway `aware-alignment` deployment
+      `4d0a2e07-305a-4c6d-9b5c-8a66be13fc73` -> SUCCESS;
+    - Railway `aiteacher` deployment
+      `b8021d98-70a7-49cf-b9d5-653c715af410` -> SUCCESS;
+    - production `/` and `/kids` -> HTTP 200;
+    - production browser verification with authenticated no-child-profile mocks
+      -> final URL `/kids/onboarding`, heading `What's your child's name?`,
+      `pageErrors: []`.
+  - `railway variables --service aiteacher` shows `KIDS_PERSONALIZATION_V2 true`
+    and `USE_KIDS_BRAIN_V1 true`.
+  - `curl.exe -sS -i https://aiteacher-production-cae8.up.railway.app/health`
+    after deploy -> HTTP 200; status `ok`; `checks.postgres=ok`;
+    `checks.redis=ok`.
+  - Voice-safe production smoke for master flag only -> exit 0;
+    `messageTypes: ["lesson_ready","lesson_ready","ai_text","audio_chunk","teacher_turn_end"]`;
+    `audioChunks: 1`; `errorCodes: []`; `voiceUnavailable: []`.
 
 **Inputs:**
-  - User production console evidence for `/kids` blank screen.
-  - `frontend/src/pages/KidsPrototypePage.tsx`.
-  - Railway frontend service `aware-alignment`.
+  - GLOBAL_GOAL.md "Deployment (Phase 9)" acceptance criteria (D2/D3/D4)
+  - docs/kids-personalization-v2.md rollback plan (7 feature flags)
+  - .codex/skills/deploy-railway, production-log-analyzer, qa-tester,
+    acceptance-auditor
+  - backend/.env.example (all 7 flags documented, default OFF)
 
 **Success criterion for this next action:**
-  The frontend fix is committed and deployed; production `/kids` no longer blank
-  screens for authenticated users with no child profile; workflow checkpoint is
-  updated with exact deployment and verification evidence.
+  `KIDS_WARMUP_ENABLED=true` live in production; W1/W2/W4/W5/W7 verified in a
+  live Kids voice/STT session; no critical errors in the first 10 minutes after
+  enablement; workflow checkpoint updated with exact evidence.
 
 **Current blocker / stop condition:**
-  None for the repair deploy. After this deploy passes, the original manual
-  warmup mic/STT verification blocker resumes for `KIDS_WARMUP_ENABLED`.
+  Live warmup verification requires a voice/STT-capable production run, not only
+  API/WS/TTS smoke. Per AGENTS stop rule 4, do not enable the next tier unless
+  that manual or automated voice/STT verification channel is available.
 
-**On PASS:** Advance back to `KIDS_WARMUP_ENABLED` production enablement and
-live warmup voice/STT verification.
-**On FAIL:** Diagnose production deploy or route behavior; do not enable
-`KIDS_WARMUP_ENABLED` until `/kids` onboarding access is working.
+**On PASS:** Advance to `KIDS_INTEREST_EXAMPLES_V2` production enablement.
+**On FAIL:** Roll back `KIDS_WARMUP_ENABLED=false`; diagnose; retry after evidence.
 
 ---
 

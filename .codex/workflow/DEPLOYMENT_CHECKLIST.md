@@ -163,6 +163,16 @@ Or via Railway dashboard: Deployments → previous deploy → Redeploy.
 ## CHECKLIST STATUS
 
 ```
+Latest completed deploy: Kids /kids no-profile frontend crash fix (commit b0d56e9) — 2026-07-09
+Deployment status:       DEPLOYED
+Railway services:
+  - aware-alignment frontend: deployment 4d0a2e07-305a-4c6d-9b5c-8a66be13fc73 SUCCESS, commit b0d56e9
+  - aiteacher backend: deployment b8021d98-70a7-49cf-b9d5-653c715af410 SUCCESS, commit b0d56e9
+Post-deploy verification:
+  - frontend / and /kids -> HTTP 200
+  - backend /health -> HTTP 200, postgres ok, redis ok
+  - production browser verification: mocked authenticated no-child-profile /kids flow -> /kids/onboarding, pageErrors []
+
 Last completed deploy: Kids Personalization V2 Phases 1-8 (commit a637c55) — 2026-06-13
 Deployment status:     DEPLOYED (code live, ALL 7 V2 flags OFF in production = no behavior change)
 Production flags:       railway variables → none of the 7 KIDS_* V2 flags set = default OFF (verified)
