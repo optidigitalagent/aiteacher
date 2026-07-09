@@ -8,8 +8,8 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Production smoke ordinary Mentium flow
-**Type:** QA / PROD-VERIFY
+**Task:** Manual authenticated production smoke for ordinary Mentium flow
+**Type:** MANUAL-PROD-VERIFY
 **Phase:** Ordinary mode Phase 1 - Demo production smoke
 **Agent:** goal-executor + lesson-qa
 
@@ -32,27 +32,34 @@
     include `1.1`, `1.2`, `1.4`, `2.1`, `2.3`, `3.1`, `4.1`, `4.3`,
     `5.1`, `5.3`, `6.1`, `6.3`, `7.1`, `7.3`, `8.1`, `8.3`.
 
-**Execute exactly this:**
-  1. Inspect whether a legitimate authenticated browser/session is available
-     without using JWTs pasted in chat.
-  2. If available, smoke `https://aware-alignment-production.up.railway.app/demo/setup`:
-     start or resume demo, open `/demo/classroom/:demoSessionId`, verify no
-     white screen and core lesson interaction.
-  3. If demo is blocked by `DEMO_USED` or unavailable auth, record that exact
-     blocker and continue to paid ordinary flow if valid subscription/auth is
-     available.
-  4. For paid flow, choose a GOLD ready section such as `1.1`, start a lesson
-     through the UI or legitimate authenticated API, open `/classroom/:sessionId`,
-     and verify `lesson_ready`, `ai_text`, `audio_chunk` or documented voice
-     fallback, and `teacher_turn_end`.
-  5. Inspect production logs for critical ordinary-flow errors in the checked
-     window.
+**Blocker evidence:**
+  - `POST /demo/start` without legitimate auth -> HTTP 401.
+  - `POST /lesson/start` without legitimate auth -> HTTP 401.
+  - Source confirms both routes use `requireAuth`.
+  - Browser-console JWTs pasted in chat must not be used as credentials.
+
+**Manual test steps:**
+  1. In your normal logged-in browser, open
+     `https://aware-alignment-production.up.railway.app/demo/setup`.
+  2. Start the demo if available. Expected: it navigates to
+     `/demo/classroom/:demoSessionId`, no white screen.
+  3. Do one simple demo interaction. Expected: the UI responds and does not
+     crash. If you see `DEMO_USED`, report that exact message.
+  4. If paid ordinary mode is available, open Learning, choose GOLD section
+     `1.1` (or another GOLD ready section), start the lesson, and enter
+     `/classroom/:sessionId`.
+  5. Expected paid lesson console: `lesson_ready`, then after Begin Lesson
+     `ai_text`, `audio_chunk` or a documented voice fallback, and
+     `teacher_turn_end`. No `PAYMENT_REQUIRED`, `SUBSCRIPTION_EXPIRED`,
+     `INVALID_SESSION`, or white screen.
+  6. Send the console snippet or report the exact visible error. Goal Executor
+     will inspect production logs for the same time window.
 
 **Success criterion:**
   Ordinary demo and/or paid lesson flow is production-smoked with direct
   evidence, or the exact missing credential/quota/subscription blocker is
   recorded.
 
-**Current stop condition if blocked:**
-  AGENTS stop rule 1 or 4 - unavailable legitimate auth/subscription or manual
-  production verification required.
+**Current stop condition:**
+  AGENTS stop rule 1/4 - legitimate authenticated production browser session
+  and possible paid entitlement/manual verification are required.

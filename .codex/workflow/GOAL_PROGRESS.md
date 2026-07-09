@@ -69,6 +69,18 @@ on Kids mode and focus on the ordinary mode because it is much more important.
 **Next action:** Production smoke ordinary Mentium flow: demo classroom first,
 then paid classroom if legitimate auth/subscription is available.
 
+**Production smoke blocker update:**
+- `POST https://aiteacher-production-cae8.up.railway.app/demo/start` without a
+  legitimate auth token -> HTTP 401.
+- `POST https://aiteacher-production-cae8.up.railway.app/lesson/start` without
+  a legitimate auth token -> HTTP 401.
+- Source confirms both routes are protected by `requireAuth`.
+- The user pasted browser console output containing auth material; this was
+  not used. No browser-console JWT was copied into any command.
+- Stop condition reached: AGENTS stop rule 1/4 - ordinary production lesson
+  smoke needs a legitimate authenticated browser session, and paid flow also
+  needs subscription/entitlement if demo is unavailable.
+
 ## CURRENT PHASE
 Phase: **Ordinary mode Phase 1 - Demo production smoke**
 Started: 2026-07-09

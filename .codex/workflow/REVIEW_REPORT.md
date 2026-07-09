@@ -53,6 +53,15 @@
 production smoke of ordinary demo flow, then paid ordinary flow if valid
 auth/subscription is available.
 
+**Production smoke blocker update:**
+- `POST /demo/start` without legitimate auth -> HTTP 401.
+- `POST /lesson/start` without legitimate auth -> HTTP 401.
+- Source confirms both routes use `requireAuth`.
+- Browser-console JWTs pasted in chat were not used.
+- Current stop condition: legitimate authenticated browser session and, for
+  paid flow, valid entitlement/subscription are required for the next evidence
+  step.
+
 ---
 
 ## REVIEW GATE - Kids STT teacher-echo target correction - 2026-07-09
