@@ -248,6 +248,52 @@ Previous goals complete:
 
 ---
 
+**Production Kids `/kids` no-profile crash repair checkpoint (2026-07-09):**
+- User attempted the next manual warmup mic test at
+  `https://aware-alignment-production.up.railway.app/kids` and observed a blank
+  screen. Browser console evidence:
+  `GET /api/kids/child-profile -> 404` followed by
+  `TypeError: Cannot read properties of null (reading 'teacherId')` in the
+  bundled Kids page component.
+- Root cause verified in source: `frontend/src/pages/KidsPrototypePage.tsx`
+  handled `404` as `profile=null` and scheduled a redirect to
+  `/kids/onboarding` in an effect, but the same render still cast
+  `profile as ChildProfile` and read `p.teacherId` before the redirect effect
+  could run.
+- Product fix: `KidsPrototypePage` now returns `null` while `profile === null`,
+  allowing the existing redirect effect to navigate to `/kids/onboarding`
+  without rendering profile fields.
+- Files changed:
+  - `frontend/src/pages/KidsPrototypePage.tsx` - null-profile render guard.
+  - `.codex/workflow/GOAL_PROGRESS.md` - checkpoint.
+  - `.codex/workflow/NEXT_ACTION.md` - next action updated to deploy/verify
+    this production-blocking frontend fix before warmup enablement.
+  - `.codex/workflow/REVIEW_REPORT.md` - review gate evidence.
+  - `.codex/workflow/RISK_REGISTER.md` - resolved no-profile frontend crash risk.
+- Validation evidence:
+  - `cd frontend; npm run build` -> exit 0; TypeScript + Vite production build
+    passed; Vite chunk-size warning only.
+  - Local production-build browser reproduction:
+    `npm run preview -- --host 127.0.0.1 --port 4173` + Playwright with
+    mocked authenticated `/api/me` and mocked
+    `/api/kids/child-profile -> 404` -> exit 0; final URL
+    `http://127.0.0.1:4173/kids/onboarding`; `pageErrors: []`.
+- Review gate:
+  - backend reviewer: NOT APPLICABLE -> no backend code changed.
+  - frontend reviewer: RUN -> PASS; null backend data no longer crashes the
+    Kids page; existing redirect contract preserved.
+  - curriculum reviewer: NOT APPLICABLE -> no curriculum, scoring, progression,
+    accepted answer, or prompt behavior changed.
+  - kids safety monitor: NOT APPLICABLE -> no child-facing content templates or
+    safety behavior changed.
+  - QA tester: RUN -> PASS; build and browser reproduction both green.
+  - acceptance auditor: NOT APPLICABLE -> not a final goal-completion claim.
+- Commit: pending at time of checkpoint.
+- Production state: not deployed yet. This frontend fix must be deployed and
+  verified before enabling `KIDS_WARMUP_ENABLED`.
+
+---
+
 ## BLOCKERS
 
 None.

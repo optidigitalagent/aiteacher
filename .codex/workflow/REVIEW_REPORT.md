@@ -6,6 +6,63 @@
 
 ---
 
+## PRODUCTION KIDS NO-PROFILE FRONTEND CRASH REVIEW - 2026-07-09
+
+```text
+Cycle ID: prod-kids-no-profile-frontend-crash/2026-07-09
+Scope: frontend /kids route null-profile handling
+Base commit: 3bd24a8
+Commit created: pending
+Production symptom:
+  User opened https://aware-alignment-production.up.railway.app/kids and saw a
+  blank screen. Browser console showed GET /api/kids/child-profile -> 404 and
+  TypeError: Cannot read properties of null (reading 'teacherId').
+
+Changed files:
+  - frontend/src/pages/KidsPrototypePage.tsx
+  - .codex/workflow/GOAL_PROGRESS.md
+  - .codex/workflow/NEXT_ACTION.md
+  - .codex/workflow/REVIEW_REPORT.md
+  - .codex/workflow/RISK_REGISTER.md
+
+Role applicability:
+  backend reviewer: NOT APPLICABLE - backend 404 contract is valid and unchanged
+  frontend reviewer: RUN - frontend null-state crash fixed
+  curriculum reviewer: NOT APPLICABLE - no curriculum/progression/scoring/content changed
+  kids safety monitor: NOT APPLICABLE - no child-facing safety/content behavior changed
+  QA tester: RUN - build and browser reproduction
+  acceptance auditor: NOT APPLICABLE - not a final goal-completion claim
+
+Frontend review:
+  Verdict: PASS
+  Findings: none blocking. KidsPrototypePage already treated 404 as
+    profile=null and had an effect redirecting null profile to /kids/onboarding.
+    The bug was the render path continuing before the effect ran. The new guard
+    `profile === null` prevents reading `p.teacherId` while preserving the
+    existing redirect behavior and authenticated/onboarding contract. No shared
+    components, adult routes, WS message types, auth logic, billing logic, CSS,
+    or KidsClassroom voice flow changed.
+
+QA tester:
+  Verdict: PASS
+  Evidence:
+    - `cd frontend; npm run build` -> exit 0. TypeScript and Vite production
+      build passed; Vite chunk-size warning only.
+    - Local production-build browser reproduction with Vite preview and
+      Playwright: mocked authenticated `/api/me`; mocked
+      `/api/kids/child-profile -> 404`; opened `/kids`; observed final URL
+      `/kids/onboarding`; `pageErrors: []`; command exit 0.
+
+Final verdict:
+  PASS for code repair.
+  Production deployment and verification are still pending. Next action is to
+  deploy this frontend fix, verify production `/kids` redirects to onboarding
+  without a page error for an authenticated user without child profile, then
+  resume `KIDS_WARMUP_ENABLED` live mic/STT verification.
+```
+
+---
+
 ## PHASE 9 MASTER FLAG PRODUCTION REVIEW - 2026-07-09
 
 ```text

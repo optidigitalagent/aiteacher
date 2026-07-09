@@ -109,6 +109,28 @@
 
 ---
 
+### RISK-020 — Kids `/kids` page crashes when profile API returns 404
+
+**Status:** RESOLVED
+**Severity:** P1
+**Area:** frontend
+**Description:** An authenticated user without a `kids_brain_child_profiles`
+  row receives `GET /api/kids/child-profile -> 404`. The frontend represented
+  that valid state as `profile=null`, but `/kids` rendered once before its
+  redirect effect and read `profile.teacherId`, causing a blank screen.
+**Trigger:** Opening `/kids` before creating a child profile.
+**Mitigation:** `KidsPrototypePage` now treats `profile === null` as a
+  non-rendering redirect state, so the existing `/kids/onboarding` redirect can
+  complete without reading profile fields.
+**Evidence:** `cd frontend; npm run build` -> exit 0. Local production-build
+  Playwright reproduction with mocked authenticated `/api/me` and mocked
+  `/api/kids/child-profile -> 404` -> final URL `/kids/onboarding`,
+  `pageErrors: []`, exit 0.
+**Opened:** 2026-07-09
+**Resolved:** 2026-07-09
+
+---
+
 ### RISK-007 — Interest personalization curriculum integrity
 
 **Status:** MITIGATED

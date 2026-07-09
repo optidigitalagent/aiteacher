@@ -158,7 +158,7 @@ export default function KidsPrototypePage() {
     }
   }
 
-  if (isAuthLoading || profile === 'loading') return null
+  if (isAuthLoading || profile === 'loading' || profile === null) return null
 
   const p = profile as ChildProfile
   const teacherName = TEACHER_DISPLAY[p.teacherId] ?? 'Lucy'
