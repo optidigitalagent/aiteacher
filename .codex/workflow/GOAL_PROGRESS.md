@@ -1,5 +1,77 @@
 # GOAL_PROGRESS.md
 
+## OWNER-ONLY PAID ACCESS BYPASS CHECKPOINT - 2026-07-09
+
+**Trigger:** User reported LiqPay checkout error
+`public_key_not_found` and Railway variables containing placeholder
+`PASTE_LIQPAY_PUBLIC_KEY` / `PASTE_LIQPAY_PRIVATE_KEY`, then explicitly said not
+to touch LiqPay and requested that only `artenon92@gmail.com` can enter ordinary
+paid lessons without payment or limits.
+
+**Recovery/intake evidence:**
+- `git status --short --untracked-files=all` -> clean at start.
+- Current branch: `main`.
+- HEAD: `f700771cf43581cb22608562cf5193f67cfa8954`.
+- Relevant code inspected:
+  - `backend/src/api/lesson-routes.ts` - `/lesson/start` subscription gate.
+  - `backend/src/ws/lesson-ws.ts` - paid classroom `checkAndLinkPaidSession`.
+  - `backend/src/billing/subscription-service.ts` - shared subscription lookup.
+  - `backend/src/auth/middleware.ts` and `backend/src/auth/jwt.ts` - auth user
+    context and JWT payload.
+  - `frontend/src/services/lessonStartApi.ts` and
+    `frontend/src/pages/LearningPage.tsx` - payment error handling.
+
+**Implementation:**
+- `backend/src/billing/subscription-service.ts`
+  - Added `OWNER_ACCESS_EMAIL = 'artenon92@gmail.com'`.
+  - Added case-insensitive/trimmed `isOwnerAccessEmail`.
+  - Changed `getSubscription(userId)` to read server-side `users.email` with a
+    `LEFT JOIN user_lesson_profiles`.
+  - If the DB email matches the owner address, returns a virtual active
+    subscription with `owner_access` plan and `1_000_000` remaining minutes.
+  - Non-owner users without a paid profile still return `null`.
+  - Existing non-owner subscription rows still return their real values.
+- `backend/src/billing/__tests__/subscription-service.test.ts`
+  - Added 4 tests for owner matching, owner no-profile access, non-owner
+    no-profile blocking, and normal subscription preservation.
+
+**Validation evidence:**
+- `cd backend; npx vitest run src/billing/__tests__/subscription-service.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 4 tests passed.
+- First `cd backend; npx tsc --noEmit` -> exit 1 because the new test mocks
+  did not include the full `pg.QueryResult` shape (`command`, `oid`, `fields`).
+  Test helper was fixed to return a typed `QueryResult`.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd backend; npx vitest run src/auth/__tests__/require-auth-guard.test.ts src/billing/__tests__/subscription-service.test.ts --reporter=dot --silent`
+  -> exit 0; 2 files passed; 10 tests passed.
+- `cd backend; npm test -- --reporter=dot --silent`
+  -> exit 0; 65 files passed; 2131 tests passed.
+
+**Review gate:**
+- backend reviewer: RUN -> PASS. The bypass is intentionally authorized by the
+  current user request, remains backend-authoritative, uses server-side
+  `users.email`, adds no unauthenticated endpoint, logs no secrets, and does
+  not touch LiqPay checkout/callback/key handling.
+- frontend reviewer: NOT APPLICABLE - no frontend files changed.
+- curriculum reviewer: NOT APPLICABLE - no curriculum, scoring, progression,
+  prompt, or teaching behavior changed.
+- kids safety monitor: NOT APPLICABLE - no Kids or child-facing behavior
+  changed.
+- QA tester: RUN -> PASS. Targeted billing/auth tests, TypeScript, and full
+  backend suite passed.
+- acceptance auditor: NOT APPLICABLE - production deploy and smoke remain
+  blocked pending explicit approval.
+
+**Commit/deploy state:**
+- Commit: no commit created.
+- Deployment: not deployed. Railway production mutation/deploy needs explicit
+  approval before this can affect the live site.
+- Production verification: not run.
+
+**Next action:** Deploy owner-only paid lesson access bypass after explicit
+approval, then production-smoke `artenon92@gmail.com` through `/lesson/start`
+and paid classroom entry.
+
 ## ACTIVE GOAL OVERRIDE - 2026-07-09
 
 **Current active goal:** Ordinary Mentium lesson mode production readiness.

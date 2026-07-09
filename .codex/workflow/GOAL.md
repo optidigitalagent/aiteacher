@@ -1,53 +1,40 @@
-# GOAL: Ordinary Mentium lesson mode production readiness
+# GOAL: Owner-only paid lesson access bypass
 
 ## Goal
 
-Prioritize and verify the ordinary, non-Kids Mentium lesson mode for a
-presentation-quality path. Kids work is paused by user request after live
-production evidence showed a Kids progression loop.
+Implement a backend-only paid lesson access exception for exactly
+`artenon92@gmail.com`, so this account can start ordinary paid lessons and enter
+the paid classroom without LiqPay payment or paid-minute limits.
 
-## Current Evidence
+## Implementation Context
 
-- Backend TypeScript is green.
-- Full backend suite is green.
-- Ordinary demo/runtime targeted suite is green.
-- Frontend production build is green.
-- Production backend health is green.
-- Production frontend `/demo/setup` is reachable.
-- Production `/lesson/sections/status` is reachable and lists ready ordinary
-  sections.
+- `/lesson/start` calls `getSubscription(userId)` before creating the lesson
+  session and usage record.
+- Paid classroom WebSocket entry also calls `getSubscription(userId)` in
+  `checkAndLinkPaidSession`.
+- Therefore the narrowest shared implementation point is
+  `backend/src/billing/subscription-service.ts`.
 
-## Ordinary Flow Entry Points
+## Scope Boundaries
 
-- Demo setup UI: `frontend/src/components/demo/DemoSetup.tsx`.
-- Demo start API: `POST /demo/start` in `backend/src/api/auth-routes.ts`.
-- Demo classroom route: `/demo/classroom/:demoId`.
-- Paid lesson start API: `POST /lesson/start` in
-  `backend/src/api/lesson-routes.ts`.
-- Paid classroom route: `/classroom/:sessionId`.
-- Paid classroom WebSocket connects only outside demo mode in
-  `frontend/src/features/classroom/components/ClassroomLayout.tsx`.
+- LiqPay code and Railway `LIQPAY_*` variables are intentionally untouched.
+- Auth remains mandatory; the bypass is only after `requireAuth` has identified
+  the user.
+- The owner check uses the server-side `users.email` row, not client-provided
+  frontend state.
+- Production is not changed until a Railway deploy is explicitly approved.
 
-## Constraints
+## Validation Evidence
 
-- Do not change Kids behavior unless the user re-prioritizes Kids.
-- Do not change auth, billing, payment, STT/TTS config, or prompts unless a
-  verified ordinary-flow blocker requires it and the user approves the scope.
-- Do not use JWTs pasted in chat/console as credentials.
-- Local npm commands must redirect cache/temp to D: while C: has no free space.
+- `cd backend; npx vitest run src/billing/__tests__/subscription-service.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 4 tests passed.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd backend; npx vitest run src/auth/__tests__/require-auth-guard.test.ts src/billing/__tests__/subscription-service.test.ts --reporter=dot --silent`
+  -> exit 0; 2 files passed; 10 tests passed.
+- `cd backend; npm test -- --reporter=dot --silent`
+  -> exit 0; 65 files passed; 2131 tests passed.
 
-## Ready Sections
+## Current State
 
-Production `/lesson/sections/status` currently returns HTTP 200 and includes
-multiple ready ordinary sections. GOLD presentation candidates include:
-`1.1`, `1.2`, `1.4`, `2.1`, `2.3`, `3.1`, `4.1`, `4.3`, `5.1`, `5.3`,
-`6.1`, `6.3`, `7.1`, `7.3`, `8.1`, `8.3`.
-
-## Next Implementation Direction
-
-No product code change is justified by current evidence. The next action is
-production smoke verification of ordinary mode:
-
-1. Demo flow first, because it avoids paid lesson entitlement assumptions.
-2. Paid ordinary textbook flow second, if valid auth/subscription is available.
-3. Record exact blocker if auth/demo quota/subscription prevents verification.
+Code and tests are complete locally. Deployment and production owner smoke are
+blocked until the user explicitly approves a Railway deploy.

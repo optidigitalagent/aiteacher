@@ -6,6 +6,9 @@ const PLAN_LESSONS_LIMIT  = Number(process.env.PAID_PLAN_LESSONS_LIMIT  ?? 10)
 const PLAN_LESSON_MINUTES = Number(process.env.PAID_PLAN_LESSON_MINUTES ?? 50)
 const PLAN_DURATION_DAYS  = Number(process.env.PAID_PLAN_DURATION_DAYS  ?? 31)
 
+export const OWNER_ACCESS_EMAIL = 'artenon92@gmail.com'
+export const OWNER_ACCESS_MINUTES = 1_000_000
+
 export interface SubscriptionInfo {
   status:           string
   planId:           string | null
@@ -16,23 +19,44 @@ export interface SubscriptionInfo {
   lessonMinutes:    number
 }
 
+export function isOwnerAccessEmail(email: string | null | undefined): boolean {
+  return email?.trim().toLowerCase() === OWNER_ACCESS_EMAIL
+}
+
 export async function getSubscription(userId: string): Promise<SubscriptionInfo | null> {
   const r = await query<{
-    subscription_status: string
+    email:               string
+    subscription_status: string | null
     plan_id:             string | null
     plan_expires_at:     Date | null
-    paid_minutes_limit:  number
-    paid_minutes_used:   number
-    paid_lesson_minutes: number
+    paid_minutes_limit:  number | null
+    paid_minutes_used:   number | null
+    paid_lesson_minutes: number | null
   }>(
-    `SELECT subscription_status, plan_id, plan_expires_at,
-            paid_minutes_limit, paid_minutes_used, paid_lesson_minutes
-     FROM user_lesson_profiles
-     WHERE user_id = $1`,
+    `SELECT u.email, ulp.subscription_status, ulp.plan_id, ulp.plan_expires_at,
+            ulp.paid_minutes_limit, ulp.paid_minutes_used, ulp.paid_lesson_minutes
+     FROM users u
+     LEFT JOIN user_lesson_profiles ulp ON ulp.user_id = u.id
+     WHERE u.id = $1`,
     [userId],
   )
   if (!r.rows.length) return null
   const row = r.rows[0]!
+
+  if (isOwnerAccessEmail(row.email)) {
+    return {
+      status:           'active',
+      planId:           'owner_access',
+      expiresAt:        null,
+      minutesLimit:     OWNER_ACCESS_MINUTES,
+      minutesUsed:      0,
+      minutesRemaining: OWNER_ACCESS_MINUTES,
+      lessonMinutes:    PLAN_LESSON_MINUTES,
+    }
+  }
+
+  if (!row.subscription_status) return null
+
   const limit = Number(row.paid_minutes_limit)
   const used  = Number(row.paid_minutes_used)
   return {

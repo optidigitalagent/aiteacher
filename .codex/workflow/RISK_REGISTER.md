@@ -25,6 +25,24 @@
 
 ## Open Risks
 
+### RISK-023 - Owner billing exception must remain narrowly scoped
+
+**Status:** MITIGATED
+**Severity:** P2
+**Area:** billing
+**Description:** A backend paid-access exception could accidentally weaken the
+ordinary paid lesson gate if it matched too broadly or trusted client state.
+**Trigger:** Future edits to `getSubscription`, owner email matching, or lesson
+start/payment guard logic.
+**Mitigation:** The current implementation checks only the server-side
+`users.email` row against exact `artenon92@gmail.com` after trim/lowercase.
+Tests cover owner matching, non-owner no-profile blocking, and normal
+subscription preservation. Auth remains required before callers reach the gate.
+**Resolution:** Remove the exception when real LiqPay keys/subscription flow are
+ready, or replace it with an explicit admin/owner entitlement managed in the DB.
+**Opened:** 2026-07-09
+**Updated:** 2026-07-09
+
 ### RISK-021 - Kids correct classification does not advance exercise in production
 
 **Status:** OPEN

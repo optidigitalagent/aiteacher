@@ -6,6 +6,73 @@
 
 ---
 
+## REVIEW GATE - Owner-only paid lesson access bypass - 2026-07-09
+
+**Cycle ID:** owner-paid-access-bypass/2026-07-09
+
+**Scope reviewed:**
+- `backend/src/billing/subscription-service.ts`
+- `backend/src/billing/__tests__/subscription-service.test.ts`
+- Workflow tracking files under `.codex/workflow/`
+
+**Base/current state:**
+- Base commit: `f700771cf43581cb22608562cf5193f67cfa8954`.
+- Commit created: no.
+- Deployment: not deployed.
+
+**Role applicability:**
+- backend reviewer: RUN - shared backend subscription gate changed.
+- frontend reviewer: NOT APPLICABLE - no frontend/UI/client contract files
+  changed.
+- curriculum reviewer: NOT APPLICABLE - no curriculum, scoring, progression,
+  prompt, or teaching behavior changed.
+- kids safety monitor: NOT APPLICABLE - no Kids or child-facing behavior
+  changed.
+- QA tester: RUN - mandatory after implementation.
+- acceptance auditor: NOT APPLICABLE - not a final production-complete claim;
+  deploy and production owner smoke remain blocked on explicit approval.
+
+**Backend reviewer: PASS**
+- Files reviewed: 2 product/test files plus changed workflow state.
+- Findings: none blocking.
+- Evidence:
+  - The user explicitly requested the billing exception for exactly
+    `artenon92@gmail.com`; LiqPay/payment flow remains untouched.
+  - No unauthenticated route or endpoint was added. Existing callers still pass
+    through `requireAuth`.
+  - The exception is backend-authoritative: `getSubscription` reads
+    server-side `users.email`, not frontend state.
+  - The match is exact after trim/lowercase and returns a virtual active
+    subscription only for the owner email.
+  - Non-owner users without `user_lesson_profiles` rows still return `null`.
+  - Existing non-owner subscription rows preserve status, expiry, and
+    remaining-minute calculation.
+  - No API keys, secrets, env values, external calls, Redis writes, prompt
+    changes, STT/TTS config, or Kids routing changed.
+- Warning/risk: RISK-023 records that the intentional owner billing exception
+  must remain narrowly scoped.
+
+**QA tester: PASS**
+- New tests:
+  - `backend/src/billing/__tests__/subscription-service.test.ts` - 4 tests.
+- Commands and results:
+  - `cd backend; npx vitest run src/billing/__tests__/subscription-service.test.ts --reporter=dot --silent`
+    -> exit 0; 1 file passed; 4 tests passed.
+  - Initial `cd backend; npx tsc --noEmit` -> exit 1 due incomplete typed test
+    mocks; fixed by returning full `pg.QueryResult` mock shape.
+  - `cd backend; npx tsc --noEmit` -> exit 0.
+  - `cd backend; npx vitest run src/auth/__tests__/require-auth-guard.test.ts src/billing/__tests__/subscription-service.test.ts --reporter=dot --silent`
+    -> exit 0; 2 files passed; 10 tests passed.
+  - `cd backend; npm test -- --reporter=dot --silent`
+    -> exit 0; 65 files passed; 2131 tests passed.
+- New failures: none.
+- Regressions: none observed.
+
+**Overall verdict:** PASS WITH WARNING. Implementation and local validation are
+complete. Production deploy/smoke is blocked pending explicit approval.
+
+---
+
 ## ORDINARY MODE INTAKE / BASELINE REVIEW - 2026-07-09
 
 **Scope reviewed:**

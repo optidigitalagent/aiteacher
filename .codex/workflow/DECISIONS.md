@@ -105,6 +105,23 @@
 
 > Append new decisions below as autonomous work progresses.
 
+### 2026-07-09 - Owner paid access bypass lives in subscription service
+
+**Decision:** Implement the `artenon92@gmail.com` no-payment/no-limit exception
+inside `backend/src/billing/subscription-service.ts` by returning a virtual
+active subscription from `getSubscription`.
+**Reason:** Both `/lesson/start` and paid classroom WebSocket entry already
+trust the shared backend subscription service. Placing the exception there
+keeps auth required, avoids frontend trust, avoids duplicate REST/WS bypass
+branches, and leaves LiqPay checkout/callback/key handling untouched per user
+instruction.
+**Alternatives rejected:** Set fake LiqPay keys or edit checkout flow; create a
+real subscription row by payment activation; add frontend-only bypass; bypass
+only `/lesson/start` while leaving WebSocket payment guard unchanged.
+**Reversible:** Yes.
+**Risk:** Medium - this is an intentional billing exception and must remain
+limited to the exact owner email.
+
 ### 2026-07-09 - Ordinary Mentium mode supersedes Kids work as active priority
 
 **Decision:** Replace the active execution target with ordinary, non-Kids
