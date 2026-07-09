@@ -6,6 +6,62 @@
 
 ---
 
+## REVIEW GATE - Paid lesson mic UX parity repair - 2026-07-09
+
+**Cycle ID:** paid-lesson-mic-ux-parity/2026-07-09
+
+**Scope reviewed:**
+- `frontend/src/features/classroom/components/ClassroomLayout.tsx`
+
+**Production symptom:**
+- Paid lesson was improved after backend repair, but the user reported the
+  paid microphone experience still must match demo: visible spoken words,
+  button mechanics, interrupt behavior, message sending, and clean mic-to-AI
+  handoff.
+- User console showed paid WebSocket transcript/audio flow plus
+  `mic_awaiting_cleared reason=no_text_timeout`; backend logs showed Deepgram
+  received audio/transcripts, so the remaining defect is frontend turn UX.
+
+**Role applicability:**
+- backend reviewer: NOT APPLICABLE - no backend files changed.
+- frontend reviewer: RUN - paid classroom mic/input behavior changed.
+- curriculum reviewer: NOT APPLICABLE - no curriculum, answer, scoring, or
+  progression behavior changed.
+- kids safety monitor: NOT APPLICABLE - no Kids code or child-facing behavior
+  changed.
+- QA tester: RUN - mandatory after implementation.
+- acceptance auditor: NOT APPLICABLE - deploy and production smoke remain
+  pending.
+
+**Frontend reviewer: PASS**
+- Critical findings: none.
+- Evidence:
+  - Paid transcript events now remain visible during backend finalization
+    instead of being discarded after `mic_stop`.
+  - `studentTurnPending` disables input/mic while the server finalizes, so the
+    preserved transcript cannot be double-submitted.
+  - New mic turns clear stale transcript before recording starts, matching demo
+    behavior of starting each recording with an empty transcript buffer.
+  - Paid typed/exercise submit now interrupts active teacher audio before
+    sending, matching demo's text-submit interruption behavior.
+- Residual risk:
+  - Browser/microphone behavior still requires production smoke because local
+    build cannot verify real audio-device timing.
+
+**QA tester: PASS**
+- Commands and results:
+  - `cd frontend; npm run build` -> exit 0; `tsc --noEmit` and Vite production
+    build completed.
+  - `git diff --check` -> exit 0; CRLF warnings only.
+- New failures: none.
+- Regression risk: live paid mic/browser behavior not verified until deploy.
+
+**Overall verdict:** PASS WITH WARNING. Local frontend mic UX parity repair is
+ready. GOAL NOT COMPLETE because the repair is not committed, deployed, or
+production-smoked yet; explicit deployment approval is required.
+
+---
+
 ## REVIEW GATE - Paid lesson production smoke follow-up repair - 2026-07-09
 
 **Cycle ID:** paid-lesson-followup-voice-state/2026-07-09
@@ -35,8 +91,7 @@
 - kids safety monitor: NOT APPLICABLE - no Kids code or child-facing behavior
   changed.
 - QA tester: RUN - mandatory after implementation.
-- acceptance auditor: NOT APPLICABLE - deploy and production smoke remain
-  pending.
+- acceptance auditor: NOT APPLICABLE - production smoke remains pending.
 
 **Backend reviewer: PASS WITH WARNING**
 - Critical findings: none.
@@ -77,9 +132,19 @@
 - New failures: none.
 - Regressions: none observed.
 
-**Overall verdict:** PASS WITH WARNING. Local follow-up repair is ready. GOAL
-NOT COMPLETE because the repair is not committed, deployed, or
-production-smoked yet; explicit deployment approval is required.
+**Deployment update:** Commit
+`2d1535048b7ad49119e22f5d0ac59af3571bcacc`
+(`fix(lesson): stabilize paid voice turn state`) was pushed to `origin/main`
+and deployed to Railway production after explicit user approval. Backend
+`aiteacher` deployment `c1d6d54d-c1d2-4558-80af-9a79a5ca8cd2` and frontend
+`aware-alignment` deployment `ed41ec51-ed38-4708-8ce4-b4826ff4d8e2` both
+reached SUCCESS. Backend `/health` returned HTTP 200 with Postgres/Redis ok,
+frontend `/demo/setup` returned HTTP 200, and checked 10-minute HTTP 4xx/5xx
+log windows returned no entries.
+
+**Overall verdict:** PASS WITH WARNING. Follow-up repair is committed,
+deployed, and automated health/log checks passed. GOAL NOT COMPLETE because
+manual authenticated owner production smoke with real audio remains pending.
 
 ---
 

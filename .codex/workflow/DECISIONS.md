@@ -22,6 +22,25 @@
 
 ## Active Decisions
 
+### 2026-07-09 - Paid mic transcript preview does not replace backend STT
+
+**Decision:** Paid lesson keeps backend Deepgram / lesson engine as the
+authoritative source for final student voice turns. Frontend only preserves and
+displays transcript preview during `mic_stop` finalization and blocks duplicate
+submits while waiting for the backend `student_message`.
+**Reason:** Demo uses browser WebSpeech directly, but paid lessons need the
+backend WebSocket/STT path for transcript recording, scoring, cursor authority,
+and consistent AI context. The production issue was UX visibility and button
+state, not a need to move paid scoring to browser-only STT.
+**Alternatives rejected:** Submit browser WebSpeech text directly for paid
+voice turns; run WebSpeech and Deepgram in parallel as competing sources;
+continue clearing paid input immediately on `mic_stop`.
+**Reversible:** Yes.
+**Risk:** Low - backend authority is preserved; live browser/mic smoke is still
+required after deploy.
+
+---
+
 ### 2026-07-09 - Paid deterministic item turns bypass Teacher Brain wording
 
 **Decision:** For ordinary paid deterministic engine turns with actions

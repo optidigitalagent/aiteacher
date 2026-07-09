@@ -25,27 +25,56 @@
 
 ## Open Risks
 
-### RISK-025 - Paid lesson follow-up repair needs production deploy and smoke
+### RISK-026 - Paid lesson mic UX differs from demo until deployed and smoked
+
+**Status:** MITIGATED
+**Severity:** P1
+**Area:** frontend / voice / paid lesson runtime
+**Description:** Paid lesson microphone UX was not demo-equivalent: spoken
+words could disappear around `mic_stop`, pending finalization could hide the
+student's transcript, and typed submit did not interrupt active teacher audio.
+**Trigger:** Owner paid lesson voice smoke using the paid WebSocket/Deepgram
+path rather than the demo WebSpeech path.
+**Mitigation:** Local frontend repair keeps paid transcripts visible while the
+backend finalizes the turn, disables mic/send while `studentTurnPending` is
+true to prevent double-submit, clears stale text only when starting a new mic
+turn, and sends `interrupt` plus stops local audio on paid typed/exercise
+submit. Evidence: `cd frontend; npm run build` -> exit 0 and
+`git diff --check` -> exit 0 with CRLF warnings only.
+**Resolution:** Deploy after explicit approval and repeat authenticated owner
+paid lesson smoke for transcript visibility, pending button behavior, typed
+interrupt, backend final student message, and prior voiced/progression fixes.
+**Opened:** 2026-07-09
+**Updated:** 2026-07-09
+
+---
+
+### RISK-025 - Paid lesson follow-up repair needs manual production smoke
 
 **Status:** MITIGATED
 **Severity:** P1
 **Area:** backend / voice / paid lesson runtime
 **Description:** Post-deploy owner smoke still found text-only teacher turns
-and stale exercise memory after item/exercise transitions.
+and stale exercise memory after item/exercise transitions. The follow-up repair
+is now deployed; the remaining risk is unverified real-browser/real-audio
+behavior for the owner account.
 **Trigger:** OpenAI TTS cooldown with `TTS_PROVIDER=openai`, queued student
 input during a still-sending teacher turn, and soft-speaking `lesson_complete`
 falling back to Teacher Brain while Redis lesson state still re-anchored to
 Exercise 1.
-**Mitigation:** Local repair allows provider fallback to ElevenLabs, treats
-provider timeouts as failures, keeps `aiProcessing` locked through TTS,
-discards queued input after lesson end, short-circuits soft-speaking
-`lesson_complete`, and sends deterministic wrong-turn hints for engine-owned
-fill-gap items. Evidence: `npx tsc --noEmit` -> exit 0 and
-`npm test -- --reporter=dot --silent` -> exit 0; 66 files passed; 2134 tests
-passed.
-**Resolution:** Deploy after explicit approval and repeat authenticated owner
-paid lesson smoke for voiced turns, stable item progression, and no stale
-Exercise 1 Number 5 after lesson completion.
+**Mitigation:** Repair allows provider fallback to ElevenLabs, treats provider
+timeouts as failures, keeps `aiProcessing` locked through TTS, discards queued
+input after lesson end, short-circuits soft-speaking `lesson_complete`, and
+sends deterministic wrong-turn hints for engine-owned fill-gap items. Evidence:
+`npx tsc --noEmit` -> exit 0; `npm test -- --reporter=dot --silent` -> exit 0,
+66 files passed, 2134 tests passed; commit
+`2d1535048b7ad49119e22f5d0ac59af3571bcacc` deployed to Railway backend
+`c1d6d54d-c1d2-4558-80af-9a79a5ca8cd2` and frontend
+`ed41ec51-ed38-4708-8ce4-b4826ff4d8e2`; `/health` returned HTTP 200 with
+Postgres/Redis ok.
+**Resolution:** Repeat authenticated owner paid lesson smoke for voiced turns,
+stable item progression, and no stale Exercise 1 Number 5 after lesson
+completion.
 **Opened:** 2026-07-09
 **Updated:** 2026-07-09
 

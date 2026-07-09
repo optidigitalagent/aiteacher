@@ -236,6 +236,25 @@ Or via Railway dashboard: Deployments в†’ previous deploy в†’ Redeploy
 ## CHECKLIST STATUS
 
 ```
+Latest completed deploy: Paid lesson voice/state follow-up repair (commit 2d15350) - 2026-07-09
+Deployment status:       DEPLOYED
+Authorization:           user explicitly requested "deploy"
+Railway services:
+  - aiteacher backend: deployment c1d6d54d-c1d2-4558-80af-9a79a5ca8cd2 SUCCESS, commit 2d15350
+  - aware-alignment frontend: deployment ed41ec51-ed38-4708-8ce4-b4826ff4d8e2 SUCCESS, commit 2d15350
+Pre-deploy verification:
+  - cd backend; npx tsc --noEmit -> exit 0
+  - cd backend; npm test -- --reporter=dot --silent -> exit 0; 66 files, 2134 tests
+  - git diff --check -> exit 0; CRLF warnings only
+  - review gate -> PASS WITH WARNING (backend + curriculum + QA PASS; RISK-025)
+Post-deploy verification:
+  - backend /health -> HTTP 200, postgres ok, redis ok, uptime 44s at 2026-07-09T12:44:05.215Z
+  - frontend /demo/setup -> HTTP 200
+  - backend logs -> migrations applied, server listening on 0.0.0.0:8080, PostgreSQL ready, Redis ready, WS attached
+  - checked 10-minute HTTP 4xx/5xx log windows -> no entries returned
+Pending:
+  - manual authenticated owner paid lesson voice smoke for section 1.1
+
 Latest completed deploy: Owner-only paid lesson access bypass (commit c2d7966) - 2026-07-09
 Deployment status:       DEPLOYED
 Authorization:           user explicitly requested "задеплой и сохрани все"

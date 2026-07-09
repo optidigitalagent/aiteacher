@@ -48,5 +48,16 @@ are both `SUCCESS`. Automated health/log checks passed. A second authenticated
 smoke run found additional production runtime defects: provider fallback could
 leave turns text-only, queued turns could interleave, and lesson completion
 could re-anchor to completed Exercise 1. The follow-up repair is implemented
-and locally validated, but not yet committed, deployed, or production-smoked.
-A new Railway production deploy requires explicit approval.
+and locally validated, committed as
+`2d1535048b7ad49119e22f5d0ac59af3571bcacc`, pushed to `origin/main`, and
+deployed to Railway production: backend `aiteacher` deployment
+`c1d6d54d-c1d2-4558-80af-9a79a5ca8cd2` and frontend `aware-alignment`
+deployment `ed41ec51-ed38-4708-8ce4-b4826ff4d8e2` are both `SUCCESS`.
+Automated post-deploy health/log checks passed. Manual authenticated owner
+paid lesson smoke showed improvement but found a remaining frontend microphone
+UX gap versus demo: paid transcript visibility, pending-turn button behavior,
+and typed-send interruption were not demo-equivalent. The mic UX parity repair
+is implemented locally in `frontend/src/features/classroom/components/ClassroomLayout.tsx`
+and `cd frontend; npm run build` passes, but it is not yet committed, deployed,
+or production-smoked. A new Railway production deploy requires explicit
+approval.

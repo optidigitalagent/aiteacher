@@ -56,7 +56,7 @@ Out of scope:
 | 0 | Intake and scope reconciliation | COMPLETE |
 | 1 | Implement owner-only backend access | COMPLETE |
 | 2 | Validate and review | COMPLETE |
-| 3 | Deploy and production owner smoke | PARTIAL - owner bypass deployed; first runtime repair deployed; follow-up runtime repair local, deploy/smoke pending |
+| 3 | Deploy and production owner smoke | PARTIAL - owner bypass deployed; backend runtime repairs deployed; paid mic UX parity repair local, deploy/smoke pending |
 
 ---
 
@@ -67,6 +67,10 @@ Out of scope:
   2026-07-09.
 - Local C: drive has no free space; npm commands must use
   `D:\codex-npm-cache` and `D:\codex-temp`.
+- Follow-up runtime repair for paid lesson voice/state was deployed to Railway
+  production on 2026-07-09 at commit
+  `2d1535048b7ad49119e22f5d0ac59af3571bcacc`; automated health/log checks
+  passed.
+- Paid lesson microphone UX parity repair is implemented locally but not yet
+  committed/deployed; a new production deploy requires explicit approval.
 - Manual authenticated owner paid lesson voice verification remains required.
-- A new production deploy for the paid lesson follow-up runtime repair has not
-  been approved yet.

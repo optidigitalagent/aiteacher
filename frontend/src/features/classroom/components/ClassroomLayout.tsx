@@ -323,6 +323,22 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   // Prevents late Deepgram UtteranceEnd events from repopulating the answer field
   // with the just-sent transcript after the student's turn is already being processed.
   const awaitingStudentMessageRef = useRef(false)
+  const [studentTurnPending, setStudentTurnPending] = useState(false)
+  const transcriptIgnoreUntilRef = useRef(0)
+  const setAwaitingStudentMessage = useCallback((value: boolean) => {
+    awaitingStudentMessageRef.current = value
+    setStudentTurnPending(value)
+  }, [])
+
+  const interruptPaidTeacherIfNeeded = useCallback((source: 'text_submit' | 'exercise_submit') => {
+    if (isDemoMode || !isSpeaking || isListening) return
+    const audioRemaining = getScheduledAudioEndMs()
+    if (audioRemaining <= 100) return
+    console.log(`[paid-lesson] text_interrupt source=${source} audioRemainingMs=${Math.round(audioRemaining)}`)
+    send({ type: 'interrupt' })
+    interruptSentRef.current = true
+    setSpeaking(false)
+  }, [isDemoMode, isSpeaking, isListening, send, setSpeaking])
 
   // ── WS message handler ────────────────────────────────────────────────────
   const onMessageRef = useRef<(msg: BackendMessage) => void>(() => {})
@@ -366,10 +382,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         }
         break
       case 'transcript': {
-        // Guard: if we already sent mic_stop and are waiting for student_message echo,
-        // discard any late UtteranceEnd transcripts — the turn is already in flight.
-        if (awaitingStudentMessageRef.current) break
-        // Mirror Deepgram transcript directly into the answer field.
+        // Show Deepgram transcript while the backend finalizes this voice turn.
+        // During pending finalization the input is read-only, so preview cannot double-submit.
+        if (!awaitingStudentMessageRef.current && Date.now() < transcriptIgnoreUntilRef.current) break
         // Guard: don't overwrite text the student typed manually (i.e. answer
         // is non-empty AND differs from the previous transcript value).
         const prevT = lastTranscriptRef.current
@@ -384,7 +399,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       case 'section_card':
         break
       case 'student_message':
-        awaitingStudentMessageRef.current = false  // turn is now processing — unblock transcript handler
+        setAwaitingStudentMessage(false)  // turn is now processing - unblock transcript handler
+        transcriptIgnoreUntilRef.current = Date.now() + 1200
         lastTranscriptRef.current = ''
         pushUser(msg.text)
         setAnswer('')       // clear stale STT transcript from input field
@@ -681,10 +697,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const handleCheck = useCallback(() => {
     if (!answer.trim() || !question) return
     if (awaitingStudentMessageRef.current) return  // mic turn already in flight — don't double-fire
+    interruptPaidTeacherIfNeeded('exercise_submit')
     pushUser(answer)
     setTyping()
     submitAnswer(answer)
-  }, [answer, question, pushUser, setTyping, submitAnswer])
+  }, [answer, question, interruptPaidTeacherIfNeeded, pushUser, setTyping, submitAnswer])
 
   // Used by cursor-based paid exercises (PaidExerciseCard via BottomControls)
   // Works when only exerciseCursor is set — does NOT require legacy question state
@@ -699,10 +716,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       if (import.meta.env.DEV) console.log('[cursor] submit blocked: exercise already complete')
       return
     }
+    interruptPaidTeacherIfNeeded('exercise_submit')
     pushUser(answer)
     setTyping()
     submitAnswer(answer)
-  }, [answer, isRecovering, exerciseCursor, pushUser, setTyping, submitAnswer])
+  }, [answer, isRecovering, exerciseCursor, interruptPaidTeacherIfNeeded, pushUser, setTyping, submitAnswer])
 
   const handleSubmit = useCallback(() => {
     if (isDemoMode) {
@@ -738,12 +756,13 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     } else {
       // Free dialogue / speaking phase
       if (awaitingStudentMessageRef.current) return  // guard: mic turn already in flight
+      interruptPaidTeacherIfNeeded('text_submit')
       pushUser(answer)
       setTyping()
       send({ type: 'text_message', text: answer })
       setAnswer('')
     }
-  }, [isDemoMode, answer, demo.handleTextSubmit, demo.interruptAudio, question, exerciseCursor, handleCheck, handleCursorSubmit, pushUser, setTyping, send])
+  }, [isDemoMode, answer, demo.handleTextSubmit, demo.interruptAudio, question, exerciseCursor, handleCheck, handleCursorSubmit, interruptPaidTeacherIfNeeded, pushUser, setTyping, send])
 
   // Begin Lesson: send focus_lesson_start only when user clicks the button
   const handleBeginLesson = useCallback(() => {
@@ -794,19 +813,17 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     }
     await toggle()
     if (wasListening) {
-      // Mic just stopped — signal backend to finalize the transcript.
-      // Clear the answer field immediately so the submit arrow cannot fire
-      // exercise_answer for the same input before student_message echoes back.
-      awaitingStudentMessageRef.current = true  // block late transcript events until echo arrives
+      // Mic just stopped: keep the transcript visible while the backend finalizes.
+      // The pending state disables submit/mic until student_message echoes back.
+      setAwaitingStudentMessage(true)
       send({ type: 'mic_stop' })
-      setAnswer('')
       lastTranscriptRef.current = ''
       // Safety valve: if no speech was detected the backend never sends student_message,
       // so awaitingStudentMessageRef would stay true forever and block the next mic click.
       // Clear after 1500ms if no student_message echo arrives (covers mic_stop_timeout_no_text).
       setTimeout(() => {
         if (awaitingStudentMessageRef.current) {
-          awaitingStudentMessageRef.current = false
+          setAwaitingStudentMessage(false)
           console.log('[paid-lesson] mic_awaiting_cleared reason=no_text_timeout')
         }
       }, 1500)
@@ -814,11 +831,14 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       // Mic just started — reset any stuck guard from a previous turn where
       // student_message never arrived (e.g. backend error mid-processing).
       // This prevents transcripts from being silently blocked on the new turn.
-      awaitingStudentMessageRef.current = false
+      setAwaitingStudentMessage(false)
+      transcriptIgnoreUntilRef.current = 0
       lastTranscriptRef.current = ''
+      setAnswer('')
+      onTranscript('')
       send({ type: 'mic_start' })
     }
-  }, [lessonStarted, isSpeaking, isListening, toggle, send])
+  }, [lessonStarted, isSpeaking, isListening, toggle, send, onTranscript, setAwaitingStudentMessage])
 
   const handleExplain = useCallback(() => {
     if (isDemoMode) {
@@ -1214,9 +1234,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
             (isDemoMode && demo.phase === 'complete') ||
             (!isDemoMode && !lessonStarted) ||
             (!isDemoMode && isRecovering) ||
+            (!isDemoMode && studentTurnPending) ||
             (!isDemoMode && exerciseCursor?.completionState === 'complete')
           }
-          micDisabled={!isDemoMode && (!lessonStarted || isRecovering)}
+          micDisabled={!isDemoMode && (!lessonStarted || isRecovering || studentTurnPending)}
           showHelpInput={isDemoMode ? showHelpInput : false}
           helpInputValue={helpInputValue}
           onHelpChange={setHelpInputValue}

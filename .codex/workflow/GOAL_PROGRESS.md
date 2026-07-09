@@ -1,5 +1,63 @@
 # GOAL_PROGRESS.md
 
+## PAID LESSON MIC UX PARITY REPAIR - 2026-07-09
+
+**Trigger:** User reran production paid lesson after commit
+`2d1535048b7ad49119e22f5d0ac59af3571bcacc` and reported the lesson is better,
+but paid lesson microphone UX still must behave like demo lesson: spoken words
+should remain visible, the mic/send button mechanics should match demo, typed
+send should interrupt teacher audio, and messages should be passed cleanly to
+the AI/frontend.
+
+**Production evidence from user console/log review:**
+- Console showed normal backend transcript/audio flow, but paid UI emitted
+  `mic_awaiting_cleared reason=no_text_timeout` and cleared/blocked local
+  transcript visibility around `mic_stop`.
+- Railway logs for session `721e9934-0905-4c19-b834-fa859b6c4cec` showed
+  Deepgram audio and transcript accumulation, `student_message` recording, and
+  occasional true `no_transcript reason=empty`; backend STT was receiving audio,
+  while frontend UX did not preserve the transcript preview like demo.
+
+**Implementation:**
+- `frontend/src/features/classroom/components/ClassroomLayout.tsx`
+  - Added `studentTurnPending` state mirrored from `awaitingStudentMessageRef`.
+  - Paid `transcript` events now update the input even after `mic_stop` while
+    the backend finalizes the voice turn.
+  - The input/mic become read-only/disabled while `studentTurnPending` is true,
+    preventing double-submit while still showing the spoken words.
+  - Paid `mic_stop` no longer clears the answer field immediately; it keeps the
+    transcript visible until `student_message` echoes or no-text timeout clears
+    the pending guard.
+  - Paid mic start clears stale transcript/answer at the start of a new turn.
+  - Paid typed/exercise submit now interrupts active teacher audio before
+    submitting, matching demo's `demo.interruptAudio()` behavior.
+
+**Validation evidence:**
+- `cd frontend; npm run build` with npm/temp redirected to `D:\` -> exit 0;
+  `tsc --noEmit` and Vite production build completed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+
+**Review gate:**
+- frontend reviewer: RUN -> PASS.
+- QA tester: RUN -> PASS for static build/typecheck; live mic/browser behavior
+  remains unverified until deploy and manual smoke.
+- backend reviewer: NOT APPLICABLE - no backend files changed.
+- curriculum reviewer: NOT APPLICABLE - no curriculum/scoring/progression
+  behavior changed.
+- kids safety monitor: NOT APPLICABLE - no Kids code or child-facing behavior
+  changed.
+- acceptance auditor: NOT APPLICABLE - production deploy and owner smoke remain
+  pending.
+
+**Commit/deploy state:**
+- Commit: no commit created for this mic UX parity repair yet.
+- Deployment: not deployed. A new Railway production deploy requires explicit
+  approval.
+- Production verification: not run for this repair.
+
+**Next action:** Commit and deploy the paid lesson mic UX parity repair after
+explicit approval, then repeat authenticated owner paid lesson smoke.
+
 ## PAID LESSON PRODUCTION SMOKE FAILURE REPAIR - 2026-07-09
 
 **Trigger:** User reran the owner paid lesson production smoke after deploy and
@@ -53,13 +111,36 @@ discussion exercise had already completed.
   smoke remain pending.
 
 **Commit/deploy state:**
-- Commit: no commit created for this follow-up repair.
-- Deployment: not deployed. A new Railway production deploy requires explicit
-  approval.
-- Production verification: not run for this follow-up repair.
+- Commit: `2d1535048b7ad49119e22f5d0ac59af3571bcacc`
+  (`fix(lesson): stabilize paid voice turn state`) created and pushed to
+  `origin/main`.
+- Deployment: Railway backend `aiteacher` deployment
+  `c1d6d54d-c1d2-4558-80af-9a79a5ca8cd2` -> SUCCESS; Railway frontend
+  `aware-alignment` deployment `ed41ec51-ed38-4708-8ce4-b4826ff4d8e2` ->
+  SUCCESS.
+- Production verification: automated health/log checks passed; manual owner
+  authenticated voice smoke remains pending.
 
-**Next action:** Deploy the paid lesson production smoke follow-up repair after
-explicit approval, then repeat authenticated owner paid lesson smoke.
+**Deploy evidence:**
+- Pre-deploy `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\`
+  -> exit 0.
+- Pre-deploy `cd backend; npm test -- --reporter=dot --silent` -> exit 0;
+  66 files passed; 2134 tests passed.
+- Pre-deploy `git diff --check` -> exit 0; CRLF warnings only.
+- `git push origin main` pushed `a2c70bf..2d15350`.
+- `railway service status --all` after rollout:
+  `aiteacher` `c1d6d54d-c1d2-4558-80af-9a79a5ca8cd2` SUCCESS,
+  `aware-alignment` `ed41ec51-ed38-4708-8ce4-b4826ff4d8e2` SUCCESS.
+- Backend `/health` -> HTTP 200 at `2026-07-09T12:44:05.215Z` with
+  `status=ok`, `postgres=ok`, `redis=ok`, uptime 44s.
+- Frontend `/demo/setup` -> HTTP 200.
+- Railway logs show migrations applied, `[server] listening on 0.0.0.0:8080`,
+  PostgreSQL ready, Redis ready, WS endpoint attached, and no checked HTTP
+  4xx/5xx entries in the 10-minute post-deploy window.
+
+**Next action:** Repeat authenticated owner paid lesson smoke with real audio
+and verify voiced turns, stable item progression, and no stale Exercise 1
+Number 5 after lesson completion.
 
 ## PAID LESSON RUNTIME DEPLOY CHECKPOINT - 2026-07-09
 
