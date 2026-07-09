@@ -457,6 +457,38 @@ describe('TTS — TTS_PROVIDER env var forces provider selection', () => {
     expect(createMock).toHaveBeenCalledTimes(1)  // OpenAI used
   })
 
+  it('TTS_PROVIDER=openai falls back to ElevenLabs when OpenAI fails', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: new ReadableStream({
+        start(c: ReadableStreamDefaultController) {
+          c.enqueue(Buffer.from('el-fallback-mp3'))
+          c.close()
+        },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const createMock = vi.fn().mockRejectedValue(
+      Object.assign(new Error('503 upstream timeout'), { status: 503 }),
+    )
+    makeOpenAIMock(() => ({ audio: { speech: { create: createMock } } }))
+
+    vi.stubEnv('TTS_PROVIDER', 'openai')
+    vi.stubEnv('ELEVENLABS_API_KEY', 'el-test')
+    vi.stubEnv('OPENAI_API_KEY', 'sk-test')
+
+    const { speakToClient } = await import('../tts.js')
+    const { send, chunks } = makeSend()
+
+    const result = await speakToClient(send as never, 'Hello!', undefined)
+
+    expect(result.ok).toBe(true)
+    expect(createMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(Buffer.from(chunks[0]!, 'base64').toString()).toBe('el-fallback-mp3')
+  })
+
   it('TTS_PROVIDER=elevenlabs skips OpenAI when ElevenLabs key is present', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

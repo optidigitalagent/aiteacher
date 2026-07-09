@@ -22,7 +22,7 @@ the paid classroom without LiqPay payment or paid-minute limits.
   the user.
 - The owner check uses the server-side `users.email` row, not client-provided
   frontend state.
-- Production is not changed until a Railway deploy is explicitly approved.
+- Production is changed only after Railway deploy approval.
 
 ## Validation Evidence
 
@@ -37,9 +37,16 @@ the paid classroom without LiqPay payment or paid-minute limits.
 ## Current State
 
 Owner-access code is deployed. During manual authenticated owner paid-lesson
-smoke, a paid lesson runtime defect was found and repaired locally: ElevenLabs
-TTS audio chunking could truncate the greeting, and Teacher Brain wording could
-contradict the backend cursor after deterministic item progression. Local
-TypeScript and the full backend suite pass. Deployment and production owner
-smoke of this runtime repair are blocked until the user explicitly approves a
-new Railway deploy.
+smoke, a paid lesson runtime defect was found: TTS audio could truncate the
+greeting, and Teacher Brain wording could contradict the backend cursor after
+deterministic item progression. The runtime repair is implemented, tested,
+committed as `a2c70bf1fe1e933762dd2ee38d9d4afd2db13635`, pushed to
+`origin/main`, and deployed to Railway production:
+backend `aiteacher` deployment `2cfe99c8-2ef2-4c8c-9dc3-4f439d41d576` and
+frontend `aware-alignment` deployment `3af88065-c052-4577-831d-717841a9b69c`
+are both `SUCCESS`. Automated health/log checks passed. A second authenticated
+smoke run found additional production runtime defects: provider fallback could
+leave turns text-only, queued turns could interleave, and lesson completion
+could re-anchor to completed Exercise 1. The follow-up repair is implemented
+and locally validated, but not yet committed, deployed, or production-smoked.
+A new Railway production deploy requires explicit approval.

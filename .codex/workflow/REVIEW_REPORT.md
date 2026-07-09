@@ -6,6 +6,83 @@
 
 ---
 
+## REVIEW GATE - Paid lesson production smoke follow-up repair - 2026-07-09
+
+**Cycle ID:** paid-lesson-followup-voice-state/2026-07-09
+
+**Scope reviewed:**
+- `backend/src/voice/tts.ts`
+- `backend/src/ws/lesson-ws.ts`
+- `backend/src/lesson/master-orchestrator.ts`
+- `backend/src/voice/__tests__/tts-fallback.test.ts`
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+
+**Production symptom:**
+- Teacher messages were often text-only because TTS returned
+  `no_provider_available` while OpenAI was in cooldown and ElevenLabs was
+  configured but skipped.
+- Teacher Brain emitted stale explanations/re-anchors after deterministic item
+  and lesson transitions.
+- Queued student input replayed before the previous teacher turn had fully
+  sent and completed TTS.
+
+**Role applicability:**
+- backend reviewer: RUN - backend TTS, WS queueing, and engine-owned teacher
+  turns changed.
+- frontend reviewer: NOT APPLICABLE - no frontend files changed and outbound
+  message shapes remain unchanged.
+- curriculum reviewer: RUN - teacher retry/progression wording changed.
+- kids safety monitor: NOT APPLICABLE - no Kids code or child-facing behavior
+  changed.
+- QA tester: RUN - mandatory after implementation.
+- acceptance auditor: NOT APPLICABLE - deploy and production smoke remain
+  pending.
+
+**Backend reviewer: PASS WITH WARNING**
+- Critical findings: none.
+- Evidence:
+  - No auth, billing, payment, LiqPay, endpoint, DB schema, or secret handling
+    changed.
+  - TTS provider fallback stays bounded by existing provider cooldowns and does
+    not add retry loops.
+  - `processInput` queue replay now occurs after deterministic/system TTS or
+    normal teacher-turn TTS, preventing concurrent state mutation.
+  - Lesson-end paths clear queued input rather than replaying it after
+    `meta.lessonId=null`.
+- Warning:
+  - Deterministic wrong-turn hints are less conversational than Teacher Brain,
+    but this is intentional for engine-owned fill-gap turns because production
+    evidence showed LLM wording could contradict the authoritative cursor.
+
+**Curriculum reviewer: PASS**
+- Curriculum files changed: none.
+- Accepted answers, scoring, retry counts, exercise order, and manifest content
+  are unchanged.
+- Wrong-turn deterministic hints preserve the correction ladder:
+  first wrong gives a general current-item hint, second wrong gives a shape /
+  first-word hint, third wrong says to stay on the item, and reveal behavior is
+  unchanged.
+- The repair prevents stale completed Exercise 1 prompts from reappearing after
+  Exercise 2/lesson completion.
+
+**QA tester: PASS**
+- Commands and results:
+  - `cd backend; npx vitest run src/voice/__tests__/tts-fallback.test.ts --reporter=dot --silent`
+    -> exit 0; 1 file passed; 19 tests passed.
+  - `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+    -> exit 0; 1 file passed; 1 test passed.
+  - `cd backend; npx tsc --noEmit` -> exit 0.
+  - `cd backend; npm test -- --reporter=dot --silent`
+    -> exit 0; 66 files passed; 2134 tests passed.
+- New failures: none.
+- Regressions: none observed.
+
+**Overall verdict:** PASS WITH WARNING. Local follow-up repair is ready. GOAL
+NOT COMPLETE because the repair is not committed, deployed, or
+production-smoked yet; explicit deployment approval is required.
+
+---
+
 ## REVIEW GATE - Paid lesson runtime TTS and cursor repair - 2026-07-09
 
 **Cycle ID:** paid-lesson-runtime-tts-cursor/2026-07-09
@@ -80,9 +157,20 @@
 - New failures: none.
 - Regressions: none observed.
 
-**Overall verdict:** PASS WITH WARNING. Code repair and local validation are
-complete. GOAL NOT COMPLETE because the repaired paid lesson behavior is not
-deployed or production-smoked yet.
+**Overall verdict:** PASS WITH WARNING. Code repair, local validation, commit,
+push, and Railway deploy are complete. GOAL NOT COMPLETE because manual
+authenticated production voice smoke remains pending.
+
+**Deployment update:**
+- Commit `a2c70bf1fe1e933762dd2ee38d9d4afd2db13635` pushed to `origin/main`.
+- Railway backend `aiteacher` deployment
+  `2cfe99c8-2ef2-4c8c-9dc3-4f439d41d576` -> `SUCCESS`.
+- Railway frontend `aware-alignment` deployment
+  `3af88065-c052-4577-831d-717841a9b69c` -> `SUCCESS`.
+- Health endpoint -> HTTP 200; postgres ok; redis ok.
+- Backend startup logs show server listening on `0.0.0.0:8080`, PostgreSQL
+  ready, Redis ready, and WS endpoint attached.
+- Backend HTTP 5xx logs for the deployment window were empty.
 
 ---
 

@@ -56,15 +56,17 @@ Out of scope:
 | 0 | Intake and scope reconciliation | COMPLETE |
 | 1 | Implement owner-only backend access | COMPLETE |
 | 2 | Validate and review | COMPLETE |
-| 3 | Deploy and production owner smoke | PARTIAL - owner bypass deployed; paid runtime repair local, deploy/smoke pending |
+| 3 | Deploy and production owner smoke | PARTIAL - owner bypass deployed; first runtime repair deployed; follow-up runtime repair local, deploy/smoke pending |
 
 ---
 
 ## CURRENT CONSTRAINTS
 
 - Do not touch LiqPay keys or payment flow per user instruction.
-- Railway production deploy was explicitly approved on 2026-07-09.
+- Railway production deploy was explicitly approved and completed on
+  2026-07-09.
 - Local C: drive has no free space; npm commands must use
   `D:\codex-npm-cache` and `D:\codex-temp`.
-- A new production deploy for the paid lesson runtime TTS/cursor repair has not
+- Manual authenticated owner paid lesson voice verification remains required.
+- A new production deploy for the paid lesson follow-up runtime repair has not
   been approved yet.

@@ -1,5 +1,125 @@
 # GOAL_PROGRESS.md
 
+## PAID LESSON PRODUCTION SMOKE FAILURE REPAIR - 2026-07-09
+
+**Trigger:** User reran the owner paid lesson production smoke after deploy and
+reported that the teacher still failed to voice many turns and mixed memory /
+exercise state. Transcript showed text-only turns, stale explanation after
+`Keen on`, and a return to `Number 5: I love reading in my ___` after the
+discussion exercise had already completed.
+
+**Production log analysis:**
+- Railway logs for lesson `e0b27353-596d-4b56-b19e-d4d21a253fc9` showed
+  repeated `[tts:fallback] no_provider_available provider_pref=openai
+  elevenlabs=configured_but_skipped openai=cooldown_until=...`.
+- Logs showed `ai_turn_queued_replay` before the prior teacher response had
+  completed, with interleaved `student_message`, `ai_text`, and cursor updates.
+- Logs showed soft-speaking `lesson_complete`, then Teacher Brain still ran in
+  `EXERCISES` and appended `re_anchor_appended exercise=#1 item=5`.
+
+**Implementation:**
+- `backend/src/voice/tts.ts` allows provider fallback even when
+  `TTS_PROVIDER=openai`, and treats provider timeouts as failures so fallback
+  can run instead of silently producing no audio.
+- `backend/src/lesson/master-orchestrator.ts` sends deterministic wrong-turn
+  hints for engine-owned fill-gap items, removing Teacher Brain from those
+  correctness-critical turns.
+- `backend/src/ws/lesson-ws.ts` keeps `aiProcessing` locked through TTS,
+  replays queued input only after teacher turn completion, discards queued
+  input after lesson end, and short-circuits soft-speaking `lesson_complete`
+  with deterministic closing plus `lesson_end`.
+- `backend/src/voice/__tests__/tts-fallback.test.ts` adds OpenAI-to-ElevenLabs
+  fallback coverage.
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts` adds deterministic
+  wrong-hint assertions.
+
+**Validation evidence:**
+- `cd backend; npx vitest run src/voice/__tests__/tts-fallback.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 19 tests passed.
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 1 test passed.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd backend; npm test -- --reporter=dot --silent`
+  -> exit 0; 66 files passed; 2134 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+
+**Review gate:**
+- backend reviewer: RUN -> PASS WITH WARNING.
+- frontend reviewer: NOT APPLICABLE - no frontend files changed.
+- curriculum reviewer: RUN -> PASS.
+- kids safety monitor: NOT APPLICABLE - no Kids behavior changed.
+- QA tester: RUN -> PASS.
+- acceptance auditor: NOT APPLICABLE - production deploy and manual owner
+  smoke remain pending.
+
+**Commit/deploy state:**
+- Commit: no commit created for this follow-up repair.
+- Deployment: not deployed. A new Railway production deploy requires explicit
+  approval.
+- Production verification: not run for this follow-up repair.
+
+**Next action:** Deploy the paid lesson production smoke follow-up repair after
+explicit approval, then repeat authenticated owner paid lesson smoke.
+
+## PAID LESSON RUNTIME DEPLOY CHECKPOINT - 2026-07-09
+
+**Trigger:** User approved deployment with `deploy` after local repair for
+paid lesson TTS truncation and deterministic cursor wording.
+
+**Pre-deploy validation:**
+- `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 66 files
+  passed; 2133 tests passed.
+- `git status --short --untracked-files=all` before commit showed only the
+  intended runtime/test/workflow files.
+
+**Commit and push:**
+- Staged only targeted files:
+  - `.codex/workflow/DECISIONS.md`
+  - `.codex/workflow/GLOBAL_GOAL.md`
+  - `.codex/workflow/GOAL.md`
+  - `.codex/workflow/GOAL_PROGRESS.md`
+  - `.codex/workflow/NEXT_ACTION.md`
+  - `.codex/workflow/REVIEW_REPORT.md`
+  - `.codex/workflow/RISK_REGISTER.md`
+  - `backend/src/lesson/master-orchestrator.ts`
+  - `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+  - `backend/src/voice/__tests__/tts-fallback.test.ts`
+  - `backend/src/voice/tts.ts`
+  - `backend/src/ws/lesson-ws.ts`
+- Commit created:
+  `a2c70bf1fe1e933762dd2ee38d9d4afd2db13635`
+  (`fix(lesson): stabilize paid TTS and cursor turns`).
+- `git push origin main` -> success (`f41c760..a2c70bf main -> main`).
+
+**Railway deployment:**
+- `railway service status --all` after deploy:
+  - backend `aiteacher`: deployment
+    `2cfe99c8-2ef2-4c8c-9dc3-4f439d41d576`, status `SUCCESS`.
+  - frontend `aware-alignment`: deployment
+    `3af88065-c052-4577-831d-717841a9b69c`, status `SUCCESS`.
+  - Postgres, Redis, and unrelated bot services: `SUCCESS`.
+- `GET https://aiteacher-production-cae8.up.railway.app/health` -> HTTP 200,
+  `status=ok`, postgres ok, redis ok.
+- `GET https://aware-alignment-production.up.railway.app/demo/setup` ->
+  HTTP 200.
+- Backend deployment/runtime logs show migrations applied, `[server] listening
+  on 0.0.0.0:8080`, `[server] PostgreSQL ready`, `[server] Redis ready`, and
+  WS endpoint attached.
+- `railway logs --service aiteacher --http --status "500..599" --lines 50 --since 10m`
+  -> no output.
+
+**Production smoke status:**
+- Automated unauthenticated production checks passed.
+- Manual authenticated owner paid lesson voice smoke remains pending because
+  it requires a live browser/audio session for `artenon92@gmail.com`.
+
+**Next action:** Manually production-smoke `artenon92@gmail.com` paid lesson
+section `1.1`: greeting TTS must include `Tell me when you're ready.`, and
+Exercise 1 item progression must not contradict `keen on` / next item cursor
+state.
+
 ## OWNER-ONLY PAID ACCESS BYPASS CHECKPOINT - 2026-07-09
 
 **Trigger:** User reported LiqPay checkout error

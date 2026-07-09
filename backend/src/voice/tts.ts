@@ -200,9 +200,12 @@ export async function speakToClient(
 ): Promise<TtsResult> {
   const tryEl  = TTS_PROVIDER_PREF === 'auto' || TTS_PROVIDER_PREF === 'elevenlabs'
   const tryOai = TTS_PROVIDER_PREF === 'auto' || TTS_PROVIDER_PREF === 'openai'
+  let attemptedEl = false
+  let lastFailureReason: TtsFailureReason | null = null
 
   // ── ElevenLabs ─────────────────────────────────────────────────────────────
   if (tryEl && ELEVENLABS_KEY && isElevenLabsAvailable()) {
+    attemptedEl = true
     const elVoice = resolveElevenLabsVoiceId(voiceId)
     console.log(`[tts:provider_selected] provider=elevenlabs voiceId=${elVoice}`)
     try {
@@ -212,6 +215,7 @@ export async function speakToClient(
       if (err instanceof Error && err.name === 'AbortError') return { ok: true }
 
       const reason = classifyTtsError(err)
+      lastFailureReason = reason
       const cdMs   = providerCooldownMs(err)
       elevenLabsDisabledUntil = Date.now() + cdMs
       const cdMin  = Math.round(cdMs / 60_000)
@@ -221,7 +225,7 @@ export async function speakToClient(
         `msg="${(err instanceof Error ? err.message : String(err)).slice(0, 160)}"`,
       )
 
-      if (tryOai && OPENAI_KEY && isOpenAiAvailable()) {
+      if (OPENAI_KEY && isOpenAiAvailable()) {
         console.warn(`[tts:fallback] elevenlabs_failed reason=${reason} — trying openai`)
         // fall through to OpenAI
       } else {
@@ -231,7 +235,7 @@ export async function speakToClient(
   }
 
   // ── OpenAI TTS ─────────────────────────────────────────────────────────────
-  if (tryOai && OPENAI_KEY && isOpenAiAvailable()) {
+  if ((tryOai || attemptedEl) && OPENAI_KEY && isOpenAiAvailable()) {
     const voice = resolveOpenAIVoice(voiceId)
     console.log(`[tts:provider_selected] provider=openai model=${OPENAI_TTS_MODEL_ENV} voice=${voice}`)
     try {
@@ -241,6 +245,7 @@ export async function speakToClient(
       if (err instanceof Error && err.name === 'AbortError') return { ok: true }
 
       const reason = classifyTtsError(err)
+      lastFailureReason = reason
       const cdMs   = providerCooldownMs(err)
       openAiTtsDisabledUntil = Date.now() + cdMs
       const cdMin  = Math.round(cdMs / 60_000)
@@ -250,7 +255,54 @@ export async function speakToClient(
         `msg="${(err instanceof Error ? err.message : String(err)).slice(0, 160)}"`,
       )
       console.warn(`[tts:fallback] openai_failed reason=${reason}`)
-      return { ok: false, textOnly: true, reason }
+
+      if (!attemptedEl && ELEVENLABS_KEY && isElevenLabsAvailable()) {
+        const elVoice = resolveElevenLabsVoiceId(voiceId)
+        attemptedEl = true
+        console.warn(`[tts:fallback] openai_failed reason=${reason} - trying elevenlabs`)
+        try {
+          await speakElevenLabs(send, text, signal, elVoice)
+          return { ok: true }
+        } catch (elErr: unknown) {
+          if (elErr instanceof Error && elErr.name === 'AbortError') return { ok: true }
+
+          const elReason = classifyTtsError(elErr)
+          lastFailureReason = elReason
+          const elCdMs   = providerCooldownMs(elErr)
+          elevenLabsDisabledUntil = Date.now() + elCdMs
+          const elCdMin  = Math.round(elCdMs / 60_000)
+          console.warn(
+            `[tts:provider_error] provider=elevenlabs reason=${elReason} ` +
+            `cooldown=${elCdMin}min voiceId=${elVoice} ` +
+            `msg="${(elErr instanceof Error ? elErr.message : String(elErr)).slice(0, 160)}"`,
+          )
+        }
+      }
+
+      return { ok: false, textOnly: true, reason: lastFailureReason ?? reason }
+    }
+  }
+
+  if (!attemptedEl && ELEVENLABS_KEY && isElevenLabsAvailable()) {
+    const elVoice = resolveElevenLabsVoiceId(voiceId)
+    attemptedEl = true
+    console.warn(`[tts:fallback] primary_unavailable provider_pref=${TTS_PROVIDER_PREF} - trying elevenlabs`)
+    try {
+      await speakElevenLabs(send, text, signal, elVoice)
+      return { ok: true }
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') return { ok: true }
+
+      const reason = classifyTtsError(err)
+      lastFailureReason = reason
+      const cdMs   = providerCooldownMs(err)
+      elevenLabsDisabledUntil = Date.now() + cdMs
+      const cdMin  = Math.round(cdMs / 60_000)
+      console.warn(
+        `[tts:provider_error] provider=elevenlabs reason=${reason} ` +
+        `cooldown=${cdMin}min voiceId=${elVoice} ` +
+        `msg="${(err instanceof Error ? err.message : String(err)).slice(0, 160)}"`,
+      )
     }
   }
 
@@ -266,7 +318,7 @@ export async function speakToClient(
     `provider_pref=${TTS_PROVIDER_PREF} elevenlabs=${elStatus} openai=${oaiStatus}`,
   )
 
-  return { ok: false, textOnly: true, reason: 'TTS_PROVIDER_UNAVAILABLE' }
+  return { ok: false, textOnly: true, reason: lastFailureReason ?? 'TTS_PROVIDER_UNAVAILABLE' }
 }
 
 // ── ElevenLabs ────────────────────────────────────────────────────────────────
@@ -304,7 +356,12 @@ async function speakElevenLabs(
     )
   } catch (err: unknown) {
     clearTimeout(timeoutRef)
-    if (err instanceof Error && err.name === 'AbortError') return
+    if (err instanceof Error && err.name === 'AbortError' && signal?.aborted) return
+    if (err instanceof Error && err.name === 'AbortError') {
+      const timeoutErr = new Error('[tts] ElevenLabs timeout')
+      ;(timeoutErr as unknown as Record<string, number>)['status'] = 503
+      throw timeoutErr
+    }
     throw err
   } finally {
     clearTimeout(timeoutRef)
@@ -332,7 +389,12 @@ async function speakElevenLabs(
       chunks.push(value)
     }
   } catch (err: unknown) {
-    if (err instanceof Error && err.name === 'AbortError') return
+    if (err instanceof Error && err.name === 'AbortError' && signal?.aborted) return
+    if (err instanceof Error && err.name === 'AbortError') {
+      const timeoutErr = new Error('[tts] ElevenLabs stream timeout')
+      ;(timeoutErr as unknown as Record<string, number>)['status'] = 503
+      throw timeoutErr
+    }
     throw err
   } finally {
     reader.cancel()
@@ -374,7 +436,12 @@ async function speakOpenAI(
     response = speechResponse as unknown as Response
   } catch (err: unknown) {
     clearTimeout(timeoutRef)
-    if (err instanceof Error && err.name === 'AbortError') return
+    if (err instanceof Error && err.name === 'AbortError' && signal?.aborted) return
+    if (err instanceof Error && err.name === 'AbortError') {
+      const timeoutErr = new Error('[tts] OpenAI timeout')
+      ;(timeoutErr as unknown as Record<string, number>)['status'] = 503
+      throw timeoutErr
+    }
     throw err
   } finally {
     clearTimeout(timeoutRef)
@@ -397,7 +464,12 @@ async function speakOpenAI(
       chunks.push(value)
     }
   } catch (err: unknown) {
-    if (err instanceof Error && err.name === 'AbortError') return
+    if (err instanceof Error && err.name === 'AbortError' && signal?.aborted) return
+    if (err instanceof Error && err.name === 'AbortError') {
+      const timeoutErr = new Error('[tts] OpenAI stream timeout')
+      ;(timeoutErr as unknown as Record<string, number>)['status'] = 503
+      throw timeoutErr
+    }
     throw err
   } finally {
     reader.cancel()

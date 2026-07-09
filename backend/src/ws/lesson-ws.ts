@@ -2877,6 +2877,21 @@ async function buildOffTopicGuard(lessonId: string): Promise<string> {
   }
 }
 
+function replayQueuedInput(ws: WebSocket, meta: ClientMeta, reason: string): void {
+  if (!meta.queuedInput) return
+  const queued = meta.queuedInput
+  meta.queuedInput = null
+
+  if (!meta.lessonId) {
+    console.log(`[paid-lesson] ai_turn_queued_discarded reason=${reason} input_chars=${queued.trim().length}`)
+    return
+  }
+
+  console.log(`[paid-lesson] ai_turn_queued_replay reason=${reason} input_chars=${queued.trim().length}`)
+  processInput(ws, meta, queued).catch((err: unknown) =>
+    console.error(`[paid-lesson] processInput error (queued-${reason}):`, err))
+}
+
 async function processInput(
   ws: WebSocket,
   meta: ClientMeta,
@@ -3057,12 +3072,7 @@ async function processInput(
               meta.stt?.close()
               meta.stt = null
               meta.aiProcessing = false
-              if (meta.queuedInput) {
-                const queued    = meta.queuedInput
-                meta.queuedInput = null
-                processInput(ws, meta, queued).catch((err: unknown) =>
-                  console.error('[paid-lesson] processInput error (queued-voice-complete):', err))
-              }
+              meta.queuedInput = null
               return
             }
 
@@ -3088,12 +3098,7 @@ async function processInput(
               }
               await ttsStream(ws, meta, teacherText)
               meta.aiProcessing = false
-              if (meta.queuedInput) {
-                const queued     = meta.queuedInput
-                meta.queuedInput = null
-                processInput(ws, meta, queued).catch((err: unknown) =>
-                  console.error('[paid-lesson] processInput error (queued-deterministic):', err))
-              }
+              replayQueuedInput(ws, meta, 'deterministic')
               return
             }
 
@@ -3149,6 +3154,56 @@ async function processInput(
                     score:       manifestValidation.correct ? 1.0 : 0,
                   })
                 }
+              }
+
+              if (engineResult?.action === 'lesson_complete') {
+                const teacherText = `Good answer. Exercise ${manifestValidation.exerciseNum} is complete. Great work today - lesson complete.`
+                send(ws, { type: 'ai_text', phase: 'WRAP_UP', text: teacherText })
+                if (meta.userId) {
+                  recordTeacherMessage({
+                    lessonId:       meta.lessonId,
+                    sessionId:      meta.sessionId,
+                    userId:         meta.userId,
+                    studentId:      meta.studentId,
+                    text:           teacherText,
+                    phase:          'WRAP_UP',
+                    exerciseNumber: manifestValidation.exerciseNum,
+                    exerciseType:   engineResult.exerciseCursor?.exerciseType ?? null,
+                    itemIndex:      engineResult.exerciseCursor?.itemIndex ?? null,
+                    itemTotal:      engineResult.exerciseCursor?.itemTotal ?? null,
+                    correctionTurn: null,
+                    source:         'system',
+                    metadata:       { deterministicLessonComplete: true },
+                  })
+                }
+                await ttsStream(ws, meta, teacherText)
+
+                const durationMin = meta.lessonStartedAt
+                  ? Math.round((Date.now() - meta.lessonStartedAt) / 60_000)
+                  : 0
+                const completedState = await exerciseEngine.getState(meta.lessonId).catch(() => null)
+                send(ws, {
+                  type: 'lesson_end',
+                  summary: {
+                    lessonId:        meta.lessonId,
+                    phasesReached:   ['DIAGNOSTIC', 'EXERCISES', 'WRAP_UP'],
+                    exerciseScore:   completedState?.completedExerciseIds.length ?? manifestValidation.exerciseNum,
+                    vocabularyCount: 0,
+                    durationMin,
+                  },
+                })
+                if (meta.sessionId) {
+                  query(
+                    `UPDATE lesson_sessions SET status = 'completed', updated_at = NOW() WHERE session_id = $1`,
+                    [meta.sessionId],
+                  ).catch((err: unknown) => console.error('[ws] session status update error:', err))
+                }
+                meta.lessonId = null
+                meta.stt?.close()
+                meta.stt = null
+                meta.queuedInput = null
+                meta.aiProcessing = false
+                return
               }
             }
           }
@@ -3212,18 +3267,16 @@ async function processInput(
       enginePromptContext: enginePromptContext || undefined,
       memoryBlock:         memoryBlock || undefined,
     })
-  } finally {
+  } catch (err) {
     meta.aiProcessing = false
-    // Process any input that arrived while AI was busy
-    if (meta.queuedInput) {
-      const queued    = meta.queuedInput
-      meta.queuedInput = null
-      console.log(`[paid-lesson] ai_turn_queued_replay input_chars=${queued.trim().length}`)
-      processInput(ws, meta, queued).catch((err: unknown) =>
-        console.error('[paid-lesson] processInput error (queued):', err))
-    }
+    replayQueuedInput(ws, meta, 'ai-error')
+    throw err
   }
-  if (!result) return
+  if (!result) {
+    meta.aiProcessing = false
+    replayQueuedInput(ws, meta, 'empty-result')
+    return
+  }
   meta.aiCallCount++
 
   recordTraceEvent({
@@ -3436,6 +3489,8 @@ async function processInput(
     meta.lessonId = null
     meta.stt?.close()
     meta.stt = null
+    meta.queuedInput = null
+    meta.aiProcessing = false
     return
   }
 
@@ -3455,6 +3510,8 @@ async function processInput(
   }
 
   await ttsStream(ws, meta, result.text)
+  meta.aiProcessing = false
+  replayQueuedInput(ws, meta, 'teacher-turn-complete')
 }
 
 async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise<void> {

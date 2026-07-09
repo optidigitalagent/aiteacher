@@ -70,20 +70,26 @@ describe('paid lesson vocabulary item flow', () => {
       studentAnswer: 'Spare time',
       lessonStartedAt: Date.now(),
     })
-    await orchestrator.handleVoiceAnswer({
+    const wrongKeenA = await orchestrator.handleVoiceAnswer({
       lessonId,
       userId: 'user-1',
       sessionId: 'session-1',
       studentAnswer: 'Like',
       lessonStartedAt: Date.now(),
     })
-    await orchestrator.handleVoiceAnswer({
+    expect(wrongKeenA?.feedback?.correct).toBe(false)
+    expect(wrongKeenA?.deterministicTeacherText).toContain('Try again - She\'s really ___ dancing.')
+
+    const wrongKeenB = await orchestrator.handleVoiceAnswer({
       lessonId,
       userId: 'user-1',
       sessionId: 'session-1',
       studentAnswer: 'Enjoy',
       lessonStartedAt: Date.now(),
     })
+    expect(wrongKeenB?.feedback?.correct).toBe(false)
+    expect(wrongKeenB?.deterministicTeacherText).toBe('The answer has 2 words and starts with "keen". Try again - She\'s really ___ dancing.')
+
     await orchestrator.handleVoiceAnswer({
       lessonId,
       userId: 'user-1',

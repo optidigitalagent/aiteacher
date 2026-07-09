@@ -25,6 +25,32 @@
 
 ## Open Risks
 
+### RISK-025 - Paid lesson follow-up repair needs production deploy and smoke
+
+**Status:** MITIGATED
+**Severity:** P1
+**Area:** backend / voice / paid lesson runtime
+**Description:** Post-deploy owner smoke still found text-only teacher turns
+and stale exercise memory after item/exercise transitions.
+**Trigger:** OpenAI TTS cooldown with `TTS_PROVIDER=openai`, queued student
+input during a still-sending teacher turn, and soft-speaking `lesson_complete`
+falling back to Teacher Brain while Redis lesson state still re-anchored to
+Exercise 1.
+**Mitigation:** Local repair allows provider fallback to ElevenLabs, treats
+provider timeouts as failures, keeps `aiProcessing` locked through TTS,
+discards queued input after lesson end, short-circuits soft-speaking
+`lesson_complete`, and sends deterministic wrong-turn hints for engine-owned
+fill-gap items. Evidence: `npx tsc --noEmit` -> exit 0 and
+`npm test -- --reporter=dot --silent` -> exit 0; 66 files passed; 2134 tests
+passed.
+**Resolution:** Deploy after explicit approval and repeat authenticated owner
+paid lesson smoke for voiced turns, stable item progression, and no stale
+Exercise 1 Number 5 after lesson completion.
+**Opened:** 2026-07-09
+**Updated:** 2026-07-09
+
+---
+
 ### RISK-024 - Paid lesson TTS and teacher wording need production retest
 
 **Status:** MITIGATED
@@ -36,15 +62,17 @@ sentence, and the teacher wording contradicted the backend cursor after the
 student answered `keen on`.
 **Trigger:** Paid lesson section `1.1` uses ElevenLabs TTS and deterministic
 vocabulary item progression after repeated wrong attempts.
-**Mitigation:** Local repair buffers ElevenLabs network chunks into one
-decodable MP3 `audio_chunk`, and sends backend-authored deterministic teacher
-text for engine correct/reveal turns instead of allowing LLM wording to
-contradict the cursor. Evidence: `npx tsc --noEmit` -> exit 0 and
+**Mitigation:** Repair buffers ElevenLabs network chunks into one decodable
+MP3 `audio_chunk`, and sends backend-authored deterministic teacher text for
+engine correct/reveal turns instead of allowing LLM wording to contradict the
+cursor. Evidence: `npx tsc --noEmit` -> exit 0 and
 `npm test -- --reporter=dot --silent` -> exit 0; 66 files passed; 2133 tests
-passed.
-**Resolution:** Deploy the repair to Railway after explicit approval and repeat
-the authenticated owner paid lesson smoke for full greeting TTS and Exercise 1
-item progression.
+passed. Commit `a2c70bf1fe1e933762dd2ee38d9d4afd2db13635` deployed to Railway
+production; backend deployment `2cfe99c8-2ef2-4c8c-9dc3-4f439d41d576` and
+frontend deployment `3af88065-c052-4577-831d-717841a9b69c` are `SUCCESS`.
+Automated health/log checks passed.
+**Resolution:** Repeat the authenticated owner paid lesson smoke for full
+greeting TTS and Exercise 1 item progression.
 **Opened:** 2026-07-09
 **Updated:** 2026-07-09
 

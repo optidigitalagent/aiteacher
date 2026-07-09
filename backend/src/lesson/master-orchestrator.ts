@@ -490,6 +490,10 @@ function buildDeterministicTeacherText(
 ): string | null {
   const cursor = result.exerciseCursor
   const nextItem = cursor?.currentItem ? normalizeSpokenLine(cursor.currentItem) : ''
+  const currentItem = normalizeSpokenLine(etr.currentItem)
+  const correctAnswer = result.validation?.correctAnswer
+    ? normalizeSpokenLine(result.validation.correctAnswer)
+    : ''
 
   if (result.action === 'step_correct' || result.action === 'soft_pass') {
     return nextItem
@@ -508,6 +512,21 @@ function buildDeterministicTeacherText(
     return nextItem
       ? `The answer is "${answer}". Let's continue. Now - ${nextItem}`
       : `The answer is "${answer}". Exercise ${etr.exerciseNumber} is complete.`
+  }
+
+  if (result.action === 'step_wrong') {
+    const itemPrompt = currentItem ? ` Try again - ${currentItem}` : ' Try again.'
+    if (etr.correctionTurn === 'C') {
+      return 'Let\'s stay on this item. Try once more.'
+    }
+    if (etr.correctionTurn === 'B' && correctAnswer) {
+      const answerWords = correctAnswer.split(/\s+/).filter(Boolean)
+      if (answerWords.length > 1) {
+        return `The answer has ${answerWords.length} words and starts with "${answerWords[0]}".${itemPrompt}`
+      }
+      return `The word starts with "${correctAnswer.slice(0, 1)}".${itemPrompt}`
+    }
+    return `Good try. Think about the phrase that fits this sentence.${itemPrompt}`
   }
 
   return null

@@ -1,5 +1,78 @@
 # DEPLOYMENT_CHECKLIST.md
 
+## DEPLOYMENT RECORD - Paid lesson runtime TTS/cursor repair - 2026-07-09
+
+### Pre-Deploy Gates
+
+```powershell
+cd backend
+$env:npm_config_cache='D:\codex-npm-cache'
+$env:TEMP='D:\codex-temp'
+$env:TMP='D:\codex-temp'
+npx tsc --noEmit
+```
+Result: `[x] exit 0`
+
+```powershell
+git diff --check
+```
+Result: `[x] exit 0` (CRLF warnings only)
+
+```powershell
+cd backend
+npm test -- --reporter=dot --silent
+```
+Result: `[x] exit 0`; 66 files passed; 2133 tests passed.
+
+### Commit and Push
+
+Commit:
+`a2c70bf1fe1e933762dd2ee38d9d4afd2db13635`
+(`fix(lesson): stabilize paid TTS and cursor turns`)
+
+Push:
+`git push origin main` -> success (`f41c760..a2c70bf main -> main`)
+
+### Railway Deploy Confirmation
+
+```powershell
+railway service status --all
+```
+
+Result:
+- `aiteacher` -> `2cfe99c8-2ef2-4c8c-9dc3-4f439d41d576` -> `SUCCESS`
+- `aware-alignment` -> `3af88065-c052-4577-831d-717841a9b69c` -> `SUCCESS`
+- Postgres -> `SUCCESS`
+- Redis -> `SUCCESS`
+
+### Post-Deploy Verification
+
+```powershell
+Invoke-WebRequest https://aiteacher-production-cae8.up.railway.app/health
+```
+Result: HTTP 200; `status=ok`; postgres ok; redis ok.
+
+```powershell
+Invoke-WebRequest https://aware-alignment-production.up.railway.app/demo/setup
+```
+Result: HTTP 200.
+
+Backend logs:
+- migrations applied
+- `[server] listening on 0.0.0.0:8080`
+- `[server] PostgreSQL ready`
+- `[server] Redis ready`
+- `[server] WS endpoint: ws://localhost:8080/lesson`
+
+HTTP 5xx logs:
+`railway logs --service aiteacher --http --status "500..599" --lines 50 --since 10m`
+-> no output.
+
+Remaining verification:
+- Manual authenticated owner paid lesson voice smoke remains pending.
+
+---
+
 > Complete every item in order. Do NOT skip items.
 > Do NOT deploy if any item is вќЊ.
 
