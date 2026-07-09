@@ -43,7 +43,7 @@ Out of scope:
 - [x] Targeted billing/auth tests pass.
 - [x] Backend TypeScript compiles.
 - [x] Full backend test suite passes.
-- [ ] Railway production deploy is completed after explicit approval.
+- [x] Railway production deploy is completed after explicit approval.
 - [ ] Production owner account smoke verifies `/lesson/start` and paid
   classroom entry without payment.
 
@@ -56,13 +56,13 @@ Out of scope:
 | 0 | Intake and scope reconciliation | COMPLETE |
 | 1 | Implement owner-only backend access | COMPLETE |
 | 2 | Validate and review | COMPLETE |
-| 3 | Deploy and production owner smoke | BLOCKED - needs explicit deploy approval |
+| 3 | Deploy and production owner smoke | PARTIAL - deployed, manual owner smoke pending |
 
 ---
 
 ## CURRENT CONSTRAINTS
 
 - Do not touch LiqPay keys or payment flow per user instruction.
-- Do not deploy or mutate Railway production without explicit approval.
+- Railway production deploy was explicitly approved on 2026-07-09.
 - Local C: drive has no free space; npm commands must use
   `D:\codex-npm-cache` and `D:\codex-temp`.

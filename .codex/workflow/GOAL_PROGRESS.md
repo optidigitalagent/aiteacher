@@ -72,6 +72,36 @@ paid lessons without payment or limits.
 approval, then production-smoke `artenon92@gmail.com` through `/lesson/start`
 and paid classroom entry.
 
+**Deployment update (2026-07-09):**
+- User explicitly approved deploy: "задеплой и сохрани все".
+- Fresh pre-deploy validation:
+  - `cd backend; npx tsc --noEmit` -> exit 0.
+  - `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 65 files
+    passed; 2131 tests passed.
+  - `git diff --check` -> exit 0; CRLF warnings only.
+- Commit created:
+  `c2d796617eed81c12c21bd2493f9d62a454bfda7`
+  (`fix(billing): allow owner paid lesson access`).
+- `git push origin main` -> success (`ed10f86..c2d7966 main -> main`).
+- Railway auto-deploy:
+  - backend `aiteacher`: deployment
+    `fdf6da76-594f-4070-8ee7-f660125e8d01`, commit `c2d7966`, status SUCCESS.
+  - frontend `aware-alignment`: deployment
+    `59712f47-9255-429e-af82-88198fbdcf0e`, commit `c2d7966`, status SUCCESS.
+- Post-deploy checks:
+  - `GET https://aiteacher-production-cae8.up.railway.app/health` -> HTTP 200,
+    `status=ok`, postgres ok, redis ok, uptime 20s.
+  - `HEAD https://aware-alignment-production.up.railway.app/demo/setup`
+    -> HTTP 200.
+  - Backend logs show migrations applied, `[server] listening on
+    0.0.0.0:8080`, `[server] PostgreSQL ready`, `[server] Redis ready`, and
+    WS endpoint attached.
+  - Frontend Caddy logs show startup at commit `c2d7966`.
+- Production smoke status:
+  - Automated unauthenticated health checks passed.
+  - Real owner paid lesson smoke is still pending manual authenticated browser
+    verification. JWTs visible in logs were not reused as credentials.
+
 ## ACTIVE GOAL OVERRIDE - 2026-07-09
 
 **Current active goal:** Ordinary Mentium lesson mode production readiness.

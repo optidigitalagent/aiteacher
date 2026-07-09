@@ -163,6 +163,24 @@ Or via Railway dashboard: Deployments в†’ previous deploy в†’ Redeploy
 ## CHECKLIST STATUS
 
 ```
+Latest completed deploy: Owner-only paid lesson access bypass (commit c2d7966) - 2026-07-09
+Deployment status:       DEPLOYED
+Authorization:           user explicitly requested "задеплой и сохрани все"
+Railway services:
+  - aiteacher backend: deployment fdf6da76-594f-4070-8ee7-f660125e8d01 SUCCESS, commit c2d7966
+  - aware-alignment frontend: deployment 59712f47-9255-429e-af82-88198fbdcf0e SUCCESS, commit c2d7966
+Pre-deploy verification:
+  - cd backend; npx tsc --noEmit -> exit 0
+  - cd backend; npm test -- --reporter=dot --silent -> exit 0; 65 files, 2131 tests
+  - review gate -> PASS WITH WARNING (backend + QA PASS; RISK-023)
+  - git diff --check -> exit 0; CRLF warnings only
+Post-deploy verification:
+  - backend /health -> HTTP 200, postgres ok, redis ok, uptime 20s at 2026-07-09T11:37:22Z
+  - frontend /demo/setup -> HTTP 200
+  - backend logs -> server listening, PostgreSQL ready, Redis ready, WS attached
+Pending:
+  - manual authenticated owner account smoke for /lesson/start and /classroom/:sessionId
+
 Latest completed deploy: Kids STT teacher-echo target correction (commit ed10f86) - 2026-07-09
 Deployment status:       DEPLOYED
 Railway services:
