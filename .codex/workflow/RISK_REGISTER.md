@@ -379,6 +379,33 @@
 
 ---
 
+### RISK-020 - teacher retry echo can be mistaken for child target answer
+
+**Status:** OPEN
+**Severity:** P2
+**Area:** backend / Kids voice / STT
+**Description:** Live production evidence showed Deepgram can return a mixed
+  transcript such as `Say again. Blue.` while the target is `blue`. Before the
+  2026-07-09 fix this caused `social_speech` via `timeout_fallback` and no
+  progression. After the fix, the exact allowlisted pattern `say again` plus
+  trailing target word(s) is normalized to the target word. The remaining risk
+  is a false positive if pure speaker echo with no child speech produces the
+  same exact phrase.
+**Trigger:** Teacher retry prompt audio leaks into the child's next mic turn or
+  the child repeats the teacher prompt together with the target word.
+**Mitigation:** Allowlist is intentionally narrow: only 3-4 word transcripts
+  with prefix `say again` and one or more trailing copies of the current target
+  are corrected. Arbitrary multi-word phrases remain blocked (`I said blue`,
+  `the blue`, `Yes. I like Roblox.`, `Say again.`).
+**Resolution:** Monitor production logs for `method=teacher_echo_target_suffix`
+  during live retest; if false positives appear, move the fix to a richer
+  echo-suppression signal using audio timing/TTS playback metadata instead of
+  transcript shape alone.
+**Opened:** 2026-07-09
+**Updated:** 2026-07-09
+
+---
+
 ## Resolved Risks
 
 ### RISK-005 — Railway deploy not verified post Phase 1–3

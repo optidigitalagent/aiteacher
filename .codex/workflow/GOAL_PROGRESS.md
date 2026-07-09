@@ -426,6 +426,89 @@ None.
 
 ---
 
+## PRODUCTION DEFECT CHECKPOINT - 2026-07-09
+
+**Trigger:** User completed Kids onboarding, started a live production lesson,
+then reported that the microphone appeared to stop working while trying to say
+the colour word `blue`.
+
+**Production evidence inspected:**
+- User browser console showed the new deployed bundle `index-DARbdknK.js`,
+  successful auth, `lesson_ready`, `ai_text`, `audio_chunk`,
+  `teacher_turn_end`, repeated `mic_start`, repeated outgoing `audio_chunk`,
+  repeated incoming `transcript`, `student_message`, and further teacher turns.
+  Therefore the mic pipeline, WebSocket, STT, Kids Brain turn handling, and TTS
+  were active; the symptom was not a dead microphone.
+- Railway variables on service `aiteacher` showed:
+  `USE_KIDS_BRAIN_V1=true`, `KIDS_PERSONALIZATION_V2=true`,
+  `KIDS_WARMUP_ENABLED=true`.
+- Railway logs for session `0abe0557-75f0-4902-adac-eb3fc55313cf` showed:
+  `[kids-v1] warmup_fired ... interest=roblox`; STT provider `deepgram`,
+  model `nova-2`, `utterance_end_ms=1000`, `keyPresent=true`; no Deepgram
+  HTTP 400, no `voice_unavailable`, no backend crash.
+- Same session showed the actual failure mode:
+  STT raw transcript `Say again. Blue. Blue.` (quality log) and Kids Brain
+  perception raw transcript `Say again. Blue.` for target `blue`; classifier
+  returned `social_speech` via `timeout_fallback`, action `warm_redirect`,
+  no progression.
+
+**Root cause from repository evidence:**
+- `backend/src/ws/kids-stt-correction.ts` intentionally returned
+  `multi_word` before target correction for any transcript containing spaces.
+- `backend/src/kids-brain/classification/deterministic-classifier.ts` only
+  uses contained-target partial matching for multi-word targets, not for a
+  single target word embedded in a teacher retry echo.
+- Result: the production transcript `Say again. Blue.` reached Kids Brain as
+  multi-word social/off-task speech instead of the single target answer `blue`.
+
+**Fix implemented:**
+- `backend/src/ws/kids-stt-correction.ts` now recognizes only the confirmed
+  teacher-echo suffix pattern `say again` + trailing target word(s), e.g.
+  `Say again. Blue.` and `Say again. Blue. Blue.`, and converts it to the
+  engine-authoritative target word before Kids Brain classification.
+- Existing broad multi-word guard remains in place for arbitrary phrases:
+  `I said blue`, `the blue`, `Yes. I like Roblox.`, and `Say again.` are not
+  corrected.
+- `backend/src/ws/__tests__/phase-21-kids-stt-target-word-correction.test.ts`
+  adds 4 regression tests for the production case and guard cases.
+
+**Validation:**
+- `cd backend; npx vitest run src/ws/__tests__/phase-21-kids-stt-target-word-correction.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 34 tests passed.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd backend; npx vitest run src/kids-brain src/ws/__tests__/phase-21-kids-stt-target-word-correction.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/voice/__tests__/stt-deepgram-options.test.ts --reporter=dot --silent`
+  -> exit 0; 45 files passed; 1544 tests passed.
+- `cd backend; npm test -- --reporter=dot --silent`
+  -> exit 0; 64 files passed; 2127 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+
+**Review gate:**
+- backend reviewer: PASS. Scope is one WS correction helper plus unit tests;
+  no secrets, no auth/billing/payment change, no new endpoint, no new STT/TTS
+  config, no new external calls, existing Kids Brain authority preserved.
+- QA tester: PASS. Targeted, broader Kids/voice, TypeScript, and full backend
+  suite all passed with the new 4 tests included.
+- curriculum reviewer: PASS. Target word, accepted answers, exercise order,
+  scoring rules, escalation ladder, and curriculum data are unchanged. The fix
+  normalizes a transcript to the already-authoritative target word only for the
+  confirmed teacher-echo retry pattern.
+- frontend reviewer: NOT APPLICABLE. No frontend files changed.
+- kids safety monitor: NOT APPLICABLE. No teacher text, child-facing copy,
+  safety escalation, or prompt behavior changed; residual false-positive risk
+  recorded below.
+- acceptance auditor: NOT APPLICABLE. Goal is not complete; live production
+  verification remains required after deploy.
+
+**Residual risk:**
+- If pure speaker echo without child speech produces exactly `Say again. Blue.`
+  or `Say again. Blue. Blue.`, it could now be treated as `blue`. The allowlist
+  is deliberately narrow and does not accept general "contains target" phrases.
+
+**Commit/deploy status:** product fix not committed/deployed yet at time of
+this checkpoint.
+
+---
+
 ## TEST EVIDENCE
 
 ```

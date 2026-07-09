@@ -178,6 +178,34 @@ describe('applyKidsTargetWordCorrection — other short target words', () => {
 
 describe('applyKidsTargetWordCorrection — multi-word guard', () => {
 
+  it('extracts target from observed teacher echo suffix "Say again. Blue."', () => {
+    const result = applyKidsTargetWordCorrection('Say again. Blue.', 'blue', SESSION)
+    expect(result.correctionApplied).toBe(true)
+    expect(result.correctionReason).toBe('teacher_echo_target_suffix')
+    expect(result.correctedText).toBe('blue')
+  })
+
+  it('extracts target when the child repeats after the teacher echo suffix', () => {
+    const result = applyKidsTargetWordCorrection('Say again. Blue. Blue.', 'blue', SESSION)
+    expect(result.correctionApplied).toBe(true)
+    expect(result.correctionReason).toBe('teacher_echo_target_suffix')
+    expect(result.correctedText).toBe('blue')
+  })
+
+  it('does NOT correct teacher retry prompt without the target word', () => {
+    const result = applyKidsTargetWordCorrection('Say again.', 'blue', SESSION)
+    expect(result.correctionApplied).toBe(false)
+    expect(result.correctionReason).toBe('multi_word')
+    expect(result.correctedText).toBe('Say again.')
+  })
+
+  it('does NOT correct social speech that includes no target word', () => {
+    const result = applyKidsTargetWordCorrection('Yes. I like Roblox.', 'blue', SESSION)
+    expect(result.correctionApplied).toBe(false)
+    expect(result.correctionReason).toBe('multi_word')
+    expect(result.correctedText).toBe('Yes. I like Roblox.')
+  })
+
   it('does NOT correct multi-word transcript "I said blue"', () => {
     // Levenshtein correction never applied to multi-word answers
     const result = applyKidsTargetWordCorrection('I said blue', 'blue', SESSION)

@@ -8,81 +8,58 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Phase 9 step 2 - enable `KIDS_WARMUP_ENABLED` in production and live-verify warmups
-**Type:** DEPLOY-VERIFY (external production verification)
+**Task:** Deploy Kids STT teacher-echo target correction and run production verification
+**Type:** DEPLOY-VERIFY
 **Phase:** Phase 9 - Deployment
-**Agent:** goal-executor -> deploy-railway + production-log-analyzer + QA tester + acceptance-auditor later
+**Agent:** goal-executor -> deploy-railway + production-log-analyzer + QA tester
 
 **Why this is next:**
-  The local Kids WS/STT test breakage is fixed and the full backend suite is
-  green. The Phase 9 master flag is live in production:
-  `KIDS_PERSONALIZATION_V2=true`, `USE_KIDS_BRAIN_V1=true`.
-  The blocking production `/kids` blank screen for users without child profile
-  is fixed and deployed at commit `b0d56e95237051cef498835ec072ec02f9bd5294`.
-  Production `/kids` now serves HTTP 200 and the deployed frontend bundle routes
-  authenticated `NO_CHILD_PROFILE` state to `/kids/onboarding` without React
-  page errors.
+  User live production evidence showed the Kids mic/STT pipeline was active, but
+  target recognition failed when Deepgram returned `Say again. Blue.` for target
+  `blue`. The local fix is implemented and validated; production still runs the
+  old behavior until the new backend commit is pushed and Railway deploys it.
 
-**Description:**
-  Continue Phase 9 one tier at a time. The next tier is `KIDS_WARMUP_ENABLED`.
-  Before enabling it, ensure a live voice/STT-capable verification channel is
-  available (manual browser/microphone run or a repository-backed automated
-  audio/STT smoke). Then:
-  1. Set `KIDS_WARMUP_ENABLED=true` on Railway service `aiteacher`.
-  2. Wait for the Railway redeploy to reach `SUCCESS`.
-  3. Verify `/health` returns HTTP 200 with PostgreSQL and Redis OK.
-  4. Run a live Kids voice session with a prepared child profile and interests.
-  5. Verify W1/W2/W4/W5/W7 in production:
-     W1 warmup fires once, W2 no-interests -> no warmup, W4 <=2 turns,
-     W5 15s auto-end, W7 returns to curriculum.
-  6. Run production-log-analyzer for the first 10 minutes after enablement.
-  7. If clean, update workflow evidence and advance to
-     `KIDS_INTEREST_EXAMPLES_V2`. If not clean, roll back only
-     `KIDS_WARMUP_ENABLED=false`, diagnose, and retry.
+**Current evidence:**
+  - Production session `0abe0557-75f0-4902-adac-eb3fc55313cf`:
+    STT provider `deepgram`, `utterance_end_ms=1000`, transcripts received,
+    warmup fired with interest `roblox`; no Deepgram HTTP 400, no
+    `voice_unavailable`, no backend crash.
+  - Failure mode: `Say again. Blue.` reached Kids Brain and classified as
+    `social_speech` via `timeout_fallback`, so no progression.
+  - Local fix:
+    `backend/src/ws/kids-stt-correction.ts` extracts target only from confirmed
+    `say again` + trailing target word(s), preserving the broad multi-word guard.
+  - Tests:
+    `cd backend; npx vitest run src/ws/__tests__/phase-21-kids-stt-target-word-correction.test.ts --reporter=dot --silent`
+    -> exit 0; 34 tests passed.
+    `cd backend; npx tsc --noEmit` -> exit 0.
+    `cd backend; npx vitest run src/kids-brain src/ws/__tests__/phase-21-kids-stt-target-word-correction.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/voice/__tests__/stt-deepgram-options.test.ts --reporter=dot --silent`
+    -> exit 0; 45 files passed; 1544 tests passed.
+    `cd backend; npm test -- --reporter=dot --silent`
+    -> exit 0; 64 files passed; 2127 tests passed.
 
-**Latest verified evidence (2026-07-09):**
-  - `cd backend; npx tsc --noEmit` -> exit 0.
-  - `cd backend; npm test -- --reporter=dot --silent` -> exit 0;
-    64 files passed; 2123 tests passed.
-  - `cd frontend; npm run build` -> exit 0.
-  - Kids no-profile frontend fix:
-    - commit `b0d56e95237051cef498835ec072ec02f9bd5294`;
-    - Railway `aware-alignment` deployment
-      `4d0a2e07-305a-4c6d-9b5c-8a66be13fc73` -> SUCCESS;
-    - Railway `aiteacher` deployment
-      `b8021d98-70a7-49cf-b9d5-653c715af410` -> SUCCESS;
-    - production `/` and `/kids` -> HTTP 200;
-    - production browser verification with authenticated no-child-profile mocks
-      -> final URL `/kids/onboarding`, heading `What's your child's name?`,
-      `pageErrors: []`.
-  - `railway variables --service aiteacher` shows `KIDS_PERSONALIZATION_V2 true`
-    and `USE_KIDS_BRAIN_V1 true`.
-  - `curl.exe -sS -i https://aiteacher-production-cae8.up.railway.app/health`
-    after deploy -> HTTP 200; status `ok`; `checks.postgres=ok`;
-    `checks.redis=ok`.
-  - Voice-safe production smoke for master flag only -> exit 0;
-    `messageTypes: ["lesson_ready","lesson_ready","ai_text","audio_chunk","teacher_turn_end"]`;
-    `audioChunks: 1`; `errorCodes: []`; `voiceUnavailable: []`.
+**Steps:**
+  1. Commit the product fix plus workflow evidence with targeted `git add`.
+  2. Push `main` to `origin/main`.
+  3. Wait for Railway backend service `aiteacher` to deploy the new commit to
+     `SUCCESS`.
+  4. Verify `/health` returns HTTP 200 with PostgreSQL and Redis OK.
+  5. Inspect production logs for startup errors and for the correction marker
+     `method=teacher_echo_target_suffix` after the user/manual retest.
+  6. Ask for or run live Kids mic retest: say `blue` after the retry prompt and
+     verify the lesson progresses instead of looping on warm redirect.
+  7. Update workflow evidence. If production is clean but manual mic retest is
+     still required, stop under AGENTS stop rule 4 with exact retest steps.
 
-**Inputs:**
-  - GLOBAL_GOAL.md "Deployment (Phase 9)" acceptance criteria (D2/D3/D4)
-  - docs/kids-personalization-v2.md rollback plan (7 feature flags)
-  - .codex/skills/deploy-railway, production-log-analyzer, qa-tester,
-    acceptance-auditor
-  - backend/.env.example (all 7 flags documented, default OFF)
+**Success criterion:**
+  New commit deployed on Railway backend; health OK; no critical production
+  startup/log errors; live retest either verifies `Say again. Blue.` normalizes
+  to `blue` and progresses, or the remaining manual verification step is
+  explicitly recorded as the only blocker.
 
-**Success criterion for this next action:**
-  `KIDS_WARMUP_ENABLED=true` live in production; W1/W2/W4/W5/W7 verified in a
-  live Kids voice/STT session; no critical errors in the first 10 minutes after
-  enablement; workflow checkpoint updated with exact evidence.
-
-**Current blocker / stop condition:**
-  Live warmup verification requires a voice/STT-capable production run, not only
-  API/WS/TTS smoke. Per AGENTS stop rule 4, do not enable the next tier unless
-  that manual or automated voice/STT verification channel is available.
-
-**On PASS:** Advance to `KIDS_INTEREST_EXAMPLES_V2` production enablement.
-**On FAIL:** Roll back `KIDS_WARMUP_ENABLED=false`; diagnose; retry after evidence.
+**Rollback criterion:**
+  If deploy causes critical backend errors, revert the product commit and push,
+  or deploy previous known-good commit per Railway rollback procedure.
 
 ---
 

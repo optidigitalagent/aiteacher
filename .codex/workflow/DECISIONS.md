@@ -199,3 +199,25 @@ strand the child in warmup state.
 **Recorded at:** Phase 7 review (QA W-027 flagged the asymmetry).
 **Reversible:** Yes (but do not without handling the mid-session flag flip).
 **Risk:** None — it only fires when lesson-ws is already draining a warmup.
+
+### 2026-07-09 - target-word correction handles only confirmed teacher retry echo
+
+**Decision:** The production `Say again. Blue.` failure is handled in
+`backend/src/ws/kids-stt-correction.ts`, not by changing curriculum answers or
+opening deterministic classification to any transcript containing the target.
+Only the confirmed pattern `say again` followed by trailing current target
+word(s) is normalized to the target word.
+**Why:** Production logs proved the mic/STT path was alive and the failure was
+classification of a mixed teacher retry echo plus target word. A broad
+"contains target" rule would weaken curriculum authority and risk false
+progression on arbitrary phrases. A narrow correction preserves the existing
+multi-word guard for `I said blue`, `the blue`, social speech, and target-free
+retry prompts.
+**Alternatives rejected:** Accept any single target word contained in a longer
+transcript; change Kids Brain accepted answers; change STT/TTS configuration;
+make a frontend-only mic timing change without backend protection.
+**Pinned by:** 4 tests in
+`backend/src/ws/__tests__/phase-21-kids-stt-target-word-correction.test.ts`.
+**Reversible:** Yes.
+**Risk:** Pure speaker echo of exactly `Say again. Blue.` could be accepted as
+the target; logged as RISK-020 and bounded by the narrow allowlist.

@@ -6,6 +6,66 @@
 
 ---
 
+## REVIEW GATE - Kids STT teacher-echo target correction - 2026-07-09
+
+**Scope reviewed:**
+- `backend/src/ws/kids-stt-correction.ts`
+- `backend/src/ws/__tests__/phase-21-kids-stt-target-word-correction.test.ts`
+
+**Production failure evidence:**
+- Live production session `0abe0557-75f0-4902-adac-eb3fc55313cf` had working
+  WS/mic/STT/TTS but failed progression when target `blue` was transcribed as
+  `Say again. Blue.` and classified as `social_speech` via `timeout_fallback`.
+
+**Backend reviewer: PASS**
+- Files reviewed: 2.
+- Checklist checked: secrets/auth/billing/payment, endpoint surface, STT/TTS
+  config, external calls, Kids Brain authority, correction scope, tests.
+- Findings: none critical.
+- Notes: new correction is confined to the existing Kids target-word STT
+  correction layer and runs only when `lesson-ws.ts` already has
+  `kidsBrainV1Active` and `kidsCurrentTargetWord`. It does not introduce new
+  endpoints, trust client-provided correctness, change auth/session ownership,
+  create new Deepgram/ElevenLabs calls, or modify STT/TTS configuration.
+
+**QA tester: PASS**
+- `cd backend; npx vitest run src/ws/__tests__/phase-21-kids-stt-target-word-correction.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 34 tests passed.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd backend; npx vitest run src/kids-brain src/ws/__tests__/phase-21-kids-stt-target-word-correction.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/voice/__tests__/stt-deepgram-options.test.ts --reporter=dot --silent`
+  -> exit 0; 45 files passed; 1544 tests passed.
+- `cd backend; npm test -- --reporter=dot --silent`
+  -> exit 0; 64 files passed; 2127 tests passed.
+- New tests: 4 regression/guard tests for `Say again. Blue.`,
+  `Say again. Blue. Blue.`, `Say again.`, and `Yes. I like Roblox.`.
+- Regressions: none observed.
+
+**Curriculum reviewer: PASS**
+- Curriculum files changed: none.
+- Exercise chain traced: not applicable; no curriculum data/runtime exercise
+  chain changed.
+- Teacher behavior: unchanged.
+- Escalation logic: unchanged.
+- Target word, accepted answers, completion rules, scoring/progression rules,
+  and escalation ladder remain curriculum-authoritative. The fix only maps a
+  confirmed teacher retry echo transcript back to the already-authoritative
+  current target word before existing Kids Brain classification.
+
+**Frontend reviewer: NOT APPLICABLE**
+- No frontend files or browser UI behavior changed.
+
+**Kids safety monitor: NOT APPLICABLE**
+- No teacher text, child-facing prompt, safety escalation, or prompt behavior
+  changed. Residual false-positive risk is recorded in `RISK_REGISTER.md`.
+
+**Acceptance auditor: NOT APPLICABLE**
+- This is a production defect repair inside Phase 9. Final goal acceptance
+  still requires live production verification and later acceptance audit.
+
+**Verdict:** PASS. Proceed to commit and Railway deployment.
+
+---
+
 ## PRODUCTION KIDS NO-PROFILE FRONTEND CRASH REVIEW - 2026-07-09
 
 ```text
