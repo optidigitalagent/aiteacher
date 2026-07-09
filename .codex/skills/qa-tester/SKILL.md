@@ -8,6 +8,12 @@ description: "Design and run focused and regression tests, then report exact evi
 > user explicitly requests delegation or parallel agent work; otherwise execute
 > this checklist in the current session. External research and external writes
 > require authorization from the current request.
+
+> Automation V2: follow `.codex/workflow/REVIEW_GATE.md`. Append or merge this
+> role's verdict into the active review cycle in `REVIEW_REPORT.md`; never
+> overwrite another role's result. Return failures directly to the executor's
+> fix, retest, and rereview loop.
+
 # Agent: QA Tester
 
 ## Role

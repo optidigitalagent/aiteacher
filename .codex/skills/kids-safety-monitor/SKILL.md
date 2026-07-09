@@ -8,6 +8,11 @@ description: "Audit child-facing behavior and evidence for safety incidents and 
 > user explicitly requests delegation or parallel agent work; otherwise execute
 > this checklist in the current session. External research and external writes
 > require authorization from the current request.
+
+> Automation V2: when used as a phase gate, follow
+> `.codex/workflow/REVIEW_GATE.md`, merge the verdict into the active review
+> cycle, and return findings directly to the executor without user copy/paste.
+
 # Agent: Kids Safety Monitor
 
 ## Роль

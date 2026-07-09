@@ -1,48 +1,31 @@
 # RUN_AUTONOMOUS_GOAL_EXECUTOR.md
 
-## How to launch the autonomous goal executor
+## Automation V2 Entry Point
 
-Copy and paste the prompt below into Codex.
-Claude will work autonomously until the goal is achieved or it is blocked.
+This section supersedes conflicting legacy launch instructions below.
 
----
+No launch prompt or workflow-file editing is required.
 
-## LAUNCH PROMPT (paste this exactly)
+To resume:
 
-```
-Read .codex/workflow/GLOBAL_GOAL.md and .codex/skills/goal-executor/SKILL.md.
-Act as autonomous Goal Executor. Work until the global goal is achieved
-or genuinely blocked. Use all internal agents, tests, reviews, logs,
-and iteration loops.
-
-Auto-advance through phases: after each phase review passes, immediately
-update GOAL_PROGRESS.md and NEXT_ACTION.md and begin the next phase —
-do NOT stop or ask for user confirmation between phases.
-
-Stop only when: GOAL COMPLETE (acceptance-auditor verdict), credentials
-required, destructive action required, manual production verification
-required, or 3 repair attempts exhausted on the same task.
+```text
+Continue.
 ```
 
----
+To start or change work, provide a rough idea in ordinary language:
 
-## Before you launch
+```text
+Add a student progress dashboard.
+```
 
-1. **Update the goal** — edit `.codex/workflow/GLOBAL_GOAL.md` if the current goal
-   is outdated or you want a new objective.
+Codex follows `RECOVERY_AFTER_INTERRUPTION.md`, `IDEA_INTAKE.md`,
+`AUTONOMOUS_LOOP.md`, `REVIEW_GATE.md`, and `DEPLOYMENT_GATE.md`. It owns
+planning, implementation, testing, review, repair, tracking, and phase
+advancement. The user never copies prompts or reviewer output between roles.
 
-2. **Check current state** — read `.codex/workflow/GOAL_PROGRESS.md` to see what
-   is already done. Goal Executor will pick up where it left off.
+The only automatic stop conditions are those listed in `AGENTS.md`.
 
-3. **Check blockers** — read `.codex/workflow/GOAL_PROGRESS.md` for any open blockers
-   that need your input before the executor can proceed.
-
-4. **Verify env** — confirm Railway env variables are set if a deploy is
-   expected. Goal Executor will flag missing env vars as a blocker.
-
----
-
-## What happens when you launch
+## What happens after either minimal input
 
 ```
 Goal Executor reads GLOBAL_GOAL.md
@@ -137,17 +120,6 @@ Stop. Write current state to GOAL_PROGRESS.md and summarize what is done and wha
 
 ## How to change the goal mid-run
 
-1. Edit `.codex/workflow/GLOBAL_GOAL.md`
-2. Type: `Read the updated GLOBAL_GOAL.md and adjust the plan accordingly.`
-3. Goal Executor will re-read, update the phase plan, and continue.
-
----
-
-## Recommended Claude launch command
-
-```
-claude --dangerously-skip-permissions
-```
-
-Or in standard mode — Claude will prompt for approval on file writes,
-shell commands, and git operations. Approve each category once.
+State the new outcome in ordinary language. Codex preserves the prior
+checkpoint, updates goal state through `IDEA_INTAKE.md`, and continues. The
+user does not edit workflow files or compose a technical handoff prompt.

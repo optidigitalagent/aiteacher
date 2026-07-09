@@ -1,6 +1,7 @@
-# GOAL.md — Шаблон цели для автономного выполнения
+# GOAL.md — Internal Automation V2 Goal Template
 
-> Скопируй этот файл в `.codex/workflow/GOAL.md`, заполни и скажи мне: "выполни цель"
+> Codex fills this template from a rough user idea by following
+> `IDEA_INTAKE.md`. The user does not copy, edit, or submit this file.
 
 ---
 

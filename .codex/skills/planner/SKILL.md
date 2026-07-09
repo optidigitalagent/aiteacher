@@ -8,6 +8,25 @@ description: "Decompose an active goal into ordered, testable phases and concret
 > user explicitly requests delegation or parallel agent work; otherwise execute
 > this checklist in the current session. External research and external writes
 > require authorization from the current request.
+
+## Automation V2 Override
+
+This section supersedes conflicting legacy instructions later in this file.
+
+- Accept a rough user idea as sufficient input; do not ask the user to convert
+  it into a technical prompt.
+- Follow `.codex/workflow/IDEA_INTAKE.md` and reconstruct repository state
+  before planning.
+- Create or update `GLOBAL_GOAL.md`, `GOAL.md`, acceptance criteria, phase
+  status, risks, progress, and exactly one `NEXT_ACTION.md` task.
+- Derive the plan from inspected repository evidence and preserve verified
+  completed work.
+- Record review applicability for backend, frontend, curriculum, kids safety,
+  QA, and acceptance audit in every phase.
+- After planning, return control directly to the goal executor, which enters
+  `.codex/workflow/AUTONOMOUS_LOOP.md`. Planning completion is not a stop
+  condition.
+
 # Agent: Planner
 
 ## Role

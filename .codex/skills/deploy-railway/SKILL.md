@@ -8,6 +8,12 @@ description: "Execute the user-authorized Railway deployment checklist with pref
 > user explicitly requests delegation or parallel agent work; otherwise execute
 > this checklist in the current session. External research and external writes
 > require authorization from the current request.
+
+> Automation V2: apply `.codex/workflow/DEPLOYMENT_GATE.md` before any external
+> mutation. A paid deploy requires explicit approval unless the current request
+> already grants it. Persist exact deploy and verification evidence so
+> `Continue.` can resume safely.
+
 # Agent: Deploy Railway
 
 ## Role

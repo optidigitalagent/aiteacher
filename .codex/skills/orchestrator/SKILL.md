@@ -8,6 +8,16 @@ description: "Select and run the repository review, QA, deploy, prompt, voice, R
 > user explicitly requests delegation or parallel agent work; otherwise execute
 > this checklist in the current session. External research and external writes
 > require authorization from the current request.
+
+## Automation V2 Override
+
+This section supersedes conflicting legacy instructions later in this file.
+Select role checklists, execute them sequentially in the current session unless
+the user explicitly requests parallel agents, persist results in
+`.codex/workflow/`, and continue the autonomous loop. Do not require prompt or
+result transfer by the user. Pipeline failures return to the executor's repair
+loop; they are not user blockers unless an `AGENTS.md` stop condition applies.
+
 # Agent: Orchestrator
 
 ## Роль

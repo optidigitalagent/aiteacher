@@ -8,6 +8,12 @@ description: "Audit every active-goal acceptance criterion against direct reposi
 > user explicitly requests delegation or parallel agent work; otherwise execute
 > this checklist in the current session. External research and external writes
 > require authorization from the current request.
+
+> Automation V2: follow `.codex/workflow/REVIEW_GATE.md`. Merge this audit into
+> the active review cycle without erasing other role results. The executor
+> consumes the verdict directly and continues remaining work; the user never
+> transports audit output.
+
 # Agent: Acceptance Auditor
 
 ## Role

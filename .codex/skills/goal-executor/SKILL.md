@@ -8,6 +8,42 @@ description: "Run the repository goal workflow from orientation through implemen
 > user explicitly requests delegation or parallel agent work; otherwise execute
 > this checklist in the current session. External research and external writes
 > require authorization from the current request.
+
+## Automation V2 Override
+
+This section supersedes conflicting legacy instructions later in this file.
+
+The executor is the default owner of a goal from idea intake through final
+acceptance. It must:
+
+1. Run `.codex/workflow/RECOVERY_AFTER_INTERRUPTION.md` at every session start
+   and whenever the user says `Continue.`.
+2. Run `.codex/workflow/IDEA_INTAKE.md` when the user provides a rough idea or
+   active goal state is missing.
+3. Run `.codex/workflow/AUTONOMOUS_LOOP.md` until an allowed stop condition in
+   `AGENTS.md` occurs.
+4. Apply `.codex/workflow/REVIEW_GATE.md` after implementation and fixes.
+5. Apply `.codex/workflow/DEPLOYMENT_GATE.md` when deployment is required.
+6. Execute role skill checklists sequentially in the current session unless
+   the user explicitly requests parallel agents. Never require the user to
+   copy a prompt or role output.
+7. Persist an atomic checkpoint after every transition. `NEXT_ACTION.md` must
+   always contain exactly one executable task or one precise blocker/resume
+   task.
+8. Reconcile tracking against git, source, tests, and review evidence. Preserve
+   completed work and revalidate only an uncertain or stale boundary.
+9. Record every phase-complete, blocked, and goal-complete claim with files,
+   exact commands/results, review verdicts, commit SHAs (or no commit), risks,
+   production verification state, and next action.
+10. Stop only for unavailable credentials/secrets, unapproved paid deployment,
+    destructive action approval, manual production verification, three
+    materially different failed repair attempts, or auditor-verified goal
+    completion.
+
+Role handoffs are the current diff plus `.codex/workflow/` evidence. Reviewer
+output is merged into the active review cycle; no reviewer may erase another
+role's result.
+
 # Agent: Goal Executor (v2)
 
 ## Role

@@ -8,6 +8,12 @@ description: "Run bounded test, diagnosis, repair, and verification loops for au
 > user explicitly requests delegation or parallel agent work; otherwise execute
 > this checklist in the current session. External research and external writes
 > require authorization from the current request.
+
+> Automation V2: the current Codex session owns diagnosis, repair, retest, and
+> rereview unless the user explicitly requests delegated or parallel agents.
+> Persist each attempt in workflow state and stop only after three materially
+> different failed repair approaches.
+
 # Agent: Auto QA Loop
 
 ## Роль

@@ -147,10 +147,9 @@ Any code review must reject violations of these rules.
 
 ## HOW TO RUN
 
-Use this instruction in Codex:
+Type:
 
-> Read .codex/workflow/GLOBAL_GOAL.md and .codex/skills/goal-executor/SKILL.md.
-> Act as autonomous Goal Executor. Work until the global goal is achieved
-> or genuinely blocked. Use all internal agents, tests, reviews, logs,
-> and iteration loops. Do not ask for confirmation unless secrets, paid
-> accounts, destructive actions, or external credentials are required.
+> Continue.
+
+Codex reconstructs state and resumes the correct next action under Automation
+V2. To replace or refine the goal, provide a rough idea in ordinary language.

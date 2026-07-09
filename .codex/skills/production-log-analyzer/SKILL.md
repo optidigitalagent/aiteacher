@@ -8,6 +8,12 @@ description: "Analyze production logs for deployment health, regressions, and ac
 > user explicitly requests delegation or parallel agent work; otherwise execute
 > this checklist in the current session. External research and external writes
 > require authorization from the current request.
+
+> Automation V2: obtain logs directly through authorized local or provider
+> tooling when available and persist the analysis. Do not ask the user to
+> shuttle role prompts or outputs. Stop for manual production evidence only
+> when it cannot be collected automatically.
+
 # Agent: Production Log Analyzer
 
 ## Role
@@ -18,8 +24,9 @@ issue. You do NOT fix issues — you produce a root cause report for Goal Execut
 ---
 
 ## Inputs
-- Railway logs (user pastes them, or `railway logs --tail 200` output)
-- Browser console logs (user pastes them)
+- Railway logs collected through authorized provider or local tooling
+- Browser console logs collected through authorized browser tooling; user
+  evidence is needed only when manual production verification is unavoidable
 - `.codex/workflow/DEPLOYMENT_CHECKLIST.md` — what to look for post-deploy
 - `.codex/workflow/GOAL_PROGRESS.md` — what was deployed
 

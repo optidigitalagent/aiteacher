@@ -171,6 +171,24 @@ relies on.
 **Risk:** A many-word 100-char name yields a ~29-word greeting worst-case —
 bounded and TTS-safe.
 
+### 2026-07-09 — Codex Automation V2 owns workflow state and role handoffs
+
+**Decision:** `AGENTS.md` and the Automation V2 workflow contracts are the
+authoritative execution layer. `Continue.` triggers state reconstruction and
+resume; rough ideas trigger intake and planning. Role checklists run internally
+and exchange evidence through `.codex/workflow/`, never through user
+copy/paste. The Claude sync script preserves existing Codex workflow state and
+V2-overridden orchestration skills.
+**Reason:** The prior adapted workflow could overwrite live Codex state, asked
+the user to paste a launch prompt, and contained reviewer output contracts that
+could erase other reviewers. Those behaviors break interruption recovery and
+autonomous phase advancement.
+**Alternatives rejected:** Keep prompt-copy launch instructions; synchronize
+active state from `.claude`; require separate user-mediated reviewer sessions.
+**Reversible:** Yes, by changing the V2 contracts and sync preservation list.
+**Risk:** Low. Legacy sections remain for historical context but are explicitly
+subordinate to the V2 overrides and `AGENTS.md`.
+
 ### 2026-06-12 — buildWarmupReturnPhrase intentionally has no flag gate
 
 **Decision:** buildWarmupReturnPhrase stays ungated by feature flags.

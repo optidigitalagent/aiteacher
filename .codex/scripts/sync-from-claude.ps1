@@ -7,6 +7,23 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $claudeRoot = Join-Path $repoRoot '.claude'
 $codexRoot = Join-Path $repoRoot '.codex'
 
+# Automation V2 state and orchestration skills are Codex-owned. Synchronization
+# may create missing files, but must not erase active state or V2 overrides.
+$automationV2OwnedSkillNames = @(
+    'acceptance-auditor',
+    'auto-qa-loop',
+    'backend-reviewer',
+    'curriculum-reviewer',
+    'deploy-railway',
+    'frontend-reviewer',
+    'goal-executor',
+    'kids-safety-monitor',
+    'orchestrator',
+    'planner',
+    'production-log-analyzer',
+    'qa-tester'
+)
+
 if (-not (Test-Path -LiteralPath $claudeRoot -PathType Container)) {
     throw "Missing source workflow directory: $claudeRoot"
 }
@@ -71,10 +88,16 @@ $workflowNames = @(
 
 foreach ($name in $workflowNames) {
     $source = Join-Path $claudeRoot $name
+    $target = Join-Path $codexRoot "workflow\$name"
+    if (Test-Path -LiteralPath $target -PathType Leaf) {
+        Write-Verbose "Preserving Codex-owned workflow file: $target"
+        continue
+    }
+
     if (Test-Path -LiteralPath $source -PathType Leaf) {
         $content = [System.IO.File]::ReadAllText($source)
         $adapted = Convert-ClaudeReferences $content
-        Write-Utf8File (Join-Path $codexRoot "workflow\$name") $adapted
+        Write-Utf8File $target $adapted
     }
 }
 
@@ -119,6 +142,11 @@ Get-ChildItem -LiteralPath $agentsRoot -Directory |
     Sort-Object Name |
     ForEach-Object {
         $name = $_.Name
+        if ($automationV2OwnedSkillNames -contains $name) {
+            Write-Verbose "Preserving Automation V2 skill: $name"
+            return
+        }
+
         $source = Join-Path $_.FullName 'AGENT.md'
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
             return
@@ -150,24 +178,25 @@ description: "$description"
     }
 
 $readme = @'
-# Codex workflow layer
+# Codex Automation V2
 
-This directory is generated from the repository's existing `.claude` workflow
-and adapted for Codex.
+`AGENTS.md` is the authority and entry point. `Continue.` reconstructs active
+state and resumes the correct next task. A rough idea triggers idea intake,
+planning, execution, tests, review, repair, and automatic phase advancement.
 
-- `workflow/` contains the Codex-owned goal, progress, decision, risk, review,
-  and deployment state snapshot.
+- `workflow/` contains Codex-owned state and Automation V2 contracts.
 - `rules/` contains project coding and prompt rules.
-- `skills/` exposes each specialized workflow role as a Codex skill.
-- `scripts/sync-from-claude.ps1` refreshes generated files from `.claude`.
+- `skills/` contains specialized role checklists.
+- `scripts/sync-from-claude.ps1` imports non-V2 legacy updates while preserving
+  Codex-owned state and Automation V2 overrides.
 
-`AGENTS.md` is the repository entry point and authority map. Claude permission
-settings are intentionally not copied: Codex sandbox and approval behavior is
-controlled by the active Codex environment, not repository workflow content.
-
-The sync script never writes to `.claude` or product source directories.
+The user never copies prompts or reviewer output between roles. The sync script
+never writes to `.claude` or product source directories.
 '@
 
-Write-Utf8File (Join-Path $codexRoot 'README.md') $readme
+$readmePath = Join-Path $codexRoot 'README.md'
+if (-not (Test-Path -LiteralPath $readmePath -PathType Leaf)) {
+    Write-Utf8File $readmePath $readme
+}
 
-Write-Output "Codex workflow synchronized from .claude."
+Write-Output "Codex workflow synchronized from .claude; Automation V2 state preserved."
