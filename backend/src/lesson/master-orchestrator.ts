@@ -117,6 +117,7 @@ export interface OrchestratorAnswerResult {
   feedback:       FeedbackEvent | null
   // Teacher Brain input — null means skip AI call (lesson complete, error, empty)
   teacherInput:   string | null
+  deterministicTeacherText?: string | null
   // True when engine action === 'lesson_complete'
   lessonComplete: boolean
   lessonSummary?: LessonSummaryData
@@ -479,6 +480,39 @@ function buildTeacherContextFromResult(
   return historyBlackout + '\n\n' + body + adaptiveSection
 }
 
+function normalizeSpokenLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+function buildDeterministicTeacherText(
+  result: EngineResult,
+  etr: EngineTurnResult,
+): string | null {
+  const cursor = result.exerciseCursor
+  const nextItem = cursor?.currentItem ? normalizeSpokenLine(cursor.currentItem) : ''
+
+  if (result.action === 'step_correct' || result.action === 'soft_pass') {
+    return nextItem
+      ? `Right. Now - ${nextItem}`
+      : `Right. Exercise ${etr.exerciseNumber} is complete.`
+  }
+
+  if (result.action === 'exercise_complete') {
+    return nextItem
+      ? `Right. Exercise ${etr.exerciseNumber} is complete. Now - ${nextItem}`
+      : `Right. Exercise ${etr.exerciseNumber} is complete.`
+  }
+
+  if (result.action === 'step_revealed' && result.validation?.correctAnswer) {
+    const answer = normalizeSpokenLine(result.validation.correctAnswer)
+    return nextItem
+      ? `The answer is "${answer}". Let's continue. Now - ${nextItem}`
+      : `The answer is "${answer}". Exercise ${etr.exerciseNumber} is complete.`
+  }
+
+  return null
+}
+
 // ── MasterLessonOrchestrator ──────────────────────────────────────────────────
 
 export class MasterLessonOrchestrator {
@@ -796,6 +830,7 @@ export class MasterLessonOrchestrator {
     // Build Teacher Brain context — AI verbalizes engine decision only.
     // Phase 3C: adaptiveBlock is advisory; injected at end of context (phrasing guide only).
     const teacherInput = buildTeacherContextFromResult(result, studentAnswer, engineTurnResult, adaptiveBlock || undefined)
+    const deterministicTeacherText = buildDeterministicTeacherText(result, engineTurnResult)
     console.log(`[master-orch] teacher_response_requested lessonId=${lessonId} action=${result.action}`)
 
     // Log canonical cursor version going into teacher context
@@ -812,6 +847,7 @@ export class MasterLessonOrchestrator {
       skippedCursors: result.skippedExerciseCursors,
       feedback:       feedbackEvent,
       teacherInput,
+      deterministicTeacherText,
       lessonComplete: false,
     }
   }

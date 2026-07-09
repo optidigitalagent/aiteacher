@@ -6,6 +6,86 @@
 
 ---
 
+## REVIEW GATE - Paid lesson runtime TTS and cursor repair - 2026-07-09
+
+**Cycle ID:** paid-lesson-runtime-tts-cursor/2026-07-09
+
+**Scope reviewed:**
+- `backend/src/voice/tts.ts`
+- `backend/src/lesson/master-orchestrator.ts`
+- `backend/src/ws/lesson-ws.ts`
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+- `backend/src/voice/__tests__/tts-fallback.test.ts`
+
+**Production symptom:**
+- Opening greeting was audibly truncated before `Tell me when you're ready.`
+- Exercise 1 item 3 (`keen on`) teacher wording contradicted backend cursor
+  state and then gave the next item gym hint.
+
+**Role applicability:**
+- backend reviewer: RUN - backend TTS and paid lesson runtime changed.
+- frontend reviewer: NOT APPLICABLE - no frontend files changed; backend keeps
+  the existing `audio_chunk` contract.
+- curriculum reviewer: RUN - paid exercise teacher wording/progression behavior
+  changed.
+- kids safety monitor: NOT APPLICABLE - no Kids or child-facing code changed.
+- QA tester: RUN - mandatory after implementation.
+- acceptance auditor: NOT APPLICABLE - production deploy/smoke remains pending.
+
+**Backend reviewer: PASS WITH WARNING**
+- Files reviewed: 5.
+- Critical findings: none.
+- Evidence:
+  - No auth, billing, payment, LiqPay, endpoint, Redis key, DB write, or prompt
+    configuration changes were introduced.
+  - `deterministicTeacherText` is derived from backend `EngineResult` and
+    `ExerciseCursor`; it reduces LLM authority over deterministic item
+    progression rather than expanding it.
+  - WS still emits cursor/feedback before teacher text; no client value controls
+    correctness or advancement.
+  - `speakToClient()` result handling remains in `ttsStream`; provider failures
+    still send `voice_unavailable` and `teacher_turn_end`.
+- Warning:
+  - ElevenLabs TTS now buffers a single turn before sending audio, so it is no
+    longer chunk-streaming at network-read granularity. This is intentional and
+    mirrors the existing OpenAI path because frontend WebAudio decodes each
+    `audio_chunk` as a complete MP3; partial MP3 chunks caused audible loss.
+
+**Curriculum reviewer: PASS**
+- Curriculum files changed: none.
+- Exercise chain verified: section `1.1` vocabulary flow exercised by regression
+  test through `hobby -> spare time -> keen on -> get fit`.
+- Teacher behavior:
+  - Correct deterministic results now use short positive confirmation and the
+    next backend cursor item.
+  - Reveal results announce the correct answer and continue; they do not say
+    `Wrong`, `Incorrect`, or contradict the cursor with `Try once more`.
+- Curriculum authority:
+  - Accepted answers, scoring, retry counts, exercise order, and item text are
+    unchanged.
+
+**QA tester: PASS**
+- New tests:
+  - `backend/src/lesson/__tests__/paid-vocab-flow.test.ts` - 1 regression test.
+  - `backend/src/voice/__tests__/tts-fallback.test.ts` - 1 new ElevenLabs chunk
+    buffering regression inside the existing suite.
+- Commands and results:
+  - `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+    -> exit 0; 1 file passed; 1 test passed.
+  - `cd backend; npx vitest run src/voice/__tests__/tts-fallback.test.ts --reporter=dot --silent`
+    -> exit 0; 1 file passed; 18 tests passed.
+  - `cd backend; npx tsc --noEmit` -> exit 0.
+  - `cd backend; npm test -- --reporter=dot --silent`
+    -> exit 0; 66 files passed; 2133 tests passed.
+- New failures: none.
+- Regressions: none observed.
+
+**Overall verdict:** PASS WITH WARNING. Code repair and local validation are
+complete. GOAL NOT COMPLETE because the repaired paid lesson behavior is not
+deployed or production-smoked yet.
+
+---
+
 ## REVIEW GATE - Owner-only paid lesson access bypass - 2026-07-09
 
 **Cycle ID:** owner-paid-access-bypass/2026-07-09

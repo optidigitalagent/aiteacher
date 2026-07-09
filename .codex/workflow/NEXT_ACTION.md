@@ -8,50 +8,49 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Manual production owner smoke for paid lesson access
-**Type:** MANUAL-PROD-VERIFY
+**Task:** Deploy and production-smoke paid lesson runtime TTS/cursor repair after explicit approval
+**Type:** DEPLOY-PROD-VERIFY
 **Phase:** Phase 3 - Deploy and production owner smoke
-**Agent:** goal-executor + lesson-qa
+**Agent:** goal-executor + qa-tester
 
 **Why this is next:**
-  The owner-only backend bypass has been committed, pushed, and deployed to
-  Railway. The remaining evidence gap is a real authenticated production smoke
-  for `artenon92@gmail.com`; Codex must not reuse JWTs observed in logs.
+  The owner paid-access bypass is already deployed, but the manual paid lesson
+  smoke found ordinary paid lesson runtime defects: greeting TTS truncation and
+  teacher wording that contradicted the backend cursor after `keen on`. The
+  local repair is implemented and fully tested. A new Railway production deploy
+  requires explicit approval before Codex can mutate production again.
 
 **Completed evidence:**
-  - `backend/src/billing/subscription-service.ts` grants virtual active access
-    only when the server-side `users.email` is `artenon92@gmail.com`.
-  - `backend/src/billing/__tests__/subscription-service.test.ts` covers owner
-    access, case-insensitive matching, non-owner no-profile blocking, and
-    normal active subscription preservation.
+  - `backend/src/voice/tts.ts` buffers ElevenLabs network chunks into one
+    complete MP3 `audio_chunk`, matching the existing OpenAI behavior and
+    preserving the frontend decode contract.
+  - `backend/src/lesson/master-orchestrator.ts` returns
+    `deterministicTeacherText` for deterministic engine correct/reveal turns.
+  - `backend/src/ws/lesson-ws.ts` sends deterministic paid exercise teacher
+    text directly, after cursor/feedback and without a Teacher Brain call.
+  - `backend/src/lesson/__tests__/paid-vocab-flow.test.ts` reproduces the
+    `hobby -> spare time -> Like/Enjoy/Enjoy/Keen on` section `1.1` path and
+    verifies the next item is `I joined a gym to ___.`.
+  - `backend/src/voice/__tests__/tts-fallback.test.ts` verifies two
+    ElevenLabs network chunks become one `audio_chunk`.
+  - `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+    -> exit 0; 1 file passed; 1 test passed.
+  - `cd backend; npx vitest run src/voice/__tests__/tts-fallback.test.ts --reporter=dot --silent`
+    -> exit 0; 1 file passed; 18 tests passed.
   - `cd backend; npx tsc --noEmit` -> exit 0.
   - `cd backend; npm test -- --reporter=dot --silent`
-    -> exit 0; 65 files passed; 2131 tests passed.
-  - Commit `c2d796617eed81c12c21bd2493f9d62a454bfda7`
-    (`fix(billing): allow owner paid lesson access`) pushed to `origin/main`.
-  - Railway backend `aiteacher` deployment
-    `fdf6da76-594f-4070-8ee7-f660125e8d01` reached SUCCESS at commit
-    `c2d7966`.
-  - Railway frontend `aware-alignment` deployment
-    `59712f47-9255-429e-af82-88198fbdcf0e` reached SUCCESS at commit
-    `c2d7966`.
-  - Backend `/health` -> HTTP 200, postgres ok, redis ok.
-  - Frontend `/demo/setup` -> HTTP 200.
-  - Backend logs show migrations applied, `[server] listening on
-    0.0.0.0:8080`, PostgreSQL ready, Redis ready, and WS endpoint attached.
+    -> exit 0; 66 files passed; 2133 tests passed.
+  - Review gate: backend reviewer PASS WITH WARNING; curriculum reviewer PASS;
+    QA tester PASS; frontend/kids safety/acceptance auditor not applicable.
 
-**Manual smoke steps:**
-  1. Log in as `artenon92@gmail.com` in the normal browser.
-  2. Open `https://aware-alignment-production.up.railway.app/learning`.
-  3. Choose a ready GOLD Focus 2 section such as `1.1`.
-  4. Start the paid lesson.
-  5. Expected: no redirect to `/pricing`, no `PAYMENT_REQUIRED`,
-     `SUBSCRIPTION_EXPIRED`, or `LESSON_LIMIT_REACHED`; browser enters
-     `/classroom/:sessionId`.
-  6. Click Begin Lesson and confirm the classroom receives `lesson_ready`,
-     `ai_text`, `audio_chunk` or a documented voice fallback, and
-     `teacher_turn_end`.
+**Exact next step after approval:**
+  1. Run `git status --short --untracked-files=all` and `git diff --check`.
+  2. Commit only the paid lesson runtime repair files plus workflow checkpoint.
+  3. Push `main`.
+  4. Wait for Railway backend/frontend deployment success.
+  5. Production-smoke `artenon92@gmail.com` paid lesson section `1.1`:
+     greeting TTS must include `Tell me when you're ready.`, and Exercise 1
+     item progression must not contradict `keen on` / next item cursor state.
 
 **Current stop condition:**
-  Manual production verification is required for the real authenticated owner
-  account flow.
+  Explicit approval is required before the new production deploy/mutation.

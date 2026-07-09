@@ -22,6 +22,43 @@
 
 ## Active Decisions
 
+### 2026-07-09 - Paid deterministic item turns bypass Teacher Brain wording
+
+**Decision:** For ordinary paid deterministic engine turns with actions
+`step_correct`, `soft_pass`, `exercise_complete`, or `step_revealed`,
+`MasterLessonOrchestrator` now returns backend-authored
+`deterministicTeacherText`; `lesson-ws` sends that text and TTS directly instead
+of calling the Teacher Brain for the verbal wording of that turn.
+**Reason:** Live paid lesson smoke showed the engine cursor could advance while
+LLM wording still said to stay on the old item because conversation history
+contained repeated wrong attempts. Correctness and progression were already
+backend-authoritative; the remaining unsafe surface was letting the LLM restate
+the cursor transition for simple deterministic outcomes.
+**Alternatives rejected:** Add stronger prompt text only; rely on stale-item
+guards after generation; keep partial MP3 streaming and change frontend decode
+logic in the same patch.
+**Reversible:** Yes.
+**Risk:** Medium - deterministic text is less conversational, but it prevents
+state contradictions in correctness-critical paid exercise turns.
+
+---
+
+### 2026-07-09 - ElevenLabs TTS sends one complete MP3 per teacher turn
+
+**Decision:** Buffer ElevenLabs network chunks into a single `audio_chunk`
+before sending to the frontend, matching the existing OpenAI TTS path.
+**Reason:** The frontend decodes every `audio_chunk` as a complete MP3. Network
+read chunks from ElevenLabs are arbitrary byte boundaries and can be
+undecodable partial MP3 fragments, causing audible truncation such as dropping
+`Tell me when you're ready.` from the opening greeting.
+**Alternatives rejected:** Continue streaming partial MP3 chunks; add frontend
+MediaSource streaming in the same repair; force OpenAI TTS via env.
+**Reversible:** Yes, if the frontend later supports true streaming MP3 assembly.
+**Risk:** Low - this adds one-turn TTS latency but avoids lost audio and mirrors
+the already-tested OpenAI TTS buffering path.
+
+---
+
 ### 2026-06-07 — Kids STT utterance_end_ms raised to 1000ms
 
 **Decision:** UTTERANCE_END_MS_KIDS changed from 700 → 1000ms

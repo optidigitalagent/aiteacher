@@ -56,7 +56,7 @@ Out of scope:
 | 0 | Intake and scope reconciliation | COMPLETE |
 | 1 | Implement owner-only backend access | COMPLETE |
 | 2 | Validate and review | COMPLETE |
-| 3 | Deploy and production owner smoke | PARTIAL - deployed, manual owner smoke pending |
+| 3 | Deploy and production owner smoke | PARTIAL - owner bypass deployed; paid runtime repair local, deploy/smoke pending |
 
 ---
 
@@ -66,3 +66,5 @@ Out of scope:
 - Railway production deploy was explicitly approved on 2026-07-09.
 - Local C: drive has no free space; npm commands must use
   `D:\codex-npm-cache` and `D:\codex-temp`.
+- A new production deploy for the paid lesson runtime TTS/cursor repair has not
+  been approved yet.

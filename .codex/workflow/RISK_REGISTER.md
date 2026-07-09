@@ -25,6 +25,31 @@
 
 ## Open Risks
 
+### RISK-024 - Paid lesson TTS and teacher wording need production retest
+
+**Status:** MITIGATED
+**Severity:** P1
+**Area:** backend / voice / paid lesson runtime
+**Description:** Manual owner paid-lesson smoke found two ordinary paid lesson
+runtime defects: opening greeting audio did not include the final readiness
+sentence, and the teacher wording contradicted the backend cursor after the
+student answered `keen on`.
+**Trigger:** Paid lesson section `1.1` uses ElevenLabs TTS and deterministic
+vocabulary item progression after repeated wrong attempts.
+**Mitigation:** Local repair buffers ElevenLabs network chunks into one
+decodable MP3 `audio_chunk`, and sends backend-authored deterministic teacher
+text for engine correct/reveal turns instead of allowing LLM wording to
+contradict the cursor. Evidence: `npx tsc --noEmit` -> exit 0 and
+`npm test -- --reporter=dot --silent` -> exit 0; 66 files passed; 2133 tests
+passed.
+**Resolution:** Deploy the repair to Railway after explicit approval and repeat
+the authenticated owner paid lesson smoke for full greeting TTS and Exercise 1
+item progression.
+**Opened:** 2026-07-09
+**Updated:** 2026-07-09
+
+---
+
 ### RISK-023 - Owner billing exception must remain narrowly scoped
 
 **Status:** MITIGATED

@@ -485,6 +485,34 @@ describe('TTS — TTS_PROVIDER env var forces provider selection', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)  // ElevenLabs used
     expect(createMock).not.toHaveBeenCalled()   // OpenAI skipped
   })
+
+  it('buffers ElevenLabs network chunks into one decodable audio_chunk', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: new ReadableStream({
+        start(c: ReadableStreamDefaultController) {
+          c.enqueue(Buffer.from('mp3-part-1'))
+          c.enqueue(Buffer.from('mp3-part-2'))
+          c.close()
+        },
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    makeOpenAIMock(() => ({ audio: { speech: { create: vi.fn() } } }))
+
+    vi.stubEnv('TTS_PROVIDER', 'elevenlabs')
+    vi.stubEnv('ELEVENLABS_API_KEY', 'el-test')
+
+    const { speakToClient } = await import('../tts.js')
+    const { send, chunks } = makeSend()
+
+    const result = await speakToClient(send as never, 'Hello!', undefined)
+
+    expect(result.ok).toBe(true)
+    expect(chunks).toHaveLength(1)
+    expect(Buffer.from(chunks[0]!, 'base64').toString()).toBe('mp3-part-1mp3-part-2')
+  })
 })
 
 // ── Suite 8: Provider status health check ────────────────────────────────────

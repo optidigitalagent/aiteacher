@@ -508,6 +508,92 @@ None.
 
 ---
 
+## PAID LESSON RUNTIME DEFECT REPAIR CHECKPOINT - 2026-07-09
+
+**Trigger:** During manual owner paid-lesson smoke, the user reported two live
+ordinary paid lesson defects in section `1.1`:
+- The opening text was complete in backend form, but TTS only audibly played
+  `Hi! I'm Alex. Today we'll practise Personality adjectives; negative prefixes
+  (un-, in-, ir-, dis-); adjective + preposition.` and dropped
+  `Tell me when you're ready.`
+- During Exercise 1 item 3 (`She's really ___ dancing.` -> `keen on`), after
+  repeated wrong answers the teacher response contradicted the backend cursor:
+  it said to stay on the old item, then the next turn gave the item 4 `get fit`
+  gym hint.
+
+**Root cause from repository evidence:**
+- `backend/src/ws/lesson-ws.ts` already builds the full greeting including
+  `Tell me when you're ready.`, so the missing final sentence was not a prompt
+  construction bug. `backend/src/voice/tts.ts` streamed ElevenLabs MP3 network
+  chunks directly while the frontend decodes each `audio_chunk` as a complete
+  MP3; arbitrary partial MP3 chunks can be silently skipped by WebAudio.
+- The exercise engine correctly owns validation/progression, but
+  `master-orchestrator` still sent simple correct/reveal engine results through
+  the Teacher Brain. Conversation history from prior wrong attempts could make
+  the model say `Try once more` or `stay on this item` even after the engine had
+  already advanced the cursor.
+
+**Implementation:**
+- `backend/src/voice/tts.ts`
+  - Changed ElevenLabs TTS to buffer network chunks into one complete MP3
+    `audio_chunk`, matching the existing OpenAI TTS buffering behavior.
+- `backend/src/lesson/master-orchestrator.ts`
+  - Added `deterministicTeacherText` to `OrchestratorAnswerResult`.
+  - For deterministic engine `step_correct`, `soft_pass`, `exercise_complete`,
+    and `step_revealed`, builds short backend-authored teacher text directly
+    from `EngineResult` / `ExerciseCursor`.
+- `backend/src/ws/lesson-ws.ts`
+  - When `deterministicTeacherText` is present, sends `ai_text` + TTS directly
+    and skips the Teacher Brain call for that turn.
+  - Keeps cursor and feedback emission before the teacher turn.
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+  - Added regression for section `1.1`: after `hobby`, `spare time`, then
+    `Like -> Enjoy -> Enjoy -> Keen on`, the backend advances to
+    `I joined a gym to ___.` and emits deterministic text without
+    `Try once more` / `stay on this item`.
+- `backend/src/voice/__tests__/tts-fallback.test.ts`
+  - Added regression proving two ElevenLabs network chunks become one
+    decodable `audio_chunk`.
+
+**Validation evidence:**
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 1 test passed.
+- `cd backend; npx vitest run src/voice/__tests__/tts-fallback.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 18 tests passed.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd backend; npm test -- --reporter=dot --silent`
+  -> exit 0; 66 files passed; 2133 tests passed.
+
+**Review gate:**
+- backend reviewer: RUN -> PASS WITH WARNING. No auth/billing/payment weakening,
+  no secrets, no new endpoints, no new external-call loop, and no client trust
+  added. Warning: ElevenLabs TTS now buffers a single turn before sending audio;
+  this intentionally mirrors the existing OpenAI path because the current
+  frontend decodes each `audio_chunk` as a complete MP3.
+- frontend reviewer: NOT APPLICABLE - no frontend files changed; backend now
+  preserves the existing frontend audio contract.
+- curriculum reviewer: RUN -> PASS. The fix does not change curriculum items,
+  accepted answers, scoring, or exercise order. It prevents teacher wording
+  from contradicting the backend-authoritative cursor after correct/reveal
+  deterministic results.
+- kids safety monitor: NOT APPLICABLE - no Kids or child-facing code changed.
+- QA tester: RUN -> PASS. Targeted tests, TypeScript, and full backend suite
+  passed.
+- acceptance auditor: NOT APPLICABLE - not a final goal completion claim;
+  production deploy and authenticated owner smoke remain pending.
+
+**Commit/deploy state:**
+- Commit: no commit created.
+- Deployment: not deployed. New Railway production deploy requires explicit
+  approval for this runtime repair.
+- Production verification: not run after this local repair.
+
+**Next action:** After explicit deploy approval, commit/push this paid lesson
+runtime repair, wait for Railway success, then repeat the owner paid lesson
+smoke for greeting TTS completeness and Exercise 1 item progression.
+
+---
+
 ## PHASE COMPLETION STATUS
 
 ```

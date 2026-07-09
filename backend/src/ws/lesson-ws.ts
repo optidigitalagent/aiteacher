@@ -3066,6 +3066,37 @@ async function processInput(
               return
             }
 
+            if (orchVoiceResult.deterministicTeacherText) {
+              const teacherText = orchVoiceResult.deterministicTeacherText
+              send(ws, { type: 'ai_text', phase: 'EXERCISES', text: teacherText })
+              if (meta.userId) {
+                recordTeacherMessage({
+                  lessonId:       meta.lessonId,
+                  sessionId:      meta.sessionId,
+                  userId:         meta.userId,
+                  studentId:      meta.studentId,
+                  text:           teacherText,
+                  phase:          'EXERCISES',
+                  exerciseNumber: orchVoiceResult.cursorUpdate?.exerciseNumber ?? null,
+                  exerciseType:   orchVoiceResult.cursorUpdate?.exerciseType ?? null,
+                  itemIndex:      orchVoiceResult.cursorUpdate?.itemIndex ?? null,
+                  itemTotal:      orchVoiceResult.cursorUpdate?.itemTotal ?? null,
+                  correctionTurn: null,
+                  source:         'system',
+                  metadata:       { deterministicTeacherText: true },
+                })
+              }
+              await ttsStream(ws, meta, teacherText)
+              meta.aiProcessing = false
+              if (meta.queuedInput) {
+                const queued     = meta.queuedInput
+                meta.queuedInput = null
+                processInput(ws, meta, queued).catch((err: unknown) =>
+                  console.error('[paid-lesson] processInput error (queued-deterministic):', err))
+              }
+              return
+            }
+
             if (orchVoiceResult.teacherInput) {
               inputText = orchVoiceResult.teacherInput
             }

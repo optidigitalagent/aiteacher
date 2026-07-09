@@ -36,5 +36,10 @@ the paid classroom without LiqPay payment or paid-minute limits.
 
 ## Current State
 
-Code and tests are complete locally. Deployment and production owner smoke are
-blocked until the user explicitly approves a Railway deploy.
+Owner-access code is deployed. During manual authenticated owner paid-lesson
+smoke, a paid lesson runtime defect was found and repaired locally: ElevenLabs
+TTS audio chunking could truncate the greeting, and Teacher Brain wording could
+contradict the backend cursor after deterministic item progression. Local
+TypeScript and the full backend suite pass. Deployment and production owner
+smoke of this runtime repair are blocked until the user explicitly approves a
+new Railway deploy.
