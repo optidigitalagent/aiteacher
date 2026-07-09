@@ -504,8 +504,27 @@ the colour word `blue`.
   or `Say again. Blue. Blue.`, it could now be treated as `blue`. The allowlist
   is deliberately narrow and does not accept general "contains target" phrases.
 
-**Commit/deploy status:** product fix not committed/deployed yet at time of
-this checkpoint.
+**Commit/deploy status:**
+- Commit `ed10f8664c1772377b5c8e0fcf8f074a90ab54d6`
+  (`fix(kids): recognize retry echo target word`) created and pushed to
+  `origin/main`.
+- Railway backend `aiteacher` deployment
+  `2e247e8d-508c-4f0e-a961-be16974a4e46` -> SUCCESS at commit `ed10f86`.
+- Railway frontend `aware-alignment` deployment
+  `81bebd19-c2aa-4d84-b7d8-b8a1e7075e62` -> SUCCESS at commit `ed10f86`
+  (monorepo auto-deploy; no frontend product files changed in this fix).
+- Post-deploy `/health` at 2026-07-09T08:15:01Z -> HTTP 200,
+  `status=ok`, `checks.postgres=ok`, `checks.redis=ok`, uptime 620s.
+- Backend startup logs after deploy show migrations applied, `[server]
+  listening on 0.0.0.0:8080`, `[server] PostgreSQL ready`, `[redis] ping OK`,
+  `[server] Redis ready`.
+- 10-minute post-deploy log window checked with patterns:
+  `HTTP 400`, `Unhandled`, `ECONNREFUSED`, `Cannot find`, `Error:`,
+  `voice_unavailable`, `SESSION_VERIFICATION_FAILED`, `NO_CHILD_PROFILE`.
+  No matching critical errors observed in the checked tail.
+- Manual live mic/progression verification remains required: repeat the Kids
+  lesson, trigger the retry prompt, say `blue`, and verify progression plus
+  optional production log marker `method=teacher_echo_target_suffix`.
 
 ---
 
