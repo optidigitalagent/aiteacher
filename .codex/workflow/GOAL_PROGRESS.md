@@ -1,9 +1,78 @@
 # GOAL_PROGRESS.md
 
+## ACTIVE GOAL OVERRIDE - 2026-07-09
+
+**Current active goal:** Ordinary Mentium lesson mode production readiness.
+
+**User instruction:** After live Kids retest looped, user said to stop focusing
+on Kids mode and focus on the ordinary mode because it is much more important.
+
+**Kids evidence from the latest live retest:**
+- Browser console on production showed the deployed bundle `index-DARbdknK.js`,
+  successful auth, production WebSocket connection after one transient 1006,
+  `lesson_ready`, `ai_text`, `audio_chunk`, `teacher_turn_end`, repeated
+  `mic_start`, outgoing `audio_chunk`, incoming `transcript`,
+  `student_message`, and subsequent teacher turns. This proves the mic,
+  WebSocket, STT, Kids Brain turn handling, and TTS were active.
+- Production logs for session `55c599ad-6539-4b19-a344-5293c1b9652d` showed
+  first two turns with audio but no transcript (`finalChars=0`,
+  `source=none`, classified `silence_long`), then repeated raw transcript
+  `Blue.` normalized as `blue.`.
+- The Kids classifier marked `Blue.` as `correct_hesitant`, confidence `0.8`,
+  deterministic source, `eligibleForMasteryUpdate=true`, and
+  `eligibleForProgression=true`.
+- Despite correct classification, Kids logs kept `exerciseCorrectCount=0` and
+  the target remained `blue`. Therefore the current Kids symptom is no longer
+  dead mic or the earlier `Say again. Blue.` correction failure; it is an
+  unresolved Kids progression loop after correct classification. This is
+  recorded as a paused risk.
+
+**Ordinary mode intake and baseline evidence:**
+- No product-code edits were made for ordinary mode.
+- Local C: drive had no free space, so npm commands were run with
+  `npm_config_cache=D:\codex-npm-cache`, `TEMP=D:\codex-temp`, and
+  `TMP=D:\codex-temp`.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd backend; npx vitest run src/demo src/exercises/runtime-qa --reporter=dot --silent`
+  -> exit 0; 4 files passed; 298 tests passed.
+- `cd backend; npm test -- --reporter=dot --silent`
+  -> exit 0; 64 files passed; 2127 tests passed.
+- `cd frontend; npm run build` -> exit 0; production build passed with the
+  existing Vite chunk-size warning only.
+- Production `GET https://aiteacher-production-cae8.up.railway.app/health`
+  -> HTTP 200, `status=ok`, postgres ok, redis ok.
+- Production `GET https://aware-alignment-production.up.railway.app/demo/setup`
+  -> HTTP 200.
+- Production `GET https://aiteacher-production-cae8.up.railway.app/lesson/sections/status`
+  -> HTTP 200 and returned ready ordinary sections. GOLD ready candidates:
+  `1.1`, `1.2`, `1.4`, `2.1`, `2.3`, `3.1`, `4.1`, `4.3`, `5.1`, `5.3`,
+  `6.1`, `6.3`, `7.1`, `7.3`, `8.1`, `8.3`.
+
+**Review gate for intake/baseline:**
+- backend reviewer: NOT APPLICABLE - no backend product code changed.
+- frontend reviewer: NOT APPLICABLE - no frontend product code changed.
+- curriculum reviewer: NOT APPLICABLE - no curriculum, scoring, progression,
+  or prompt behavior changed.
+- kids safety monitor: NOT APPLICABLE - active goal explicitly excludes Kids
+  product changes; latest Kids defect is recorded only as a paused risk.
+- QA tester: RUN -> PASS for local ordinary baseline and production reachability.
+- acceptance auditor: NOT APPLICABLE - goal is not complete; production demo
+  and paid ordinary smoke remain.
+
+**Commit/deploy state:**
+- Product code: no ordinary-mode product change.
+- Deployment: no new deploy needed for this intake because no product code
+  changed and production endpoints are already reachable.
+- Commit: no product commit created for ordinary mode. Workflow checkpoint
+  pending local commit only.
+
+**Next action:** Production smoke ordinary Mentium flow: demo classroom first,
+then paid classroom if legitimate auth/subscription is available.
+
 ## CURRENT PHASE
-Phase: **Phase 9 — Deployment**
-Started: 2026-06-13
-Last updated: 2026-06-13
+Phase: **Ordinary mode Phase 1 - Demo production smoke**
+Started: 2026-07-09
+Last updated: 2026-07-09
 
 > State reconstruction 2026-06-13: previous run completed Phase 8 implementation
 > (integration test file + W-024/W-026 engine tests + W-025 doc amend) AND ran

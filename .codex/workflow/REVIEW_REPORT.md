@@ -6,6 +6,55 @@
 
 ---
 
+## ORDINARY MODE INTAKE / BASELINE REVIEW - 2026-07-09
+
+**Scope reviewed:**
+- Active-goal pivot from Kids Phase 9 verification to ordinary Mentium lesson
+  production readiness.
+- No product code changed.
+- Ordinary demo/runtime tests, full backend suite, frontend build, and
+  production reachability checks.
+
+**User instruction:**
+- After a live Kids production retest looped, user said to stop focusing on
+  Kids mode and focus on ordinary mode because it is much more important.
+
+**Kids status recorded, not fixed in this cycle:**
+- Production logs for the latest Kids session showed `Blue.` classified as
+  `correct_hesitant` with `eligibleForProgression=true`, but
+  `exerciseCorrectCount=0` persisted and the target stayed `blue`.
+- Verdict: real Kids progression-loop risk exists, but it is paused by user
+  priority change.
+
+**QA tester: PASS**
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd backend; npx vitest run src/demo src/exercises/runtime-qa --reporter=dot --silent`
+  -> exit 0; 4 files passed; 298 tests passed.
+- `cd backend; npm test -- --reporter=dot --silent`
+  -> exit 0; 64 files passed; 2127 tests passed.
+- `cd frontend; npm run build` -> exit 0; Vite chunk-size warning only.
+- Production `/health` -> HTTP 200, status ok, postgres ok, redis ok.
+- Production `/demo/setup` -> HTTP 200.
+- Production `/lesson/sections/status` -> HTTP 200; returned multiple GOLD
+  ready ordinary sections.
+
+**Role applicability:**
+- backend reviewer: NOT APPLICABLE - no backend product code changed.
+- frontend reviewer: NOT APPLICABLE - no frontend product code changed.
+- curriculum reviewer: NOT APPLICABLE - no curriculum/progression/scoring or
+  prompt behavior changed.
+- kids safety monitor: NOT APPLICABLE - no child-facing behavior changed;
+  Kids issue only recorded as a paused risk.
+- QA tester: RUN - PASS as above.
+- acceptance auditor: NOT APPLICABLE - production demo/paid ordinary smoke is
+  still pending.
+
+**Verdict:** PASS for intake/baseline. GOAL NOT COMPLETE. Next action is
+production smoke of ordinary demo flow, then paid ordinary flow if valid
+auth/subscription is available.
+
+---
+
 ## REVIEW GATE - Kids STT teacher-echo target correction - 2026-07-09
 
 **Scope reviewed:**

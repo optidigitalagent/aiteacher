@@ -25,6 +25,48 @@
 
 ## Open Risks
 
+### RISK-021 - Kids correct classification does not advance exercise in production
+
+**Status:** OPEN
+**Severity:** P1
+**Area:** Kids backend / progression
+**Description:** Live production Kids retest after the teacher-echo correction
+  showed STT and classification working for `Blue.`: logs recorded
+  `correct_hesitant`, confidence 0.8, deterministic source, and
+  `eligibleForProgression=true`. However the same session kept
+  `exerciseCorrectCount=0` and the target remained `blue`, causing the user to
+  experience a loop.
+**Trigger:** Kids production lesson receives a correct target transcript but
+  the runtime/progression layer does not increment or advance.
+**Mitigation:** Kids work is paused by explicit user priority change; do not
+  enable more Kids V2 tier flags until this is understood. Existing full
+  backend suite remains green, so this appears to require production/session
+  reproduction rather than a broad local test failure.
+**Resolution:** Re-prioritize Kids, reproduce with the logged session pattern,
+  trace `eligibleForProgression` through Kids runtime state update, add a
+  regression test, deploy, and verify live progression.
+**Opened:** 2026-07-09
+**Updated:** 2026-07-09
+
+---
+
+### RISK-022 - Local C drive full blocks npm unless temp/cache are redirected
+
+**Status:** OPEN
+**Severity:** P2
+**Area:** tooling
+**Description:** Local C: drive reported 0 free bytes. npm/npx commands can
+  fail with `ENOSPC` unless cache and temp directories are redirected.
+**Trigger:** Running npm, npx, Vite, or Vitest with default cache/temp paths.
+**Mitigation:** Use `npm_config_cache=D:\codex-npm-cache`,
+  `TEMP=D:\codex-temp`, and `TMP=D:\codex-temp` for local validation.
+**Resolution:** Free disk space on C: or permanently configure npm/temp paths
+  to a drive with sufficient space.
+**Opened:** 2026-07-09
+**Updated:** 2026-07-09
+
+---
+
 ### RISK-001 — Kids Brain: No production voice test coverage
 
 **Status:** OPEN

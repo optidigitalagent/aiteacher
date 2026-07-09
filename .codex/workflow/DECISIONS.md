@@ -105,6 +105,22 @@
 
 > Append new decisions below as autonomous work progresses.
 
+### 2026-07-09 - Ordinary Mentium mode supersedes Kids work as active priority
+
+**Decision:** Replace the active execution target with ordinary, non-Kids
+Mentium lesson production readiness. Keep Kids evidence and risks, but pause
+Kids implementation/debugging until the user re-prioritizes it.
+**Reason:** The latest live Kids retest showed a real Kids loop, but the user
+explicitly said to stop doing Kids mode and focus on the ordinary mode because
+it is much more important. Repository and production evidence show ordinary
+baseline checks are green, so the next valuable work is ordinary production
+smoke verification rather than more Kids repair.
+**Alternatives rejected:** Continue debugging Kids progression immediately;
+enable additional Kids V2 flags; deploy without product-code changes.
+**Reversible:** Yes.
+**Risk:** Medium - Kids remains with an open progression-loop risk, but the
+user-set priority is ordinary mode.
+
 ### 2026-06-10 — Micro-dialogue cooldown: count-up from 0 (design doc was internally inconsistent)
 
 **Decision:** `createInitialPersonalizationState().microDialogueCooldown` changed 3 → 0.

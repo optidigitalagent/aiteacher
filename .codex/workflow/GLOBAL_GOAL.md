@@ -1,42 +1,36 @@
-# GLOBAL_GOAL.md — Mentium AI Teacher
+# GLOBAL_GOAL.md - Mentium AI Teacher
 
 ## ACTIVE GOAL
 
-**Kids Personalization V2 — STARTED 2026-06-10**
+**Ordinary Mentium lesson mode production readiness - STARTED 2026-07-09**
 
-Make Kids lessons feel personally tailored to each child while keeping
-Kid's Box curriculum fully authoritative.
+Make the ordinary, non-Kids Mentium textbook/demo lesson flow the current
+priority and verify it is safe to present.
 
-**Previous goal COMPLETE:** Kids Mode Onboarding V1 — all 23 ACs verified (2026-06-10)
-**Previous goal COMPLETE:** Kids Brain V1 — 28/28 criteria verified (Run 5, 2026-06-09)
-**Tags:** kids-brain-v1-complete, kids-onboarding-v1-complete
+**Paused goal:** Kids Personalization V2 Phase 9. Kids remains deployed with
+`KIDS_PERSONALIZATION_V2=true` and `KIDS_WARMUP_ENABLED=true`, but live user
+evidence on 2026-07-09 showed a separate Kids progression loop after correct
+classification. Per user instruction, Kids work is paused and ordinary mode is
+now higher priority.
 
 ---
 
-## CORE RULE (IMMUTABLE)
+## SCOPE
 
-> **Curriculum controls everything that matters educationally.
-> Interests control only how the teacher talks, not what the teacher teaches.**
+In scope:
+- Ordinary adult/demo lesson entry points.
+- Public section readiness API.
+- Demo setup and demo classroom flow.
+- Paid lesson start and paid classroom WebSocket flow when valid
+  authentication/subscription evidence is available.
+- Build, test, production health, and production-log checks.
 
-### What curriculum controls (CANNOT be changed by personalization):
-- progression
-- correctness
-- target words
-- exercise order
-- mastery
-- escalation ladder
-- scoring
-- accepted answers
-
-### What interests control (ALLOWED):
-- examples (context phrases during teacher model)
-- warmups (1-2 turns before lesson content)
-- encouragement (at ENCOURAGEMENT tier)
-- recovery prompts (at ENCOURAGEMENT tier)
-- micro-dialogues (1 turn between exercises, ≥3 exercise cooldown)
-- imagination prompts ("Imagine a blue Minecraft block!")
-- contextual references in praise
-- teacher greeting style (persona-based)
+Out of scope unless explicitly re-prioritized:
+- Kids mode product fixes.
+- Kids Brain progression/personalization changes.
+- Billing/payment/auth logic changes.
+- STT/TTS configuration changes.
+- Prompt changes in `docs/master-prompt.md`.
 
 ---
 
@@ -44,112 +38,58 @@ Kid's Box curriculum fully authoritative.
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 0 | Design | ✅ COMPLETE — docs/kids-personalization-v2.md APPROVED |
-| 1 | Interest-Aware Warmups | ✅ COMPLETE — review PASS 2026-06-10 |
-| 2 | Interest-Aware Examples | ✅ COMPLETE — review PASS 2026-06-10 |
-| 3 | Interest-Aware Praise | ✅ COMPLETE — review PASS 2026-06-10 |
-| 4 | Interest-Aware Recovery | ✅ COMPLETE — review PASS 2026-06-10 |
-| 5 | Micro-Dialogues | ✅ COMPLETE — review PASS 2026-06-10 |
-| 6 | Teacher Personas | ✅ COMPLETE — review PASS 2026-06-12 |
-| 7 | Safety | ✅ COMPLETE — review PASS 2026-06-12 |
-| 8 | Testing | ✅ COMPLETE — review PASS 2026-06-13 |
-| 9 | Deployment | 🔲 NEXT |
+| 0 | Intake and baseline evidence | COMPLETE - local and production baseline green 2026-07-09 |
+| 1 | Ordinary demo production smoke | NEXT |
+| 2 | Ordinary paid lesson production smoke | PENDING |
+| 3 | Review, risks, and completion audit | PENDING |
 
 ---
 
 ## ACCEPTANCE CRITERIA
 
-The goal is NOT complete until ALL of the following are satisfied:
+The goal is NOT complete until all applicable criteria below are satisfied or
+explicitly blocked by unavailable credentials.
 
-### Warmup (Phase 1)
-- [ ] Warmup fires once per session when interests are set (W1)
-- [ ] Warmup does NOT fire if no interests set (W2)
-- [ ] Warmup max 2 turns enforced server-side (W4)
-- [ ] Warmup auto-ends after 15s (W5)
-- [ ] Warmup returns to curriculum after completion (W7)
+### Baseline
+- [x] Backend TypeScript compiles: `cd backend; npx tsc --noEmit` -> exit 0.
+- [x] Full backend suite passes: `cd backend; npm test -- --reporter=dot --silent` -> 64 files, 2127 tests passed.
+- [x] Ordinary/demo targeted suite passes: `cd backend; npx vitest run src/demo src/exercises/runtime-qa --reporter=dot --silent` -> 4 files, 298 tests passed.
+- [x] Frontend production build passes: `cd frontend; npm run build` -> exit 0.
+- [x] Production backend `/health` returns HTTP 200 with postgres ok and redis ok.
+- [x] Production frontend `/demo/setup` returns HTTP 200.
+- [x] Production `/lesson/sections/status` returns HTTP 200 with ready ordinary sections.
 
-### Interest-Aware Examples (Phase 2)
-- [ ] Example context appears in teacher model when interests set (E1)
-- [ ] Example is ≤ 15 words (E2)
-- [ ] targetWord not modified by example function (E4)
+### Demo Flow
+- [ ] Authenticated demo start can create or resume a demo session, or the
+  blocker is recorded as `DEMO_USED` / unavailable auth.
+- [ ] `/demo/classroom/:demoSessionId` renders without a white screen.
+- [ ] Demo lesson core interaction is verified by browser/manual evidence or
+  an automated harness using legitimate auth state.
 
-### Interest-Aware Praise (Phase 3)
-- [ ] Praise fires after CORRECT_* labels (P1)
-- [ ] Lucy praise measurably different from Tom praise (P4/T4)
+### Paid Ordinary Flow
+- [ ] Public section readiness identifies at least one `GOLD` section with
+  `canStartPaidLesson=true`.
+- [ ] Authenticated `/lesson/start` succeeds for a chosen ready section, or the
+  blocker is recorded as unavailable subscription/auth.
+- [ ] `/classroom/:sessionId` opens WebSocket and receives expected paid lesson
+  events: `lesson_ready`, `ai_text`, `audio_chunk` or a documented voice
+  fallback, and `teacher_turn_end`.
+- [ ] No critical ordinary-flow production log errors are observed in the
+  checked window.
 
-### Interest-Aware Recovery (Phase 4)
-- [ ] Recovery fires at ENCOURAGEMENT tier (R1)
-- [ ] Recovery ends with target word invitation (R2)
-
-### Micro-Dialogues (Phase 5)
-- [ ] Micro-dialogue fires after ≥3 exercises (M1)
-- [ ] Micro-dialogue is 1 turn only (M3)
-- [ ] Micro-dialogue does NOT score the child (M5)
-
-### Teacher Personas (Phase 6)
-- [ ] Lucy and Tom greeting phrases are distinct (T1, T2)
-- [ ] Both personas use same curriculum (T5)
-
-### Curriculum Integrity (all phases)
-- [x] targetWord not modified by any V2 function (C1) — Phase 8 runtime test: currentTargetItemId identical flags-on/off + explicit post-recovery assertion
-- [x] exerciseCorrectCount not modified (C3) — Phase 8 curriculumFingerprint equal turn-by-turn
-- [x] escalationLadder not modified (C4) — Phase 8 ladder/counter equivalence on recovery path
-- [x] Adult flow unaffected (C5) — scope discipline: no adult-path files touched in any phase
-- [x] Kids Brain V1 28/28 criteria still pass (C6) — full suite green (2060 pass, 0 new failures)
-
-### QA (Phase 8)
-- [x] TypeScript build: npx tsc --noEmit → exit 0 (Q1) — verified 2026-06-13
-- [x] npm test → all pass, no new failures (Q2) — 2060 pass / 63 pre-existing STT, 0 new
-- [x] Interest personalization test suite: ≥40 tests green (Q4) — 232 (207 engine + 25 integration)
-
-### Deployment (Phase 9)
-- [ ] Railway deploy successful
-- [ ] All feature flags tested in production
-- [ ] No critical errors in first 10 min of production logs
-- [ ] Acceptance auditor final verdict: PASS
+### Review and Completion
+- [ ] Mandatory review gate recorded: backend reviewer, frontend reviewer,
+  curriculum reviewer, kids safety monitor, QA tester, acceptance auditor
+  each marked RUN or NOT APPLICABLE with reason.
+- [ ] Acceptance auditor returns GOAL COMPLETE, or the goal remains blocked
+  with the exact missing credential/manual verification.
 
 ---
 
-## CONSTRAINTS (do NOT touch unless goal explicitly requires it)
+## CURRENT CONSTRAINTS
 
-- docs/master-prompt.md — only via update-prompt skill
-- billing / payment / auth logic
-- Adult lesson flow (non-Kids WebSocket path)
-- STT/TTS configuration (Deepgram, ElevenLabs voice IDs)
-- Railway env variables — only for feature flags specified in this goal
-- Kids Brain V1 exercise logic — personalization adds to, never replaces
-- Kids Onboarding V1 code — personalization integrates with, never replaces
-- V1 interest-personalizer.ts — extend, do not remove
-
----
-
-## PERSONALIZATION HARD RULES (NOT NEGOTIABLE)
-
-Any code review must reject violations of these rules.
-
-**FORBIDDEN:**
-- changing `targetWord` in any exercise
-- changing `acceptedAnswers[]`
-- changing `completionRule.type`
-- changing `exerciseCorrectCount`
-- changing `exerciseAttemptCount`
-- changing `escalationLadder[]` items or order
-- skipping curriculum steps
-- using copyrighted characters as core teaching characters
-- using LLM to generate interest content (templates only)
-- unauthenticated usage of any Kids resource
-- warmup > 2 turns
-- warmup > 15 seconds
-- micro-dialogue responding to child as if in open chat
-- micro-dialogue > 1 turn
-
----
-
-## HOW TO RUN
-
-Type:
-
-> Continue.
-
-Codex reconstructs state and resumes the correct next action under Automation
-V2. To replace or refine the goal, provide a rough idea in ordinary language.
+- Local C: drive has no free space; npm commands must use `D:\codex-npm-cache`
+  and `D:\codex-temp` until disk space is restored.
+- Do not use browser console JWTs pasted by the user as credentials.
+- Do not perform new paid-service mutations or deploys without explicit user
+  approval.

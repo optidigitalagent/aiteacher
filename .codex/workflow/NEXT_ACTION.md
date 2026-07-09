@@ -8,64 +8,51 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Manual production Kids mic retest for `Say again. Blue.` correction
-**Type:** MANUAL-PROD-VERIFY
-**Phase:** Phase 9 - Deployment
-**Agent:** user live browser + goal-executor production-log-analyzer
+**Task:** Production smoke ordinary Mentium flow
+**Type:** QA / PROD-VERIFY
+**Phase:** Ordinary mode Phase 1 - Demo production smoke
+**Agent:** goal-executor + lesson-qa
 
 **Why this is next:**
-  The backend fix for the observed production target-recognition bug is
-  committed, pushed, deployed, health-checked, and log-checked. The remaining
-  evidence gap is the physical browser/microphone path: confirm that saying
-  `blue` after the retry prompt now progresses instead of looping on
-  `social_speech` / warm redirect.
+  The user explicitly deprioritized Kids after a live Kids loop and said the
+  ordinary mode is much more important. Local and production baseline checks
+  are green. The remaining evidence gap is a real ordinary lesson smoke:
+  demo classroom first, then paid classroom if valid auth/subscription exists.
 
 **Completed evidence:**
-  - Commit `ed10f8664c1772377b5c8e0fcf8f074a90ab54d6`
-    (`fix(kids): recognize retry echo target word`) pushed to `origin/main`.
-  - Railway backend `aiteacher` deployment
-    `2e247e8d-508c-4f0e-a961-be16974a4e46` -> SUCCESS at commit `ed10f86`.
-  - Railway frontend `aware-alignment` deployment
-    `81bebd19-c2aa-4d84-b7d8-b8a1e7075e62` -> SUCCESS at commit `ed10f86`
-    (auto-deploy; no frontend code changed).
-  - `/health` at 2026-07-09T08:15:01Z -> HTTP 200, postgres ok, redis ok.
-  - Backend logs: server listening, PostgreSQL ready, Redis ping OK/ready.
-  - 10-minute post-deploy log check: no `HTTP 400`, `Unhandled`,
-    `ECONNREFUSED`, `Cannot find`, `Error:`, `voice_unavailable`,
-    `SESSION_VERIFICATION_FAILED`, or `NO_CHILD_PROFILE` in checked tail.
-  - Local validation:
-    targeted correction suite -> 34/34 passed;
-    `npx tsc --noEmit` -> exit 0;
-    broader Kids/voice suite -> 45 files, 1544 tests passed;
-    full backend suite -> 64 files, 2127 tests passed.
+  - `cd backend; npx tsc --noEmit` -> exit 0.
+  - `cd backend; npx vitest run src/demo src/exercises/runtime-qa --reporter=dot --silent`
+    -> exit 0; 4 files passed; 298 tests passed.
+  - `cd backend; npm test -- --reporter=dot --silent`
+    -> exit 0; 64 files passed; 2127 tests passed.
+  - `cd frontend; npm run build` -> exit 0; Vite chunk-size warning only.
+  - Production `/health` -> HTTP 200, postgres ok, redis ok.
+  - Production `/demo/setup` -> HTTP 200.
+  - Production `/lesson/sections/status` -> HTTP 200; GOLD ready sections
+    include `1.1`, `1.2`, `1.4`, `2.1`, `2.3`, `3.1`, `4.1`, `4.3`,
+    `5.1`, `5.3`, `6.1`, `6.3`, `7.1`, `7.3`, `8.1`, `8.3`.
 
-**Manual test steps:**
-  1. Open `https://aware-alignment-production.up.railway.app/kids`.
-  2. Start a Kids lesson with the existing child profile/interests.
-  3. If the teacher asks a warmup/interests question, answer normally.
-  4. When the lesson reaches the colour word `blue`, intentionally trigger the
-     retry/recovery prompt if needed, then press the mic and clearly say
-     `blue`.
-  5. Expected browser behavior: transcript/student message appears, teacher
-     accepts or advances, and the lesson does not keep redirecting as if the
-     answer was social/off-task speech.
-  6. Send the new console snippet or just report whether the lesson advanced.
-     Goal Executor will then inspect Railway logs for
-     `method=teacher_echo_target_suffix` and classification/progression.
+**Execute exactly this:**
+  1. Inspect whether a legitimate authenticated browser/session is available
+     without using JWTs pasted in chat.
+  2. If available, smoke `https://aware-alignment-production.up.railway.app/demo/setup`:
+     start or resume demo, open `/demo/classroom/:demoSessionId`, verify no
+     white screen and core lesson interaction.
+  3. If demo is blocked by `DEMO_USED` or unavailable auth, record that exact
+     blocker and continue to paid ordinary flow if valid subscription/auth is
+     available.
+  4. For paid flow, choose a GOLD ready section such as `1.1`, start a lesson
+     through the UI or legitimate authenticated API, open `/classroom/:sessionId`,
+     and verify `lesson_ready`, `ai_text`, `audio_chunk` or documented voice
+     fallback, and `teacher_turn_end`.
+  5. Inspect production logs for critical ordinary-flow errors in the checked
+     window.
 
 **Success criterion:**
-  Live production browser/mic path verifies target `blue` is accepted/progresses
-  after the retry prompt; production logs show no critical errors.
+  Ordinary demo and/or paid lesson flow is production-smoked with direct
+  evidence, or the exact missing credential/quota/subscription blocker is
+  recorded.
 
-**Current stop condition:**
-  AGENTS stop rule 4 - manual production verification is required.
-
----
-
-### Phase-advance rule (ALWAYS included after REVIEW tasks)
-After a REVIEW PASS, Goal Executor MUST:
-1. Mark phase complete in `GLOBAL_GOAL.md` phase table
-2. Append completion entry to `GOAL_PROGRESS.md`
-3. Detect next NEXT or PENDING phase from `GLOBAL_GOAL.md`
-4. Write that phase's CODE task here
-5. Continue immediately - no user confirmation required
+**Current stop condition if blocked:**
+  AGENTS stop rule 1 or 4 - unavailable legitimate auth/subscription or manual
+  production verification required.
