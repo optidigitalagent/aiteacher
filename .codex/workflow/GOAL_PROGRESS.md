@@ -96,6 +96,156 @@ Previous goals complete:
   verify logs between each, run a live Kids voice session per tier to satisfy
   "All feature flags tested in production", then acceptance-auditor FINAL verdict.
 
+**Demo readiness QA checkpoint (2026-07-09):**
+- User requested current project stage and presentation readiness for ordinary
+  Mentium textbook mode and Mentium Kids textbook mode.
+- No product-code edits were made. Worktree clean before and after.
+- Backend TypeScript: `cd backend && npx tsc --noEmit` -> exit 0.
+- Targeted adult/runtime + Kids routing/STT config suite:
+  `npx vitest run src/lesson src/exercises src/behavior-runtime src/runtime src/ws/__tests__/phase-16j2-kids-start-billing-guard-fix.test.ts src/ws/__tests__/phase-21-kids-stt-target-word-correction.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/voice/__tests__/stt-deepgram-options.test.ts`
+  -> 5 files, 204 tests passed, exit 0.
+- Kids Brain suite: `npx vitest run src/kids-brain` -> 42 files,
+  1486 tests passed, exit 0.
+- API/auth targeted suite:
+  `npx vitest run src/api/__tests__/kids-child-profile-api.test.ts src/auth/__tests__/require-auth-guard.test.ts`
+  -> 2 files, 23 tests passed, exit 0.
+- Frontend build: `cd frontend && npm run build` -> exit 0; Vite chunk-size
+  warning only.
+- Full backend suite: `cd backend && npm test -- --reporter=default` -> exit 1;
+  586 suites total, 553 passed, 33 failed; 2123 tests total, 2060 passed,
+  63 failed. All current failing files are Kids WS/STT real-smoke paths:
+  `kids-brain-v1-real-ws-smoke`, `phase-16g-kids-stt-integration`,
+  `phase-16k-kids-stt-turn-finalization`, `phase-18-kids-stt-late-transcript`,
+  `phase-23-kids-stt-wait-ready-buffer`, `stt-reconnect-dead-connection`.
+  Current failure symptom includes Kids sessions closing with `NO_CHILD_PROFILE`
+  before voice/STT assertions complete.
+- Adult Focus matrix: 25 Focus 2 sections, 16 GOLD, 7 SILVER, 2 BLOCKED.
+  GOLD recommended presentation sections: 1.1, 1.2, 1.4, 2.1, 2.3, 3.1,
+  4.1, 4.3, 5.1, 5.3, 6.1, 6.3, 7.1, 7.3, 8.1, 8.3.
+- Kids textbook curriculum loaded: `kb1-u01-l02` "Colours" with 7 target words
+  and 14 exercises; exercise types review/listen_and_repeat/listen_and_choose/
+  chant; no visual UI dependency.
+- Presentation recommendation from this checkpoint: ordinary Mentium textbook
+  mode is the strongest demo candidate. Kids textbook engine is strong at
+  engine/unit level, but live presentation requires a prepared authenticated
+  child profile, `USE_KIDS_BRAIN_V1=true`, and a live voice smoke in the target
+  environment before showing it to a client.
+
+**Kids WS/STT repair checkpoint (2026-07-09):**
+- User requested: "исправь то что сейчас сломанно" after the demo readiness
+  checkpoint showed full backend suite red with 63 Kids WS/STT failures.
+- Root cause verified by reproduction: `kids-brain-v1-real-ws-smoke.test.ts`
+  closed with `NO_CHILD_PROFILE` because the real WS test DB mocks returned a
+  Kids session but no row for the now-required `kids_brain_child_profiles`
+  lookup. The remaining STT failures were cascade failures after the WS session
+  closed before voice assertions could run.
+- Product code was not changed. Test fixtures were updated to include minimal
+  child profile rows for the affected real WS Kids STT suites, preserving the
+  production `KIDS_REQUIRE_PROFILE` guard. Stale test-only
+  `DEEPGRAM_KIDS_LIVE_OPTIONS.utterance_end_ms: 700` mocks were aligned to the
+  current valid 1000ms value.
+- Files changed:
+  `backend/src/ws/__tests__/kids-brain-v1-real-ws-smoke.test.ts`,
+  `backend/src/ws/__tests__/phase-16g-kids-stt-integration.test.ts`,
+  `backend/src/ws/__tests__/phase-16j2-kids-start-billing-guard-fix.test.ts`,
+  `backend/src/ws/__tests__/phase-16k-kids-stt-turn-finalization.test.ts`,
+  `backend/src/ws/__tests__/phase-18-kids-stt-late-transcript.test.ts`,
+  `backend/src/ws/__tests__/phase-23-kids-stt-wait-ready-buffer.test.ts`,
+  `backend/src/ws/__tests__/stt-reconnect-dead-connection.test.ts`.
+- Validation evidence:
+  - `cd backend; npx vitest run src/ws/__tests__/kids-brain-v1-real-ws-smoke.test.ts src/ws/__tests__/phase-16g-kids-stt-integration.test.ts src/ws/__tests__/phase-16k-kids-stt-turn-finalization.test.ts src/ws/__tests__/phase-18-kids-stt-late-transcript.test.ts src/ws/__tests__/phase-23-kids-stt-wait-ready-buffer.test.ts src/ws/__tests__/stt-reconnect-dead-connection.test.ts --reporter=dot --silent`
+    -> exit 0; 6 files passed; 71 tests passed.
+  - `cd backend; npx vitest run src/ws/__tests__/phase-16j2-kids-start-billing-guard-fix.test.ts --reporter=dot --silent`
+    -> exit 0; 1 file passed; 8 tests passed.
+  - `rg "utterance_end_ms:\s*700" backend/src -n` -> exit 1; no stale 700ms
+    mocks remain.
+  - `cd backend; npx tsc --noEmit` -> exit 0.
+  - `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 64 files
+    passed; 2123 tests passed.
+- Review gate:
+  - backend reviewer: RUN -> PASS; test-only fixture repair, no auth/billing
+    weakening, no product WS behavior changed.
+  - frontend reviewer: NOT APPLICABLE -> no frontend/UI/client contract files changed.
+  - curriculum reviewer: NOT APPLICABLE -> no curriculum, scoring, progression,
+    accepted answer, or prompt behavior changed.
+  - kids safety monitor: NOT APPLICABLE -> no child-facing production behavior
+    or content changed; child names are test-only fixtures.
+  - QA tester: RUN -> PASS; targeted and full backend suite green.
+  - acceptance auditor: NOT APPLICABLE -> not a final goal-completion claim.
+- RISK-009 resolved: full backend suite no longer has the 63 Kids WS/STT
+  failures.
+- Commit: no commit created.
+- Production state: not deployed or production-verified in this repair; no
+  production mutation performed.
+
+---
+
+**Phase 9 master-flag production checkpoint (2026-07-09):**
+- User said "продолжай" after the Phase 9 next action explicitly identified
+  production Railway env mutation and live verification as requiring go-ahead.
+- Production mutation performed:
+  `railway variable set --service aiteacher KIDS_PERSONALIZATION_V2=true`
+  -> exit 0. Verification:
+  `railway variables --service aiteacher | Select-String -Pattern 'KIDS_PERSONALIZATION|USE_KIDS_BRAIN_V1'`
+  showed `KIDS_PERSONALIZATION_V2 true` and `USE_KIDS_BRAIN_V1 true`.
+- Railway backend deployment from the env change:
+  service `aiteacher`, deployment `44050bfb-babc-434b-9405-352b120c91e0`,
+  commit `0b82f7d1c3fccf0fdaca47f898d8636cecbc4661`, created
+  `2026-07-09T07:08:55.724Z`, status `SUCCESS`.
+- Health evidence after deploy:
+  `curl.exe -sS -i https://aiteacher-production-cae8.up.railway.app/health`
+  at `2026-07-09T07:20:31Z` -> HTTP 200; JSON status `ok`;
+  `checks.postgres=ok`; `checks.redis=ok`; uptime `638`.
+- Production Kids API/WS smoke evidence (sanitized; token not recorded):
+  temporary harness used Railway `JWT_SECRET` to mint a one-use JWT for a
+  synthetic UUID user, POSTed `/api/kids/child-profile`, POSTed
+  `/lesson/kids/start`, opened `wss://.../lesson`, waited for `lesson_ready`,
+  sent `focus_lesson_start`, and observed `ai_text`.
+  Result -> exit 0; `profileStatus: 201`; `startStatus: 200`;
+  `messageTypes: ["lesson_ready","lesson_ready","ai_text"]`; `errorCodes: []`;
+  close `1000 smoke complete`.
+- Production log analyzer evidence for the 10-minute master-flag window:
+  startup clean (`[server] listening on 0.0.0.0:8080`, PostgreSQL ready,
+  Redis ready). Kids smoke routed to Kids Brain V1 with matching session/user
+  and did not emit `NO_CHILD_PROFILE` or `SESSION_VERIFICATION_FAILED`.
+  The smoke closed after `ai_text` and before TTS completed, producing
+  `[tts:provider_error] provider=openai reason=TTS_UNKNOWN_ERROR msg="Request was aborted."`
+  and `[kids:voice_degraded] ... reason=TTS_UNKNOWN_ERROR`. Treat as a
+  smoke-harness artifact and voice-verification gap, not evidence that the
+  original `NO_CHILD_PROFILE` defect remains.
+- Follow-up voice-safe smoke after the 15-minute TTS cooldown:
+  temporary harness waited for `teacher_turn_end` or `voice_unavailable`
+  instead of closing immediately after `ai_text`.
+  Result -> exit 0; `profileStatus: 201`; `startStatus: 200`;
+  `messageTypes: ["lesson_ready","lesson_ready","ai_text","audio_chunk","teacher_turn_end"]`;
+  `audioChunks: 1`; `errorCodes: []`; `voiceUnavailable: []`;
+  close `1000 voice smoke complete`.
+- Follow-up logs after the voice-safe smoke:
+  second synthetic Kids session routed to Kids Brain V1 with matching
+  session/user, then closed normally with code 1000. No new
+  `tts:provider_error`, `voice_degraded`, `NO_CHILD_PROFILE`, or
+  `SESSION_VERIFICATION_FAILED` log entry appeared for the second smoke.
+  Health at `2026-07-09T07:31:16Z` -> HTTP 200, status `ok`,
+  `checks.postgres=ok`, `checks.redis=ok`, uptime `1284`.
+- Review gate:
+  - backend reviewer: NOT APPLICABLE -> no product backend code changed after
+    the local test-fixture repair.
+  - frontend reviewer: NOT APPLICABLE -> no frontend changed.
+  - curriculum reviewer: NOT APPLICABLE -> master flag alone enabled; no
+    tier flag behavior was production-verified or changed.
+  - kids safety monitor: NOT APPLICABLE -> smoke used a synthetic profile and
+    did not change child-facing behavior.
+  - QA tester: RUN -> PASS for master-flag API/WS/TTS smoke; per-tier behavior
+    remains unverified because tier flags are still off.
+  - production-log-analyzer: RUN -> PASS WITH CAVEAT for master flag; no
+    startup/DB/Redis/session critical errors and the voice-safe follow-up was
+    clean. The first TTS abort is recorded as a smoke-harness artifact.
+  - acceptance auditor: NOT APPLICABLE -> not a final goal-completion claim.
+- Remaining Phase 9 state:
+  `KIDS_PERSONALIZATION_V2=true` is live. Per-tier flags are still not enabled.
+  D2 remains incomplete for tier flags; D3 is verified only for the master-flag
+  deployment/smoke path; D4 remains incomplete. No commit created.
+
 ---
 
 ## BLOCKERS

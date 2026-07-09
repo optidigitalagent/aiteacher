@@ -129,7 +129,7 @@
 
 ### RISK-009 — Pre-existing test failures in phases 17B / 18 / 23 (STT timing)
 
-**Status:** OPEN
+**Status:** RESOLVED
 **Severity:** P2
 **Area:** backend / voice
 **Description:** 63 tests failing in 3 STT timing test files (timeout-sensitive).
@@ -137,9 +137,16 @@
   All failures are `Test timed out in 5000ms`.
 **Trigger:** npm test full suite (intermittent on CI-like environments)
 **Mitigation:** 1828 other tests pass. Production voice flow working.
-**Resolution:** Increase testTimeout for these files to 15000ms, or use fake timers.
+**Resolution:** Resolved 2026-07-09. Reproduction showed the current 63 failures
+  were not timing failures: real WS Kids STT fixtures returned a Kids session
+  but no required `kids_brain_child_profiles` row, so production code correctly
+  closed with `NO_CHILD_PROFILE` before STT assertions. Test fixtures now return
+  minimal child profile rows and stale test-only `utterance_end_ms: 700` mocks
+  are aligned to 1000ms. Evidence:
+  `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 64 files passed;
+  2123 tests passed.
 **Opened:** 2026-06-10
-**Updated:** 2026-06-10
+**Updated:** 2026-07-09
 
 ---
 

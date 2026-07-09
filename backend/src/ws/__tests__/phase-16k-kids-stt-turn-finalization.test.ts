@@ -53,6 +53,17 @@ const mocks = vi.hoisted(() => {
     if (s.includes('FROM KIDS_SESSIONS')) {
       return { rows: [{ user_id: 'u-16k-001', status: 'created', mode: 'mentium_kids' }], rowCount: 1 }
     }
+    if (s.includes('FROM KIDS_BRAIN_CHILD_PROFILES')) {
+      return {
+        rows: [{
+          child_name: 'STT16K',
+          child_age_years: 7,
+          teacher_id: 'lucy',
+          high_engagement_topics: [],
+        }],
+        rowCount: 1,
+      }
+    }
     if (s.includes('SELECT LESSON_ID FROM LESSON_SESSIONS')) {
       return { rows: [], rowCount: 0 }
     }
@@ -121,7 +132,7 @@ vi.mock('../../voice/tts.js', () => ({
 // and verify partial-fallback path via onInterim.
 vi.mock('../../voice/stt.js', () => ({
   DEEPGRAM_LIVE_OPTIONS:      { model: 'nova-2', language: 'en', encoding: 'linear16', sample_rate: 16000, channels: 1 },
-  DEEPGRAM_KIDS_LIVE_OPTIONS: { model: 'nova-2', language: 'en', encoding: 'linear16', sample_rate: 16000, channels: 1, utterance_end_ms: 700 },
+  DEEPGRAM_KIDS_LIVE_OPTIONS: { model: 'nova-2', language: 'en', encoding: 'linear16', sample_rate: 16000, channels: 1, utterance_end_ms: 1000 },
   DeepgramSTT: vi.fn().mockImplementation(
     (onTranscript: (text: string) => void, onInterim?: (text: string) => void) => {
       mocks.sttState.onTranscript  = onTranscript

@@ -107,7 +107,7 @@ vi.mock('../../voice/tts.js', () => ({
 vi.mock('../../voice/stt.js', () => ({
   DeepgramSTT:                mocks.deepgramSTTMock,
   DEEPGRAM_LIVE_OPTIONS:      {},
-  DEEPGRAM_KIDS_LIVE_OPTIONS: { utterance_end_ms: 700 },
+  DEEPGRAM_KIDS_LIVE_OPTIONS: { utterance_end_ms: 1000 },
 }));
 vi.mock('../../billing/subscription-service.js', () => ({
   getSubscription: vi.fn(async () => null),  // no subscription → 4402 for adult path

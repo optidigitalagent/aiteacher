@@ -6,6 +6,127 @@
 
 ---
 
+## PHASE 9 MASTER FLAG PRODUCTION REVIEW - 2026-07-09
+
+```text
+Cycle ID: phase-9-master-flag-production/2026-07-09
+Scope: Railway production env + production smoke verification
+Base commit: 0b82f7d
+Commit created: no
+Production mutation:
+  railway variable set --service aiteacher KIDS_PERSONALIZATION_V2=true
+
+Changed files:
+  - .codex/workflow/GOAL_PROGRESS.md
+  - .codex/workflow/NEXT_ACTION.md
+  - .codex/workflow/REVIEW_REPORT.md
+  - .codex/workflow/RISK_REGISTER.md
+  - backend/src/ws/__tests__/kids-brain-v1-real-ws-smoke.test.ts
+  - backend/src/ws/__tests__/phase-16g-kids-stt-integration.test.ts
+  - backend/src/ws/__tests__/phase-16j2-kids-start-billing-guard-fix.test.ts
+  - backend/src/ws/__tests__/phase-16k-kids-stt-turn-finalization.test.ts
+  - backend/src/ws/__tests__/phase-18-kids-stt-late-transcript.test.ts
+  - backend/src/ws/__tests__/phase-23-kids-stt-wait-ready-buffer.test.ts
+  - backend/src/ws/__tests__/stt-reconnect-dead-connection.test.ts
+
+Role applicability:
+  backend reviewer: NOT APPLICABLE - no product backend code changed in this production step
+  frontend reviewer: NOT APPLICABLE - no frontend changed
+  curriculum reviewer: NOT APPLICABLE - master flag enabled only; no tier behavior enabled
+  kids safety monitor: NOT APPLICABLE - smoke used synthetic profile; no behavior/content change
+  QA tester: RUN - production API/WS/TTS smoke and health verification
+  production-log-analyzer: RUN - Railway deploy/log/health inspection
+  acceptance auditor: NOT APPLICABLE - not a final goal-completion claim
+
+QA tester:
+  Verdict: PASS for master flag only.
+  Evidence:
+    - /health after deploy at 2026-07-09T07:31:16Z -> HTTP 200, status ok,
+      postgres ok, redis ok.
+    - Production voice-safe Kids smoke -> exit 0; profileStatus 201;
+      startStatus 200; messageTypes lesson_ready, lesson_ready, ai_text,
+      audio_chunk, teacher_turn_end; audioChunks 1; errorCodes [];
+      voiceUnavailable [].
+    - No NO_CHILD_PROFILE observed in production smoke.
+  Limit:
+    Per-tier V2 behavior is still unverified because tier flags remain off.
+
+Production-log-analyzer:
+  Verdict: PASS WITH CAVEAT for master flag.
+  Evidence:
+    - Railway deployment 44050bfb-babc-434b-9405-352b120c91e0 reached SUCCESS.
+    - Startup logs: PostgreSQL ready, Redis ready, server listening, LessonWS attached.
+    - First smoke routed to Kids Brain V1 and closed code 1000 but produced
+      TTS_UNKNOWN_ERROR "Request was aborted" because the harness closed after
+      ai_text before TTS completed.
+    - Follow-up smoke after cooldown waited for teacher_turn_end and produced
+      no new tts:provider_error, voice_degraded, NO_CHILD_PROFILE, or
+      SESSION_VERIFICATION_FAILED entries.
+  Limit:
+    D3 is verified for the master-flag deployment/smoke path only. Remaining
+    tier flags still require their own 10-minute log windows.
+
+Final verdict:
+  PASS for Phase 9 master flag enablement only.
+  GOAL NOT COMPLETE. Next action is KIDS_WARMUP_ENABLED production enablement
+  plus live voice/STT verification for W1/W2/W4/W5/W7.
+```
+
+---
+
+## KIDS WS/STT REPAIR REVIEW - 2026-07-09
+
+```text
+Cycle ID: kids-ws-stt-fixture-repair/2026-07-09
+Scope: backend/src/ws/__tests__ only
+Base commit: 0b82f7d
+Commit created: no
+
+Changed files:
+  - backend/src/ws/__tests__/kids-brain-v1-real-ws-smoke.test.ts
+  - backend/src/ws/__tests__/phase-16g-kids-stt-integration.test.ts
+  - backend/src/ws/__tests__/phase-16j2-kids-start-billing-guard-fix.test.ts
+  - backend/src/ws/__tests__/phase-16k-kids-stt-turn-finalization.test.ts
+  - backend/src/ws/__tests__/phase-18-kids-stt-late-transcript.test.ts
+  - backend/src/ws/__tests__/phase-23-kids-stt-wait-ready-buffer.test.ts
+  - backend/src/ws/__tests__/stt-reconnect-dead-connection.test.ts
+
+Role applicability:
+  backend reviewer: RUN - backend WS/STT test fixtures changed
+  frontend reviewer: NOT APPLICABLE - no frontend/UI/client contract files changed
+  curriculum reviewer: NOT APPLICABLE - no curriculum/progression/scoring/content changed
+  kids safety monitor: NOT APPLICABLE - no production child-facing behavior or data changed
+  QA tester: RUN - mandatory after implementation
+  acceptance auditor: NOT APPLICABLE - not a final goal-completion claim
+
+Backend review:
+  Verdict: PASS
+  Findings: none blocking. The fix preserves production profile enforcement:
+    no product code changed and no `KIDS_REQUIRE_PROFILE` bypass added. Test DB
+    mocks now match the real WS contract by returning a minimal
+    `kids_brain_child_profiles` row. The owner-mismatch negative test remains
+    intact and still rejects with 4401. No secrets, auth weakening, billing
+    bypass, Redis persistence change, or new external-call loop introduced.
+
+QA evidence:
+  - Reproduction before fix: kids-brain-v1-real-ws-smoke closed with
+    `NO_CHILD_PROFILE`; downstream waits saw [lesson_ready, lesson_ready, error].
+  - `cd backend; npx vitest run src/ws/__tests__/kids-brain-v1-real-ws-smoke.test.ts src/ws/__tests__/phase-16g-kids-stt-integration.test.ts src/ws/__tests__/phase-16k-kids-stt-turn-finalization.test.ts src/ws/__tests__/phase-18-kids-stt-late-transcript.test.ts src/ws/__tests__/phase-23-kids-stt-wait-ready-buffer.test.ts src/ws/__tests__/stt-reconnect-dead-connection.test.ts --reporter=dot --silent`
+    -> exit 0; 6 files passed; 71 tests passed.
+  - `cd backend; npx vitest run src/ws/__tests__/phase-16j2-kids-start-billing-guard-fix.test.ts --reporter=dot --silent`
+    -> exit 0; 1 file passed; 8 tests passed.
+  - `rg "utterance_end_ms:\s*700" backend/src -n` -> exit 1; no stale 700ms mocks remain.
+  - `cd backend; npx tsc --noEmit` -> exit 0.
+  - `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 64 files passed; 2123 tests passed.
+
+Overall verdict: PASS
+Warnings/risk IDs: RISK-009 marked RESOLVED with full-suite evidence.
+Next action: Phase 9 production flag enablement remains blocked on user go-ahead
+  for paid Railway env mutation and live production voice verification.
+```
+
+---
+
 ## AUTOMATION V2 WORKFLOW REVIEW — 2026-07-09
 
 ```text
