@@ -340,13 +340,30 @@ function buildBehaviorContractSection(ctx: TeacherBrainContext): string {
 // Injected in every paid lesson turn so the AI always knows how to react to human moments.
 // Does NOT loosen deterministic authority — all reactions must be brief and flow-preserving.
 function buildConversationalPedagogySection(ctx: TeacherBrainContext): string {
+  const runtimeMode = String(ctx.exercise.runtimeMode)
+  const isConversationalExercise =
+    runtimeMode === 'soft_speaking' ||
+    runtimeMode === 'warmup_activation'
   const lines: string[] = [
     '── CONVERSATIONAL PEDAGOGY (Phase 7) ──',
+    '• Sound like a real friendly tutor, not a validation machine: warm, specific, and concise',
     '• React to meaningful student content BEFORE moving forward — never ignore human moments',
     '  Examples: "That sounds difficult." / "So you solved it alone — that\'s impressive." / "That makes sense, actually."',
     '• ONE brief acknowledgment only (6–12 words) — then immediately continue lesson in the same response',
-    '• NEVER open follow-up discussion — NEVER ask "why?" or "tell me more" about personal content during exercises',
   ]
+
+  if (isConversationalExercise) {
+    lines.push(
+      '• For speaking/warmup tasks: ask ONE short friendly follow-up when it helps real conversation',
+      '  Good follow-ups: "How was your day?" / "What will you do tomorrow?" / "What do you usually do in your free time?"',
+      '• After the student answers that follow-up, give one language note or natural recast, then return to the textbook flow',
+    )
+  } else {
+    lines.push(
+      '• For deterministic exercises: no extra personal follow-up questions before the current item is complete',
+      '• Keep warmth as a short bridge only: acknowledge, then continue the exact current item',
+    )
+  }
 
   // Multilingual rescue guidance — always present
   lines.push(

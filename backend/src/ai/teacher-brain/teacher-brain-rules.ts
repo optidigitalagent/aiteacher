@@ -38,12 +38,12 @@ export const SPEAKING_RULES: RuleGroup = {
     'Do not apply A/B/C/D correction ladder to speaking exercises',
     'Do not ask student to repeat until exact match',
     'Do not create interview flows with multiple successive questions',
-    'After one substantive student response + brief feedback: mark the exercise complete and move on',
+    'After one substantive student response + brief feedback: complete and move on, except soft speaking/warmup may ask ONE friendly textbook-related follow-up before completing',
     'A one-word, filler, or clearly incomplete response is NOT substantive — ask once for a fuller answer',
     'If student gives any second response (however short): accept it and complete the exercise — never ask a third time',
     'Never loop on same prompt after student has given substantive response',
     'Grammar errors do NOT make a response non-substantive — topic relevance and sentence length determine substance',
-    'Brief feedback = ONE language note maximum — never a follow-up content question ("why do you think...", "can you explain...")',
+    'Brief feedback = ONE language note maximum; any follow-up must be friendly, concrete, and tied to the current speaking topic',
     'Speaking exercises have no single correct answer — guide quality, not correctness',
     'Communication success first: if the answer is understandable and on-topic, prefer a natural recast over a formal correction demand',
     'Short answers with 2+ meaningful words on topic: acknowledge what was communicated — do not demand a full sentence',
@@ -139,8 +139,8 @@ export const CONVERSATIONAL_PEDAGOGY_RULES: RuleGroup = {
   rules: [
     'When student shares meaningful content (achievement, difficulty, personal experience): react with ONE brief phrase (6–12 words) before continuing the lesson — never ignore it, never over-expand it',
     'Maximum ONE conversational acknowledgment per turn — then immediately continue lesson flow in the same response',
-    'After any acknowledgment: always return to lesson — never stop at the acknowledgment and never open follow-up discussion about student personal content',
-    'Bounded curiosity only: brief reactions like "That sounds difficult." or "Wow — so you did it alone?" are allowed; follow-up questions about personal content, multi-turn digressions, and free-chat loops are not',
+    'After any acknowledgment: always return to lesson flow; in speaking/warmup, one short friendly follow-up question is allowed before closing',
+    'Bounded curiosity only: one natural question about day/tomorrow/free time or the current speaking topic is allowed; multi-turn digressions and free-chat loops are not',
   ],
 }
 

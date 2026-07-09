@@ -154,3 +154,80 @@ export function classifyVoiceTranscript(
   // 2+ words — generally usable
   return { usable: true, kind: 'answer', normalizedText: finalText, reason: 'normal' }
 }
+
+export interface ExpectedAnswerNormalization {
+  text: string
+  matchedAnswer: string
+  reason: 'exact_expected_answer' | 'sentence_final_expected_answer' | 'answer_phrase_tail'
+}
+
+function normalizeForExpectedAnswerMatch(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[’']/g, '')
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function splitSpokenFragments(text: string): string[] {
+  return text
+    .split(/[.!?;\n]+/)
+    .map(part => part.trim())
+    .filter(Boolean)
+}
+
+// Deepgram can return "Harvey. Hobby." or "Get fit. Free time." when the
+// student corrects themselves inside one mic turn. For deterministic textbook
+// short-answer items, submit the final expected answer phrase instead of the
+// whole noisy transcript. This never invents answers: the expected answer comes
+// from the backend exercise state.
+export function normalizeTranscriptToExpectedAnswer(
+  raw: string,
+  expectedAnswers: readonly string[],
+): ExpectedAnswerNormalization | null {
+  const candidates = expectedAnswers
+    .map(answer => answer.trim())
+    .filter(Boolean)
+
+  if (candidates.length === 0) return null
+
+  const whole = normalizeForExpectedAnswerMatch(raw)
+  if (!whole) return null
+
+  for (const answer of candidates) {
+    const normalizedAnswer = normalizeForExpectedAnswerMatch(answer)
+    if (!normalizedAnswer) continue
+    if (whole === normalizedAnswer) {
+      return { text: answer, matchedAnswer: answer, reason: 'exact_expected_answer' }
+    }
+  }
+
+  const fragments = splitSpokenFragments(raw)
+  const lastFragment = fragments.at(-1)
+  if (lastFragment) {
+    const normalizedLast = normalizeForExpectedAnswerMatch(lastFragment)
+    for (const answer of candidates) {
+      const normalizedAnswer = normalizeForExpectedAnswerMatch(answer)
+      if (!normalizedAnswer) continue
+      if (normalizedLast === normalizedAnswer) {
+        return { text: answer, matchedAnswer: answer, reason: 'sentence_final_expected_answer' }
+      }
+    }
+  }
+
+  for (const answer of candidates) {
+    const normalizedAnswer = normalizeForExpectedAnswerMatch(answer)
+    if (!normalizedAnswer) continue
+    const answerAtTail = whole.endsWith(` ${normalizedAnswer}`)
+    const answerAfterSpeechVerb = new RegExp(
+      `\\b(?:answer|say|said|saying|think|maybe|it is|its)\\b.*\\b${normalizedAnswer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+      'u',
+    ).test(whole)
+    if (answerAtTail && answerAfterSpeechVerb) {
+      return { text: answer, matchedAnswer: answer, reason: 'answer_phrase_tail' }
+    }
+  }
+
+  return null
+}

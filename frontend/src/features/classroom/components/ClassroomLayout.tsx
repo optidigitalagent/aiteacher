@@ -407,6 +407,24 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         onTranscript('')    // clear transcript state
         setTyping()         // show AI processing indicator (mirrors demo behavior)
         break
+      case 'voice_turn_empty':
+        setAwaitingStudentMessage(false)
+        transcriptIgnoreUntilRef.current = Date.now() + 600
+        lastTranscriptRef.current = ''
+        setAnswer('')
+        onTranscript('')
+        console.log(`[paid-lesson] mic_awaiting_cleared reason=voice_turn_empty:${msg.reason ?? 'unknown'}`)
+        break
+      case 'voice_unavailable':
+        if (awaitingStudentMessageRef.current || msg.reason === 'STT_CONNECT_FAILED') {
+          setAwaitingStudentMessage(false)
+          transcriptIgnoreUntilRef.current = Date.now() + 600
+          lastTranscriptRef.current = ''
+          setAnswer('')
+          onTranscript('')
+          console.log(`[paid-lesson] mic_awaiting_cleared reason=voice_unavailable:${msg.reason ?? 'unknown'}`)
+        }
+        break
       case 'teacher_turn_end':
         if (!isDemoMode) onTeacherTurnEnd()
         break
@@ -818,15 +836,14 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       setAwaitingStudentMessage(true)
       send({ type: 'mic_stop' })
       lastTranscriptRef.current = ''
-      // Safety valve: if no speech was detected the backend never sends student_message,
-      // so awaitingStudentMessageRef would stay true forever and block the next mic click.
-      // Clear after 1500ms if no student_message echo arrives (covers mic_stop_timeout_no_text).
+      // Backend must answer every mic_stop with either student_message or voice_turn_empty.
+      // This timeout is a last-resort recovery for a lost websocket event, not normal flow.
       setTimeout(() => {
         if (awaitingStudentMessageRef.current) {
           setAwaitingStudentMessage(false)
-          console.log('[paid-lesson] mic_awaiting_cleared reason=no_text_timeout')
+          console.log('[paid-lesson] mic_awaiting_cleared reason=backend_finalize_timeout')
         }
-      }, 1500)
+      }, 7000)
     } else {
       // Mic just started — reset any stuck guard from a previous turn where
       // student_message never arrived (e.g. backend error mid-processing).
