@@ -22,6 +22,25 @@
 
 ## Active Decisions
 
+### 2026-07-10 - Private tutor repair adds unscored warm-up and speaking depth gate
+
+**Decision:** Improve Alex's private-tutor feel with backend-owned interstitial
+behavior: readiness after the intro opens exactly one unscored topic warm-up,
+the warm-up reply bridges into Exercise 1, deterministic gap-fill feedback gets
+warmer backend-authored wording, and open speaking requires short
+context-aware follow-up depth before completion.
+**Reason:** The user wants Alex to feel like a live English tutor without
+breaking curriculum authority. Intercepting readiness/warm-up before
+`exerciseEngine.submitAnswer` prevents false wrong answers and avoids scoring
+side effects. Keeping open-speaking depth in `soft-speaking-validator` makes
+the mini-dialogue testable and bounded.
+**Alternatives rejected:** Let the LLM decide whether `Okay` is readiness or an
+exercise answer; change accepted answers/scoring; add personal follow-up turns
+inside every deterministic gap-fill item; complete open speaking after one
+short answer.
+**Reversible:** Yes.
+**Risk:** Medium until deployed and verified with live paid lesson state.
+
 ### 2026-07-10 - Paid lesson intelligence repair stays deterministic and expected-answer bounded
 
 **Decision:** Repair the observed paid lesson teaching defects with bounded

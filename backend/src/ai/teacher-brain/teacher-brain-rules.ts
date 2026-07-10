@@ -37,7 +37,9 @@ export const SPEAKING_RULES: RuleGroup = {
     'Feedback is soft — language quality only, not content correctness',
     'Do not apply A/B/C/D correction ladder to speaking exercises',
     'Do not ask student to repeat until exact match',
-    'Do not create interview flows with multiple successive questions',
+    'Do not create endless interview flows; open speaking may use up to TWO context-aware follow-ups, then must complete',
+    'Open speaking mini-dialogue: ask why, ask for one real example, then recast the answer and ask the student to say the fuller answer once',
+    'Speaking follow-ups must be context-aware: use what the student just said, never random small talk',
     'After one substantive student response + brief feedback: complete and move on, except soft speaking/warmup may ask ONE friendly textbook-related follow-up before completing',
     'A one-word, filler, or clearly incomplete response is NOT substantive — ask once for a fuller answer',
     'If student gives any second response (however short): accept it and complete the exercise — never ask a third time',
@@ -137,6 +139,7 @@ export const CONVERSATIONAL_PEDAGOGY_RULES: RuleGroup = {
   name: 'CONVERSATIONAL_PEDAGOGY_RULES',
   description: 'Rules for bounded conversational engagement and emotional responsiveness to student content',
   rules: [
+    'Speaking/warmup may use up to two short context-aware follow-up questions before closing; never ask random small talk',
     'When student shares meaningful content (achievement, difficulty, personal experience): react with ONE brief phrase (6–12 words) before continuing the lesson — never ignore it, never over-expand it',
     'Maximum ONE conversational acknowledgment per turn — then immediately continue lesson flow in the same response',
     'After any acknowledgment: always return to lesson flow; in speaking/warmup, one short friendly follow-up question is allowed before closing',

@@ -6,6 +6,109 @@
 
 ---
 
+## REVIEW GATE - Paid private tutor behavior repair - 2026-07-10
+
+**Cycle ID:** paid-private-tutor-behavior-repair/2026-07-10
+
+**Phase:** Phase 3 - paid owner production smoke repair follow-up.
+
+**Base/current commit:**
+- Base HEAD: `5208c2c8bec4ed72b6aa1e13d05fe7cfbd4de01f`.
+- Current commit: no new commit created yet.
+
+**Changed files reviewed:**
+- `backend/src/lesson/master-orchestrator.ts`
+- `backend/src/validation/soft-speaking-validator.ts`
+- `backend/src/ws/lesson-ws.ts`
+- `backend/src/ai/prompt-builder.ts`
+- `backend/src/ai/teacher-brain/teacher-brain-rules.ts`
+- `backend/src/ai/teacher-brain/teacher-brain-builder.ts`
+- `backend/src/behavior-runtime/exercise-teaching/exercise-teaching-protocols.ts`
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+- `backend/src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+
+**Role applicability:**
+- backend reviewer: RUN - backend lesson orchestration, Redis warm-up state,
+  soft-speaking validation, and WS speaking response text changed.
+- frontend reviewer: NOT APPLICABLE - no frontend files or client contracts
+  changed.
+- curriculum reviewer: RUN - teaching behavior around gap-fill, warm-up, and
+  open speaking changed.
+- kids safety monitor: RUN - shared Teacher Brain rules and `lesson-ws.ts`
+  text changed; Kids safety surface must remain unchanged.
+- prompt tester: RUN - prompt/rule behavior changed.
+- QA tester: RUN - mandatory after implementation.
+- acceptance auditor: NOT APPLICABLE - no final goal completion is claimed.
+
+**Backend reviewer: PASS**
+- Critical findings: none.
+- Evidence:
+  - No auth, billing, payment, LiqPay, endpoint, DB schema, secret, or external
+    provider behavior changed.
+  - The new warm-up marker is a scoped Redis key with TTL and stores only a
+    lesson id in the key name.
+  - Readiness and warm-up turns are intercepted before `exerciseEngine.submitAnswer`,
+    so they do not affect scoring, attempts, or cursor progression.
+  - Correct/wrong deterministic text remains derived from backend engine/cursor
+    state; the LLM still does not own correctness.
+
+**Curriculum reviewer: PASS**
+- Curriculum files changed: none.
+- Accepted answers, scoring, retry counts, exercise order, and progression are
+  unchanged.
+- Warm-up is unscored and bridges back to Exercise 1 item 1.
+- Closed gap-fill feedback is warmer but still immediately advances to the
+  next backend item without asking a personal follow-up that waits for input.
+- Open speaking depth checks ask for reason/example/recast before progression,
+  but do not change target content or accepted gap-fill answers.
+
+**Kids safety monitor: PASS**
+- No Kids curriculum, safety filters, child profile data, escalation logic, or
+  Kids scoring behavior was intentionally changed.
+- Shared prompt/WS wording changes are adult paid-lesson oriented.
+- Full backend suite, including Kids runtime/voice/safety tests, passed.
+
+**Prompt tester: PASS WITH WARNING**
+- New prompt/runtime contract supports:
+  - readiness after intro is not graded as Exercise 1;
+  - one short personal topic warm-up before Exercise 1;
+  - context-aware speaking follow-up(s);
+  - natural recast and repeat request before completing weak speaking answers.
+- Existing important constraints remain present, including "Never say Wrong or
+  Incorrect" and backend-authoritative deterministic item handling.
+- Warning: older prompt/rule strings still contain some legacy direct-readiness
+  and "one follow-up" wording below the newer explicit overrides. Runtime
+  behavior is pinned by backend tests, but a future prompt cleanup should
+  remove the stale text to reduce model ambiguity.
+
+**QA tester: PASS**
+- Targeted tests:
+  - Initial run failed on readiness/warm-up expectations; implementation was
+    repaired.
+  - Rerun:
+    `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+    -> exit 0; 2 files passed; 153 tests passed.
+- TypeScript:
+  - Initial run found `exState` possibly undefined in warm-up bridge helper;
+    fixed.
+  - Rerun `cd backend; npx tsc --noEmit` -> exit 0.
+- Full backend suite:
+  - `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 67 files
+    passed; 2156 tests passed.
+- Diff check:
+  - `git diff --check` -> exit 0; CRLF warnings only.
+- New failures: none after repair.
+- Regressions: none observed.
+
+**Overall verdict:** PASS WITH WARNING. Local repair is implemented and
+validated, but not yet committed, deployed, or production-smoked. GOAL NOT
+COMPLETE.
+
+**Next action:** Commit and deploy the scoped private-tutor behavior repair,
+then rerun authenticated owner paid lesson section `1.1` production smoke.
+
+---
+
 ## REVIEW GATE - Paid lesson AI intelligence repair - 2026-07-10
 
 **Cycle ID:** paid-lesson-ai-intelligence-repair/2026-07-10
@@ -14,7 +117,7 @@
 
 **Base/current commit:**
 - Base HEAD: `8d67c9bf8f01ea6299dd734b7694612a004f2aab`.
-- Current commit: no new commit created.
+- Current commit: `5208c2c8bec4ed72b6aa1e13d05fe7cfbd4de01f`.
 
 **Changed files reviewed:**
 - `backend/src/voice/voice-turn-stabilizer.ts`
@@ -88,13 +191,23 @@
 - New failures: none after repair.
 - Regressions: none observed.
 
-**Overall verdict:** PASS. Local backend AI/teaching repair is implemented and
-validated. GOAL NOT COMPLETE because the repair is not committed, deployed, or
-production-smoked.
+**Deployment update:** Commit
+`5208c2c8bec4ed72b6aa1e13d05fe7cfbd4de01f`
+(`fix(lesson): polish paid tutor responses`) was pushed to `origin/main` and
+deployed to Railway production after explicit user approval. Backend
+`aiteacher` deployment `11426479-9ed4-49a7-b9b6-7013f96180d3` and frontend
+`aware-alignment` deployment `1ce94080-f4df-404b-88b5-d6817bf81cc4` both
+reached SUCCESS. Backend `/health` returned HTTP 200 with Postgres/Redis ok,
+frontend `/demo/setup` returned HTTP 200, and checked backend/frontend HTTP
+4xx/5xx log windows returned no entries.
 
-**Next action:** Commit/push/deploy after explicit production approval, then
-rerun authenticated owner paid lesson section `1.1` with real microphone and
-verify the reported STT cleanup and teaching-style fixes.
+**Overall verdict:** PASS. Backend AI/teaching repair is implemented,
+validated, committed, deployed, and automated health/log checks passed. GOAL
+NOT COMPLETE because manual authenticated owner production smoke with real
+audio remains pending.
+
+**Next action:** Rerun authenticated owner paid lesson section `1.1` with real
+microphone and verify the reported STT cleanup and teaching-style fixes.
 
 ---
 

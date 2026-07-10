@@ -48,6 +48,58 @@ describe('paid lesson vocabulary item flow', () => {
     vi.clearAllMocks()
   })
 
+  it('treats intro readiness as warm-up, not as the first gap-fill answer', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-warmup'
+
+    await exerciseEngine.init(lessonId, '1.1')
+
+    const ready = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'Okay.',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(ready.feedback).toBeNull()
+    expect(ready.cursorUpdate).toBeNull()
+    expect(ready.deterministicTeacherText).toContain('Before we start')
+    expect(ready.deterministicTeacherText).toContain('free time today')
+
+    let state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
+
+    const warmupAnswer = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'I watched a movie.',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(warmupAnswer.feedback).toBeNull()
+    expect(warmupAnswer.cursorUpdate).toBeNull()
+    expect(warmupAnswer.deterministicTeacherText).toContain('real English practice')
+    expect(warmupAnswer.deterministicTeacherText).toContain('My ___ is photography.')
+
+    state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
+
+    const firstAnswer = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'Hobby',
+      lessonStartedAt: Date.now(),
+    })
+    expect(firstAnswer.feedback?.correct).toBe(true)
+  })
+
   it('keeps exercise authority after repeated wrong answers and advances keen on to the gym item deterministically', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
@@ -130,6 +182,7 @@ describe('paid lesson vocabulary item flow', () => {
 
     const firstCorrect = await submit('Hobby')
     expect(firstCorrect?.deterministicTeacherText).toContain('What do you do in your ___?')
+    expect(firstCorrect?.deterministicTeacherText).toContain('"hobby" fits perfectly')
     expect(firstCorrect?.deterministicTeacherText).not.toMatch(/^(Right|Good|Yes|Exactly)\. (Next|Now|Let's continue):/)
 
     await submit('Spare time')

@@ -36,6 +36,33 @@ import {
   recordMisconception,
 } from './pedagogical-progress-graph.js'
 import { getHintPolicy } from '../behavior-runtime/exercise-teaching/exercise-format-registry.js'
+import redis from '../db/redis.js'
+
+const PAID_OPENING_WARMUP_TTL_SECONDS = 14_400
+
+function paidOpeningWarmupKey(lessonId: string): string {
+  return `paid_opening_warmup:${lessonId}`
+}
+
+async function getPaidOpeningWarmupPending(lessonId: string): Promise<boolean> {
+  try {
+    return await redis.get(paidOpeningWarmupKey(lessonId)) === 'pending'
+  } catch {
+    return false
+  }
+}
+
+async function markPaidOpeningWarmupPending(lessonId: string): Promise<void> {
+  try {
+    await redis.set(paidOpeningWarmupKey(lessonId), 'pending', 'EX', PAID_OPENING_WARMUP_TTL_SECONDS)
+  } catch { /* non-fatal */ }
+}
+
+async function clearPaidOpeningWarmupPending(lessonId: string): Promise<void> {
+  try {
+    await redis.del(paidOpeningWarmupKey(lessonId))
+  } catch { /* non-fatal */ }
+}
 
 // Inline readiness guard — mirrors normalizeIntentText + READINESS_INTENT_RE in lesson-ws.ts.
 // Kept local to avoid a circular import between lesson/ and ws/ layers.
@@ -47,7 +74,7 @@ function isReadinessIntentGuard(text: string): boolean {
     .replace(/\s+/g, ' ')
     .replace(/[.!?…]+$/, '')
     .trim()
-  return /^(i'm\s+ready|i\s+am\s+ready|ready|let's\s+start|start|go|let's\s+go|ok(ay)?,?\s+(let's\s+(go|start)|go|start)|alright,?\s+(let's\s+(go|start)|go|start))$/i.test(normalized)
+  return /^(i'm\s+ready|i\s+am\s+ready|ready|yes|yeah|yep|ok|okay|sure|let's\s+start|start|go|begin|let's\s+go|go\s+ahead|ok(ay)?,?\s+(let's\s+(go|start)|go|start)|alright,?\s+(let's\s+(go|start)|go|start))$/i.test(normalized)
 }
 
 // ── Runtime Error Codes ───────────────────────────────────────────────────────
@@ -490,12 +517,49 @@ function pickVariant(options: readonly string[], seed: number): string {
 
 function buildNextItemPrompt(nextItem: string, seed: number): string {
   const lead = pickVariant([
-    'Try this one:',
-    'Here is the next one:',
-    'Now answer this:',
-    'Let\'s use it here:',
+    'Next one:',
+    'Try this next:',
+    'Now use it here:',
+    'Let\'s put that into this one:',
   ], seed)
   return `${lead} ${nextItem}`
+}
+
+function isOpeningWarmupEligible(state: EngineLessonState): boolean {
+  const exState = state.currentExerciseState
+  if (!exState) return false
+  return exState.status === 'active' &&
+    exState.spec.meta.runtimeMode === 'deterministic_sequential' &&
+    exState.spec.meta.exerciseNumber === 1 &&
+    exState.currentStepIndex === 0 &&
+    exState.completedSteps.length === 0 &&
+    exState.stepAttempts.length === 0
+}
+
+function buildOpeningWarmupQuestion(state: EngineLessonState): string {
+  const exState = state.currentExerciseState
+  const focus = exState?.spec.meta.skillFocus.toLowerCase() ?? ''
+  const firstItem = exState?.spec.steps[exState.currentStepIndex]?.question.toLowerCase() ?? ''
+  if (state.sectionId === '1.1' || /hobby|free|spare|fit|time|photography/.test(`${focus} ${firstItem}`)) {
+    return 'Great. Before we start, tell me one thing: did you have any free time today? What did you do?'
+  }
+  return 'Great. Before we start, tell me one quick thing about today\'s topic from your own life.'
+}
+
+function buildOpeningWarmupReturn(state: EngineLessonState): string {
+  const exState = state.currentExerciseState
+  if (!exState) return "Nice. That is real English practice already. Now let's continue."
+  const spec = exState.spec
+  const item = normalizeSpokenLine(spec.steps[exState.currentStepIndex]?.question ?? '')
+  const instruction = normalizeSpokenLine(spec.instruction)
+  return `Nice. That is real English practice already. Now let's use today's vocabulary. Exercise 1: ${instruction} Number 1: ${item}`
+}
+
+function buildReadinessRefocus(state: EngineLessonState): string {
+  const exState = state.currentExerciseState
+  const item = normalizeSpokenLine(exState?.spec.steps[exState.currentStepIndex]?.question ?? '')
+  if (!item) return "Great, let's continue."
+  return `Great, let's stay with this one: ${item}`
 }
 
 function isSoftSpeakingTransition(result: EngineResult): boolean {
@@ -524,6 +588,32 @@ function buildMeaningHint(correctAnswer: string): string {
   }
 }
 
+function buildCorrectAnswerReaction(answer: string): string {
+  switch (answer.toLowerCase().trim()) {
+    case 'hobby':
+      return 'Good, "hobby" fits perfectly. Photography is a nice example too.'
+    case 'spare time':
+      return 'Yes, "spare time" is exactly right. We use it for time when school or work is finished.'
+    case 'keen on':
+      return 'Exactly, "keen on" means really interested in something.'
+    case 'take up':
+      return 'Nice, "take up" means to start a new activity.'
+    case 'give up':
+      return 'Right, "give up" means to stop doing something.'
+    case 'get fit':
+      return 'Good, "get fit" means become healthier and stronger.'
+    case 'free time':
+      return 'Yes, "free time" is the natural phrase here.'
+    default:
+      return pickVariant([
+        'Nice, that fits the sentence.',
+        'Good, that phrase works here.',
+        'Yes, that is the right idea.',
+        'Exactly, that matches the meaning.',
+      ], answer.length)
+  }
+}
+
 function buildDeterministicTeacherText(
   result: EngineResult,
   etr: EngineTurnResult,
@@ -534,12 +624,7 @@ function buildDeterministicTeacherText(
   const correctAnswer = result.validation?.correctAnswer
     ? normalizeSpokenLine(result.validation.correctAnswer)
     : ''
-  const confirmation = pickVariant([
-    'Nice, that fits.',
-    'Good, that is the phrase.',
-    'Yes, that works here.',
-    'Exactly, that is it.',
-  ], etr.itemIndex)
+  const confirmation = buildCorrectAnswerReaction(etr.studentAnswer)
 
   if (result.action === 'step_correct' || result.action === 'soft_pass') {
     return nextItem
@@ -579,9 +664,9 @@ function buildDeterministicTeacherText(
       return `The word starts with "${correctAnswer.slice(0, 1)}".${itemPrompt}`
     }
     const hintLead = pickVariant([
-      'Good try.',
-      'Close.',
-      'Nearly.',
+      'Good try - I see the idea.',
+      'Close - you are near it.',
+      'Nearly - the meaning is close.',
       'You are on the right track.',
     ], etr.retryCount)
     return `${hintLead} ${buildMeaningHint(correctAnswer)}${itemPrompt}`
@@ -654,6 +739,35 @@ export class MasterLessonOrchestrator {
         teacherInput:   null,
         lessonComplete: false,
         error: { code: 'STALE_EXERCISE_ANSWER', message: 'Exercise already completed.' },
+      }
+    }
+
+    if (await getPaidOpeningWarmupPending(lessonId)) {
+      await clearPaidOpeningWarmupPending(lessonId)
+      console.log(`[master-orch] paid_opening_warmup_answered lessonId=${lessonId}`)
+      return {
+        cursorUpdate:   null,
+        feedback:       null,
+        teacherInput:   null,
+        deterministicTeacherText: buildOpeningWarmupReturn(engineState),
+        lessonComplete: false,
+      }
+    }
+
+    if (isReadinessIntentGuard(studentAnswer)) {
+      const teacherText = isOpeningWarmupEligible(engineState)
+        ? buildOpeningWarmupQuestion(engineState)
+        : buildReadinessRefocus(engineState)
+      if (isOpeningWarmupEligible(engineState)) {
+        await markPaidOpeningWarmupPending(lessonId)
+      }
+      console.log(`[master-orch] readiness_not_submitted_to_engine lessonId=${lessonId}`)
+      return {
+        cursorUpdate:   null,
+        feedback:       null,
+        teacherInput:   null,
+        deterministicTeacherText: teacherText,
+        lessonComplete: false,
       }
     }
 
@@ -954,11 +1068,6 @@ export class MasterLessonOrchestrator {
       }
       // Readiness guard: "I'm ready." / "ready!" must never reach exerciseEngine.submitAnswer().
       // Inline normalization mirrors normalizeIntentText() in lesson-ws.ts.
-      if (isReadinessIntentGuard(input.studentAnswer)) {
-        console.log(`[master-orch] readiness_intent_detected raw="${input.studentAnswer.slice(0, 80)}" lessonId=${lessonId}`)
-        console.log(`[master-orch] readiness_not_submitted_to_engine lessonId=${lessonId}`)
-        return null  // caller (lesson-ws) handles readiness presentation
-      }
       console.log(`[master-orch] voice_answer_handled lessonId=${lessonId} answer="${input.studentAnswer.slice(0, 40)}"`)
       return this.handleStudentAnswer(input)
     } catch (err) {

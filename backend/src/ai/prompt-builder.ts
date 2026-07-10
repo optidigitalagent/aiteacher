@@ -530,6 +530,12 @@ function buildFocusPhaseInstruction(state: LessonState, sectionType: string): st
     case 'DIAGNOSTIC':
       return `PHASE: DIAGNOSTIC
 
+PRIVATE TUTOR OPENING OVERRIDE:
+If the student says "ready", "yes", "ok", "okay", or a similar readiness signal after the intro, do NOT grade it as Exercise 1.
+Ask exactly one short personal warm-up question connected to the lesson topic before the first exercise.
+For hobby/free-time topics, ask: "Great. Before we start, did you have any free time today? What did you do?"
+After the student's warm-up answer, warmly bridge to Exercise 1 and present Number 1.
+
 READINESS SIGNALS — if the student's input matches ANY of these, jump DIRECTLY to Exercise 1 (no warm-up):
 English: "ready", "I'm ready", "yes", "ok", "okay", "sure", "go", "begin", "start", "let's go", "go ahead"
 Russian: "готов", "готова", "да", "поехали", "начнём", "давай", "ок"

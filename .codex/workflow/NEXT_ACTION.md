@@ -8,51 +8,49 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Commit and deploy paid lesson AI intelligence repair after production approval
-**Type:** DEPLOY-AFTER-APPROVAL
+**Task:** Commit, push, and deploy paid private-tutor behavior repair
+**Type:** DEPLOY
 **Phase:** Phase 3 - Deploy and production owner smoke
-**Agent:** deploy-railway + goal-executor
+**Agent:** goal-executor + deploy-railway
 
 **Why this is next:**
-  User reran paid lesson section `1.1` after the previous deployed repair and
-  found additional AI/teaching behavior defects, not frontend or mic mechanics:
-  `I'm ready. Hold Hobby.` and `Get it.` were treated as wrong, deterministic
-  correct feedback sounded validator-like, wrong hints were too dry, Exercise 1
-  to Exercise 2 was abrupt, and the speaking prompt was too instruction-heavy.
-  The scoped backend intelligence repair is implemented and locally validated,
-  but it is not committed, deployed, or production-smoked.
+  User reran paid lesson section `1.1` and found additional Teacher Brain
+  behavior defects: `Okay` after the intro was graded as a wrong Exercise 1
+  answer, there was no short personal warm-up, closed gap-fill feedback still
+  sounded mechanical, clarification wording was dry, and open speaking
+  completed after one short answer. The scoped backend repair is implemented,
+  locally validated, and review-gated. It must now be committed, pushed, and
+  deployed before production smoke can verify the behavior.
 
 **Completed evidence:**
-  - `backend/src/voice/voice-turn-stabilizer.ts` now normalizes short
-    readiness/filler tails to the current backend expected answer and maps
-    `get it` -> `get fit` only when the expected answer is `get fit`.
-  - `backend/src/lesson/master-orchestrator.ts` now produces warmer
-    backend-authored deterministic confirmations, concrete wrong-turn hints,
-    and a warm bridge into soft-speaking after deterministic completion.
-  - `backend/src/lesson/auto-section-manifest-builder.ts` now frames vocabulary
-    Exercise 2 as a tutor-like question plus answer starter.
-  - `backend/src/ai/teacher-brain/teacher-brain-rules.ts` and
-    `backend/src/ai/teacher-brain/teacher-brain-builder.ts` clarify that warm
-    bridging belongs in speaking/warmup, not personal follow-up inside
-    deterministic gap-fill.
+  - `backend/src/lesson/master-orchestrator.ts` intercepts intro readiness and
+    one pending warm-up turn before Exercise 1 submission, then bridges back to
+    the backend-authoritative first item.
+  - `backend/src/validation/soft-speaking-validator.ts` adds bounded speaking
+    depth checks: reason/example follow-up, natural recast, and repeat request
+    before progression.
+  - Teacher Brain prompt/rule/protocol files now describe private-tutor
+    warm-up and context-aware speaking mini-dialogue behavior.
+  - `backend/src/ws/lesson-ws.ts` uses more teacher-like soft-speaking retry
+    and completion wording.
   - Targeted tests:
-    `cd backend; npx vitest run src/voice/__tests__/voice-turn-stabilizer.test.ts src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
-    -> exit 0; 3 files passed; 161 tests passed.
+    `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+    -> exit 0; 2 files passed; 153 tests passed.
   - Backend TypeScript:
     `cd backend; npx tsc --noEmit` -> exit 0.
   - Full backend suite:
     `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 67 files
-    passed; 2152 tests passed.
+    passed; 2156 tests passed.
   - `git diff --check` -> exit 0; CRLF warnings only.
-  - Review gate -> PASS for backend, curriculum, kids safety, and QA; frontend
-    and acceptance auditor not applicable.
+  - Review gate -> PASS WITH WARNING: backend, curriculum, kids safety, prompt,
+    and QA ran; frontend not applicable; acceptance auditor not applicable.
 
 **Exact next step:**
-  If production deployment is approved, commit only the scoped backend product,
-  test, and workflow files for this repair; push to `origin/main`; deploy to
-  Railway; verify backend `/health`, frontend reachability if monorepo deploy
-  also fires, and recent Railway logs; then rerun authenticated owner paid
-  lesson section `1.1` with real microphone.
+  Stage only the scoped product/test files and workflow evidence, confirm no
+  `.env` or unrelated files are staged, commit, push to `origin/main`, wait for
+  Railway backend/frontend deployment success, verify `/health`, frontend
+  `/demo/setup`, startup logs, and recent critical log windows.
 
 **Current stop condition:**
-  Production deploy approval/live owner smoke is pending.
+  Manual authenticated owner paid lesson smoke with real microphone remains
+  required after deployment.

@@ -24,6 +24,8 @@ export type SoftSpeakingIssueType =
   | 'missing_object'
   | 'missing_answer'
   | 'missing_required_slot'
+  | 'needs_example'
+  | 'needs_recast_repeat'
   | 'broken_grammar'
   | 'pronunciation_or_stt'
   | 'off_task'
@@ -171,6 +173,10 @@ function hasSubstantiveContent(words: string[]): boolean {
   return words.some(w => w.length > 1 && !STOPWORDS.has(w) && !FILLER_PHRASES.has(w) && !NON_NAME_WORDS.has(w))
 }
 
+function hasReasonRequest(instruction: string): boolean {
+  return /\b(reasons?|because|why|opinion|think)\b/.test(normalizeText(instruction))
+}
+
 // Phase 6B.3: communication success heuristic.
 // Returns true when the answer is understandable and on-topic (≥2 semantic words + substantive).
 // Used to gate the communicative success fast-path — does NOT bypass nonsense/filler rejection.
@@ -302,6 +308,9 @@ export function inferSoftSpeakingTask(instruction: string): SoftSpeakingTaskSpec
     slots.push('subject')
   } else if (hasWhy) {
     // "why" without "who" — reason still required
+    taskKind = 'reason_required'
+    slots.push('reason')
+  } else if (hasReasonRequest(instruction)) {
     taskKind = 'reason_required'
     slots.push('reason')
   }
@@ -475,6 +484,21 @@ function chooseRepairPrefix(attemptCount: number): string {
   return REPAIR_PREFIXES[Math.min(attemptCount, REPAIR_PREFIXES.length - 1)]!
 }
 
+function buildSpeakingDepthPrompt(instruction: string, normalized: string, attemptCount: number): string {
+  const topicText = `${normalizeText(instruction)} ${normalized}`
+  if (attemptCount <= 0) {
+    if (/free time|school time|relax/.test(topicText)) {
+      return 'Good start. Why do you think relaxing helps you study better? Can you give one real example from your life?'
+    }
+    return 'Good start. Why do you think that? Give me one real example.'
+  }
+
+  if (/free time|school time|relax/.test(topicText)) {
+    return 'Nice idea. A more natural sentence is: "Free time is important because it helps me relax and study better afterwards." Now try to say the full answer again.'
+  }
+  return 'Nice idea. Make it more natural: give your opinion, one reason, and one example in one answer. Now try the full answer again.'
+}
+
 export function buildPedagogicalRetry(
   instruction: string,
   missingSlots: AnswerSlot[],
@@ -498,6 +522,9 @@ export function buildPedagogicalRetry(
       }
       if (/like|enjoy|prefer|favourite|favorite/.test(norm)) {
         return `${prefix} Now say why you like it.`
+      }
+      if (/free time|school time|reason|opinion|think/.test(norm)) {
+        return `${prefix} Why do you think that? Give me one real example.`
       }
       return `${prefix} Now add why.`
     }
@@ -731,6 +758,17 @@ function validateWithSlots(
 
   // ── All required slots present ──────────────────────────────────────────────
   // Only reach here when missingSlots.length === 0.
+
+  if (taskSpec.taskKind === 'reason_required' && attemptCount < 2 && semWords >= 2) {
+    return {
+      allowProgression:      false,
+      needsRetry:            true,
+      isPartiallyAcceptable: true,
+      issueType:             attemptCount <= 0 ? 'needs_example' : 'needs_recast_repeat',
+      repairPrompt:          buildSpeakingDepthPrompt(instruction, normalized, attemptCount),
+      confidence:            0.8,
+    }
+  }
 
   // Max attempts soft-accept: prevents infinite retry loops after 3 genuine tries.
   // Runs ONLY after required slots are confirmed present.

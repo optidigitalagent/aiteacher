@@ -25,26 +25,57 @@
 
 ## Open Risks
 
+### RISK-030 - Paid private tutor behavior repair requires deploy and live retest
+
+**Status:** MITIGATED
+**Severity:** P1
+**Area:** backend / prompt / paid lesson runtime
+**Description:** Local repair addresses the latest paid section `1.1`
+teaching defects: readiness after intro is no longer graded as a wrong
+gap-fill answer, one topic warm-up is added before Exercise 1, deterministic
+gap-fill feedback is warmer, clarification/speaking wording is more teacher-like,
+and open speaking requires a short context-aware mini-dialogue before
+completion. The remaining risk is unverified production behavior with the live
+paid lesson state, Redis, LLM prompt context, browser audio, STT, and TTS.
+**Trigger:** Owner paid lesson section `1.1`, especially `Okay` / `ready` after
+the intro, the first warm-up reply, deterministic vocabulary feedback, and the
+final open speaking prompt.
+**Mitigation:** Targeted tests passed (2 files / 153 tests), backend
+TypeScript passed, full backend suite passed (67 files / 2156 tests), and
+`git diff --check` passed with CRLF warnings only. Review gate passed with a
+non-blocking prompt cleanup warning.
+**Resolution:** Deploy the repair and pass authenticated owner paid lesson
+smoke verifying warm-up/readiness, teacher-like gap-fill feedback,
+clarification wording, and 1-2 context-aware speaking follow-ups with
+recast/repeat before lesson completion.
+**Opened:** 2026-07-10
+**Updated:** 2026-07-10
+
+---
+
 ### RISK-029 - Paid AI intelligence repair requires deploy and live retest
 
 **Status:** MITIGATED
 **Severity:** P1
 **Area:** voice / backend / prompt / paid lesson runtime
-**Description:** Local repair addresses the latest paid section `1.1` teaching
-defects: bounded STT cleanup for `I'm ready. Hold Hobby.` and `Get it.` ->
-`get fit`, warmer deterministic confirmations, more concrete wrong-turn hints,
-a warm Exercise 1 -> Exercise 2 bridge, and a simpler speaking prompt frame.
-The remaining risk is unverified production behavior with real browser audio,
-Railway runtime, Deepgram, TTS, and the live lesson state.
+**Description:** Deployed repair addresses the latest paid section `1.1`
+teaching defects: bounded STT cleanup for `I'm ready. Hold Hobby.` and `Get
+it.` -> `get fit`, warmer deterministic confirmations, more concrete wrong-turn
+hints, a warm Exercise 1 -> Exercise 2 bridge, and a simpler speaking prompt
+frame. The remaining risk is unverified production behavior with real browser
+audio, Deepgram, TTS, and the live lesson state.
 **Trigger:** Owner paid lesson section `1.1`, especially noisy readiness plus
 answer transcripts, `get fit` phonetic STT, wrong gap-fill retries, and the
 transition from vocabulary Exercise 1 into soft-speaking Exercise 2.
 **Mitigation:** Targeted tests passed (3 files / 161 tests), backend TypeScript
 passed, full backend suite passed (67 files / 2152 tests), and `git diff
---check` passed with CRLF warnings only.
-**Resolution:** Commit/push/deploy the repair after explicit production
-approval, then pass authenticated owner paid lesson smoke verifying the reported
-STT cleanup and teaching-style fixes in production.
+--check` passed with CRLF warnings only. Commit
+`5208c2c8bec4ed72b6aa1e13d05fe7cfbd4de01f` deployed to Railway backend
+`11426479-9ed4-49a7-b9b6-7013f96180d3` and frontend
+`1ce94080-f4df-404b-88b5-d6817bf81cc4`; automated health/log checks passed so
+far, including the 10-minute stability recheck.
+**Resolution:** Pass authenticated owner paid lesson smoke verifying the
+reported STT cleanup and teaching-style fixes in production.
 **Opened:** 2026-07-10
 **Updated:** 2026-07-10
 

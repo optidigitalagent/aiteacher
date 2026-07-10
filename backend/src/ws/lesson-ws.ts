@@ -2768,7 +2768,7 @@ function buildSoftSpeakingRetryContext(mv: ManifestVoiceResult, studentText: str
     `MANDATORY: Do NOT say "Exercise complete." Do NOT introduce Exercise ${mv.exerciseNum + 1} or any other exercise.`,
     `Your response MUST deliver this repair prompt (phrase naturally, keep short — one or two sentences):`,
     repair,
-    `End with a clear retry instruction.`,
+    `End with a clear invitation for the student to answer or improve the answer.`,
   ].filter(Boolean)
 
   return lines.join('\n')
@@ -3174,7 +3174,7 @@ async function processInput(
               }
 
               if (engineResult?.action === 'lesson_complete') {
-                const teacherText = `Good answer. Exercise ${manifestValidation.exerciseNum} is complete. Great work today - lesson complete.`
+                const teacherText = `Nice work. You built a fuller answer, and that is real speaking practice. Lesson complete.`
                 send(ws, { type: 'ai_text', phase: 'WRAP_UP', text: teacherText })
                 if (meta.userId) {
                   recordTeacherMessage({

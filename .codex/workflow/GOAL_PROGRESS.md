@@ -1,5 +1,88 @@
 # GOAL_PROGRESS.md
 
+## PAID PRIVATE TUTOR BEHAVIOR REPAIR - 2026-07-10
+
+**Trigger:** User completed another paid lesson smoke and reported that Alex no
+longer breaks the lesson, but still feels like an exercise validator instead
+of a live private English tutor. Concrete defects: `Okay` after the intro was
+graded as a wrong Exercise 1 answer; there was no short personal warm-up before
+gap-fill; deterministic feedback was still mechanical; clarification wording
+was dry; and the open speaking task completed after one short answer instead
+of running a short context-aware mini-dialogue.
+
+**Implementation:**
+- `backend/src/lesson/master-orchestrator.ts`
+  - Added a backend-authoritative opening readiness/warm-up guard for paid
+    section `1.1`: `Okay` / `ready` / `yes` style replies before Exercise 1
+    are not submitted to the exercise engine.
+  - Added a short Redis-backed pending warm-up marker
+    `paid_opening_warmup:{lessonId}` with TTL, so the next student turn is
+    treated as warm-up practice and then bridged into Exercise 1 item 1.
+  - Kept closed gap-fill progression, scoring, accepted answers, and cursor
+    owned by the exercise engine.
+  - Reworked deterministic correct/wrong feedback so it sounds like teacher
+    feedback while still using backend cursor state.
+- `backend/src/validation/soft-speaking-validator.ts`
+  - Added open-speaking depth checks for reason/opinion prompts.
+  - Short complete answers now trigger a context-aware follow-up asking for a
+    reason/example; the next turn can trigger a natural recast and repeat
+    request; only the fuller follow-up turn can progress.
+- `backend/src/ws/lesson-ws.ts`
+  - Made soft-speaking retry context sound like a teacher invitation instead
+    of a system retry.
+  - Updated lesson-complete text after speaking to acknowledge a fuller answer.
+- `backend/src/ai/prompt-builder.ts`,
+  `backend/src/ai/teacher-brain/teacher-brain-rules.ts`,
+  `backend/src/ai/teacher-brain/teacher-brain-builder.ts`, and
+  `backend/src/behavior-runtime/exercise-teaching/exercise-teaching-protocols.ts`
+  - Added private-tutor opening/warm-up rules, context-aware speaking
+    mini-dialogue rules, and recast/repeat guidance.
+- Tests updated:
+  - `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+  - `backend/src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+
+**Validation evidence:**
+- Initial targeted run found readiness phrase matching and topic-warmup gaps;
+  both were fixed.
+- Initial TypeScript run found `exState` possibly undefined in the warm-up
+  bridge helper; fixed with a guard.
+- Targeted tests:
+  `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 2 files passed; 153 tests passed.
+- Backend TypeScript:
+  `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- Full backend suite:
+  `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 67 files passed; 2156 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+
+**Review gate:**
+- backend reviewer: RUN -> PASS; no auth, billing, payment, DB schema,
+  endpoint, secret, or external provider behavior changed; new Redis marker is
+  scoped by lesson id and TTL.
+- frontend reviewer: NOT APPLICABLE - no frontend files or client contracts
+  changed.
+- curriculum reviewer: RUN -> PASS; accepted answers, scoring, exercise order,
+  and deterministic cursor authority are unchanged; warm-up is unscored.
+- kids safety monitor: RUN -> PASS; shared prompt/WS files changed but no Kids
+  curriculum, safety filter, profile data, or scoring behavior was loosened.
+- prompt tester: RUN -> PASS WITH WARNING; new runtime tests pin the desired
+  behavior, but some older prompt/rule strings still contain legacy
+  "one follow-up" or direct-readiness wording below the newer overrides.
+- QA tester: RUN -> PASS; targeted tests, TypeScript, full backend suite, and
+  diff check passed.
+- acceptance auditor: NOT APPLICABLE - this repair is not a final active-goal
+  completion claim.
+
+**Commit/deploy state:**
+- Commit: no commit created yet for this repair.
+- Deployment: not deployed yet.
+- Production verification: unverified for this repair.
+
+**Next action:** Commit, push, and deploy the scoped private-tutor behavior
+repair to Railway, then rerun authenticated owner paid lesson section `1.1`
+production smoke.
+
 ## PAID LESSON AI INTELLIGENCE REPAIR - 2026-07-10
 
 **Trigger:** User completed a paid lesson section `1.1` smoke and reported
@@ -66,16 +149,31 @@ too instruction-heavy.
   completion claim.
 
 **Commit/deploy state:**
-- Commit: no commit created.
-- Deployment: not deployed; production deploy would be a separate production
-  mutation and needs explicit approval/current deploy action.
-- Production verification: not run for this local repair.
+- Commit `5208c2c8bec4ed72b6aa1e13d05fe7cfbd4de01f`
+  (`fix(lesson): polish paid tutor responses`) created from the scoped backend
+  product/test files plus workflow evidence and pushed to `origin/main`.
+- Railway backend `aiteacher` deployment
+  `11426479-9ed4-49a7-b9b6-7013f96180d3` -> SUCCESS at commit `5208c2c`.
+- Railway frontend `aware-alignment` deployment
+  `1ce94080-f4df-404b-88b5-d6817bf81cc4` -> SUCCESS at commit `5208c2c`
+  (monorepo auto-deploy; no frontend product files changed).
+- Backend `/health` -> HTTP 200 with `status=ok`, `checks.postgres=ok`,
+  `checks.redis=ok`, uptime 45s at `2026-07-10T06:32:58.949Z`.
+- Frontend `/demo/setup` -> HTTP 200 and served
+  `/assets/index-Cq-fCicY.js`.
+- Backend startup logs show migrations applied, `[server] listening on
+  0.0.0.0:8080`, PostgreSQL ready, Redis ready, and WS attached.
+- Backend and frontend recent HTTP 4xx/5xx log checks returned no entries.
+- Backend critical error-pattern sweep returned no entries in tail 300.
+- 10-minute stability recheck at `2026-07-10T06:41:50Z` passed: backend
+  `/health` HTTP 200 with uptime 577s and postgres/redis ok; frontend
+  `/demo/setup` HTTP 200; final backend/frontend HTTP 4xx/5xx checks returned
+  no entries; final backend/frontend error-pattern sweeps returned no entries.
 
-**Next action:** After explicit production approval, commit/push/deploy this
-paid lesson AI intelligence repair to Railway, then rerun authenticated owner
-paid lesson section `1.1` with real microphone and verify the two STT cleanup
-cases, warmer deterministic feedback, concrete wrong hints, and friendly
-Exercise 1 -> Exercise 2 speaking transition.
+**Next action:** Rerun authenticated owner paid lesson section `1.1` with real
+microphone and verify the two STT cleanup cases, warmer deterministic feedback,
+concrete wrong hints, and friendly Exercise 1 -> Exercise 2 speaking
+transition.
 
 ## PAID VOICE SMOKE DEFECT REPAIR - 2026-07-10
 

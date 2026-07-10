@@ -524,17 +524,19 @@ const SOFT_SPEAKING_PROTOCOL: ExerciseTeachingProtocol = {
   answerMode: 'open_ended',
   acceptedAnswerShape: 'Any substantive spoken response.',
   shortAnswerPolicy:
-    'One-word response: ask once for more. Any second response: accept and move on.',
+    'One-word response: ask for more; after a follow-up answer, recast and ask for one fuller repeat.',
+  discussionDepthRule:
+    'Mini-dialogue: ask why, ask for one real example, then recast and ask for one fuller repeat before completing.',
   studentQuestionPolicy: 'Brief answer. Return to the prompt.',
   firstRetry: 'Offer a starter or context prompt.',
-  secondRetry: 'Accept whatever the student says. Note one improvement.',
+  secondRetry: 'Give a natural recast and ask the student to say the fuller answer once.',
   finalReveal: 'Accept. Note one language point. Move on.',
-  completionRule: 'Complete after any substantive response or after one follow-up.',
+  completionRule: 'Complete after a substantive answer plus up to two context-aware follow-ups.',
   engagementChallengeRule: 'If student hesitates: "No right answer here — just go for it."',
   forbiddenBehavior: [
     'Do NOT apply correction ladder to speaking exercises.',
     'Do NOT say wrong/incorrect for speaking.',
-    'Do NOT ask more than one follow-up.',
+    'Do NOT ask more than two follow-ups.',
   ],
   teacherTone: 'encouraging',
 }

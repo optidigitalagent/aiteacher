@@ -741,6 +741,49 @@ describe('Phase 6B.3 — Soft-Speaking Threshold Calibration', () => {
     expect(result.needsRetry).toBe(true)
   })
 
+  it('reason-required speaking does not complete after the first short opinion', () => {
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-free-time-1',
+      exerciseNumber:    2,
+      exerciseType:      'discussion',
+      instruction:       'Do you think free time is more important than school time? Give two reasons.',
+      itemText:          'Do you think free time is more important than school time? Give two reasons.',
+      studentTranscript: 'I think free time is more important because I relax.',
+      attemptCount:      0,
+    })
+    expect(result.allowProgression).toBe(false)
+    expect(result.issueType).toBe('needs_example')
+    expect(result.repairPrompt).toContain('real example')
+  })
+
+  it('reason-required speaking asks for a natural recast before final completion', () => {
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-free-time-2',
+      exerciseNumber:    2,
+      exerciseType:      'discussion',
+      instruction:       'Do you think free time is more important than school time? Give two reasons.',
+      itemText:          'Do you think free time is more important than school time? Give two reasons.',
+      studentTranscript: 'Because I relax and I can study better after football.',
+      attemptCount:      1,
+    })
+    expect(result.allowProgression).toBe(false)
+    expect(result.issueType).toBe('needs_recast_repeat')
+    expect(result.repairPrompt).toContain('more natural sentence')
+  })
+
+  it('reason-required speaking completes after the improved third speaking turn', () => {
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-free-time-3',
+      exerciseNumber:    2,
+      exerciseType:      'discussion',
+      instruction:       'Do you think free time is more important than school time? Give two reasons.',
+      itemText:          'Do you think free time is more important than school time? Give two reasons.',
+      studentTranscript: 'Free time is important because it helps me relax and study better afterwards.',
+      attemptCount:      2,
+    })
+    expect(result.allowProgression).toBe(true)
+  })
+
   // ── Validator: no free-chat regression ────────────────────────────────────
 
   it('blank answer still rejected — no free-chat regression', () => {
@@ -847,9 +890,10 @@ describe('Phase 6B.3 — Soft-Speaking Threshold Calibration', () => {
 describe('Phase 7 — Conversational Pedagogy Layer', () => {
   // ── a) CONVERSATIONAL_PEDAGOGY_RULES rule group ───────────────────────────
 
-  it('CONVERSATIONAL_PEDAGOGY_RULES group exists and has exactly 4 rules', () => {
+  it('CONVERSATIONAL_PEDAGOGY_RULES group exists and keeps a bounded rule set', () => {
     expect(CONVERSATIONAL_PEDAGOGY_RULES).toBeDefined()
-    expect(CONVERSATIONAL_PEDAGOGY_RULES.rules.length).toBe(4)
+    expect(CONVERSATIONAL_PEDAGOGY_RULES.rules.length).toBeGreaterThanOrEqual(4)
+    expect(CONVERSATIONAL_PEDAGOGY_RULES.rules.length).toBeLessThanOrEqual(5)
   })
 
   it('CONVERSATIONAL_PEDAGOGY_RULES rule 1: react to meaningful content before moving forward', () => {
@@ -883,16 +927,16 @@ describe('Phase 7 — Conversational Pedagogy Layer', () => {
     expect(hasBoundedRule).toBe(true)
   })
 
-  it('CONVERSATIONAL_PEDAGOGY_RULES allows exactly one friendly follow-up in speaking modes', () => {
+  it('CONVERSATIONAL_PEDAGOGY_RULES allows bounded context-aware follow-ups in speaking modes', () => {
     const joinedRules = CONVERSATIONAL_PEDAGOGY_RULES.rules.join(' ').toLowerCase()
-    expect(joinedRules).toContain('one short friendly follow-up')
-    expect(joinedRules).toContain('multi-turn digressions')
+    expect(joinedRules).toContain('up to two short context-aware follow-up')
+    expect(joinedRules).toContain('random small talk')
   })
 
-  it('SPEAKING_RULES permits one textbook-related follow-up before completion', () => {
+  it('SPEAKING_RULES requires mini-dialogue steps before completion', () => {
     const joinedRules = SPEAKING_RULES.rules.join(' ').toLowerCase()
-    expect(joinedRules).toContain('one friendly textbook-related follow-up')
-    expect(joinedRules).toContain('before completing')
+    expect(joinedRules).toContain('open speaking mini-dialogue')
+    expect(joinedRules).toContain('say the fuller answer once')
   })
 
   it('CONVERSATIONAL_PEDAGOGY_RULES forbids invented current news hooks', () => {
