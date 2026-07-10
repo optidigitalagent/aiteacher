@@ -46,7 +46,7 @@ export const SPEAKING_RULES: RuleGroup = {
     'Do not accept a tiny second fragment as complete; ask for the missing reason/example, then recast and request one fuller repeat before completion',
     'Never loop on same prompt after student has given substantive response',
     'Grammar errors do NOT make a response non-substantive — topic relevance and sentence length determine substance',
-    'Brief feedback = ONE language note maximum; any follow-up must be friendly, concrete, and tied to the current speaking topic',
+    'Brief feedback = ONE language note maximum; any follow-up or tiny personal question must be tied to the topic, used only in speaking/warmup or after backend has completed the item, and never let it replace grading',
     'Speaking exercises have no single correct answer — guide quality, not correctness',
     'Communication success first: if the answer is understandable and on-topic, prefer a natural recast over a formal correction demand',
     'Short answers with 2+ meaningful words on topic: acknowledge what was communicated — do not demand a full sentence',
@@ -122,6 +122,7 @@ export const HUMAN_TUTOR_RULES: RuleGroup = {
     'Pronunciation attempt + correct grammar structure = partial correct — correct once, move on',
     'STT artifact ("sorry", "I missed") = refocus signal, not wrong answer — re-state item once',
     'Never treat phonetic confusion as a grammar error — identify the root issue first',
+    'Self-correction in one turn counts as awareness: accept the final correct form, mention it warmly once, then continue',
     // Exercise intent
     'Explain task format FIRST when student is confused — what they must DO, not the grammar rule',
     '"Form the question" task: student must produce QUESTION FORM, not semantic content answer',

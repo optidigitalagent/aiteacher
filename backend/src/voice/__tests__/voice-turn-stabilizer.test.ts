@@ -79,6 +79,17 @@ describe('paid lesson expected-answer transcript cleanup', () => {
   it('does not accept repeated phrase cleanup for unrelated current answers', () => {
     expect(normalizeTranscriptToExpectedAnswer('keen on keen on', ['spare time'])).toBeNull()
   })
+
+  it('uses the current expected answer when the student self-corrects without punctuation', () => {
+    const result = normalizeTranscriptToExpectedAnswer('Like keen on', ['keen on'])
+    expect(result?.text).toBe('keen on')
+    expect(result?.reason).toBe('self_corrected_to_expected_answer_tail')
+  })
+
+  it('does not treat a negated tail as self-correction', () => {
+    expect(normalizeTranscriptToExpectedAnswer('not keen on', ['keen on'])).toBeNull()
+    expect(normalizeTranscriptToExpectedAnswer('I am not keen on', ['keen on'])).toBeNull()
+  })
 })
 
 describe('voice transcript classifier still accepts short textbook answers', () => {

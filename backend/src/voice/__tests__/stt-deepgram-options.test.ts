@@ -33,8 +33,8 @@ describe('DEEPGRAM_LIVE_OPTIONS — Live API parameter contract', () => {
     expect(DEEPGRAM_LIVE_OPTIONS.utterance_end_ms).toBe(1500)
   })
 
-  it('model is nova-2', () => {
-    expect(DEEPGRAM_LIVE_OPTIONS.model).toBe('nova-2')
+  it('adult model is multilingual-capable by default', () => {
+    expect(DEEPGRAM_LIVE_OPTIONS.model).toBe('nova-3')
   })
 
   // ── Fix verification — detect_language must be absent ─────────────────────
@@ -47,8 +47,8 @@ describe('DEEPGRAM_LIVE_OPTIONS — Live API parameter contract', () => {
 
   // ── Explicit language replaces detect_language ────────────────────────────
 
-  it('has explicit language=en (replaces detect_language)', () => {
-    expect(DEEPGRAM_LIVE_OPTIONS.language).toBe('en')
+  it('has explicit language=multi for adult RU/UA/EN turns', () => {
+    expect(DEEPGRAM_LIVE_OPTIONS.language).toBe('multi')
   })
 
   // ── All required keys present ─────────────────────────────────────────────

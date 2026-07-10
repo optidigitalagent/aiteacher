@@ -165,6 +165,7 @@ export interface ExpectedAnswerNormalization {
     | 'sentence_final_expected_answer'
     | 'sentence_any_expected_answer'
     | 'repeated_expected_answer_phrase'
+    | 'self_corrected_to_expected_answer_tail'
     | 'answer_phrase_tail'
 }
 
@@ -223,6 +224,20 @@ function isRepeatedExpectedPhrase(whole: string, normalizedAnswer: string): bool
   const repeatCount = wholeWords.length / answerWords.length
   if (repeatCount < 2 || repeatCount > 3) return false
   return wholeWords.every((word, index) => word === answerWords[index % answerWords.length])
+}
+
+function isShortSelfCorrectionTail(whole: string, normalizedAnswer: string): boolean {
+  if (!whole.endsWith(` ${normalizedAnswer}`)) return false
+  const prefix = whole.slice(0, whole.length - normalizedAnswer.length).trim()
+  const prefixWords = prefix.split(/\s+/).filter(Boolean)
+  if (prefixWords.length === 0 || prefixWords.length > 5) return false
+  if (prefixWords.length === 1 && /^(?:my|your|his|her|our|their|the|a|an)$/u.test(prefixWords[0] ?? '')) {
+    return false
+  }
+  if (/\b(?:no|not|never|dont|didnt|doesnt|wont|cant|cannot)\b/u.test(prefix)) {
+    return false
+  }
+  return true
 }
 
 // Deepgram can return "Harvey. Hobby." or "Get fit. Free time." when the
@@ -286,6 +301,14 @@ export function normalizeTranscriptToExpectedAnswer(
           return { text: answer, matchedAnswer: answer, reason: 'sentence_any_expected_answer' }
         }
       }
+    }
+  }
+
+  for (const answer of candidates) {
+    const normalizedAnswer = normalizeForExpectedAnswerMatch(answer)
+    if (!normalizedAnswer) continue
+    if (isShortSelfCorrectionTail(whole, normalizedAnswer)) {
+      return { text: answer, matchedAnswer: answer, reason: 'self_corrected_to_expected_answer_tail' }
     }
   }
 

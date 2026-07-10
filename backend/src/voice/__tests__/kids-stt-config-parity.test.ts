@@ -24,14 +24,14 @@ describe('Kids vs Adult STT config parity', () => {
     expect(DEEPGRAM_KIDS_LIVE_OPTIONS.channels).toBe(DEEPGRAM_LIVE_OPTIONS.channels)
   })
 
-  it('Both configs use nova-2 model', () => {
+  it('Adult uses multilingual model, Kids keeps the stable English model', () => {
     expect(DEEPGRAM_KIDS_LIVE_OPTIONS.model).toBe('nova-2')
-    expect(DEEPGRAM_LIVE_OPTIONS.model).toBe('nova-2')
+    expect(DEEPGRAM_LIVE_OPTIONS.model).toBe('nova-3')
   })
 
-  it('Both configs use explicit language=en', () => {
+  it('Adult uses language=multi, Kids keeps explicit language=en', () => {
     expect(DEEPGRAM_KIDS_LIVE_OPTIONS.language).toBe('en')
-    expect(DEEPGRAM_LIVE_OPTIONS.language).toBe('en')
+    expect(DEEPGRAM_LIVE_OPTIONS.language).toBe('multi')
   })
 
   it('Adult utterance_end_ms unchanged at 1500ms', () => {

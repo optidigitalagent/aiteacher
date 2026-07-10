@@ -3,8 +3,10 @@ import type { LiveSchema } from '@deepgram/sdk/dist/main/lib/types/Transcription
 import { type IncomingMessage, type ClientRequest } from 'node:http'
 
 const API_KEY = process.env.DEEPGRAM_API_KEY ?? ''
-const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL ?? 'nova-2'
-const DEEPGRAM_LANGUAGE = process.env.DEEPGRAM_LANGUAGE ?? 'en'
+const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL ?? 'nova-3'
+const DEEPGRAM_LANGUAGE = process.env.DEEPGRAM_LANGUAGE ?? 'multi'
+const DEEPGRAM_KIDS_MODEL = process.env.DEEPGRAM_KIDS_MODEL ?? 'nova-2'
+const DEEPGRAM_KIDS_LANGUAGE = process.env.DEEPGRAM_KIDS_LANGUAGE ?? 'en'
 
 // How long after speech stops before we fire the transcript.
 // 1500ms = student can think for 1.5s mid-answer without triggering AI.
@@ -18,7 +20,9 @@ const UTTERANCE_END_MS_KIDS = 1000
 
 // Exported for unit tests — change here propagates to test assertions automatically.
 // detect_language is a PrerecordedSchema-only field; sending it to the Live API
-// causes HTTP 400. Use explicit language=en instead.
+// causes HTTP 400. Adult paid lessons use Deepgram's explicit multilingual
+// language setting so RU/UA clarification and English answers are not forced
+// through an English-only recognizer.
 export const DEEPGRAM_LIVE_OPTIONS: LiveSchema = {
   model:            DEEPGRAM_MODEL,
   language:         DEEPGRAM_LANGUAGE,
@@ -36,6 +40,8 @@ export const DEEPGRAM_LIVE_OPTIONS: LiveSchema = {
 // vad_events: true is required for UtteranceEnd events to fire (Deepgram API requirement).
 export const DEEPGRAM_KIDS_LIVE_OPTIONS: LiveSchema = {
   ...DEEPGRAM_LIVE_OPTIONS,
+  model:            DEEPGRAM_KIDS_MODEL,
+  language:         DEEPGRAM_KIDS_LANGUAGE,
   utterance_end_ms: UTTERANCE_END_MS_KIDS,
   vad_events:       true,
 }

@@ -37,6 +37,7 @@ import {
 } from './pedagogical-progress-graph.js'
 import { getHintPolicy } from '../behavior-runtime/exercise-teaching/exercise-format-registry.js'
 import redis from '../db/redis.js'
+import type { ExpectedAnswerNormalization } from '../voice/voice-turn-stabilizer.js'
 
 const PAID_OPENING_WARMUP_TTL_SECONDS = 14_400
 
@@ -119,6 +120,8 @@ export interface StudentAnswerInput {
   sessionId:       string | null
   studentAnswer:   string
   lessonStartedAt: number | null
+  voiceNormalizationReason?: ExpectedAnswerNormalization['reason']
+  rawStudentAnswer?: string
 }
 
 export interface RecoveryInput {
@@ -588,7 +591,16 @@ function buildMeaningHint(correctAnswer: string): string {
   }
 }
 
-function buildCorrectAnswerReaction(answer: string): string {
+function buildCorrectAnswerReaction(
+  answer: string,
+  voiceNormalizationReason?: ExpectedAnswerNormalization['reason'],
+): string {
+  if (voiceNormalizationReason === 'self_corrected_to_expected_answer_tail') {
+    return `You corrected it to "${answer.trim()}" yourself - good.`
+  }
+  if (voiceNormalizationReason === 'repeated_expected_answer_phrase') {
+    return `Yes, "${answer.trim()}" is right - repeating it is okay.`
+  }
   switch (answer.toLowerCase().trim()) {
     case 'hobby':
       return 'Good, "hobby" fits perfectly. Photography is a nice example too.'
@@ -617,6 +629,7 @@ function buildCorrectAnswerReaction(answer: string): string {
 function buildDeterministicTeacherText(
   result: EngineResult,
   etr: EngineTurnResult,
+  voiceNormalizationReason?: ExpectedAnswerNormalization['reason'],
 ): string | null {
   const cursor = result.exerciseCursor
   const nextItem = cursor?.currentItem ? normalizeSpokenLine(cursor.currentItem) : ''
@@ -624,7 +637,7 @@ function buildDeterministicTeacherText(
   const correctAnswer = result.validation?.correctAnswer
     ? normalizeSpokenLine(result.validation.correctAnswer)
     : ''
-  const confirmation = buildCorrectAnswerReaction(etr.studentAnswer)
+  const confirmation = buildCorrectAnswerReaction(etr.studentAnswer, voiceNormalizationReason)
 
   if (result.action === 'step_correct' || result.action === 'soft_pass') {
     return nextItem
@@ -1021,7 +1034,11 @@ export class MasterLessonOrchestrator {
     // Build Teacher Brain context — AI verbalizes engine decision only.
     // Phase 3C: adaptiveBlock is advisory; injected at end of context (phrasing guide only).
     const teacherInput = buildTeacherContextFromResult(result, studentAnswer, engineTurnResult, adaptiveBlock || undefined)
-    const deterministicTeacherText = buildDeterministicTeacherText(result, engineTurnResult)
+    const deterministicTeacherText = buildDeterministicTeacherText(
+      result,
+      engineTurnResult,
+      input.voiceNormalizationReason,
+    )
     console.log(`[master-orch] teacher_response_requested lessonId=${lessonId} action=${result.action}`)
 
     // Log canonical cursor version going into teacher context

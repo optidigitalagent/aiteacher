@@ -203,6 +203,44 @@ describe('paid lesson vocabulary item flow', () => {
     expect(result?.deterministicTeacherText).not.toContain('stay on this item')
   })
 
+  it('accepts one-turn self-correction and acknowledges it naturally', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-self-correct'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    await orchestrator.handleVoiceAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'Hobby',
+      lessonStartedAt: Date.now(),
+    })
+    await orchestrator.handleVoiceAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'Spare time',
+      lessonStartedAt: Date.now(),
+    })
+
+    const result = await orchestrator.handleVoiceAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'keen on',
+      lessonStartedAt: Date.now(),
+      voiceNormalizationReason: 'self_corrected_to_expected_answer_tail',
+      rawStudentAnswer: 'like keen on',
+    })
+
+    expect(result?.feedback?.correct).toBe(true)
+    expect(result?.cursorUpdate?.currentItem).toBe('I joined a gym to ___.')
+    expect(result?.deterministicTeacherText).toContain('You corrected it to "keen on" yourself - good.')
+    expect(result?.deterministicTeacherText).toContain('I joined a gym to ___.')
+  })
+
   it('uses natural deterministic confirmations and a warm bridge into vocabulary speaking', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')

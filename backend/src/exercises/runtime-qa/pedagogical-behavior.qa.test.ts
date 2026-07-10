@@ -681,6 +681,18 @@ describe('Phase 6B.3 — Soft-Speaking Threshold Calibration', () => {
     expect(hasRecastRule).toBe(true)
   })
 
+  it('self-correction is treated as awareness in HUMAN_TUTOR_RULES', () => {
+    const joinedRules = HUMAN_TUTOR_RULES.rules.join(' ').toLowerCase()
+    expect(joinedRules).toContain('self-correction')
+    expect(joinedRules).toContain('final correct form')
+  })
+
+  it('tiny personal follow-ups are bounded to speaking/warmup or completed items', () => {
+    const joinedRules = SPEAKING_RULES.rules.join(' ').toLowerCase()
+    expect(joinedRules).toContain('tiny personal question')
+    expect(joinedRules).toContain('never let it replace grading')
+  })
+
   it('new calibration rules are visible in soft_speaking behavior contract', () => {
     const groups = selectBehaviorContractRules('soft_speaking')
     const speakingGroup = groups.find(g => g.label === 'SPEAKING RULES')

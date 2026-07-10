@@ -67,7 +67,11 @@ import {
 import { hashUserId } from '../observability/langfuse-client.js'
 import { recordTraceEvent } from '../runtime/index.js'
 import { recordStudentMessage, recordTeacherMessage, recordSystemEvent } from '../lesson/transcript-recorder.js'
-import { classifyVoiceTranscript, normalizeTranscriptToExpectedAnswer } from '../voice/voice-turn-stabilizer.js'
+import {
+  classifyVoiceTranscript,
+  normalizeTranscriptToExpectedAnswer,
+  type ExpectedAnswerNormalization,
+} from '../voice/voice-turn-stabilizer.js'
 import {
   startSession as kidsStartSession,
   processTurn as kidsProcessTurn,
@@ -510,6 +514,10 @@ interface ClientMeta {
   voiceWaitingForSttReady:     boolean
   voiceMicStopDuringWait:      boolean
   voiceSTTConnectFailed:       boolean
+  pendingVoiceNormalization: {
+    reason: ExpectedAnswerNormalization['reason']
+    rawText: string
+  } | null
   // Stabilization window: 450ms timer started on mic_stop.
   // Keeps micActive=true while waiting for late Deepgram is_final segments.
   // Replaced the legacy pendingMicStop+800ms-timeout path.
@@ -2957,6 +2965,8 @@ async function processInput(
     return
   }
   meta.aiProcessing = true
+  const voiceNormalization = meta.pendingVoiceNormalization
+  meta.pendingVoiceNormalization = null
 
   // Trace student input (voice or text) — skip system-generated context strings
   if (!skipOffTopicGuard && !text.trimStart().startsWith('[')) {
@@ -3078,6 +3088,8 @@ async function processInput(
             sessionId:       meta.sessionId,
             studentAnswer:   text,
             lessonStartedAt: meta.lessonStartedAt,
+            voiceNormalizationReason: voiceNormalization?.reason,
+            rawStudentAnswer:         voiceNormalization?.rawText,
           })
 
           if (orchVoiceResult && !orchVoiceResult.error) {
@@ -3996,6 +4008,7 @@ function submitVoiceTurnText(
   text: string,
   turnId: string | null,
   trigger: string,
+  normalization?: { reason: ExpectedAnswerNormalization['reason']; rawText: string } | null,
 ): boolean {
   const finalText = text.trim()
   if (!finalText) return false
@@ -4004,6 +4017,7 @@ function submitVoiceTurnText(
     return false
   }
   meta.lastSubmittedVoiceTurnId = turnId
+  meta.pendingVoiceNormalization = normalization ?? null
   console.log(`[voice] student_turn_submit chars=${finalText.length} turnId=${turnId} trigger=${trigger}`)
   send(ws, { type: 'student_message', text: finalText })
   if (meta.lessonId && meta.userId) {
@@ -4060,15 +4074,26 @@ async function getAdultVoiceAnswerContext(lessonId: string | null): Promise<Adul
   }
 }
 
-function normalizeAdultVoiceAnswer(raw: string, ctx: AdultVoiceAnswerContext): string {
-  if (ctx.runtimeMode !== 'deterministic_sequential') return raw
+function normalizeAdultVoiceAnswer(
+  raw: string,
+  ctx: AdultVoiceAnswerContext,
+): { text: string; normalization: { reason: ExpectedAnswerNormalization['reason']; rawText: string } | null } {
+  if (ctx.runtimeMode !== 'deterministic_sequential') {
+    return { text: raw, normalization: null }
+  }
   const normalized = normalizeTranscriptToExpectedAnswer(raw, ctx.expectedAnswers)
-  if (!normalized) return raw
+  if (!normalized) return { text: raw, normalization: null }
   console.log(
     `[voice:turn] expected_answer_normalized reason=${normalized.reason} ` +
     `raw="${raw.slice(0, 60)}" normalized="${normalized.text}"`,
   )
-  return normalized.text
+  return {
+    text:          normalized.text,
+    normalization: {
+      reason:  normalized.reason,
+      rawText: raw,
+    },
+  }
 }
 
 function createSTT(ws: WebSocket, meta: ClientMeta, isKids = false): DeepgramSTT {
@@ -4188,8 +4213,15 @@ function createSTT(ws: WebSocket, meta: ClientMeta, isKids = false): DeepgramSTT
           const tid = meta.voiceTurnId
           getAdultVoiceAnswerContext(meta.lessonId)
             .then((voiceCtx) => {
-              const normalizedText = normalizeAdultVoiceAnswer(fullText, voiceCtx)
-              submitVoiceTurnText(ws, meta, normalizedText, tid, 'late-utteranceend-paid')
+              const normalized = normalizeAdultVoiceAnswer(fullText, voiceCtx)
+              submitVoiceTurnText(
+                ws,
+                meta,
+                normalized.text,
+                tid,
+                'late-utteranceend-paid',
+                normalized.normalization,
+              )
             })
             .catch((err: unknown) =>
               console.error('[paid-lesson] late adult voice normalization error:', err))
@@ -4374,8 +4406,15 @@ function scheduleTurnFinalize(
                 meta.voicePartialTranscript = ''
                 getAdultVoiceAnswerContext(meta.lessonId)
                   .then((voiceCtx) => {
-                    const normalizedText = normalizeAdultVoiceAnswer(lateText, voiceCtx)
-                    submitVoiceTurnText(ws, meta, normalizedText, captureTurnId, 'late-paid-partial')
+                    const normalized = normalizeAdultVoiceAnswer(lateText, voiceCtx)
+                    submitVoiceTurnText(
+                      ws,
+                      meta,
+                      normalized.text,
+                      captureTurnId,
+                      'late-paid-partial',
+                      normalized.normalization,
+                    )
                   })
                   .catch((err: unknown) =>
                     console.error('[paid-lesson] late adult partial normalization error:', err))
@@ -4446,8 +4485,8 @@ function scheduleTurnFinalize(
           return
         }
 
-        const normalizedText = normalizeAdultVoiceAnswer(classification.normalizedText, voiceAnswerContext)
-        const finalText = normalizedText
+        const normalized = normalizeAdultVoiceAnswer(classification.normalizedText, voiceAnswerContext)
+        const finalText = normalized.text
         if (classification.kind === 'repeat') {
           console.log(`[voice:turn] deduped preview="${finalText.slice(0, 40)}" turnId=${captureTurnId}`)
         }
@@ -4456,7 +4495,14 @@ function scheduleTurnFinalize(
           `[voice:turn] submitted chars=${finalText.length} ` +
           `kind=${classification.kind} exerciseType=${exerciseType ?? 'unknown'} turnId=${meta.voiceTurnId}`,
         )
-        submitVoiceTurnText(ws, meta, finalText, meta.voiceTurnId, 'stabilized-mic-stop')
+        submitVoiceTurnText(
+          ws,
+          meta,
+          finalText,
+          meta.voiceTurnId,
+          'stabilized-mic-stop',
+          normalized.normalization,
+        )
       } catch (err: unknown) {
         console.error('[voice:turn] stabilization_error turnId=%s:', captureTurnId,
           err instanceof Error ? err.message : err)
@@ -4551,6 +4597,7 @@ export function attachLessonWS(server: Server): void {
         voiceWaitingForSttReady:     false,
         voiceMicStopDuringWait:      false,
         voiceSTTConnectFailed:       false,
+        pendingVoiceNormalization:   null,
         stabilizationRef:         null,
         kidsPartialTranscript:      '',
         kidsPartialTurnId:          null,
@@ -4606,6 +4653,7 @@ export function attachLessonWS(server: Server): void {
         voiceWaitingForSttReady:     false,
         voiceMicStopDuringWait:      false,
         voiceSTTConnectFailed:       false,
+        pendingVoiceNormalization:   null,
         stabilizationRef:         null,
         billingStartedAt: null,
         isKidsMode:             false,
