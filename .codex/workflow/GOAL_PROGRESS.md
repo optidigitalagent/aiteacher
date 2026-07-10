@@ -1,5 +1,92 @@
 # GOAL_PROGRESS.md
 
+## PAID TEACHER LIVE SMOKE FOLLOW-UP: WORD-HELP ROUTING + STALE INPUT GUARD - 2026-07-10
+
+**Trigger:** User completed a real paid lesson after deployed commit `703da40`
+and provided the transcript. The deployed repair improved RU/UA expected-answer
+help, but two product defects remained:
+- `Which world is it? Which world is it? I don't know.` on Exercise 1 item 2
+  did not get current-word help. It reached the WebSocket off-topic guard and
+  Teacher Brain answered `not discussing worlds` instead of giving
+  `"spare time"`.
+- The paid text input could still show the previous spoken transcript when the
+  next mic turn started, creating stale-preview/carryover UX risk.
+
+**Analysis against goal:**
+- The project is not at the user's target yet. The teacher is better than the
+  earlier build, but still behaves too much like a scripted bot when a live ASR
+  variant hits the wrong routing layer.
+- The current lesson log shows acceptable behavior for RU/UA direct word-help
+  on `hobby`, `get fit`, and `free time`, and normal deterministic progression
+  through the vocabulary exercise.
+- The failed `worlds` response proves the previous local orchestrator tests
+  were insufficient because they bypassed the WebSocket off-topic guard.
+
+**Implementation:**
+- `backend/src/lesson/master-orchestrator.ts`
+  - Exported `isCurrentAnswerHelpRequest()` so the WebSocket layer can reuse
+    the exact current-answer-help detector instead of duplicating regex logic.
+- `backend/src/ws/lesson-ws.ts`
+  - Routes current-answer help requests through `masterOrchestrator.handleVoiceAnswer()`
+    before `looksLikeOffTopicRequest()`.
+  - Sends deterministic current-item help with TTS and metadata
+    `currentAnswerHelp: true`, preserving no feedback/cursor/attempt side
+    effects.
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+  - Added regression for the live shape after a wrong item 2 attempt:
+    `Which world is it? Which world is it? I don't know.` returns
+    `"spare time"`, remains on item 2, and does not add a help attempt.
+  - Added static guard proving the WebSocket current-answer-help route appears
+    before the off-topic guard.
+- `frontend/src/features/classroom/components/ClassroomLayout.tsx`
+  - On paid mic start, clears the input/transcript and keeps a short UI-only
+    ignore window so late previous-turn transcript events cannot repopulate the
+    input just as the student starts speaking.
+- `frontend/src/features/classroom/hooks/useVoiceSession.ts`
+  - Clears internal transcript state before requesting mic permission for a new
+    turn.
+
+**Validation evidence:**
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 1 file passed; 12 tests passed.
+- `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- `cd frontend; npm run build` with npm/temp redirected to `D:\` -> exit 0;
+  Vite build succeeded with the pre-existing chunk-size warning.
+- Focused regression:
+  `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/voice/__tests__/stt-deepgram-options.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/ws/__tests__/message-types.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 6 files passed; 211 tests passed.
+- Full backend suite:
+  `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 68 files passed; 2178 tests passed.
+
+**Review gate before deploy:**
+- backend reviewer: RUN -> PASS; paid WS voice routing changed so
+  current-answer help wins over off-topic recovery for deterministic items.
+- frontend reviewer: RUN -> PASS; paid mic input clearing/preview guard changed.
+  Browser mic proof still requires authenticated running-product smoke.
+- curriculum reviewer: RUN -> PASS; accepted answers, scoring, exercise order,
+  cursor progression, and attempt counting are unchanged.
+- kids safety monitor: RUN -> PASS; Kids Brain behavior and Kids STT config
+  were not changed; full backend suite passed.
+- QA tester: RUN -> PASS; targeted, focused, TypeScript, frontend build, and
+  full backend suite passed.
+- adversarial product critic: RUN -> PASS WITH WARNING; the exact live
+  `Which world... I don't know` shape is now covered through WS routing order,
+  but real authenticated mic/browser proof remains required.
+- live QA orchestrator: RUN -> PARTIAL; user-provided live transcript is real
+  product evidence, but controlled browser/WS/log/TTS correlation is still
+  unavailable in this process.
+- acceptance auditor: RUN -> GOAL NOT COMPLETE; local repair is verified, but
+  production deploy and authenticated microphone smoke remain open.
+
+**Current status:**
+- Local repair is implemented and verified.
+- Commit/deploy evidence is pending.
+
+**Next action:** Commit, push, deploy to Railway, verify health/logs, then
+repeat authenticated paid lesson microphone smoke for direct word-help and no
+stale input carryover.
+
 ## PAID TEACHER LIVE TRANSCRIPT MIC + WORD-HELP REPAIR - 2026-07-10
 
 **Trigger:** User provided a real paid lesson transcript showing that the
@@ -79,16 +166,38 @@ turns and carry stale transcript text.
 - acceptance auditor: RUN -> GOAL NOT COMPLETE; latest local repair is
   verified, but deploy and authenticated microphone smoke remain open.
 
-**Current status:**
-- Local repair is implemented and validated.
-- Commit/push/deploy are next.
-- Goal is not complete until running paid mic smoke verifies EN/RU/UA turns,
-  no lost first words, no split half-turns, no stale transcript carryover, TTS,
-  and backend/WS log correlation.
+**Deployment evidence:**
+- Product commit `703da401b36420c28a877a369af214598841d086`
+  (`fix(voice): order paid mic start before audio`) created and pushed to
+  `origin/main`.
+- Railway production:
+  - `aiteacher` backend deployment
+    `60200335-15a1-4547-9e3e-811f82a37dc6` -> SUCCESS at commit `703da40`.
+  - `aware-alignment` frontend deployment
+    `c24fd2e2-d2b7-40ea-bbfc-e597db71fe64` -> SUCCESS at commit `703da40`.
+- Post-deploy verification:
+  - backend `/health` -> HTTP 200 with postgres/redis ok; stability recheck
+    uptime 228s at `2026-07-10T14:40:14.028Z`.
+  - frontend `/demo/setup` -> HTTP 200.
+  - backend startup logs show migrations applied, server listening on
+    `0.0.0.0:8080`, PostgreSQL ready, Redis ready, and WS endpoint attached.
+  - frontend startup logs show Caddy serving on `:8080`.
+  - backend logs after deploy included adult paid STT `provider=deepgram`,
+    `model=nova-3`, `language=multi`, and lifecycle `open` on reconnect.
+  - backend/frontend HTTP logs with status `400..599` over checked windows
+    returned no entries.
+  - backend/frontend critical sweeps returned no findings.
 
-**Next action:** Commit, push, deploy the latest mic/help repair, run
-post-deploy health/log checks, then run authenticated paid microphone smoke
-when auth state is available.
+**Current status:**
+- Latest mic/help repair is implemented, committed, pushed, deployed, and
+  post-deploy health/log checked.
+- Goal is not complete until running paid mic smoke verifies EN/RU/UA turns,
+  no lost first words, no split half-turns, no stale transcript carryover, no
+  missing `student_message`, TTS, and backend/WS log correlation.
+
+**Next action:** Run authenticated paid lesson microphone smoke against
+production for EN/RU/UA turns, direct word-help, no lost/split/stale transcript
+turns, TTS, browser/WS evidence, and backend log correlation.
 
 ## PAID TEACHER ENGLISH TASK-HELP GAP-FILL REPAIR - 2026-07-10
 

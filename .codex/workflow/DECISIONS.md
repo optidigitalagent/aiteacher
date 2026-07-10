@@ -304,6 +304,20 @@ the already-tested OpenAI TTS buffering path.
 
 > Append new decisions below as autonomous work progresses.
 
+### 2026-07-10 - Current-answer help wins over paid off-topic recovery
+
+**Decision:** In the ordinary paid voice path, direct current-answer help
+requests such as `Which world is it? Which world is it? I don't know.` route to
+`MasterLessonOrchestrator` before the WebSocket off-topic guard.
+**Reason:** Live paid transcript proved ASR `word` -> `world` can make a
+normal gap-fill help request look like an off-topic "worlds" question. The
+teacher then refused the topic instead of helping with the current blank.
+**Alternatives rejected:** Broaden Teacher Brain prompt instructions only;
+duplicate the regex in `lesson-ws.ts`; remove the off-topic guard entirely.
+**Reversible:** Yes.
+**Risk:** Low, because the early route only triggers for current-answer-help
+patterns and still requires an active deterministic engine item.
+
 ### 2026-07-10 - Paid adult mic language can be selected per turn
 
 **Decision:** Keep adult paid STT defaulting to multilingual `multi`, but let

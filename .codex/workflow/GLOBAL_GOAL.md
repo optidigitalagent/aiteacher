@@ -16,9 +16,9 @@ was ready are stale. A user-provided live transcript on 2026-07-10 showed two
 remaining product defects: direct word-help / ASR-confused help turns such as
 `worms`, `world`, and RU/UA unknown word-help were still not useful enough, and
 the paid mic could start PCM capture before the backend received `mic_start`,
-which can drop the beginning of a turn. A local repair is implemented and
-verified; commit/deploy and authenticated running-product microphone smoke are
-still pending.
+which can drop the beginning of a turn. The repair is committed, pushed,
+deployed, and post-deploy health/log checked at commit `703da40`. Controlled
+authenticated running-product microphone smoke is still pending.
 
 **Acceptance criteria:**
 - [x] Adult paid STT defaults are multilingual for RU/UA/EN voice turns without
@@ -48,11 +48,16 @@ still pending.
 - [x] Direct word-help requests and ASR variants such as `which world is it`
   and `help me with this worms` are answered as current-item help without
   feedback, cursor movement, teacher-brain input, or attempt-count changes.
+- [x] Paid WebSocket voice routing sends current-answer help requests such as
+  `Which world is it? Which world is it? I don't know.` to deterministic
+  current-item help before the off-topic guard can answer about `worlds`.
 - [x] Unknown RU/UA word-help fallback during deterministic gap-fill gives the
   current expected answer instead of a dead-end `I'm not sure` response, while
   preserving known phrase-map translations such as `for 30 minutes`.
 - [x] Paid classroom sends `mic_start` before PCM capture can emit the first
   `audio_chunk`, preventing first-word audio from being ignored as stale.
+- [x] Paid classroom clears the input/transcript preview at mic-turn start and
+  guards briefly against late previous-turn transcript events repopulating it.
 - [x] Adult paid voice finalization submits/logs the captured turn id rather
   than a mutable current turn id.
 - [x] Teacher text acknowledges self-correction/repetition without changing
@@ -66,8 +71,9 @@ still pending.
   and EN turns with the configured STT provider, including no lost first words,
   no split half-turns, no stale transcript carryover, and no missing
   `student_message`.
-- [ ] Deploy is completed for the latest mic/help repair, then health/log
-  checks and authenticated paid lesson microphone smoke pass.
+- [x] Deploy is completed for the latest mic/help repair and health/log checks
+  passed.
+- [ ] Authenticated paid lesson microphone smoke passes for the latest repair.
 
 **Paused goals:**
 - Autonomous Product Delivery V3 / Telegram intake-orchestrator: local service

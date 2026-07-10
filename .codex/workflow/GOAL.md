@@ -52,10 +52,15 @@ stay bounded and curriculum-safe.
 - [x] Direct word-help requests and ASR variants such as `which world is it`
   and `help me with this worms` are answered as current-item help without
   feedback, cursor movement, teacher-brain input, or attempt-count changes.
+- [x] Paid WebSocket voice routing sends current-answer help requests such as
+  `Which world is it? Which world is it? I don't know.` to deterministic
+  current-item help before the off-topic guard can answer about `worlds`.
 - [x] Unknown RU/UA word-help fallback during deterministic gap-fill gives the
   current expected answer instead of a dead-end `I'm not sure` response.
 - [x] Paid classroom sends `mic_start` before PCM capture can emit the first
   `audio_chunk`, preventing first-word audio from being ignored as stale.
+- [x] Paid classroom clears the input/transcript preview at mic-turn start and
+  guards briefly against late previous-turn transcript events repopulating it.
 - [x] Adult paid voice finalization submits/logs the captured turn id rather
   than a mutable current turn id.
 - [x] Deterministic teacher text can acknowledge self-correction/repetition
@@ -68,9 +73,9 @@ stay bounded and curriculum-safe.
   and EN turns with the configured STT provider, including no lost first words,
   no split half-turns, no stale transcript carryover, and no missing
   `student_message`.
-- [ ] Production deployment and post-deploy health/log checks are completed for
-  the latest mic/help repair; final acceptance still requires live microphone
-  smoke.
+- [x] Production deployment and post-deploy health/log checks are completed for
+  the latest mic/help repair.
+- [ ] Final acceptance still requires authenticated live microphone smoke.
 
 ## Scope Boundaries
 
@@ -104,5 +109,6 @@ splitting, missing sends, and stale transcript carryover. Local repair now:
 - submits adult paid voice turns with the captured turn id.
 
 Local targeted tests, backend TypeScript, frontend build, focused regression,
-and the full backend suite pass. Commit/deploy and authenticated paid
-microphone smoke remain pending.
+and the full backend suite pass. Commit `703da40` is pushed and deployed to
+Railway production; post-deploy health/log checks passed. Authenticated paid
+microphone smoke remains pending.

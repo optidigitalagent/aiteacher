@@ -96,7 +96,7 @@ function isEnglishTaskHelpRequest(text: string): boolean {
   return ENGLISH_TASK_HELP_RE.test(text.trim())
 }
 
-function wantsCurrentAnswerHelp(text: string): boolean {
+export function isCurrentAnswerHelpRequest(text: string): boolean {
   return ENGLISH_DIRECT_ANSWER_HELP_RE.test(text.trim())
 }
 
@@ -118,7 +118,7 @@ function buildEnglishTaskHelpAnswer(text: string, state: EngineLessonState): str
     return "No problem. Tell me what part is unclear, and we'll continue from the same point."
   }
 
-  if (wantsCurrentAnswerHelp(text)) {
+  if (isCurrentAnswerHelpRequest(text)) {
     const answerHelp = buildCurrentExpectedHelpAnswer(state)
     if (answerHelp) return answerHelp
   }

@@ -46,7 +46,7 @@ import type { StudentConfused } from './message-types.js'
 import { exerciseEngine } from '../engine/exercise-engine.js'
 import type { EngineResult, EngineValidationResult } from '../engine/types.js'
 import { memoryService } from '../memory/index.js'
-import { masterOrchestrator } from '../lesson/master-orchestrator.js'
+import { masterOrchestrator, isCurrentAnswerHelpRequest } from '../lesson/master-orchestrator.js'
 import { guardTeacherResponse, buildFallbackGuardContext } from '../engine/stale-item-guard.js'
 import {
   buildExerciseExecutionState,
@@ -3003,6 +3003,47 @@ async function processInput(
   let inputText = text
   let manifestValidation: ManifestVoiceResult | null = null
   if (!skipOffTopicGuard) {
+    if (isCurrentAnswerHelpRequest(text)) {
+      const currentHelpResult = await masterOrchestrator.handleVoiceAnswer({
+        lessonId:        meta.lessonId,
+        userId:          meta.userId,
+        sessionId:       meta.sessionId,
+        studentAnswer:   text,
+        lessonStartedAt: meta.lessonStartedAt,
+      })
+
+      if (currentHelpResult && !currentHelpResult.error && currentHelpResult.deterministicTeacherText) {
+        const teacherText = currentHelpResult.deterministicTeacherText
+        masterOrchestrator.emitFrontendSnapshot(
+          currentHelpResult,
+          (event) => send(ws, event as Parameters<typeof send>[1]),
+          meta.lessonId,
+        )
+        send(ws, { type: 'ai_text', phase: 'EXERCISES', text: teacherText })
+        if (meta.userId) {
+          recordTeacherMessage({
+            lessonId:       meta.lessonId,
+            sessionId:      meta.sessionId,
+            userId:         meta.userId,
+            studentId:      meta.studentId,
+            text:           teacherText,
+            phase:          'EXERCISES',
+            exerciseNumber: currentHelpResult.cursorUpdate?.exerciseNumber ?? null,
+            exerciseType:   currentHelpResult.cursorUpdate?.exerciseType ?? null,
+            itemIndex:      currentHelpResult.cursorUpdate?.itemIndex ?? null,
+            itemTotal:      currentHelpResult.cursorUpdate?.itemTotal ?? null,
+            correctionTurn: null,
+            source:         'system',
+            metadata:       { deterministicTeacherText: true, currentAnswerHelp: true },
+          })
+        }
+        await ttsStream(ws, meta, teacherText)
+        meta.aiProcessing = false
+        replayQueuedInput(ws, meta, 'current-answer-help')
+        return
+      }
+    }
+
     if (looksLikeOffTopicRequest(text)) {
       const guard = await buildOffTopicGuard(meta.lessonId)
       if (guard) {

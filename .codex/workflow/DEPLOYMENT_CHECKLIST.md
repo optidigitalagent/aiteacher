@@ -1,5 +1,122 @@
 # DEPLOYMENT_CHECKLIST.md
 
+## DEPLOYMENT RECORD - Paid teacher live smoke follow-up word-help routing + stale input guard - 2026-07-10
+
+Authorization:
+- User provided a failing authenticated paid lesson transcript after `703da40`
+  and asked to analyze it against the target product behavior and remove the
+  remaining bad communication/stale input behavior. Repository operating
+  preferences authorize deploy when product changes are in scope and checks
+  pass, subject to deployment gate stop rules.
+
+Reviewed commit:
+- Pending commit for follow-up repair.
+
+Pre-deploy gates:
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 1 file passed; 12 tests passed.
+- `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- `cd frontend; npm run build` with npm/temp redirected to `D:\` -> exit 0;
+  Vite build succeeded with the pre-existing chunk-size warning.
+- Focused regression:
+  `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/voice/__tests__/stt-deepgram-options.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/ws/__tests__/message-types.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 6 files passed; 211 tests passed.
+- `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 68 files passed; 2178 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- Review gate -> PASS WITH PENDING DEPLOY AND LIVE SMOKE.
+- Targeted staged scope: 5 product/test files plus workflow evidence; no auth,
+  billing, payment, Kids Brain behavior, STT/TTS provider config, `.env`, or
+  secret files staged.
+
+Push:
+- Pending.
+
+Railway:
+- Pending.
+
+Post-deploy verification:
+- Pending.
+
+Pending:
+- Controlled authenticated paid browser/microphone smoke remains required:
+  exact `Which world... I don't know` word-help, EN/RU/UA turns, no lost first
+  words, no split half-turns, no stale transcript carryover, no missing
+  `student_message`, TTS audibility, and backend/WS log correlation.
+
+## DEPLOYMENT RECORD - Paid teacher live transcript mic + word-help repair - 2026-07-10
+
+Authorization:
+- User provided a failing live paid lesson transcript and asked Codex to fix
+  both the teacher behavior and microphone behavior, with autonomous testing
+  and agents. Repository operating preferences authorize deploy when product
+  changes are in scope and checks pass, subject to deployment gate stop rules.
+
+Reviewed commit:
+- `703da401b36420c28a877a369af214598841d086`
+  (`fix(voice): order paid mic start before audio`)
+
+Pre-deploy gates:
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 1 file passed; 10 tests passed.
+- `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- `cd frontend; npm run build` with npm/temp redirected to `D:\` -> exit 0;
+  Vite build succeeded with the pre-existing chunk-size warning.
+- Focused regression:
+  `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/voice/__tests__/stt-deepgram-options.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/ws/__tests__/message-types.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 6 files passed; 209 tests passed.
+- `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 68 files passed; 2176 tests passed.
+- Static paid mic ordering check -> exit 0; `paid mic start ordering static
+  check passed`.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- `git diff --cached --check` before commit -> exit 0; CRLF warnings only.
+- Review gate -> PASS WITH PENDING DEPLOY AND LIVE SMOKE.
+- Targeted staged scope: 5 product/test files plus workflow evidence; no auth,
+  billing, payment, Kids Brain behavior, STT/TTS provider config, `.env`, or
+  secret files staged.
+
+Push:
+- `git push origin main` -> success (`1ee5613..703da40 main -> main`).
+
+Railway:
+- `aiteacher` backend deployment
+  `60200335-15a1-4547-9e3e-811f82a37dc6` -> SUCCESS at commit `703da40`.
+- `aware-alignment` frontend deployment
+  `c24fd2e2-d2b7-40ea-bbfc-e597db71fe64` -> SUCCESS at commit `703da40`.
+
+Post-deploy verification:
+- Backend `/health` initial check -> HTTP 200; `status=ok`; postgres ok;
+  redis ok; uptime 20s at `2026-07-10T14:36:46.043Z`.
+- Frontend `/demo/setup` initial check -> HTTP 200; served SPA HTML.
+- Backend startup logs -> migrations applied, `[server] listening on
+  0.0.0.0:8080`, PostgreSQL ready, Redis connected, Redis ping OK, Redis ready,
+  and WS endpoint attached.
+- Frontend startup logs -> Caddy serving on `:8080`.
+- Backend logs after deploy included an adult paid reconnect with
+  `[stt:config] provider=deepgram model=nova-3 language=multi` and
+  `[stt:lifecycle] status="open"`.
+- Backend/frontend HTTP logs with status `400..599` over the checked
+  15-minute window returned no entries.
+- Backend/frontend critical error-pattern sweeps returned no findings.
+- Stability recheck after ~3 minutes -> backend `/health` HTTP 200 with
+  postgres/redis ok, uptime 228s at `2026-07-10T14:40:14.028Z`; frontend
+  `/demo/setup` HTTP 200.
+- Final backend/frontend HTTP logs with status `400..599` over the checked
+  5-minute window returned no entries.
+- Final backend critical sweep returned no matches for `Unhandled`,
+  `ECONNREFUSED`, `Cannot find`, `Missing`, `voice_unavailable`,
+  `STT_CONNECT_FAILED`, `HTTP 400`, `Error:`, `TypeError`, or
+  `ReferenceError`.
+- Final frontend critical sweep returned no matches for `error`, `panic`,
+  `failed`, `cannot`, or `exception`.
+
+Pending:
+- Controlled authenticated paid browser/microphone smoke remains required:
+  EN/RU/UA turns, no lost first words, no split half-turns, no stale transcript
+  carryover, no missing `student_message`, TTS audibility, and backend/WS log
+  correlation.
+
 ## DEPLOYMENT RECORD - Paid teacher English task-help deterministic gap-fill repair - 2026-07-10
 
 Authorization:

@@ -30,24 +30,32 @@
 **Status:** OPEN
 **Severity:** P1
 **Area:** voice / frontend / backend / paid lesson runtime
-**Description:** Local repair sends `mic_start` before frontend PCM capture can
-emit `audio_chunk` and uses captured adult voice turn ids during stabilized
-finalization. This should prevent lost first words, half-turn submission, and
-some stale-turn races, but real browser microphone timing, Deepgram finalization,
+**Description:** Local repairs send `mic_start` before frontend PCM capture can
+emit `audio_chunk`, use captured adult voice turn ids during stabilized
+finalization, and clear/guard paid input preview at the next mic start. This
+should prevent lost first words, half-turn submission, and visible stale
+transcript carryover, but real browser microphone timing, Deepgram finalization,
 and production WebSocket/log behavior still require authenticated paid smoke.
 **Trigger:** Adult paid lesson microphone use, especially quick click-start,
 speaking immediately, click-stop, reconnect, or starting a next turn after a
 late transcript.
 **Mitigation:** Frontend build passes; static source check proves
 `beforeCapture?.()` is before `startPCMCapture()` and paid `mic_start` is sent
-through that callback. Backend full suite passes, including existing late
-transcript and stale partial guards.
+through that callback. The follow-up UI guard clears the paid input and ignores
+late previous-turn transcript preview for a short window at mic start. Backend
+full suite passes, including existing late transcript and stale partial guards.
+Commit `703da40` is deployed to Railway backend deployment
+`60200335-15a1-4547-9e3e-811f82a37dc6` and frontend deployment
+`c24fd2e2-d2b7-40ea-bbfc-e597db71fe64`; follow-up local repair is verified but
+not yet deployed.
 **Resolution:** Deploy latest repair and pass authenticated paid mic smoke
 with browser/WS/backend-log evidence showing one clean `student_message` per
 turn, no ignored first audio as stale/before-begin, no split half-turns, no
 stale transcript carryover, and TTS response for each teacher turn.
 **Opened:** 2026-07-10
-**Updated:** 2026-07-10
+**Updated:** 2026-07-10 user live smoke after `703da40` still showed stale
+input carryover; follow-up local UI guard is implemented and verified, deploy
+and authenticated paid mic smoke remain pending
 
 ### RISK-034 - Adult paid multilingual STT requires live provider smoke
 
@@ -74,10 +82,9 @@ Russian clarification, Ukrainian clarification, self-correction `Like keen on`,
 and repeated answer `keen on keen on`, with no critical backend/voice logs.
 **Opened:** 2026-07-10
 **Updated:** 2026-07-10 follow-up deployed and post-deploy health/log checks
-passed through `1ee5613`, but user live transcript later showed direct
-word-help and mic-turn defects remained. Latest local repair covers direct
-word-help / ASR variants and `mic_start` ordering, but controlled RU/UA/EN
-browser microphone smoke remains pending.
+passed through `703da40`. User live transcript defects for direct word-help /
+ASR variants and `mic_start` ordering are locally repaired and deployed, but
+controlled RU/UA/EN browser microphone smoke remains pending.
 
 ### RISK-035 - Live QA automation still cannot prove real microphone behavior unattended
 

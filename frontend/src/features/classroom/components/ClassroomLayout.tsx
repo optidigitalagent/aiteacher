@@ -849,9 +849,10 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     } else {
       // Mic just started — reset any stuck guard from a previous turn where
       // student_message never arrived (e.g. backend error mid-processing).
-      // This prevents transcripts from being silently blocked on the new turn.
+      // Keep a short UI-only ignore window so late transcript events from the
+      // previous turn cannot repopulate the input just as the student starts.
       setAwaitingStudentMessage(false)
-      transcriptIgnoreUntilRef.current = 0
+      transcriptIgnoreUntilRef.current = Date.now() + 500
       lastTranscriptRef.current = ''
       setAnswer('')
       onTranscript('')

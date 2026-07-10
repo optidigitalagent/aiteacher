@@ -6,6 +6,100 @@
 
 ---
 
+## REVIEW GATE - Paid teacher live smoke follow-up word-help routing + stale input guard - 2026-07-10
+
+**Cycle ID:** paid-teacher-live-smoke-follow-up-word-help-stale-input/2026-07-10
+
+**Phase:** Follow-up after user-provided authenticated paid lesson transcript.
+
+**Base/current commit:**
+- Base HEAD: `703da401b36420c28a877a369af214598841d086`
+  (`fix(voice): order paid mic start before audio`).
+- Product commit: pending.
+
+**Changed files reviewed:**
+- `backend/src/lesson/master-orchestrator.ts`
+- `backend/src/ws/lesson-ws.ts`
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+- `frontend/src/features/classroom/components/ClassroomLayout.tsx`
+- `frontend/src/features/classroom/hooks/useVoiceSession.ts`
+
+**Role applicability:**
+- backend reviewer: RUN - paid WebSocket voice routing changed.
+- frontend reviewer: RUN - paid mic input/transcript preview state changed.
+- curriculum reviewer: RUN - deterministic gap-fill help boundary changed.
+- kids safety monitor: RUN - mandatory protected-surface check.
+- QA tester: RUN - mandatory after implementation.
+- adversarial product critic: RUN - product-facing teacher and mic UX changed.
+- live QA orchestrator: RUN - real user transcript is evidence, controlled
+  browser/WS/TTS/log smoke remains pending.
+- acceptance auditor: RUN - active goal still has open deploy/live mic evidence.
+
+**Backend reviewer: PASS**
+- Critical findings: none.
+- Current-answer help requests now route through `masterOrchestrator.handleVoiceAnswer()`
+  before the WebSocket off-topic guard.
+- The live ASR shape `Which world is it? Which world is it? I don't know.`
+  now returns the current expected answer for item 2 (`spare time`) instead of
+  the off-topic `worlds` response.
+- No auth, billing, payment, LiqPay, endpoint, DB schema, raw SQL, Redis
+  contract, secret, `.env`, external API call, STT/TTS provider config, or
+  prompt-master change.
+
+**Frontend reviewer: PASS**
+- Critical findings: none.
+- Paid mic start clears `answer`, clears transcript state, and applies a short
+  UI-only transcript ignore window so late previous-turn transcript events
+  cannot repopulate the input at the start of the next turn.
+- `cd frontend; npm run build` -> exit 0; Vite build succeeded with the
+  pre-existing chunk-size warning.
+- Warning: actual real-browser microphone timing and transcript preview still
+  require authenticated running-product smoke.
+
+**Curriculum reviewer: PASS**
+- Accepted answers, scoring, exercise order, cursor progression, and attempt
+  counting are unchanged.
+- The new help route returns no feedback/cursor update and does not add an
+  answer attempt.
+
+**Kids safety monitor: PASS**
+- Kids Brain, Kids STT config, child-facing curriculum, and safety policy were
+  not changed.
+- Full backend suite passed.
+
+**QA tester: PASS**
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 12 tests passed.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd frontend; npm run build` -> exit 0.
+- Focused regression -> exit 0; 6 files passed; 211 tests passed.
+- Full backend suite -> exit 0; 68 files passed; 2178 tests passed.
+- New failures/regressions: none.
+
+**Adversarial product critic: PASS WITH WARNING**
+- The exact failure from the user transcript is covered locally at both the
+  orchestrator behavior level and the WebSocket routing-order level.
+- The UI stale-input fix is source/build verified, but not yet proven with
+  authenticated browser microphone timing.
+
+**Live QA orchestrator: PARTIAL**
+- User-provided paid transcript is real running-product evidence of the defect.
+- Controlled post-fix paid browser/mic smoke is still pending until deployment
+  and authenticated production access.
+
+**Acceptance auditor: GOAL NOT COMPLETE**
+- Local repair is verified.
+- Active goal completion remains blocked by production deploy evidence and the
+  authenticated paid microphone smoke criterion.
+
+**Overall verdict:** PASS WITH PENDING DEPLOY + LIVE SMOKE. Deploy the repair
+and repeat authenticated paid lesson smoke.
+
+**Next action:** Commit, push, deploy to Railway, verify health/logs, then run
+authenticated paid lesson microphone smoke.
+
+---
+
 ## REVIEW GATE - Paid teacher live transcript mic + word-help repair - 2026-07-10
 
 **Cycle ID:** paid-teacher-live-transcript-mic-word-help/2026-07-10
@@ -15,7 +109,8 @@ brain-side-ready claim.
 
 **Base/current commit:**
 - Base HEAD: `1ee5613aabd3f0881d31f94455055548c7b35758`.
-- Current commit: no commit created yet.
+- Product commit: `703da401b36420c28a877a369af214598841d086`
+  (`fix(voice): order paid mic start before audio`).
 
 **Changed files reviewed:**
 - `backend/src/lesson/master-orchestrator.ts`
@@ -97,24 +192,43 @@ brain-side-ready claim.
 **Live QA orchestrator: PENDING AUTHENTICATED MICROPHONE SMOKE**
 - Local source and tests prove the ordering contract and pre-grading help
   behavior.
+- Railway backend deployment
+  `60200335-15a1-4547-9e3e-811f82a37dc6` and frontend deployment
+  `c24fd2e2-d2b7-40ea-bbfc-e597db71fe64` reached SUCCESS at commit `703da40`.
+- Backend `/health` and frontend `/demo/setup` returned HTTP 200. Backend logs
+  showed server/Postgres/Redis/WS ready, plus adult paid Deepgram
+  `nova-3/multi` lifecycle `open` after deploy. Backend/frontend 4xx/5xx and
+  critical sweeps returned no findings.
 - Controlled running-product paid mic smoke is still unavailable because this
   process lacks subscribed JWT/auth state and stored browser auth.
 
 **Acceptance auditor: GOAL NOT COMPLETE**
-- Latest local repair is verified.
-- Active goal completion remains blocked by commit/deploy plus the original
-  running-product paid microphone criterion, now expanded to include no lost
-  first words, no split half-turns, no stale transcript carryover, and no
-  missing `student_message`.
+- Latest repair is implemented, committed, pushed, deployed, and post-deploy
+  health/log checked.
+- Active goal completion remains blocked by the running-product paid microphone
+  criterion, now expanded to include no lost first words, no split half-turns,
+  no stale transcript carryover, and no missing `student_message`.
 
-**Overall verdict:** PASS WITH PENDING DEPLOY AND LIVE SMOKE. The latest repair
-is locally valid; it must be committed, deployed, health/log checked, and then
-verified with authenticated paid microphone smoke before the goal can be
-complete.
+**Deploy Railway: PASS**
+- `git push origin main` -> success (`1ee5613..703da40 main -> main`).
+- Railway `aiteacher` backend deployment
+  `60200335-15a1-4547-9e3e-811f82a37dc6` -> SUCCESS at commit `703da40`.
+- Railway `aware-alignment` frontend deployment
+  `c24fd2e2-d2b7-40ea-bbfc-e597db71fe64` -> SUCCESS at commit `703da40`.
+- Backend `/health` -> HTTP 200, `status=ok`, postgres ok, redis ok.
+- Frontend `/demo/setup` -> HTTP 200.
+- Startup logs show backend server listening on `0.0.0.0:8080`, PostgreSQL
+  ready, Redis ready, WS attached, and frontend Caddy serving on `:8080`.
+- HTTP 4xx/5xx and critical sweeps for backend/frontend returned no findings.
 
-**Next action:** Commit, push, deploy the latest mic/help repair, run
-post-deploy health/log checks, then run authenticated paid microphone smoke
-when auth state is available.
+**Overall verdict:** PASS WITH PENDING LIVE SMOKE. The latest repair is
+committed, pushed, deployed, and post-deploy health/log checked. The active
+goal must still not be marked complete until authenticated paid microphone
+scenarios pass.
+
+**Next action:** Run authenticated paid lesson live smoke against production
+for EN/RU/UA mic turns, direct word-help, no lost/split/stale transcript turns,
+TTS, browser/WS evidence, and backend log correlation.
 
 ---
 

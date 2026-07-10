@@ -232,6 +232,62 @@ describe('paid lesson vocabulary item flow', () => {
     }
   })
 
+  it('answers ASR-confused word-help for the current item after a wrong attempt', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-current-item-word-help-after-wrong'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'hobby',
+      lessonStartedAt: Date.now(),
+    })
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'Free training. Free try free time.',
+      lessonStartedAt: Date.now(),
+    })
+    const stateBeforeHelp = await exerciseEngine.getState(lessonId)
+    const attemptsBeforeHelp = stateBeforeHelp?.currentExerciseState?.stepAttempts.length ?? 0
+
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: "Which world is it? Which world is it? I don't know.",
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.teacherInput).toBeNull()
+    expect(result.deterministicTeacherText).toContain('"spare time"')
+    expect(result.deterministicTeacherText).toContain('What do you do in your ___?')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(1)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
+  })
+
+  it('routes paid voice current-answer help before the WebSocket off-topic guard', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync(new URL('../../ws/lesson-ws.ts', import.meta.url), 'utf8')
+    const helpRouteIndex = source.indexOf('isCurrentAnswerHelpRequest(text)')
+    const offTopicIndex = source.indexOf('if (looksLikeOffTopicRequest(text))')
+
+    expect(helpRouteIndex).toBeGreaterThan(-1)
+    expect(offTopicIndex).toBeGreaterThan(-1)
+    expect(helpRouteIndex).toBeLessThan(offTopicIndex)
+    expect(source.slice(helpRouteIndex, offTopicIndex)).toContain('handleVoiceAnswer')
+    expect(source.slice(helpRouteIndex, offTopicIndex)).toContain('currentAnswerHelp: true')
+  })
+
   it('uses the current expected answer for unknown RU/UA word-help fallback in gap-fill', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')

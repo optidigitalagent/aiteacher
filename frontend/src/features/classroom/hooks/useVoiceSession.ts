@@ -76,6 +76,7 @@ export function useVoiceSession({ send }: Options): VoiceState & {
     isSpeakingRef.current = false
     setIsSpeaking(false)
     clearTimeout(stopSpeakRef.current)
+    setTranscript('')
 
     try {
       const stream = await requestMicPermission()
