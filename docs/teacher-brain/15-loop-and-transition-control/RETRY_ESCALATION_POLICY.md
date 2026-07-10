@@ -95,6 +95,8 @@ Identify missing slot. Target ONLY that slot.
 > "Good start. Now add the reason — why does [name] inspire you?"
 
 **Must NOT:** Ask for multiple missing elements simultaneously.
+**Must NOT:** Repeat the entire original speaking prompt when only the reason
+or example is missing.
 
 ---
 
@@ -104,6 +106,10 @@ Add sentence starter for the missing slot.
 > "Say: '[name] inspires me because...' — finish the sentence."
 
 If student produces ANY content after the starter → `acceptable_with_repair` → advance.
+
+For prompts that explicitly ask for two reasons, Attempt 3 may instead ask for:
+one clear reason plus one real example, then recast the full answer and ask the
+student to repeat it once.
 
 ---
 

@@ -164,6 +164,7 @@ export interface ExpectedAnswerNormalization {
     | 'readiness_expected_answer_tail'
     | 'sentence_final_expected_answer'
     | 'sentence_any_expected_answer'
+    | 'repeated_expected_answer_phrase'
     | 'answer_phrase_tail'
 }
 
@@ -213,6 +214,17 @@ function isBoundedReadinessTail(whole: string, normalizedAnswer: string): boolea
   return prefixWords.every(word => READINESS_TAIL_WORDS.has(word))
 }
 
+function isRepeatedExpectedPhrase(whole: string, normalizedAnswer: string): boolean {
+  const answerWords = normalizedAnswer.split(/\s+/).filter(Boolean)
+  const wholeWords = whole.split(/\s+/).filter(Boolean)
+  if (answerWords.length === 0) return false
+  if (wholeWords.length <= answerWords.length) return false
+  if (wholeWords.length % answerWords.length !== 0) return false
+  const repeatCount = wholeWords.length / answerWords.length
+  if (repeatCount < 2 || repeatCount > 3) return false
+  return wholeWords.every((word, index) => word === answerWords[index % answerWords.length])
+}
+
 // Deepgram can return "Harvey. Hobby." or "Get fit. Free time." when the
 // student corrects themselves inside one mic turn. For deterministic textbook
 // short-answer items, submit the final expected answer phrase instead of the
@@ -242,6 +254,9 @@ export function normalizeTranscriptToExpectedAnswer(
     }
     if (isBoundedReadinessTail(whole, normalizedAnswer)) {
       return { text: answer, matchedAnswer: answer, reason: 'readiness_expected_answer_tail' }
+    }
+    if (isRepeatedExpectedPhrase(whole, normalizedAnswer)) {
+      return { text: answer, matchedAnswer: answer, reason: 'repeated_expected_answer_phrase' }
     }
   }
 

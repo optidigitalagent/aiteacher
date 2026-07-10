@@ -380,14 +380,14 @@ const PROTOCOLS: Record<string, ExerciseTeachingProtocol> = {
     secondRetry:
       'Give a broader prompt: "Think about [specific aspect] — what comes to mind?"',
     finalReveal:
-      'Accept the second response regardless of length. Note one thing to improve. Move on.',
+      'After bounded scaffolding, accept with one language note. Move on.',
     completionRule:
       'Complete ONLY after student gives a substantive response (6+ words with reasoning). ' +
       'A fragment, single word, or vague phrase requires ONE follow-up before completing.',
     discussionDepthRule:
       'DISCUSSION DEPTH RULE: The student must express at least one opinion or reason. ' +
       '"Jordan inspire me" is NOT complete. "Jordan inspires me because of his hard work" IS complete. ' +
-      'Ask ONE follow-up for fragment answers. After any second response — complete regardless.',
+      'Ask a targeted follow-up for fragment answers. If a reason is required, collect one reason or one reason plus example before recast/repeat.',
     engagementChallengeRule:
       'After student answers, optionally probe: "Can you give an example?" or ' +
       '"What specifically makes you say that?" — but only ONCE, never loop.',
@@ -408,7 +408,7 @@ const PROTOCOLS: Record<string, ExerciseTeachingProtocol> = {
     acceptedAnswerShape: 'Any spoken response addressing the topic.',
     shortAnswerPolicy:
       'One-word or very short filler: "Can you say a bit more? Just a sentence or two." ' +
-      'Any second response (however short): accept and move on. Never ask a third time.',
+      'A tiny second fragment is not enough for reason-required tasks; target the missing reason/example.',
     studentQuestionPolicy:
       'Brief answer. Then: "Good — now back to the topic. Tell me more."',
     firstRetry:
@@ -416,12 +416,12 @@ const PROTOCOLS: Record<string, ExerciseTeachingProtocol> = {
     secondRetry:
       'Give a broader prompt: "Think about [specific aspect] — what comes to mind?"',
     finalReveal:
-      'Accept any second response. Note one language point. Move on.',
+      'Accept after the student gives a substantive response or reaches the anti-loop soft-accept limit. Note one language point. Move on.',
     completionRule:
       'Complete after one substantive response. If first response is a fragment — ' +
-      'ask once for more. After any second response: complete.',
+      'ask for the missing reason/example, then recast and request one fuller repeat when useful.',
     discussionDepthRule:
-      'A one-word or filler answer requires ONE follow-up. Any second answer completes.',
+      'A one-word, filler, or reasonless answer requires targeted scaffolding; do not repeat the whole prompt.',
     engagementChallengeRule:
       'If student seems reluctant: "There\'s no right or wrong — just tell me what you think."',
     forbiddenBehavior: [

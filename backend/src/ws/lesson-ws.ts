@@ -3009,26 +3009,39 @@ async function processInput(
           console.log(`[ws] readiness_intent_detected raw="${text.slice(0, 80)}" normalized="${normalizedRdy}" lessonId=${meta.lessonId}`)
           console.log(`[ws] readiness_not_submitted_to_engine lessonId=${meta.lessonId}`)
           await forcePhaseToExercises(meta.lessonId)
-          const rdyCursor = await exerciseEngine.getCursor(meta.lessonId)
-          if (rdyCursor) {
-            send(ws, { type: 'exercise_cursor_updated', cursor: rdyCursor })
-            console.log(
-              `[ws] readiness_cursor_emitted exercise=#${rdyCursor.exerciseNumber} item=${rdyCursor.itemIndex}/${rdyCursor.itemTotal} lessonId=${meta.lessonId}`,
-            )
+          const readyResult = await masterOrchestrator.handleStudentAnswer({
+            lessonId:        meta.lessonId,
+            userId:          meta.userId,
+            sessionId:       meta.sessionId,
+            studentAnswer:   text,
+            lessonStartedAt: meta.lessonStartedAt,
+          })
+
+          if (readyResult.deterministicTeacherText && !readyResult.error) {
+            const teacherText = readyResult.deterministicTeacherText
+            send(ws, { type: 'ai_text', phase: 'EXERCISES', text: teacherText })
+            if (meta.userId) {
+              recordTeacherMessage({
+                lessonId:       meta.lessonId,
+                sessionId:      meta.sessionId,
+                userId:         meta.userId,
+                studentId:      meta.studentId,
+                text:           teacherText,
+                phase:          'EXERCISES',
+                exerciseNumber: rdyState.currentExerciseState.spec.meta.exerciseNumber,
+                exerciseType:   rdyState.currentExerciseState.spec.exerciseType,
+                itemIndex:      rdyState.currentExerciseState.currentStepIndex,
+                itemTotal:      rdyState.currentExerciseState.spec.steps.length,
+                correctionTurn: null,
+                source:         'system',
+                metadata:       { readinessWarmup: true },
+              })
+            }
+            await ttsStream(ws, meta, teacherText)
+            meta.aiProcessing = false
+            replayQueuedInput(ws, meta, 'readiness-warmup')
+            return
           }
-          const rdySpec    = rdyState.currentExerciseState.spec
-          const rdyExState = rdyState.currentExerciseState
-          const rdyStep    = rdySpec.steps[rdyExState.currentStepIndex]
-          inputText = [
-            `[LESSON START — EXERCISES PHASE]`,
-            `Student said they are ready to start. Do NOT treat this as an exercise answer.`,
-            `MANDATORY: Introduce Exercise ${rdySpec.meta.exerciseNumber} now.`,
-            rdySpec.instruction ? `Instruction: "${rdySpec.instruction}"` : ``,
-            rdyStep?.question
-              ? `Present item 1: "${rdyStep.question}". Wait for the student's answer.`
-              : `Present the exercise and wait for the student's answer.`,
-            `Do NOT say "I'm thinking". Do NOT skip any items. Start from item 1.`,
-          ].filter(Boolean).join('\n')
         }
       }
 

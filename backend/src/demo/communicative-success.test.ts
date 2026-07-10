@@ -140,15 +140,15 @@ describe('Phase 7.5 — soft-speaking-validator: LOW severity grammar accepted e
     minWords: 2,
   }
 
-  it('"My teacher inspire me" at attempt 1 should soft-accept (LOW severity)', () => {
+  it('"My teacher inspire me" at attempt 1 asks for the missing reason', () => {
     const result = validateSoftSpeakingAnswer({
       ...BASE_INPUT,
       studentTranscript: 'My teacher inspire me',
       attemptCount: 1,
     })
-    // LOW severity + communicative success + attempt >= 1 → allowProgression
-    expect(result.allowProgression).toBe(true)
-    expect(result.issueType).toBe('acceptable_with_repair')
+    expect(result.allowProgression).toBe(false)
+    expect(['missing_reason', 'broken_grammar']).toContain(result.issueType)
+    expect(result.repairPrompt).toContain('because')
   })
 
   it('"I watching funny movie" at attempt 1 should soft-accept (LOW severity)', () => {

@@ -18,6 +18,7 @@
 //  13. Phase 7 — Conversational Pedagogy Layer (new)
 
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
 
 import {
   getHintPolicy,
@@ -197,9 +198,9 @@ describe('warmup_activation rule set', () => {
     expect(warmupRules).toContain('Do not ask student to repeat until exact match')
   })
 
-  it('includes the speaking completion rule (accept second response)', () => {
+  it('includes the speaking completion rule (reason scaffold before completion)', () => {
     const hasCompletion = warmupRules.some(r =>
-      r.includes('second response') && r.includes('accept'),
+      r.includes('missing reason') || r.includes('reason plus example'),
     )
     expect(hasCompletion).toBe(true)
   })
@@ -218,16 +219,16 @@ describe('warmup_activation rule set', () => {
 describe('soft_speaking behavior contract', () => {
   const softRules = getRulesForMode('soft_speaking')
 
-  it('includes the one-follow-up-maximum rule', () => {
+  it('includes the bounded mini-dialogue rule', () => {
     const hasOneFollowUp = softRules.some(r =>
-      r.includes('second response') && r.includes('accept'),
+      r.includes('bounded mini-dialogue') || r.includes('missing reason'),
     )
     expect(hasOneFollowUp).toBe(true)
   })
 
-  it('includes the "never ask a third time" rule', () => {
+  it('includes the anti-loop completion rule', () => {
     const hasNeverThird = softRules.some(r =>
-      r.includes('third'),
+      r.includes('anti-loop') || r.includes('tiny second fragment'),
     )
     expect(hasNeverThird).toBe(true)
   })
@@ -442,11 +443,11 @@ describe('Phase 6B.1 — Correction Rule Visibility', () => {
     expect(hasNoEarlyReveal).toBe(true)
   })
 
-  it('speaking completion rule (accept second response) is visible in soft_speaking', () => {
+  it('speaking completion rule (reason scaffold before completion) is visible in soft_speaking', () => {
     const groups = selectBehaviorContractRules('soft_speaking')
     const allRules = groups.flatMap(g => [...g.rules])
     const hasCompletion = allRules.some(r =>
-      r.includes('second response') && r.includes('accept'),
+      r.includes('missing reason') || r.includes('reason plus example'),
     )
     expect(hasCompletion).toBe(true)
   })
@@ -644,8 +645,8 @@ describe('Phase 6B.2 — Binary exercise calibration', () => {
 // ── 13. Phase 6B.3 — Soft-Speaking Threshold Calibration ─────────────────────
 //
 // Validates that soft-speaking thresholds prioritise communication success,
-// accept partial answers at attempt ≥ 2 when understandable and on-topic,
-// and avoid demanding full sentences.
+// require missing reasons for reason-required prompts, and avoid demanding full
+// sentences when the required slots are present.
 //
 // Strict rules preserved:
 //   - blank/filler still rejected
@@ -708,9 +709,9 @@ describe('Phase 6B.3 — Soft-Speaking Threshold Calibration', () => {
     expect(result.allowProgression).toBe(true)
   })
 
-  it('communicatively successful partial answer accepted at attempt 2', () => {
+  it('reason-required partial answer still asks for the missing reason at attempt 2', () => {
     // "My teacher inspires me." — subject present, reason missing.
-    // At attempt 2, communicative success fast-path should soft-accept.
+    // At attempt 2, the validator should still target the missing reason.
     const result = validateSoftSpeakingAnswer({
       exerciseId:        'test-ss-002',
       exerciseNumber:    2,
@@ -720,9 +721,10 @@ describe('Phase 6B.3 — Soft-Speaking Threshold Calibration', () => {
       studentTranscript: 'My teacher inspires me.',
       attemptCount:      2,
     })
-    expect(result.allowProgression).toBe(true)
+    expect(result.allowProgression).toBe(false)
     expect(result.isPartiallyAcceptable).toBe(true)
-    expect(result.issueType).toBe('acceptable_with_repair')
+    expect(result.issueType).toBe('missing_reason')
+    expect(result.repairPrompt).toContain('Now add why')
   })
 
   it('partial answer at attempt 0 NOT fast-pathed (still asks for missing slot)', () => {
@@ -756,6 +758,38 @@ describe('Phase 6B.3 — Soft-Speaking Threshold Calibration', () => {
     expect(result.repairPrompt).toContain('real example')
   })
 
+  it('opinion fragment gets targeted reason scaffold instead of the full prompt', () => {
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-free-time-fragment-1',
+      exerciseNumber:    2,
+      exerciseType:      'discussion',
+      instruction:       'Do you think free time is more important than school time? Give two reasons.',
+      itemText:          'Do you think free time is more important than school time? Give two reasons.',
+      studentTranscript: "Yes. I think that's",
+      attemptCount:      0,
+    })
+    expect(result.allowProgression).toBe(false)
+    expect(result.issueType).toBe('missing_reason')
+    expect(result.repairPrompt).toContain('one clear reason')
+    expect(result.repairPrompt).not.toContain('Do you think free time is more important than school time?')
+  })
+
+  it('second incomplete opinion fragment still asks for one missing reason', () => {
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-free-time-fragment-2',
+      exerciseNumber:    2,
+      exerciseType:      'discussion',
+      instruction:       'Do you think free time is more important than school time? Give two reasons.',
+      itemText:          'Do you think free time is more important than school time? Give two reasons.',
+      studentTranscript: "free time is more important than school time. I think that's free",
+      attemptCount:      1,
+    })
+    expect(result.allowProgression).toBe(false)
+    expect(result.issueType).toBe('missing_reason')
+    expect(result.repairPrompt).toContain('one clear reason')
+    expect(result.repairPrompt).not.toContain('Do you think free time is more important than school time?')
+  })
+
   it('reason-required speaking asks for a natural recast before final completion', () => {
     const result = validateSoftSpeakingAnswer({
       exerciseId:        'test-ss-free-time-2',
@@ -782,6 +816,18 @@ describe('Phase 6B.3 — Soft-Speaking Threshold Calibration', () => {
       attemptCount:      2,
     })
     expect(result.allowProgression).toBe(true)
+  })
+
+  it('paid lesson readiness path delegates to master orchestrator warm-up', () => {
+    const source = readFileSync(new URL('../../ws/lesson-ws.ts', import.meta.url), 'utf8')
+    const readinessBlock = source.slice(
+      source.indexOf('if (isReadinessIntent(text))'),
+      source.indexOf('if (!readinessHandled)'),
+    )
+
+    expect(readinessBlock).toContain('masterOrchestrator.handleStudentAnswer')
+    expect(readinessBlock).toContain('readinessWarmup')
+    expect(readinessBlock).not.toContain('MANDATORY: Introduce Exercise')
   })
 
   // ── Validator: no free-chat regression ────────────────────────────────────

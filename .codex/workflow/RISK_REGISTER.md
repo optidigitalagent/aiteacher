@@ -25,6 +25,40 @@
 
 ## Open Risks
 
+### RISK-031 - Paid section 1.1 live tutor intelligence repair requires deploy and live retest
+
+**Status:** MITIGATED
+**Severity:** P1
+**Area:** backend / voice / prompt / paid lesson runtime
+**Description:** Local repair addresses the latest paid section `1.1`
+production defects after commit `ae5eb8b`: readiness now reaches the
+orchestrator warm-up guard, Section `1.1` item text and expected answer are
+pinned as `My ___ is photography.` -> `hobby`, repeated full current answers
+such as `keen on keen on` normalize to the current expected answer, and
+reason-required speaking fragments receive targeted missing-reason scaffolding
+instead of full-prompt echo. The remaining risk is unverified production
+behavior through Railway, Redis lesson state, LLM context, browser audio, STT,
+and TTS.
+**Trigger:** Owner paid lesson section `1.1`, especially `I'm ready` after the
+intro, Exercise 1 item 1 answer handling, repeated `keen on`, and the final
+free-time/school-time speaking task with incomplete reasons.
+**Mitigation:** Targeted tests passed (3 files / 171 tests), focused demo test
+passed (1 file / 35 tests), backend TypeScript passed, full backend suite
+passed (67 files / 2162 tests), `git diff --check` passed with CRLF warnings
+only, and review gate passed for backend, curriculum, kids safety, prompt
+tester, and QA. No frontend UI, billing, auth, STT/TTS config, mic config,
+`docs/master-prompt.md`, or `.env` file was changed.
+**Resolution:** Commit, deploy, and pass authenticated owner paid lesson
+section `1.1` smoke verifying warm-up after readiness, synchronized item text
+and expected answer, repeated `keen on` acceptance, and natural
+reason/example/recast/repeat speaking scaffolding. The intro TTS sentence
+symptom remains recorded as a voice-runtime symptom unless reproduced after
+this AI repair.
+**Opened:** 2026-07-10
+**Updated:** 2026-07-10
+
+---
+
 ### RISK-030 - Paid private tutor behavior repair requires deploy and live retest
 
 **Status:** MITIGATED
@@ -43,7 +77,11 @@ final open speaking prompt.
 **Mitigation:** Targeted tests passed (2 files / 153 tests), backend
 TypeScript passed, full backend suite passed (67 files / 2156 tests), and
 `git diff --check` passed with CRLF warnings only. Review gate passed with a
-non-blocking prompt cleanup warning.
+non-blocking prompt cleanup warning. Commit
+`ae5eb8b82d7eb538794ac961d11213ecf7a42b62` deployed to Railway backend
+`de818d67-e947-4f7f-98f8-48e9e327885e` and frontend
+`439bdd8c-9ebf-44cd-8d38-ed6585348ca3`; automated health/log checks passed,
+including the 10-minute stability recheck.
 **Resolution:** Deploy the repair and pass authenticated owner paid lesson
 smoke verifying warm-up/readiness, teacher-like gap-fill feedback,
 clarification wording, and 1-2 context-aware speaking follow-ups with

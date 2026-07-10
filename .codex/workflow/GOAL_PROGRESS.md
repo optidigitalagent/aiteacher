@@ -1,5 +1,99 @@
 # GOAL_PROGRESS.md
 
+## PAID LESSON 1.1 LIVE TUTOR INTELLIGENCE REPAIR - 2026-07-10
+
+**Trigger:** User manually tested production paid lesson section `1.1` after
+commit `ae5eb8b` and reported remaining Alex intelligence defects: intro text
+included `Tell me when you're ready.` but audio did not pronounce it; `I'm
+ready` started Exercise 1 without the expected warm-up bridge; Exercise 1
+display/expected-answer behavior appeared to accept `spare time` for `My ___ is
+photography.`; repeated full answer `keen on keen on` was rejected; and the
+speaking task repeated the whole prompt for partial answers instead of
+scaffolding reason/example/recast/repeat.
+
+**Implementation:**
+- `backend/src/ws/lesson-ws.ts`
+  - Fixed the real paid WS readiness path: `I'm ready` now delegates to
+    `MasterLessonOrchestrator.handleStudentAnswer`, so the backend warm-up guard
+    runs in production instead of the older direct `Introduce Exercise 1`
+    fallback prompt.
+- `backend/src/voice/voice-turn-stabilizer.ts`
+  - Added expected-answer-bounded normalization for the current expected phrase
+    repeated exactly 2-3 times, e.g. `keen on keen on` -> `keen on`.
+- `backend/src/validation/soft-speaking-validator.ts`
+  - Added targeted reason scaffolding for opinion fragments, especially
+    two-reason prompts, and prevented the communicative-success fast path from
+    completing reason-required answers while the reason slot is still missing
+    before the anti-loop limit.
+- `backend/src/ai/prompt-builder.ts`,
+  `backend/src/ai/teacher-brain/teacher-brain-rules.ts`,
+  `backend/src/behavior-runtime/exercise-teaching/exercise-teaching-protocols.ts`
+  - Removed prompt/rule ambiguity that told readiness to jump directly to
+    Exercise 1 and replaced old "any second response completes" speaking rules
+    with bounded reason/example/recast/repeat behavior.
+- `docs/teacher-brain/`
+  - Updated runtime authority, grammar-fill, soft-speaking, STT noise,
+    self-correction, retry, and loop-prevention notes to match the production
+    defect repair.
+- Tests updated:
+  - `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+  - `backend/src/voice/__tests__/voice-turn-stabilizer.test.ts`
+  - `backend/src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+  - `backend/src/demo/communicative-success.test.ts`
+
+**Validation evidence:**
+- First targeted run failed on stale speaking-rule QA assertions and one short
+  fragment branch; fixed by updating the rule contract and handling opinion
+  fragments before off-task fallback.
+- First full backend suite then failed one stale demo expectation that accepted
+  `My teacher inspire me` without a reason at attempt 1; fixed to require
+  missing-reason/broken-grammar scaffold with `because`.
+- Targeted tests:
+  `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 3 files passed; 171 tests passed.
+- Backend TypeScript:
+  `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- Focused follow-up:
+  `cd backend; npx vitest run src/demo/communicative-success.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 35 tests passed.
+- Full backend suite:
+  `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 67 files passed; 2162 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+
+**Review gate:**
+- backend reviewer: RUN -> PASS; no auth, billing, payment, DB schema,
+  endpoint, secret, STT/TTS config, or external provider behavior changed.
+  WS readiness remains backend-authoritative and expected-answer cleanup can
+  only return the current backend expected answer.
+- frontend reviewer: NOT APPLICABLE - no frontend files or client UI contracts
+  changed.
+- curriculum reviewer: RUN -> PASS; Section `1.1` item 1 is pinned as
+  `My ___ is photography.` -> `hobby`, and `spare time` is rejected there.
+  Curriculum answers/order were not changed.
+- kids safety monitor: RUN -> PASS; shared WS/prompt files changed, but full
+  Kids-related backend suite passed and no Kids curriculum/safety/profile
+  behavior was loosened.
+- prompt tester: RUN -> PASS; `docs/master-prompt.md` was not edited and still
+  contains the no-`Wrong`, Socratic, JSON output, and prompt-size constraints.
+  Runtime prompt-builder ambiguity around readiness was removed.
+- QA tester: RUN -> PASS; targeted tests, focused demo test, TypeScript, full
+  backend suite, and diff check passed.
+- acceptance auditor: NOT APPLICABLE - this repair is not a final active-goal
+  completion claim before deploy and manual production smoke.
+
+**Current deploy state:**
+- Commit: no commit created yet for this repair.
+- Deployment: not deployed yet.
+- Production verification: not run after this repair. The prior production
+  symptom about intro TTS is recorded as a voice-runtime symptom; this patch
+  did not change TTS config.
+
+**Next action:** Stage only the scoped backend/docs/test/workflow files for
+this repair, commit, push to `origin/main`, deploy Railway production, verify
+health/logs, then run/manual-check paid lesson section `1.1` production smoke
+for warm-up, item-answer sync, repeated `keen on`, and speaking scaffolding.
+
 ## PAID PRIVATE TUTOR BEHAVIOR REPAIR - 2026-07-10
 
 **Trigger:** User completed another paid lesson smoke and reported that Alex no
@@ -75,13 +169,35 @@ of running a short context-aware mini-dialogue.
   completion claim.
 
 **Commit/deploy state:**
-- Commit: no commit created yet for this repair.
-- Deployment: not deployed yet.
-- Production verification: unverified for this repair.
+- Commit `ae5eb8b82d7eb538794ac961d11213ecf7a42b62`
+  (`fix(lesson): make paid Alex feel like a tutor`) created from the scoped
+  backend product/test files plus workflow evidence and pushed to `origin/main`.
+- Railway backend `aiteacher` deployment
+  `de818d67-e947-4f7f-98f8-48e9e327885e` -> SUCCESS at commit `ae5eb8b`.
+- Railway frontend `aware-alignment` deployment
+  `439bdd8c-9ebf-44cd-8d38-ed6585348ca3` -> SUCCESS at commit `ae5eb8b`
+  (monorepo auto-deploy; no frontend product files changed).
+- Backend `/health` -> HTTP 200 with `status=ok`, `checks.postgres=ok`,
+  `checks.redis=ok`, uptime 22s at `2026-07-10T07:14:04.688Z`.
+- Frontend `/demo/setup` -> HTTP 200 and served
+  `/assets/index-Cq-fCicY.js`.
+- Backend startup logs show migrations applied, `[server] listening on
+  0.0.0.0:8080`, PostgreSQL ready, Redis connected/ping OK/ready, and WS
+  attached.
+- Backend/frontend recent HTTP 4xx/5xx log checks returned no entries.
+- Backend/frontend critical error-pattern sweeps returned no entries.
+- 10-minute stability recheck at `2026-07-10T07:23:55.579Z` passed: backend
+  `/health` HTTP 200 with uptime 613s and postgres/redis ok; frontend
+  `/demo/setup` HTTP 200; final backend/frontend HTTP 4xx/5xx checks returned
+  no entries; final backend/frontend error-pattern sweeps returned no entries.
 
-**Next action:** Commit, push, and deploy the scoped private-tutor behavior
-repair to Railway, then rerun authenticated owner paid lesson section `1.1`
-production smoke.
+**Next action:** Rerun authenticated owner paid lesson section `1.1` with real
+microphone and verify: `Okay` / `ready` after intro opens the warm-up instead
+of a wrong gap-fill attempt; the warm-up response bridges into Exercise 1;
+closed feedback sounds teacher-like; clarification explains the current
+exercise calmly; open speaking asks context-aware follow-up(s), requests a
+reason/example, recasts the answer, and asks the student to repeat/improve
+before lesson completion.
 
 ## PAID LESSON AI INTELLIGENCE REPAIR - 2026-07-10
 

@@ -100,6 +100,44 @@ describe('paid lesson vocabulary item flow', () => {
     expect(firstAnswer.feedback?.correct).toBe(true)
   })
 
+  it('keeps Section 1.1 item text and expected answer synchronized', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { tryBuildAutoManifest } = await import('../auto-section-manifest-builder.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-item-sync'
+
+    const manifest = tryBuildAutoManifest('1.1')
+    const firstItem = manifest?.exercises[0]?.items?.[0]
+    expect(firstItem).toEqual({
+      text: 'My ___ is photography.',
+      correctAnswer: 'hobby',
+    })
+
+    await exerciseEngine.init(lessonId, '1.1')
+
+    const wrongFirst = await orchestrator.handleVoiceAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'Spare time',
+      lessonStartedAt: Date.now(),
+    })
+    expect(wrongFirst?.feedback?.correct).toBe(false)
+    expect(wrongFirst?.cursorUpdate?.currentItem).toBe('My ___ is photography.')
+    expect(wrongFirst?.deterministicTeacherText).toContain('My ___ is photography.')
+
+    const correctFirst = await orchestrator.handleVoiceAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'Hobby',
+      lessonStartedAt: Date.now(),
+    })
+    expect(correctFirst?.feedback?.correct).toBe(true)
+    expect(correctFirst?.cursorUpdate?.currentItem).toBe('What do you do in your ___?')
+  })
+
   it('keeps exercise authority after repeated wrong answers and advances keen on to the gym item deterministically', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')

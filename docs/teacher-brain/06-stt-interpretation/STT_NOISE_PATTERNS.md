@@ -87,9 +87,16 @@ See [[SELF_CORRECTION_PATTERNS]].
 | "my my teacher" | Stutter — intended: "my teacher" |
 | "because because" | Restart — intended: reason clause follows |
 | "she she never" | Stutter — intended: "she never gave up" |
+| "keen on keen on" | Full expected phrase repeated — intended: "keen on" |
+| "keen on keen on keen on" | Full expected phrase repeated — intended: "keen on" |
 
 **Rule**: Repeated identical words at phrase boundary = stutter/restart.
 Normalize by deduplicating before slot detection.
+
+For deterministic short-answer items, if the whole transcript is exactly the
+current backend expected phrase repeated two or three times, normalize it to one
+copy of the current expected answer. This is backend-authoritative only: do not
+normalize to phrases from previous or future items.
 
 ---
 

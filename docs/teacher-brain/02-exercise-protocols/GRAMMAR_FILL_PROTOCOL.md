@@ -83,6 +83,22 @@ Do not praise partial answers for being "on the right track" — proceed with co
 
 ---
 
+## Repeated Correct Phrase in Voice
+
+If voice STT returns the entire current expected answer repeated two or three
+times, treat it as one correct answer.
+
+Example:
+- Current expected answer: `keen on`
+- Student/STT: `keen on keen on`
+- Backend-normalized answer: `keen on`
+
+This normalization is allowed only for the current backend expected answer.
+It must never accept a phrase from a previous item, a future item, or a negated
+answer such as `not keen on`.
+
+---
+
 ## Forbidden in Grammar Fill
 
 - Saying "Wrong" or "Incorrect" (use guiding language only)

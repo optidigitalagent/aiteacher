@@ -177,6 +177,14 @@ function hasReasonRequest(instruction: string): boolean {
   return /\b(reasons?|because|why|opinion|think)\b/.test(normalizeText(instruction))
 }
 
+function asksForTwoReasons(instruction: string): boolean {
+  return /\b(two|2)\s+reasons?\b/.test(normalizeText(instruction))
+}
+
+function hasOpinionSignal(normalized: string): boolean {
+  return /\b(i think|i believe|in my opinion|yes|no|free time|school time|more important|important)\b/.test(normalized)
+}
+
 // Phase 6B.3: communication success heuristic.
 // Returns true when the answer is understandable and on-topic (≥2 semantic words + substantive).
 // Used to gate the communicative success fast-path — does NOT bypass nonsense/filler rejection.
@@ -524,7 +532,10 @@ export function buildPedagogicalRetry(
         return `${prefix} Now say why you like it.`
       }
       if (/free time|school time|reason|opinion|think/.test(norm)) {
-        return `${prefix} Why do you think that? Give me one real example.`
+        if (asksForTwoReasons(instruction)) {
+          return `${prefix} I hear your opinion. Now add one clear reason, or one reason plus a real example.`
+        }
+        return `${prefix} I hear your opinion. Why do you think that? Give me one real example.`
       }
       return `${prefix} Now add why.`
     }
@@ -571,8 +582,21 @@ function validateWithSlots(
   rawTranscript?: string,
   preComputedSlotResult?: SlotDetectionResult,
 ): SoftSpeakingValidationResult {
+  const missingReasonFragment =
+    taskSpec.taskKind === 'reason_required' && hasOpinionSignal(normalized)
+
   // Off-task: no substantive content at all
   if (!hasSubstantiveContent(words)) {
+    if (missingReasonFragment) {
+      return {
+        allowProgression:      false,
+        needsRetry:            true,
+        isPartiallyAcceptable: true,
+        issueType:             'missing_reason',
+        repairPrompt:          buildPedagogicalRetry(instruction, ['reason' as AnswerSlot], 'someone', attemptCount),
+        confidence:            0.75,
+      }
+    }
     if (attemptCount >= 3) {
       return {
         allowProgression:      true,
@@ -655,11 +679,14 @@ function validateWithSlots(
     // HIGH severity (word salad, 3+ gerunds): no early accept — scaffold required.
     const grammarSeverity = assessGrammarSeverity(normalized, words, semWords)
     const commSuccess = isCommunicativelySuccessful(words, semWords)
+    const missingReasonInReasonTask =
+      taskSpec.taskKind === 'reason_required' && slotResult.missingSlots.includes('reason')
 
     if (
       commSuccess &&
       slotResult.presentSlots.length > 0 &&
       grammarSeverity !== 'high' &&
+      (!missingReasonInReasonTask || attemptCount >= 3) &&
       (
         (attemptCount >= 1 && grammarSeverity === 'low') ||
         attemptCount >= 2
@@ -676,6 +703,17 @@ function validateWithSlots(
         teacherHint:           slotResult.interpretedMeaning
           ? `Recast naturally and continue: acknowledge "${slotResult.interpretedMeaning}".`
           : "Communication succeeded — recast naturally and continue.",
+      }
+    }
+
+    if (missingReasonInReasonTask && hasOpinionSignal(normalized)) {
+      return {
+        allowProgression:      false,
+        needsRetry:            true,
+        isPartiallyAcceptable: true,
+        issueType:             'missing_reason',
+        repairPrompt:          buildPedagogicalRetry(instruction, ['reason' as AnswerSlot], subjectGuess, attemptCount),
+        confidence:            Math.max(slotResult.confidence, 0.7),
       }
     }
 
@@ -711,6 +749,16 @@ function validateWithSlots(
 
     // Not enough content
     if (semWords < 2) {
+      if (missingReasonInReasonTask) {
+        return {
+          allowProgression:      false,
+          needsRetry:            true,
+          isPartiallyAcceptable: false,
+          issueType:             'missing_reason',
+          repairPrompt:          buildPedagogicalRetry(instruction, ['reason' as AnswerSlot], subjectGuess, attemptCount),
+          confidence:            0.85,
+        }
+      }
       return {
         allowProgression:      false,
         needsRetry:            true,

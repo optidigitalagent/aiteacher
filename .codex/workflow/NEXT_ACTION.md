@@ -8,49 +8,64 @@
 
 ## CURRENT NEXT ACTION
 
-**Task:** Commit, push, and deploy paid private-tutor behavior repair
+**Task:** Commit, push, and deploy paid lesson 1.1 live tutor intelligence repair
 **Type:** DEPLOY
 **Phase:** Phase 3 - Deploy and production owner smoke
-**Agent:** goal-executor + deploy-railway
+**Agent:** goal-executor + qa-tester
 
 **Why this is next:**
-  User reran paid lesson section `1.1` and found additional Teacher Brain
-  behavior defects: `Okay` after the intro was graded as a wrong Exercise 1
-  answer, there was no short personal warm-up, closed gap-fill feedback still
-  sounded mechanical, clarification wording was dry, and open speaking
-  completed after one short answer. The scoped backend repair is implemented,
-  locally validated, and review-gated. It must now be committed, pushed, and
-  deployed before production smoke can verify the behavior.
+  User manually tested production paid lesson section `1.1` after commit
+  `ae5eb8b` and found remaining Teacher Brain / backend intelligence defects:
+  readiness bypassed the warm-up, the `My ___ is photography.` expected-answer
+  alignment needed proof, repeated full answer `keen on keen on` was rejected,
+  and the reason-required speaking task repeated the whole prompt instead of
+  targeted scaffolding. The scoped backend/Teacher Brain repair is implemented
+  and locally validated; it now needs commit, push, Railway deployment, and
+  post-deploy health/log verification before manual owner smoke.
 
 **Completed evidence:**
-  - `backend/src/lesson/master-orchestrator.ts` intercepts intro readiness and
-    one pending warm-up turn before Exercise 1 submission, then bridges back to
-    the backend-authoritative first item.
-  - `backend/src/validation/soft-speaking-validator.ts` adds bounded speaking
-    depth checks: reason/example follow-up, natural recast, and repeat request
-    before progression.
-  - Teacher Brain prompt/rule/protocol files now describe private-tutor
-    warm-up and context-aware speaking mini-dialogue behavior.
-  - `backend/src/ws/lesson-ws.ts` uses more teacher-like soft-speaking retry
-    and completion wording.
+  - `backend/src/ws/lesson-ws.ts` readiness now delegates to
+    `MasterLessonOrchestrator.handleStudentAnswer`, so the production WS path
+    can return the deterministic warm-up instead of an immediate Exercise 1
+    prompt.
+  - Section `1.1` item sync is pinned by test:
+    `My ___ is photography.` expects `hobby`; `spare time` is rejected there
+    and the cursor stays on the same item.
+  - `backend/src/voice/voice-turn-stabilizer.ts` normalizes the current
+    expected phrase repeated exactly 2-3 times, e.g. `keen on keen on` ->
+    `keen on`, and rejects that normalization for other current answers.
+  - `backend/src/validation/soft-speaking-validator.ts` detects
+    opinion-without-reason fragments, asks for one missing reason or reason
+    plus example, and blocks premature completion of tiny reason-required
+    fragments before the anti-loop limit.
+  - Teacher Brain runtime docs, prompt-builder, rules, and exercise-teaching
+    protocol text now match the bounded reason/example/recast/repeat behavior.
   - Targeted tests:
-    `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
-    -> exit 0; 2 files passed; 153 tests passed.
+    `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+    -> exit 0; 3 files passed; 171 tests passed.
   - Backend TypeScript:
     `cd backend; npx tsc --noEmit` -> exit 0.
+  - Focused follow-up:
+    `cd backend; npx vitest run src/demo/communicative-success.test.ts --reporter=dot --silent`
+    -> exit 0; 1 file passed; 35 tests passed.
   - Full backend suite:
     `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 67 files
-    passed; 2156 tests passed.
+    passed; 2162 tests passed.
   - `git diff --check` -> exit 0; CRLF warnings only.
-  - Review gate -> PASS WITH WARNING: backend, curriculum, kids safety, prompt,
-    and QA ran; frontend not applicable; acceptance auditor not applicable.
+  - Review gate -> PASS: backend, curriculum, kids safety, prompt tester, and
+    QA ran; frontend not applicable; acceptance auditor not applicable before
+    deploy/manual smoke.
+  - No frontend UI, billing, auth, STT/TTS config, mic config,
+    `docs/master-prompt.md`, or `.env` file changed.
+  - Commit: no commit created yet for this repair.
+  - Deployment: not deployed yet for this repair.
 
 **Exact next step:**
-  Stage only the scoped product/test files and workflow evidence, confirm no
-  `.env` or unrelated files are staged, commit, push to `origin/main`, wait for
-  Railway backend/frontend deployment success, verify `/health`, frontend
-  `/demo/setup`, startup logs, and recent critical log windows.
+  Stage only scoped backend, Teacher Brain docs, tests, and workflow evidence;
+  commit; push `origin/main`; verify Railway backend/frontend deployments,
+  backend `/health`, frontend `/demo/setup`, and recent HTTP/error logs.
 
 **Current stop condition:**
-  Manual authenticated owner paid lesson smoke with real microphone remains
-  required after deployment.
+  None until deployment finishes or an external credential/deploy failure blocks
+  progress. After deploy, manual authenticated owner paid lesson section `1.1`
+  smoke with real microphone will remain required.

@@ -22,6 +22,30 @@
 
 ## Active Decisions
 
+### 2026-07-10 - Paid section 1.1 readiness and repetition repair stays orchestrator-owned
+
+**Decision:** The paid WebSocket readiness path delegates `I'm ready` /
+readiness-style turns to `MasterLessonOrchestrator.handleStudentAnswer` instead
+of constructing a direct "Introduce Exercise 1" prompt in `lesson-ws.ts`.
+Voice cleanup may normalize a repeated full expected phrase only when the whole
+student transcript is exactly the current backend expected answer repeated 2-3
+times. Reason-required speaking prompts must ask for one missing reason or
+reason plus example, then recast and request one improved repeat before
+completion.
+**Reason:** Production evidence after commit `ae5eb8b` showed the WS readiness
+shortcut bypassed the warm-up guard, `keen on keen on` was rejected despite
+being the full current answer repeated, and the speaking task echoed the full
+prompt instead of tutoring the missing piece. Keeping these rules in backend
+orchestrator/validator code preserves cursor, scoring, and curriculum
+authority.
+**Alternatives rejected:** Keep the WS direct Exercise 1 prompt; accept any
+transcript that merely contains the expected phrase; change curriculum answers;
+let the LLM decide when a tiny reason-required answer is complete; edit
+frontend UI, billing/auth, or STT/TTS configuration.
+**Reversible:** Yes.
+**Risk:** Medium until deployed and verified with authenticated owner paid
+lesson section `1.1` and real microphone/audio.
+
 ### 2026-07-10 - Private tutor repair adds unscored warm-up and speaking depth gate
 
 **Decision:** Improve Alex's private-tutor feel with backend-owned interstitial

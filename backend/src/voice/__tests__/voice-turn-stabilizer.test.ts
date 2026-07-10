@@ -65,6 +65,20 @@ describe('paid lesson expected-answer transcript cleanup', () => {
   it('does not strip meaningful negation without a speech-verb tail', () => {
     expect(normalizeTranscriptToExpectedAnswer('not keen on', ['keen on'])).toBeNull()
   })
+
+  it('accepts a full expected phrase repeated two or three times', () => {
+    const twice = normalizeTranscriptToExpectedAnswer('Keen on, keen on.', ['keen on'])
+    const three = normalizeTranscriptToExpectedAnswer('keen on keen on keen on', ['keen on'])
+
+    expect(twice?.text).toBe('keen on')
+    expect(twice?.reason).toBe('repeated_expected_answer_phrase')
+    expect(three?.text).toBe('keen on')
+    expect(three?.reason).toBe('repeated_expected_answer_phrase')
+  })
+
+  it('does not accept repeated phrase cleanup for unrelated current answers', () => {
+    expect(normalizeTranscriptToExpectedAnswer('keen on keen on', ['spare time'])).toBeNull()
+  })
 })
 
 describe('voice transcript classifier still accepts short textbook answers', () => {

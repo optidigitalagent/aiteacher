@@ -25,6 +25,7 @@ Validation System
 └── Correctness gate: allowProgression (boolean)
 └── Per-type validators: deterministic, matching, soft-speaking
 └── Soft-speaking slot detection: deterministic, no LLM
+└── Voice normalization to the current expected answer only
 └── Correction turn: A/B/C/D tracked in backend state
 
 Master Lesson Orchestrator

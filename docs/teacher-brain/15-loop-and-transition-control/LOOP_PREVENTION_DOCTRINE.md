@@ -115,6 +115,7 @@ These rules are absolute — no exceptions:
 | **No filler cycle > 3 turns** | Soft-accept after 3 filler responses |
 | **No question repetition** | Never ask the exact same question twice in a row |
 | **No "do you understand?" loops** | Never ask for comprehension confirmation — test it |
+| **No full-prompt echo for partial speaking** | If only a reason/example is missing, ask only for that missing piece |
 
 ---
 
@@ -151,6 +152,10 @@ For soft speaking loops (filler/off-task):
 1. Accept the best attempt so far
 2. Give one-line repair note
 3. Advance cursor
+
+For reason-required speaking, do not use soft accept before the student has
+given at least a reason or a reason-like example, unless the three-attempt
+anti-loop safety valve has been reached.
 
 ### Exit via "Skip and Repair"
 

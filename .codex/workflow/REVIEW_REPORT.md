@@ -6,6 +6,122 @@
 
 ---
 
+## REVIEW GATE - Paid lesson 1.1 live tutor intelligence repair - 2026-07-10
+
+**Cycle ID:** paid-lesson-1-1-live-tutor-intelligence-repair/2026-07-10
+
+**Phase:** Phase 3 - paid owner production smoke repair follow-up.
+
+**Base/current commit:**
+- Base HEAD: `ae5eb8b82d7eb538794ac961d11213ecf7a42b62`.
+- Current commit: no new commit created yet.
+
+**Changed files reviewed:**
+- `backend/src/ws/lesson-ws.ts`
+- `backend/src/voice/voice-turn-stabilizer.ts`
+- `backend/src/validation/soft-speaking-validator.ts`
+- `backend/src/ai/prompt-builder.ts`
+- `backend/src/ai/teacher-brain/teacher-brain-rules.ts`
+- `backend/src/behavior-runtime/exercise-teaching/exercise-teaching-protocols.ts`
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+- `backend/src/voice/__tests__/voice-turn-stabilizer.test.ts`
+- `backend/src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+- `backend/src/demo/communicative-success.test.ts`
+- `docs/teacher-brain/01-runtime/RUNTIME_AUTHORITY_MAP.md`
+- `docs/teacher-brain/02-exercise-protocols/GRAMMAR_FILL_PROTOCOL.md`
+- `docs/teacher-brain/02-exercise-protocols/SOFT_SPEAKING_PROTOCOL.md`
+- `docs/teacher-brain/06-stt-interpretation/STT_NOISE_PATTERNS.md`
+- `docs/teacher-brain/06-stt-interpretation/SELF_CORRECTION_PATTERNS.md`
+- `docs/teacher-brain/15-loop-and-transition-control/RETRY_ESCALATION_POLICY.md`
+- `docs/teacher-brain/15-loop-and-transition-control/LOOP_PREVENTION_DOCTRINE.md`
+
+**Role applicability:**
+- backend reviewer: RUN - backend WebSocket readiness, voice transcript
+  normalization, soft-speaking validation, prompt-builder text, and runtime
+  teaching rules changed.
+- frontend reviewer: NOT APPLICABLE - no frontend files, visual UI, client
+  contracts, mic UI, billing UI, or auth UI changed.
+- curriculum reviewer: RUN - Section `1.1` answer/cursor synchronization and
+  speaking completion rules affect curriculum integrity.
+- kids safety monitor: RUN - shared backend WS/prompt/rule files changed and
+  full backend suite includes Kids safety/runtime surfaces.
+- prompt tester: RUN - prompt-builder and Teacher Brain rule/protocol text
+  changed; `docs/master-prompt.md` was read for constraints and not edited.
+- QA tester: RUN - mandatory after implementation.
+- acceptance auditor: NOT APPLICABLE - no final active-goal completion is
+  claimed before deploy and manual production smoke.
+
+**Backend reviewer: PASS**
+- Critical findings: none.
+- Evidence:
+  - No auth, billing, payment, LiqPay, endpoint, DB schema, secret, frontend UI,
+    STT/TTS configuration, or mic configuration changed.
+  - `lesson-ws.ts` readiness no longer builds a direct "Introduce Exercise 1"
+    prompt; it delegates to `MasterLessonOrchestrator.handleStudentAnswer` and
+    sends backend deterministic warm-up text when provided.
+  - Repeated expected-answer normalization is bounded to the current backend
+    expected answer phrase, exact 2-3 repetitions only.
+  - Deterministic item correctness and cursor authority remain in the backend
+    exercise engine; the LLM does not own grading or accepted answers.
+
+**Curriculum reviewer: PASS**
+- Curriculum files changed: none.
+- Accepted answers, exercise order, scoring, and progression rules were not
+  changed.
+- Section `1.1` item 1 is pinned by test as `My ___ is photography.` ->
+  `hobby`; `spare time` is rejected for that item and accepted only when it is
+  the current expected answer.
+- Speaking validation now collects the missing reason/example/recast/repeat
+  required by the task without accepting a tiny fragment as complete before the
+  bounded anti-loop limit.
+
+**Kids safety monitor: PASS**
+- No Kids curriculum, profile data, safety policy, safety escalation, or
+  child-facing accepted-answer behavior was intentionally changed.
+- Shared Teacher Brain wording remains bounded to curriculum tasks and does not
+  add free chat.
+- Full backend suite passed after the shared rule/validator changes.
+
+**Prompt tester: PASS**
+- `docs/master-prompt.md` was not edited.
+- Runtime prompt/rule text now matches the backend-owned readiness warm-up path
+  and removes the stale instruction that readiness should immediately start
+  Exercise 1.
+- Speaking prompt rules now require targeted missing-reason scaffolding, a
+  natural recast, and one improved repeat before completion; they still avoid
+  full prompt echo loops and "Wrong"/"Incorrect" style feedback.
+
+**QA tester: PASS**
+- Targeted tests:
+  - First run failed on stale speaking QA expectations and one short-fragment
+    branch; fixed.
+  - Rerun:
+    `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+    -> exit 0; 3 files passed; 171 tests passed.
+- TypeScript:
+  - `cd backend; npx tsc --noEmit` -> exit 0.
+- Focused follow-up:
+  - `cd backend; npx vitest run src/demo/communicative-success.test.ts --reporter=dot --silent`
+    -> exit 0; 1 file passed; 35 tests passed.
+- Full backend suite:
+  - First run failed one stale demo expectation; fixed.
+  - Rerun `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 67
+    files passed; 2162 tests passed.
+- Diff check:
+  - `git diff --check` -> exit 0; CRLF warnings only.
+- Scope guard:
+  - Diff-name check found no changed `frontend/`, billing/auth, STT/TTS config,
+    `docs/master-prompt.md`, or `.env` files.
+
+**Overall verdict:** PASS. Local repair is implemented and validated. GOAL NOT
+COMPLETE because it is not committed, deployed, or manually production-smoked
+yet.
+
+**Next action:** Commit, push, deploy to Railway, verify health/logs, then run
+authenticated owner paid lesson section `1.1` production smoke with real audio.
+
+---
+
 ## REVIEW GATE - Paid private tutor behavior repair - 2026-07-10
 
 **Cycle ID:** paid-private-tutor-behavior-repair/2026-07-10
@@ -14,7 +130,7 @@
 
 **Base/current commit:**
 - Base HEAD: `5208c2c8bec4ed72b6aa1e13d05fe7cfbd4de01f`.
-- Current commit: no new commit created yet.
+- Current commit: `ae5eb8b82d7eb538794ac961d11213ecf7a42b62`.
 
 **Changed files reviewed:**
 - `backend/src/lesson/master-orchestrator.ts`
@@ -101,11 +217,23 @@
 - Regressions: none observed.
 
 **Overall verdict:** PASS WITH WARNING. Local repair is implemented and
-validated, but not yet committed, deployed, or production-smoked. GOAL NOT
-COMPLETE.
+validated, committed, pushed, deployed, and automated health/log checks passed.
+GOAL NOT COMPLETE because manual authenticated owner production smoke with real
+audio remains pending.
 
-**Next action:** Commit and deploy the scoped private-tutor behavior repair,
-then rerun authenticated owner paid lesson section `1.1` production smoke.
+**Deployment update:** Commit
+`ae5eb8b82d7eb538794ac961d11213ecf7a42b62`
+(`fix(lesson): make paid Alex feel like a tutor`) was pushed to `origin/main`
+and deployed to Railway production. Backend `aiteacher` deployment
+`de818d67-e947-4f7f-98f8-48e9e327885e` and frontend `aware-alignment`
+deployment `439bdd8c-9ebf-44cd-8d38-ed6585348ca3` both reached SUCCESS.
+Backend `/health` returned HTTP 200 with Postgres/Redis ok, frontend
+`/demo/setup` returned HTTP 200, startup logs showed the backend listening on
+`0.0.0.0:8080`, and checked backend/frontend HTTP 4xx/5xx plus critical error
+log windows returned no entries after the stability recheck.
+
+**Next action:** Rerun authenticated owner paid lesson section `1.1` production
+smoke with real microphone/audio.
 
 ---
 

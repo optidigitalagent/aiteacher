@@ -57,10 +57,13 @@ Extraction: full string still contains intended content (correction follows the 
 |--------|---------|---------------|
 | Duplicate consecutive words | "My my dad" | Stutter / restart — intended: "My dad" |
 | Abandoned phrase + restart | "She... Jordan inspires me" | Restarted with "Jordan" as subject |
+| Full expected phrase repeated | "keen on keen on" | Voice repetition — intended: one copy of current expected phrase |
 
 These are NOT detected by `hasSelfCorrection()` but:
 - Duplicate words: normalize before slot detection
 - Phrase abandonment: longer content takes precedence
+- Full expected phrase repetition: normalize only when it equals the current
+  backend expected answer repeated two or three times
 
 ---
 
