@@ -73,6 +73,22 @@ describe('paid lesson vocabulary item flow', () => {
     expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
     expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
 
+    const shortWarmupAnswer = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'Yes. I have.',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(shortWarmupAnswer.feedback).toBeNull()
+    expect(shortWarmupAnswer.cursorUpdate).toBeNull()
+    expect(shortWarmupAnswer.deterministicTeacherText).toContain('What did you do in your free time?')
+
+    state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
+
     const warmupAnswer = await orchestrator.handleStudentAnswer({
       lessonId,
       userId: 'user-1',
@@ -401,6 +417,45 @@ describe('paid lesson vocabulary item flow', () => {
 
     const state = await exerciseEngine.getState(lessonId)
     expect(state?.currentExerciseState?.currentStepIndex).toBe(3)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
+  })
+
+  it('answers an explicit Ukrainian translation question instead of guessing the current item', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-ua-homework-explicit-translation'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    for (const answer of ['hobby', 'spare time', 'keen on', 'get fit']) {
+      await orchestrator.handleStudentAnswer({
+        lessonId,
+        userId: 'user-1',
+        sessionId: 'session-1',
+        studentAnswer: answer,
+        lessonStartedAt: Date.now(),
+      })
+    }
+    const stateBeforeHelp = await exerciseEngine.getState(lessonId)
+    const attemptsBeforeHelp = stateBeforeHelp?.currentExerciseState?.stepAttempts.length ?? 0
+
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u0410 \u044f\u043a \u0441\u043a\u0430\u0437\u0430\u0442\u0438 \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456 \u0434\u043e\u043c\u0430\u0448\u043d\u044f \u0440\u043e\u0431\u043e\u0442\u0430?',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.teacherInput).toBeNull()
+    expect(result.deterministicTeacherText).toContain('"homework"')
+    expect(result.deterministicTeacherText).toContain('I love reading in my ___.')
+    expect(result.deterministicTeacherText).not.toContain('The word here is "free time"')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(4)
     expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
   })
 

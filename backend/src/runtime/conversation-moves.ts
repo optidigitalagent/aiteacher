@@ -245,6 +245,9 @@ const CYRILLIC_PHRASE_MAP: Array<readonly [string, string]> = [
   ['англійська',          'English'],
   ['українська',          'Ukrainian'],
   ['природознавство',     'science'],
+  ['\u0434\u043e\u043c\u0430\u0448\u043d\u044f \u0440\u043e\u0431\u043e\u0442\u0430',      'homework'],
+  ['\u0434\u043e\u043c\u0430\u0448\u043d\u0454 \u0437\u0430\u0432\u0434\u0430\u043d\u043d\u044f',   'homework'],
+  ['\u0445\u043e\u0431\u0456',                'hobby'],
   // Ukrainian — feelings/actions
   ['подобається',         'like'],
   ['дуже подобається',    'really like'],
@@ -288,6 +291,9 @@ const CYRILLIC_PHRASE_MAP: Array<readonly [string, string]> = [
   ['история',             'history'],
   ['английский',          'English'],
   ['природоведение',      'science'],
+  ['\u0434\u043e\u043c\u0430\u0448\u043d\u044f\u044f \u0440\u0430\u0431\u043e\u0442\u0430',      'homework'],
+  ['\u0434\u043e\u043c\u0430\u0448\u043d\u0435\u0435 \u0437\u0430\u0434\u0430\u043d\u0438\u0435',   'homework'],
+  ['\u0445\u043e\u0431\u0431\u0438',              'hobby'],
   // Russian — feelings/actions
   ['нравится',            'like'],
   ['очень нравится',      'really like'],
@@ -380,6 +386,37 @@ function lookupCyrillicPhrase(phrase: string): string | null {
     if (lower.includes(key.toLowerCase())) return value
   }
   return null
+}
+
+export interface RequestedPhraseLookup {
+  requested: string | null
+  explanation: string | null
+  mapType: 'cyrillic' | 'english' | null
+  hasCyrillic: boolean
+}
+
+export function lookupRequestedPhrase(text: string): RequestedPhraseLookup {
+  try {
+    const requested = extractRequestedPhrase(text)
+    if (!requested) {
+      return {
+        requested: null,
+        explanation: null,
+        mapType: null,
+        hasCyrillic: /\p{Script=Cyrillic}/u.test(text),
+      }
+    }
+    const cyrillicHit = lookupCyrillicPhrase(requested)
+    const englishHit = cyrillicHit ? null : lookupEnglishPhrase(requested)
+    return {
+      requested,
+      explanation: cyrillicHit ?? englishHit,
+      mapType: cyrillicHit ? 'cyrillic' : englishHit ? 'english' : null,
+      hasCyrillic: /\p{Script=Cyrillic}/u.test(requested),
+    }
+  } catch {
+    return { requested: null, explanation: null, mapType: null, hasCyrillic: false }
+  }
 }
 
 // Returns true when the text is an English "how to say X" query where X contains Cyrillic.

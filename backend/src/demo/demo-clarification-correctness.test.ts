@@ -90,6 +90,15 @@ describe('Phase 7.3 — Cyrillic phrase translations', () => {
     expect(result.toLowerCase()).toMatch(/get fit|work out|works out/)
     expect(result.toLowerCase()).not.toContain("i can see you're writing")
   })
+
+  it('live Ukrainian homework question returns homework', () => {
+    const result = buildMultilingualPhraseAnswer(
+      '\u0410 \u044f\u043a \u0441\u043a\u0430\u0437\u0430\u0442\u0438 \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456 \u0434\u043e\u043c\u0430\u0448\u043d\u044f \u0440\u043e\u0431\u043e\u0442\u0430?',
+      STEP_PROMPT,
+    )
+    expect(result.toLowerCase()).toContain('homework')
+    expect(result.toLowerCase()).not.toContain("i can see you're writing")
+  })
 })
 
 // ── 2. English idiom → explanation ───────────────────────────────────────────

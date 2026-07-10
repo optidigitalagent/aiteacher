@@ -38,7 +38,12 @@ import {
 import { getHintPolicy } from '../behavior-runtime/exercise-teaching/exercise-format-registry.js'
 import redis from '../db/redis.js'
 import type { ExpectedAnswerNormalization } from '../voice/voice-turn-stabilizer.js'
-import { buildMultilingualPhraseAnswer, detectMultilingualInterruption } from '../runtime/conversation-moves.js'
+import {
+  buildMultilingualPhraseAnswer,
+  detectMultilingualInterruption,
+  lookupRequestedPhrase,
+  type RequestedPhraseLookup,
+} from '../runtime/conversation-moves.js'
 
 const PAID_OPENING_WARMUP_TTL_SECONDS = 14_400
 
@@ -46,17 +51,23 @@ function paidOpeningWarmupKey(lessonId: string): string {
   return `paid_opening_warmup:${lessonId}`
 }
 
-async function getPaidOpeningWarmupPending(lessonId: string): Promise<boolean> {
+type PaidOpeningWarmupStage = 'pending' | 'detail'
+
+async function getPaidOpeningWarmupStage(lessonId: string): Promise<PaidOpeningWarmupStage | null> {
   try {
-    return await redis.get(paidOpeningWarmupKey(lessonId)) === 'pending'
+    const value = await redis.get(paidOpeningWarmupKey(lessonId))
+    return value === 'pending' || value === 'detail' ? value : null
   } catch {
-    return false
+    return null
   }
 }
 
-async function markPaidOpeningWarmupPending(lessonId: string): Promise<void> {
+async function markPaidOpeningWarmupPending(
+  lessonId: string,
+  stage: PaidOpeningWarmupStage = 'pending',
+): Promise<void> {
   try {
-    await redis.set(paidOpeningWarmupKey(lessonId), 'pending', 'EX', PAID_OPENING_WARMUP_TTL_SECONDS)
+    await redis.set(paidOpeningWarmupKey(lessonId), stage, 'EX', PAID_OPENING_WARMUP_TTL_SECONDS)
   } catch { /* non-fatal */ }
 }
 
@@ -139,6 +150,18 @@ function buildCurrentExpectedHelpAnswerForQuestion(
   if (!expected) return null
   if (!asksAboutCurrentExpectedMeaning(text, expected, phraseText)) return null
   return buildCurrentExpectedHelpAnswer(state)
+}
+
+function isCurrentItemPlaceholderLookup(lookup: RequestedPhraseLookup): boolean {
+  const requested = lookup.requested?.toLowerCase().trim()
+  if (!requested) return true
+  return /^(?:\u0446\u0435|\u0446\u0435 \u0441\u043b\u043e\u0432\u043e|\u044d\u0442\u043e|\u044d\u0442\u043e \u0441\u043b\u043e\u0432\u043e|this|this word|it|the word|answer)$/.test(requested)
+}
+
+function shouldUseCurrentExpectedFallback(lookup: RequestedPhraseLookup, phraseText: string): boolean {
+  const genericFallback = phraseText.startsWith("I'm not sure about that exact word") ||
+    phraseText.startsWith("I can see you're writing")
+  return genericFallback && isCurrentItemPlaceholderLookup(lookup)
 }
 
 function buildEnglishTaskHelpAnswer(text: string, state: EngineLessonState): string {
@@ -647,6 +670,25 @@ function buildOpeningWarmupReturn(state: EngineLessonState): string {
   return `Nice. That is real English practice already. Now let's use today's vocabulary. Exercise 1: ${instruction} Number 1: ${item}`
 }
 
+function shouldAskOpeningWarmupDetail(answer: string, state: EngineLessonState): boolean {
+  if (!isOpeningWarmupEligible(state)) return false
+  const normalized = normalizeSpokenLine(answer)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}' ]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!normalized) return false
+  return /^(yes|yes i have|yeah|yep|i did|no|no i didn'?t|not really)$/.test(normalized)
+}
+
+function buildOpeningWarmupDetailQuestion(answer: string): string {
+  const normalized = normalizeSpokenLine(answer).toLowerCase()
+  if (/^(no|not really)\b/.test(normalized)) {
+    return 'No problem. If you had free time later, what would you like to do? One short sentence is enough.'
+  }
+  return 'Got it. What did you do in your free time? One short sentence is enough.'
+}
+
 function buildReadinessRefocus(state: EngineLessonState): string {
   const exState = state.currentExerciseState
   const item = normalizeSpokenLine(exState?.spec.steps[exState.currentStepIndex]?.question ?? '')
@@ -847,7 +889,19 @@ export class MasterLessonOrchestrator {
       }
     }
 
-    if (await getPaidOpeningWarmupPending(lessonId)) {
+    const openingWarmupStage = await getPaidOpeningWarmupStage(lessonId)
+    if (openingWarmupStage) {
+      if (openingWarmupStage === 'pending' && shouldAskOpeningWarmupDetail(studentAnswer, engineState)) {
+        await markPaidOpeningWarmupPending(lessonId, 'detail')
+        console.log(`[master-orch] paid_opening_warmup_detail_requested lessonId=${lessonId}`)
+        return {
+          cursorUpdate:   null,
+          feedback:       null,
+          teacherInput:   null,
+          deterministicTeacherText: buildOpeningWarmupDetailQuestion(studentAnswer),
+          lessonComplete: false,
+        }
+      }
       await clearPaidOpeningWarmupPending(lessonId)
       console.log(`[master-orch] paid_opening_warmup_answered lessonId=${lessonId}`)
       return {
@@ -891,10 +945,10 @@ export class MasterLessonOrchestrator {
     const multilingual = detectMultilingualInterruption(studentAnswer)
     if (multilingual.detected) {
       const stepPrompt = buildCurrentItemReturnPrompt(engineState)
+      const phraseLookup = lookupRequestedPhrase(studentAnswer)
       const phraseText = buildMultilingualPhraseAnswer(studentAnswer, stepPrompt, sessionId ?? lessonId)
       const currentItemAnswer = buildCurrentExpectedHelpAnswerForQuestion(studentAnswer, engineState, phraseText)
-      const fallbackAnswer = phraseText.startsWith("I'm not sure about that exact word") ||
-        phraseText.startsWith("I can see you're writing")
+      const fallbackAnswer = shouldUseCurrentExpectedFallback(phraseLookup, phraseText)
         ? buildCurrentExpectedHelpAnswer(engineState)
         : null
       const teacherText = currentItemAnswer ?? fallbackAnswer ?? phraseText
