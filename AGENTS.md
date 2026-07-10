@@ -144,6 +144,74 @@ not stop conditions. Preserve unrelated user changes and work around them.
 - Do not use web search unless the user explicitly authorizes external
   research. Prefer repository files and installed local documentation.
 
+## User Operating Preferences
+
+When making project changes, work autonomously end to end within the current
+request.
+
+- After changes, run all necessary tests and checks. Use the repository agents
+  or role skills when the workflow provides them.
+- If checks pass and deployment is in scope, deploy without waiting for a
+  separate reminder, subject to the stop rules and deployment gate.
+- After deployment, verify that the new version is running and has no observed
+  startup or health-check errors.
+- Keep final responses short. Include only what was done, files changed, tests
+  and results, deployment target and status, what the user must manually check,
+  and known remaining issues.
+- Assume future requests may arrive in a new chat or terminal. At the end of
+  every completed task, include a compact handoff report for the next chat.
+
+Use this handoff format:
+
+```text
+### Отчёт для следующего чата
+
+**Задача:**
+<кратко, что требовалось сделать>
+
+**Что сделано:**
+<краткий список изменений>
+
+**Изменённые файлы:**
+<точные пути основных изменённых файлов>
+
+**Важные технические решения:**
+<как реализовано и что важно не сломать>
+
+**Тесты и проверки:**
+<команды, результаты тестов и ручных проверок>
+
+**Деплой:**
+<платформа, сервис, ветка, commit и результат деплоя>
+
+**Текущий статус:**
+<что полностью работает>
+
+**Что осталось:**
+<незавершённые задачи, проблемы или ручные проверки>
+```
+
+## Autonomous Product Delivery V3
+
+For product-facing work, Codex must treat the Telegram intake-orchestrator and
+`.codex/workflow/ORCHESTRATION_BRIEF.md` as the front door for new rough ideas.
+The user should talk to one orchestrator; Codex owns the downstream specialist
+chain.
+
+Before implementation, Codex must ensure the goal has:
+
+- a scenario matrix with happy, negative, adversarial, live-evidence, and
+  failure-definition paths;
+- explicit affected surfaces and protected surfaces;
+- a developer-reminder checkpoint before CODE tasks;
+- blocking QA, adversarial product critic, live QA, failure analysis when
+  failures occur, and final acceptance audit.
+
+If production/manual smoke reveals defects outside the active goal or if the
+current next action proves behavior not listed in acceptance criteria, rebase
+the goal before repairing code. A deployment health check or local unit test
+does not prove a user-facing outcome without running-product evidence.
+
 ## Product Guardrails
 
 - Do not touch billing, payment, or authentication logic unless explicitly in

@@ -6,6 +6,390 @@
 
 ---
 
+## REVIEW GATE - Paid teacher RU/UA selector and mixed answer follow-up - 2026-07-10
+
+**Cycle ID:** paid-teacher-ru-ua-selector-mixed-answer-follow-up/2026-07-10
+
+**Phase:** Phase 2 - follow-up local implementation and validation.
+
+**Base/current commit:**
+- Base HEAD: `34cfefeccc721662c549ac9776497a68bfd08a56`.
+- Current commit: no new commit created yet for this follow-up.
+
+**Changed files reviewed:**
+- `backend/src/voice/stt.ts`
+- `backend/src/ws/message-types.ts`
+- `backend/src/ws/lesson-ws.ts`
+- `backend/src/voice/voice-turn-stabilizer.ts`
+- `backend/src/lesson/master-orchestrator.ts`
+- `backend/src/voice/__tests__/stt-deepgram-options.test.ts`
+- `backend/src/voice/__tests__/voice-turn-stabilizer.test.ts`
+- `backend/src/ws/__tests__/message-types.test.ts`
+- `frontend/src/features/classroom/components/BottomControls.tsx`
+- `frontend/src/features/classroom/components/ClassroomLayout.tsx`
+- `.gitignore`
+- `.codex/workflow/GLOBAL_GOAL.md`
+- `.codex/workflow/GOAL.md`
+- `.codex/workflow/GOAL_PROGRESS.md`
+- `.codex/workflow/NEXT_ACTION.md`
+- `.codex/workflow/SCENARIO_MATRIX.md`
+- `.codex/workflow/RISK_REGISTER.md`
+- `.codex/workflow/DECISIONS.md`
+- `.codex/workflow/REVIEW_REPORT.md`
+
+**Role applicability:**
+- backend reviewer: RUN - backend voice/STT/WS contract and normalization changed.
+- frontend reviewer: RUN - paid classroom mic UI changed.
+- curriculum reviewer: RUN - answer normalization affects correctness boundary.
+- kids safety monitor: RUN - shared STT code changed; Kids is protected.
+- QA tester: RUN - mandatory after implementation.
+- adversarial product critic: RUN - voice and mixed-answer behavior changed.
+- live QA orchestrator: RUN - real microphone/browser behavior is affected.
+- acceptance auditor: RUN - active goal remains incomplete without deployment/live evidence.
+
+**Backend reviewer: PASS**
+- Critical findings: none.
+- `mic_start.language` is validated by `InboundMessageSchema` as `multi`, `ru`,
+  or `uk`; unsupported values are rejected by test.
+- Adult Deepgram options are rebuilt through `buildAdultDeepgramLiveOptions()`;
+  `detect_language` remains absent.
+- Kids STT remains explicitly `DEEPGRAM_KIDS_LIVE_OPTIONS` and is not affected
+  by the adult selector.
+- No auth, billing, payment, LiqPay, DB schema, raw SQL, new endpoint,
+  hardcoded secret, `.env`, or new external-call loop was added.
+
+**Frontend reviewer: PASS WITH WARNING**
+- Critical findings: none.
+- Paid-only RU/UA selector is additive, has `role=group`, `aria-label`, and
+  per-button `aria-pressed`.
+- `ClassroomLayout` includes `adultVoiceLanguage` in the `paidToggle`
+  dependency list and sends the selected language only on paid `mic_start`.
+- `cd frontend; npm run build` -> exit 0.
+- Warning: no Playwright screenshot/browser smoke was run, so actual small-screen
+  layout and production click behavior still require running-product proof.
+
+**Curriculum reviewer: PASS**
+- Accepted answer data, scoring, exercise order, and cursor progression were
+  not changed.
+- Mixed-answer cleanup normalizes only to the current backend expected answer.
+- Negated/possessive false positives remain blocked by tests.
+
+**Kids safety monitor: PASS**
+- Kids curriculum, safety policy, and child-facing behavior were not changed.
+- Kids STT remains `nova-2` / `en`.
+- Full backend suite passed after the shared STT file changed.
+
+**QA tester: PASS**
+- Targeted tests:
+  `cd backend; npx vitest run src/voice/__tests__/voice-turn-stabilizer.test.ts src/voice/__tests__/stt-deepgram-options.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/ws/__tests__/message-types.test.ts --reporter=dot --silent`
+  -> exit 0; 4 files passed; 45 tests passed.
+- Backend TypeScript:
+  `cd backend; npx tsc --noEmit` -> exit 0.
+- Frontend build:
+  `cd frontend; npm run build` -> exit 0.
+- Full backend suite:
+  `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 68 files
+  passed; 2172 tests passed.
+- Telegram orchestrator:
+  `cd tools/telegram-orchestrator; node --test` -> exit 0; 4 tests passed.
+
+**Adversarial product critic: PASS WITH WARNING**
+- Local adversarial cases cover `not keen on`, `not keen on like`, `my hobby`,
+  `my hobby spare time`, `hobby spare time`, `keen on like`, `Like keen on`,
+  and `keen on keen on`.
+- Warning: provider-level Ukrainian transcription quality cannot be proven by
+  local tests.
+
+**Live QA orchestrator: PENDING**
+- Required evidence missing: deployed paid classroom with RU/UA selector,
+  real microphone RU, UA, and EN turns, WebSocket transcript/student_message
+  evidence, TTS, and backend logs.
+
+**Acceptance auditor: GOAL NOT COMPLETE**
+- Complete locally: backend/frontend implementation, schema validation,
+  expected-answer bounded cleanup, Kids STT protection, targeted tests,
+  backend TypeScript, frontend build, full backend suite, Telegram bot tests.
+- Not complete: commit/push/deployment evidence and running-product voice smoke.
+
+**Overall verdict:** PASS WITH PENDING DEPLOYMENT AND LIVE SMOKE. Local
+implementation is valid. Goal is not complete.
+
+**Next action:** Commit, push, deploy RU/UA selector and mixed-answer repair,
+then run post-deploy health/log checks and live paid microphone smoke.
+
+---
+
+## REVIEW GATE - Paid teacher multilingual voice and conversational tutor behavior - 2026-07-10
+
+**Cycle ID:** paid-teacher-multilingual-conversational-behavior/2026-07-10
+
+**Phase:** Phase 1 - local implementation and validation.
+
+**Base/current commit:**
+- Base HEAD: `594824f864c0b9b5c02e6734033c448d4216b242`.
+- Current commit: no new commit created.
+
+**Changed files reviewed:**
+- `backend/src/voice/stt.ts`
+- `backend/src/voice/voice-turn-stabilizer.ts`
+- `backend/src/ws/lesson-ws.ts`
+- `backend/src/lesson/master-orchestrator.ts`
+- `backend/src/ai/teacher-brain/teacher-brain-rules.ts`
+- `backend/src/voice/__tests__/voice-turn-stabilizer.test.ts`
+- `backend/src/voice/__tests__/stt-deepgram-options.test.ts`
+- `backend/src/voice/__tests__/kids-stt-config-parity.test.ts`
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+- `backend/src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+- `.codex/workflow/GLOBAL_GOAL.md`
+- `.codex/workflow/GOAL.md`
+- `.codex/workflow/GOAL_PROGRESS.md`
+- `.codex/workflow/NEXT_ACTION.md`
+- `.codex/workflow/SCENARIO_MATRIX.md`
+- `.codex/workflow/RISK_REGISTER.md`
+- `.codex/workflow/DECISIONS.md`
+
+**Role applicability:**
+- backend reviewer: RUN - backend voice/STT/WS/orchestrator behavior changed.
+- frontend reviewer: NOT APPLICABLE - no frontend files or UI contracts changed.
+- curriculum reviewer: RUN - accepted-answer normalization and teacher behavior
+  affect curriculum integrity.
+- kids safety monitor: RUN - shared STT config file changed; Kids behavior is a
+  protected surface.
+- prompt tester: RUN - Teacher Brain rule text changed; `docs/master-prompt.md`
+  was not edited.
+- QA tester: RUN - mandatory after implementation.
+- adversarial product critic: RUN - product-facing lesson/voice behavior changed.
+- live QA orchestrator: RUN - real microphone evidence is required.
+- acceptance auditor: RUN - active goal must not be marked complete without
+  every criterion verified.
+
+**Backend reviewer: PASS WITH WARNING**
+- Critical findings: none.
+- No auth, billing, payment, LiqPay, database schema, new endpoint, hardcoded
+  secret, or `.env` file changed.
+- Adult STT option construction remains a single Deepgram connection per STT
+  instance; no new external-call loop was added.
+- `detect_language` remains absent from Live API options.
+- Kids STT is explicitly overridden to `nova-2` / `en`, preserving protected
+  Kids voice defaults.
+- Expected-answer cleanup is bounded to the current backend expected answer and
+  rejects negation/possessive false positives pinned by tests.
+- Warning: local tests cannot prove Deepgram production transcription quality
+  for `nova-3` / `multi`; live paid microphone smoke remains required.
+
+**Curriculum reviewer: PASS**
+- Curriculum files changed: none.
+- Accepted answers, scoring, exercise order, retry counts, and progression were
+  not changed.
+- Self-correction/repetition acceptance only returns the current backend
+  expected answer when the transcript shape is bounded.
+- Tiny personal follow-ups are allowed only in speaking/warmup or after backend
+  item completion and cannot replace grading.
+
+**Kids safety monitor: PASS**
+- No Kids curriculum, safety policy, profile data, or child-facing accepted
+  answers changed.
+- `kids-stt-config-parity.test.ts` proves Kids STT remains `nova-2` / `en` and
+  keeps existing timing options.
+- Full backend suite including Kids runtime/voice/safety tests passed.
+
+**Prompt tester: PASS**
+- `docs/master-prompt.md` was not edited.
+- Teacher Brain rules now explicitly treat self-correction as awareness and
+  keep conversational personal questions bounded.
+- Prompt budget guard stayed green after merging the new rule into an existing
+  speaking rule.
+
+**QA tester: PASS**
+- Targeted tests:
+  `cd backend; npx vitest run src/voice/__tests__/voice-turn-stabilizer.test.ts src/voice/__tests__/stt-deepgram-options.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  -> exit 0; 5 files passed; 200 tests passed.
+- TypeScript:
+  `cd backend; npx tsc --noEmit` -> exit 0.
+- Full backend suite:
+  `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 67 files
+  passed; 2167 tests passed.
+- First targeted run failed 8 tests; fixes were applied and rerun passed.
+- New failures: none after repair.
+
+**Adversarial product critic: PASS WITH WARNING**
+- Checked wrong-then-correct `Like keen on`, repeated `keen on keen on`,
+  negated `not keen on`, possessive `my hobby`, English option contract, Kids
+  protected config, and prompt budget.
+- Blocking findings: none locally.
+- Warning: no running-product microphone evidence yet for RU/UA/EN provider
+  behavior.
+
+**Live QA orchestrator: PENDING**
+- Required evidence missing: real adult paid lesson microphone smoke with
+  English answer, Russian clarification, Ukrainian clarification,
+  self-correction, repeated answer, transcript display, TTS, and backend logs.
+
+**Acceptance auditor: GOAL NOT COMPLETE**
+- Complete locally: STT option contract, Kids override, expected-answer bounded
+  normalization, deterministic teacher acknowledgment, prompt rule budget, and
+  backend tests.
+- Complete for deployment: commit
+  `34cfefeccc721662c549ac9776497a68bfd08a56` pushed to `origin/main`; Railway
+  backend `d0f8cc64-69d3-4f26-a378-245445990152` and frontend
+  `e887b721-d936-4cf6-aca5-486da11bd177` reached SUCCESS at commit `34cfefe`;
+  backend `/health` stayed HTTP 200 with postgres/redis ok through a 10-minute
+  stability window; frontend `/demo/setup` returned HTTP 200; critical error
+  and HTTP 4xx/5xx log sweeps returned no entries.
+- Partial/not complete: running-product adult paid microphone smoke.
+
+**Overall verdict:** PASS WITH PENDING LIVE SMOKE. Local implementation is
+valid and deployment verification passed. Goal is not complete because
+running-product voice evidence is missing.
+
+**Next action:** Run adult paid lesson live microphone smoke for RU/UA/EN and
+self-correction/repetition behavior against the deployed production build.
+
+---
+
+## REVIEW GATE - Autonomous Product Delivery V3 bootstrap - 2026-07-10
+
+**Cycle ID:** autonomous-product-delivery-v3-bootstrap/2026-07-10
+
+**Phase:** Phase 3 - local validation and review.
+
+**Base/current commit:**
+- Base HEAD: `594824f864c0b9b5c02e6734033c448d4216b242`.
+- Current commit: no commit created.
+
+**Changed files reviewed:**
+- `AGENTS.md`
+- `.codex/workflow/GLOBAL_GOAL.md`
+- `.codex/workflow/GOAL.md`
+- `.codex/workflow/GOAL_PROGRESS.md`
+- `.codex/workflow/NEXT_ACTION.md`
+- `.codex/workflow/RISK_REGISTER.md`
+- `.codex/workflow/DECISIONS.md`
+- `.codex/workflow/REVIEW_REPORT.md`
+- `.codex/workflow/IDEA_INTAKE.md`
+- `.codex/workflow/AUTONOMOUS_LOOP.md`
+- `.codex/workflow/REVIEW_GATE.md`
+- `.codex/workflow/ORCHESTRATION_BRIEF.md`
+- `.codex/workflow/SCENARIO_MATRIX.md`
+- `.codex/workflow/LIVE_QA_GATE.md`
+- `.codex/workflow/FAILURE_ANALYSIS.md`
+- `.codex/workflow/TEST_EVIDENCE.md`
+- `.codex/workflow/TELEGRAM_GOAL_IMPORT.md`
+- `.codex/skills/goal-intake-orchestrator/SKILL.md`
+- `.codex/skills/product-context-researcher/SKILL.md`
+- `.codex/skills/goal-analyst/SKILL.md`
+- `.codex/skills/scenario-designer/SKILL.md`
+- `.codex/skills/backend-implementer/SKILL.md`
+- `.codex/skills/frontend-implementer/SKILL.md`
+- `.codex/skills/voice-runtime-implementer/SKILL.md`
+- `.codex/skills/prompt-curriculum-implementer/SKILL.md`
+- `.codex/skills/adversarial-product-critic/SKILL.md`
+- `.codex/skills/live-qa-orchestrator/SKILL.md`
+- `.codex/skills/failure-analyst/SKILL.md`
+- `.codex/skills/developer-reminder/SKILL.md`
+- `.codex/skills/handoff-scribe/SKILL.md`
+- `tools/telegram-orchestrator/package.json`
+- `tools/telegram-orchestrator/.env.example`
+- `tools/telegram-orchestrator/README.md`
+- `tools/telegram-orchestrator/src/orchestrator.mjs`
+- `tools/telegram-orchestrator/src/server.mjs`
+- `tools/telegram-orchestrator/test/orchestrator.test.mjs`
+
+**Role applicability:**
+- backend reviewer: RUN - standalone Node service and internal HTTP endpoints
+  were added.
+- frontend reviewer: NOT APPLICABLE - no frontend files changed.
+- curriculum reviewer: NOT APPLICABLE - no curriculum, scoring, accepted
+  answers, or lesson progression changed.
+- kids safety monitor: NOT APPLICABLE - no Kids runtime behavior changed.
+- QA tester: RUN - mandatory after implementation.
+- adversarial product critic: RUN - workflow must block shallow completion.
+- live QA orchestrator: RUN - live Telegram smoke remains the next gate.
+- acceptance auditor: NOT APPLICABLE - live bot smoke and optional deploy
+  phases remain pending.
+
+**Backend reviewer: PASS**
+- No hardcoded Telegram token or API key appears in bot source, examples, tests,
+  or workflow files.
+- `TELEGRAM_BOT_TOKEN` and `INTERNAL_TELEGRAM_API_KEY` are environment-only.
+- Internal bot endpoints require `Authorization: Bearer <INTERNAL_KEY>`.
+- Telegram link tokens are in-memory with a 10-minute TTL and are not persisted.
+- Telegram polling now fails closed when `TELEGRAM_BOT_TOKEN` is set without
+  `ORCHESTRATOR_ALLOWED_CHAT_IDS`, unless explicit local dev override is set.
+- `/status` and `/export` return only the latest goal for the requesting chat.
+- `/internal/orchestrator/events` rejects disallowed chats.
+- JSON body parsing is size-limited and invalid JSON returns HTTP 400.
+- Runtime data path `tools/telegram-orchestrator/data/` is gitignored.
+- No auth, billing, payment, LiqPay, Kids, STT/TTS provider, or curriculum code
+  was changed.
+
+**QA tester: PASS**
+- `cd tools/telegram-orchestrator; node --test` -> exit 0; 4 tests passed.
+- Local health smoke with `PORT=4110` and dummy internal key -> `/health` HTTP
+  200 `{"ok":true}`.
+- Internal endpoint smoke with dummy internal key -> unauthenticated
+  `/internal/orchestrator/latest` HTTP 401 and authenticated request HTTP 200
+  `{"ok":true,"goal":null}`.
+- Hardening smoke with dummy internal key -> invalid JSON on
+  `/internal/orchestrator/events` HTTP 400; disallowed `telegramChatId` event
+  relay HTTP 403.
+- Secret leak scan for the shared Telegram token id/prefix and committed
+  `TELEGRAM_BOT_TOKEN=` values -> exit 1, no matches.
+- `git diff --check` -> exit 0; CRLF warnings only.
+
+**Adversarial product critic: PASS WITH WARNING**
+- The new workflow explicitly blocks completion without scenario contracts,
+  adversarial critique, live QA, and acceptance evidence.
+- Follow-up critic blockers were fixed: `live-qa-orchestrator` was added to
+  the chain and brief; missing executable role skills/dispatch mapping were
+  added; Telegram import contract was added; packet scenario rows now include
+  affected surfaces and concrete intake-seed rows; README path was corrected.
+- Warning: the actual Playwright/fake-mic/log-correlation live QA harness for
+  lesson runtime behavior is not implemented yet; recorded as RISK-033.
+
+**Live QA orchestrator: PENDING**
+- Local bot unit tests pass.
+- Real Telegram command smoke requires running with the token supplied only via
+  environment. This is the current next action and must not write the token to
+  repository files.
+- 2026-07-10 continuation checkpoint: current Codex process environment does
+  not contain `TELEGRAM_BOT_TOKEN`, `INTERNAL_TELEGRAM_API_KEY`, or
+  `ORCHESTRATOR_ALLOWED_CHAT_IDS`. The pasted token was not re-used in shell or
+  file state. Fresh bot tests passed 4/4, fresh secret scan returned no
+  matches, and fresh `git diff --check` exited 0 with CRLF warnings only.
+- 2026-07-10 second continuation checkpoint: the same three required runtime
+  env vars are still absent, and `ORCHESTRATOR_ALLOW_ALL_CHATS_FOR_DEV` is not
+  enabled. Fresh bot tests passed 4/4. README placeholder scan found only
+  documented examples; narrower real token-like secret scan excluding the
+  synthetic redaction test returned exit 1 with no matches. Dummy-key local
+  HTTP smoke without Telegram polling passed: `/health` ok, unauthenticated
+  internal latest HTTP 401, authenticated latest ok with `goal=null`, invalid
+  JSON event HTTP 400. `git diff --check` exited 0 with CRLF warnings only.
+- 2026-07-10 standalone new-bot checkpoint: user rejected reuse of the prior
+  Mentium bot/runtime. The tool now defaults to `Codex Intake Bot`, disables
+  platform linking unless `ORCHESTRATOR_PLATFORM_LINK_ENABLED=1`, and includes
+  `npm run start:local` to prompt for a new BotFather token without echoing it,
+  clear webhook state, detect chat id, and start polling with the allowlist set.
+  `cd tools/telegram-orchestrator; node --test` -> exit 0; 4 tests passed.
+  `cd tools/telegram-orchestrator; node --check src/server.mjs` -> exit 0.
+- 2026-07-10 blocked-runtime recheck: the current Codex process still lacks
+  `TELEGRAM_BOT_TOKEN`, `INTERNAL_TELEGRAM_API_KEY`, and
+  `ORCHESTRATOR_ALLOWED_CHAT_IDS`; dev allow-all is also not enabled. Fresh
+  bot tests passed 4/4, `server.mjs` syntax check passed, `start-local.ps1`
+  parsed successfully, real token-like secret scan returned exit 1 with no
+  matches, dummy-key local HTTP smoke passed, and `git diff --check` exited 0
+  with CRLF warnings only.
+
+**Overall verdict:** PASS WITH PENDING LIVE SMOKE. Local implementation and
+workflow bootstrap are valid. Goal is not complete because Telegram runtime
+smoke and optional deploy remain pending.
+
+**Next action:** Create a brand-new BotFather bot and run
+`cd tools/telegram-orchestrator; npm run start:local`, then verify `/start`,
+`/new_goal`, rough goal text, `/confirm`, `/status`, and `/export`.
+
+---
+
 ## REVIEW GATE - Paid lesson 1.1 live tutor intelligence repair - 2026-07-10
 
 **Cycle ID:** paid-lesson-1-1-live-tutor-intelligence-repair/2026-07-10
@@ -113,12 +497,24 @@
   - Diff-name check found no changed `frontend/`, billing/auth, STT/TTS config,
     `docs/master-prompt.md`, or `.env` files.
 
-**Overall verdict:** PASS. Local repair is implemented and validated. GOAL NOT
-COMPLETE because it is not committed, deployed, or manually production-smoked
-yet.
+**Deployment update:** Commit
+`594824f864c0b9b5c02e6734033c448d4216b242`
+(`fix(lesson): repair paid tutor intelligence`) was pushed to `origin/main`
+and deployed to Railway production. Backend `aiteacher` deployment
+`80d7c496-5582-4002-951e-1759c37464e2` and frontend `aware-alignment`
+deployment `dda6c780-89de-476d-a239-2ba6b9044117` both reached SUCCESS at
+commit `594824f`. Backend `/health` returned HTTP 200 with Postgres/Redis ok,
+frontend `/demo/setup` returned HTTP 200, startup logs showed the backend
+listening on `0.0.0.0:8080`, and checked backend/frontend HTTP 4xx/5xx plus
+critical error log windows returned no entries after the stability recheck.
 
-**Next action:** Commit, push, deploy to Railway, verify health/logs, then run
-authenticated owner paid lesson section `1.1` production smoke with real audio.
+**Overall verdict:** PASS. Backend AI/teaching repair is implemented,
+validated, committed, deployed, and automated health/log checks passed. GOAL
+NOT COMPLETE because manual authenticated owner production smoke with real
+audio remains pending.
+
+**Next action:** Rerun authenticated owner paid lesson section `1.1`
+production smoke with real microphone/audio.
 
 ---
 

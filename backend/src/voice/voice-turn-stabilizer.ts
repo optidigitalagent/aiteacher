@@ -166,6 +166,7 @@ export interface ExpectedAnswerNormalization {
     | 'sentence_any_expected_answer'
     | 'repeated_expected_answer_phrase'
     | 'self_corrected_to_expected_answer_tail'
+    | 'short_answer_list_contains_expected'
     | 'answer_phrase_tail'
 }
 
@@ -240,6 +241,23 @@ function isShortSelfCorrectionTail(whole: string, normalizedAnswer: string): boo
   return true
 }
 
+function isShortAnswerListContainingExpected(whole: string, normalizedAnswer: string): boolean {
+  const wholeWords = whole.split(/\s+/).filter(Boolean)
+  const answerWords = normalizedAnswer.split(/\s+/).filter(Boolean)
+  if (answerWords.length === 0) return false
+  if (wholeWords.length <= answerWords.length || wholeWords.length > answerWords.length + 3) return false
+  if (/\b(?:no|not|never|dont|didnt|doesnt|wont|cant|cannot)\b/u.test(whole)) return false
+
+  for (let start = 0; start <= wholeWords.length - answerWords.length; start++) {
+    const matches = answerWords.every((word, offset) => wholeWords[start + offset] === word)
+    if (!matches) continue
+    const before = wholeWords[start - 1]
+    if (before && /^(?:my|your|his|her|our|their|the|a|an)$/u.test(before)) continue
+    return true
+  }
+  return false
+}
+
 // Deepgram can return "Harvey. Hobby." or "Get fit. Free time." when the
 // student corrects themselves inside one mic turn. For deterministic textbook
 // short-answer items, submit the final expected answer phrase instead of the
@@ -309,6 +327,14 @@ export function normalizeTranscriptToExpectedAnswer(
     if (!normalizedAnswer) continue
     if (isShortSelfCorrectionTail(whole, normalizedAnswer)) {
       return { text: answer, matchedAnswer: answer, reason: 'self_corrected_to_expected_answer_tail' }
+    }
+  }
+
+  for (const answer of candidates) {
+    const normalizedAnswer = normalizeForExpectedAnswerMatch(answer)
+    if (!normalizedAnswer) continue
+    if (isShortAnswerListContainingExpected(whole, normalizedAnswer)) {
+      return { text: answer, matchedAnswer: answer, reason: 'short_answer_list_contains_expected' }
     }
   }
 

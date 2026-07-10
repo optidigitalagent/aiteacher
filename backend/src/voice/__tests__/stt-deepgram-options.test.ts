@@ -4,7 +4,11 @@
 // See: https://developers.deepgram.com/docs/language-detection
 
 import { describe, it, expect } from 'vitest'
-import { DEEPGRAM_LIVE_OPTIONS, DEEPGRAM_KIDS_LIVE_OPTIONS } from '../stt.js'
+import {
+  DEEPGRAM_LIVE_OPTIONS,
+  DEEPGRAM_KIDS_LIVE_OPTIONS,
+  buildAdultDeepgramLiveOptions,
+} from '../stt.js'
 
 describe('DEEPGRAM_LIVE_OPTIONS — Live API parameter contract', () => {
   // ── Required parameters that must be preserved ────────────────────────────
@@ -49,6 +53,12 @@ describe('DEEPGRAM_LIVE_OPTIONS — Live API parameter contract', () => {
 
   it('has explicit language=multi for adult RU/UA/EN turns', () => {
     expect(DEEPGRAM_LIVE_OPTIONS.language).toBe('multi')
+  })
+
+  it('can build explicit adult Russian and Ukrainian live options for manual mic language', () => {
+    expect(buildAdultDeepgramLiveOptions('ru').language).toBe('ru')
+    expect(buildAdultDeepgramLiveOptions('uk').language).toBe('uk')
+    expect(buildAdultDeepgramLiveOptions('multi').language).toBe('multi')
   })
 
   // ── All required keys present ─────────────────────────────────────────────

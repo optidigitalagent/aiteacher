@@ -22,6 +22,35 @@
 
 ## Active Decisions
 
+### 2026-07-10 - Autonomous Product Delivery V3 replaces symptom repair as active goal
+
+**Decision:** Rebase the active goal from owner-only paid lesson access bypass
+to Autonomous Product Delivery V3. Preserve the owner paid lesson smoke as a
+paused pending verification task, but make the current work the Telegram
+intake-orchestrator and blocking multi-agent workflow.
+**Reason:** The user explicitly requested a stronger autonomous development
+system and authorized the remaining work. Repository evidence showed the old
+goal's acceptance criteria did not cover the actual paid voice, Teacher Brain,
+multilingual, mic UX, and tutor-quality defects being repaired.
+**Alternatives rejected:** Continue patching paid lesson symptoms under the old
+billing-bypass goal; store the Telegram token in workflow state; rely on local
+unit tests without live/adversarial evidence.
+**Reversible:** Yes.
+**Risk:** Medium until Telegram live smoke and later live QA harness are
+completed.
+
+### 2026-07-10 - Telegram token stays environment-only
+
+**Decision:** The bot service reads `TELEGRAM_BOT_TOKEN` from environment only;
+no real token is written to `.env`, examples, workflow files, logs, tests, or
+source code.
+**Reason:** Secrets must not be committed. The token was shared in chat, so it
+must be treated as exposed and rotated after verification.
+**Alternatives rejected:** Commit a `.env`, write the token into workflow state,
+or print it in command examples.
+**Reversible:** No for the security rule; yes for implementation details.
+**Risk:** Low in repository, medium operationally until token rotation.
+
 ### 2026-07-10 - Paid section 1.1 readiness and repetition repair stays orchestrator-owned
 
 **Decision:** The paid WebSocket readiness path delegates `I'm ready` /
@@ -274,6 +303,67 @@ the already-tested OpenAI TTS buffering path.
 ---
 
 > Append new decisions below as autonomous work progresses.
+
+### 2026-07-10 - Paid adult mic language can be selected per turn
+
+**Decision:** Keep adult paid STT defaulting to multilingual `multi`, but let
+the paid classroom send optional `mic_start.language` values `ru` or `uk`.
+The backend validates those values and recreates the adult Deepgram live stream
+with explicit `language=ru` or `language=uk` for the selected turn. Kids STT
+continues to use its separate `nova-2` / `en` config.
+**Reason:** Live user evidence showed Russian transcription improved but
+Ukrainian still failed under automatic multilingual handling. A manual RU/UA
+selector gives the student a deterministic escape hatch without using
+Live-API-invalid `detect_language` and without changing Kids.
+**Alternatives rejected:** Force all adult turns to Ukrainian or Russian; add
+`detect_language` to Live API options; move paid scoring to browser WebSpeech;
+change Kids STT.
+**Reversible:** Yes.
+**Risk:** Medium until deployed and verified with real paid microphone turns.
+
+### 2026-07-10 - Mixed answer-list cleanup remains expected-answer bounded
+
+**Decision:** Accept short mixed answer lists only when they contain the
+current backend expected answer as a full phrase, while rejecting negated and
+possessive forms such as `not keen on like` and `my hobby spare time`.
+**Reason:** The user reported that one correct and one incorrect word in the
+same message was still rejected. The repair preserves curriculum authority by
+normalizing only to the current backend expected answer and by keeping false
+positive guards.
+**Alternatives rejected:** Accept any substring; let the LLM grade the answer;
+change accepted answers or scoring.
+**Reversible:** Yes.
+**Risk:** Low locally; live STT phrase shape still needs production smoke.
+
+### 2026-07-10 - Adult paid STT uses explicit multilingual mode while Kids STT stays English-only
+
+**Decision:** Change adult paid Deepgram defaults to `model=nova-3` and
+`language=multi`, but explicitly pin Kids STT to `model=nova-2` and
+`language=en`.
+**Reason:** The user reported RU/UA/EN language confusion in ordinary paid
+teacher turns. The previous adult default forced every paid voice turn through
+`language=en`. Kids STT behavior is protected and should not inherit the adult
+multilingual change.
+**Alternatives rejected:** Reintroduce `detect_language` on the Live API
+because project tests and prior evidence state it caused HTTP 400; switch Kids
+STT to multilingual without a Kids-specific goal; move recognition authority to
+the browser.
+**Reversible:** Yes via environment variables or defaults.
+**Risk:** Medium until real paid microphone provider smoke confirms the
+configured model/language works in production.
+
+### 2026-07-10 - Self-correction normalization stays current-expected-answer bounded
+
+**Decision:** Accept one-turn wrong-then-correct speech only when the final
+tail exactly equals the current backend expected answer, while blocking negated
+or possessive tails such as `not keen on` and `my hobby`.
+**Reason:** The user wants `wrong first, correct second` and repeated correct
+phrases to be treated naturally. Keeping the rule expected-answer bounded
+preserves backend curriculum authority and avoids broad substring acceptance.
+**Alternatives rejected:** Accept any transcript containing the expected phrase;
+let Teacher Brain decide correctness; change curriculum accepted answers.
+**Reversible:** Yes.
+**Risk:** Low locally; live STT phrase shape still needs production smoke.
 
 ### 2026-07-09 - Owner paid access bypass lives in subscription service
 

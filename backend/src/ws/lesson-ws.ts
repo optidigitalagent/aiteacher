@@ -25,7 +25,12 @@ import { getFocusStudentBookSection } from '../lesson/focus-student-book.js'
 import { getCatalogEntry } from '../lesson/curriculum-catalog.js'
 import { LessonOrchestrator } from '../lesson/orchestrator.js'
 import type { ExerciseErrorData } from '../lesson/orchestrator.js'
-import { DeepgramSTT, DEEPGRAM_KIDS_LIVE_OPTIONS } from '../voice/stt.js'
+import {
+  DeepgramSTT,
+  DEEPGRAM_KIDS_LIVE_OPTIONS,
+  buildAdultDeepgramLiveOptions,
+  type AdultVoiceLanguage,
+} from '../voice/stt.js'
 import { applyKidsTargetWordCorrection } from './kids-stt-correction.js'
 import { speakToClient } from '../voice/tts.js'
 import { loadExercise, recordAnswer } from '../exercises/exercise-store.js'
@@ -471,6 +476,7 @@ interface ClientMeta {
   lessonStartedAt: number | null
   voiceId:         string | null   // selected TTS voice id
   teacherId:       string | null   // 'alex' | 'emma'
+  adultVoiceLanguage: AdultVoiceLanguage
   lastSeen:        number
   heartbeatRef:    ReturnType<typeof setInterval>
   timeoutRef:      ReturnType<typeof setTimeout>
@@ -4097,7 +4103,9 @@ function normalizeAdultVoiceAnswer(
 }
 
 function createSTT(ws: WebSocket, meta: ClientMeta, isKids = false): DeepgramSTT {
-  const sttOptions = isKids ? DEEPGRAM_KIDS_LIVE_OPTIONS : undefined
+  const sttOptions = isKids
+    ? DEEPGRAM_KIDS_LIVE_OPTIONS
+    : buildAdultDeepgramLiveOptions(meta.adultVoiceLanguage)
 
   // Kids only: pre-warm next connection when current one dies unexpectedly.
   // Deepgram often closes the idle connection between turns (during TTS playback).
@@ -4624,6 +4632,7 @@ export function attachLessonWS(server: Server): void {
         lessonStartedAt: null,
         voiceId:         null,
         teacherId:       null,
+        adultVoiceLanguage: 'multi',
         lastSeen:        Date.now(),
         heartbeatRef,
         timeoutRef:      setTimeout(() => ws.terminate(), INACTIVITY_TIMEOUT_MS),
@@ -4790,6 +4799,16 @@ export function attachLessonWS(server: Server): void {
             break
           case 'mic_start': {
             console.log(JSON.stringify({ event: '[voice:kids]', status: 'mic_start_received', turnId: meta.voiceTurnId }))
+            const isKidsTurn = meta.kidsBrainV1Active || meta.isKidsMode
+            if (!isKidsTurn) {
+              const requestedLanguage = msg.language ?? 'multi'
+              if (requestedLanguage !== meta.adultVoiceLanguage) {
+                meta.adultVoiceLanguage = requestedLanguage
+                meta.stt?.close()
+                meta.stt = null
+                console.log(`[voice] adult_stt_language_selected language=${requestedLanguage}`)
+              }
+            }
             // If stabilization from a previous mic_stop is pending, cancel it.
             // A new mic_start means the student is starting a fresh recording,
             // so the previous turn's stabilization window is no longer relevant.

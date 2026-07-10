@@ -13,6 +13,9 @@ Every phase review records all roles below. Each role is either `RUN` or
 | kids safety monitor | Child-facing behavior/data, Kids flows, prompts, content, voice, or safety boundaries changed |
 | QA tester | Always after implementation; owns targeted and regression evidence |
 | acceptance auditor | At final goal completion, and earlier when a phase claims acceptance criteria complete |
+| adversarial product critic | User-facing lesson, voice, AI, UI, browser, curriculum, safety, auth, billing, or deployment behavior changed |
+| live QA orchestrator | Running-product behavior, browser workflows, WebSocket flows, voice, STT/TTS, or deployment behavior changed |
+| failure analyst | Any live QA, critic, production smoke, or repeated user-reported failure is present |
 
 If a migration, prompt, deployment, RAG, voice, cost, or production-log surface
 is affected, also run its specialized skill. Applicability may not be silently
@@ -67,3 +70,8 @@ Next action:
 
 Phase completion requires a passing current-cycle verdict. Goal completion
 requires a fresh acceptance-auditor `GOAL COMPLETE` verdict.
+
+For user-facing product goals, `PASS` also requires the scenario matrix and
+live evidence required by `.codex/workflow/SCENARIO_MATRIX.md` and
+`.codex/workflow/LIVE_QA_GATE.md`. A code review, unit test run, or deployment
+health check alone is not sufficient.

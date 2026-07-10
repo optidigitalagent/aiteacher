@@ -24,6 +24,7 @@ Codex owns every transition. The user does not transfer prompts or role output.
    - Follow `RECOVERY_AFTER_INTERRUPTION.md`.
    - Select the one valid next action from evidence, not timestamps alone.
 2. **Execute**
+   - Run developer-reminder before CODE tasks.
    - Read the relevant role skill and current files.
    - Make the smallest scoped change.
    - Preserve unrelated worktree changes.
@@ -34,7 +35,10 @@ Codex owns every transition. The user does not transfer prompts or role output.
 4. **Review**
    - Apply `REVIEW_GATE.md`.
    - Persist all role verdicts in one review-cycle section.
+   - For product-facing goals, run the adversarial product critic and live QA
+     orchestrator when applicable.
 5. **Repair**
+   - Run failure analysis before implementing another repair.
    - Convert each blocking finding into the current `NEXT_ACTION`.
    - Diagnose from direct evidence.
    - Try at most three materially different repair approaches for the same
@@ -53,6 +57,20 @@ Codex owns every transition. The user does not transfer prompts or role output.
    - If any item is partial or incomplete, write the highest-priority missing
      work to `NEXT_ACTION.md` and continue.
    - Stop only after the auditor returns `GOAL COMPLETE`.
+
+## Goal Rebase Gate
+
+Run this gate before further implementation when:
+
+- production/manual smoke finds defects outside the active goal or scope;
+- the next action contains checks that are not acceptance criteria;
+- two consecutive repairs in the same product area still leave user-visible
+  failure;
+- the user clarifies that the intended outcome is broader than the current
+  goal.
+
+Goal rebase updates `GLOBAL_GOAL.md`, `GOAL.md`, scenario matrix, risks,
+decisions, and `NEXT_ACTION.md` before code changes continue.
 
 ## Atomic Checkpoint Contract
 

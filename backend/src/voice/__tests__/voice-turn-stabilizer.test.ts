@@ -86,9 +86,24 @@ describe('paid lesson expected-answer transcript cleanup', () => {
     expect(result?.reason).toBe('self_corrected_to_expected_answer_tail')
   })
 
+  it('accepts a short mixed answer list when one phrase is the current expected answer', () => {
+    const first = normalizeTranscriptToExpectedAnswer('hobby spare time', ['hobby'])
+    const second = normalizeTranscriptToExpectedAnswer('keen on like', ['keen on'])
+
+    expect(first?.text).toBe('hobby')
+    expect(first?.reason).toBe('short_answer_list_contains_expected')
+    expect(second?.text).toBe('keen on')
+    expect(second?.reason).toBe('short_answer_list_contains_expected')
+  })
+
   it('does not treat a negated tail as self-correction', () => {
     expect(normalizeTranscriptToExpectedAnswer('not keen on', ['keen on'])).toBeNull()
     expect(normalizeTranscriptToExpectedAnswer('I am not keen on', ['keen on'])).toBeNull()
+  })
+
+  it('does not accept negated or possessive mixed answer lists', () => {
+    expect(normalizeTranscriptToExpectedAnswer('not keen on like', ['keen on'])).toBeNull()
+    expect(normalizeTranscriptToExpectedAnswer('my hobby spare time', ['hobby'])).toBeNull()
   })
 })
 

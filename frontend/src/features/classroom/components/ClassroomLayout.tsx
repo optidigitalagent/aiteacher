@@ -35,6 +35,7 @@ const LESSON_UNIT = Number(import.meta.env.VITE_LESSON_UNIT ?? 1)
 const ENV_SECTION = import.meta.env.VITE_LESSON_SECTION as string | undefined
 
 export type ClassroomMode = 'demo' | 'paid'
+type AdultVoiceLanguage = 'ru' | 'uk'
 
 export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const { demoId, sessionId: paidSessionId } = useParams<{ sessionId?: string; demoId?: string }>()
@@ -313,6 +314,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const [showTips, setShowTips] = useState(false)
   // Stale answer rejection message (STALE_EXERCISE_ANSWER engine error)
   const [staleAnswerMsg, setStaleAnswerMsg] = useState<string | null>(null)
+  const [adultVoiceLanguage, setAdultVoiceLanguage] = useState<AdultVoiceLanguage | null>(null)
 
   const answerRef = useRef('')
   useEffect(() => { answerRef.current = answer }, [answer])
@@ -853,9 +855,9 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       lastTranscriptRef.current = ''
       setAnswer('')
       onTranscript('')
-      send({ type: 'mic_start' })
+      send({ type: 'mic_start', language: adultVoiceLanguage ?? 'multi' })
     }
-  }, [lessonStarted, isSpeaking, isListening, toggle, send, onTranscript, setAwaitingStudentMessage])
+  }, [lessonStarted, isSpeaking, isListening, toggle, send, onTranscript, setAwaitingStudentMessage, adultVoiceLanguage])
 
   const handleExplain = useCallback(() => {
     if (isDemoMode) {
@@ -1255,6 +1257,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
             (!isDemoMode && exerciseCursor?.completionState === 'complete')
           }
           micDisabled={!isDemoMode && (!lessonStarted || isRecovering || studentTurnPending)}
+          voiceLanguage={isDemoMode ? null : adultVoiceLanguage}
+          onVoiceLanguageChange={isDemoMode ? undefined : setAdultVoiceLanguage}
           showHelpInput={isDemoMode ? showHelpInput : false}
           helpInputValue={helpInputValue}
           onHelpChange={setHelpInputValue}

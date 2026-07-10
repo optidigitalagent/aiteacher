@@ -8,6 +8,8 @@ const DEEPGRAM_LANGUAGE = process.env.DEEPGRAM_LANGUAGE ?? 'multi'
 const DEEPGRAM_KIDS_MODEL = process.env.DEEPGRAM_KIDS_MODEL ?? 'nova-2'
 const DEEPGRAM_KIDS_LANGUAGE = process.env.DEEPGRAM_KIDS_LANGUAGE ?? 'en'
 
+export type AdultVoiceLanguage = 'multi' | 'ru' | 'uk'
+
 // How long after speech stops before we fire the transcript.
 // 1500ms = student can think for 1.5s mid-answer without triggering AI.
 const UTTERANCE_END_MS = 1500
@@ -44,6 +46,13 @@ export const DEEPGRAM_KIDS_LIVE_OPTIONS: LiveSchema = {
   language:         DEEPGRAM_KIDS_LANGUAGE,
   utterance_end_ms: UTTERANCE_END_MS_KIDS,
   vad_events:       true,
+}
+
+export function buildAdultDeepgramLiveOptions(language: AdultVoiceLanguage = 'multi'): LiveSchema {
+  return {
+    ...DEEPGRAM_LIVE_OPTIONS,
+    language: language === 'multi' ? DEEPGRAM_LIVE_OPTIONS.language : language,
+  }
 }
 
 type DgLive = ReturnType<ReturnType<typeof createClient>['listen']['live']>

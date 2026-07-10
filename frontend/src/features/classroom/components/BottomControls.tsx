@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect } from 'react'
 import { IcMic, IcSend, IcQ } from './icons'
 
+type VoiceLanguage = 'ru' | 'uk'
+
 interface Props {
   isListening:        boolean
   value:              string
@@ -18,12 +20,15 @@ interface Props {
   onHelpChange?:      (v: string) => void
   onHelpSubmit?:      () => void
   onHelpClose?:       () => void
+  voiceLanguage?:     VoiceLanguage | null
+  onVoiceLanguageChange?: (v: VoiceLanguage | null) => void
 }
 
 export default function BottomControls({
   isListening, value, onChange, onSubmit, onToggleMic, onExplain,
   inputDisabled, micDisabled, showExplain = true, isPartialTranscript,
   showHelpInput, helpInputValue, onHelpChange, onHelpSubmit, onHelpClose,
+  voiceLanguage, onVoiceLanguageChange,
 }: Props) {
   const inputRef          = useRef<HTMLInputElement>(null)
   const helpInputRef      = useRef<HTMLInputElement>(null)
@@ -153,6 +158,40 @@ export default function BottomControls({
             <IcQ s={14} c={showHelpInput ? '#6E7CFB' : '#888'} />
             <span className="cls-explain-label">I don&apos;t understand</span>
           </button>
+        )}
+
+        {onVoiceLanguageChange && (
+          <div
+            role="group"
+            aria-label="Voice language"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0,
+              background: '#F5F5F7', border: '1.5px solid rgba(110,124,251,0.15)',
+              borderRadius: 99, padding: 4,
+            }}
+          >
+            {(['ru', 'uk'] as const).map(lang => {
+              const active = voiceLanguage === lang
+              return (
+                <button
+                  key={lang}
+                  type="button"
+                  onClick={() => onVoiceLanguageChange(active ? null : lang)}
+                  title={lang === 'ru' ? 'I will speak Russian' : 'I will speak Ukrainian'}
+                  aria-pressed={active}
+                  style={{
+                    width: 34, height: 30, borderRadius: 99, border: 'none',
+                    background: active ? '#1a1a2e' : 'transparent',
+                    color: active ? 'white' : '#64748B',
+                    cursor: 'pointer', fontSize: 11, fontWeight: 900,
+                    transition: 'background 0.15s, color 0.15s',
+                  }}
+                >
+                  {lang.toUpperCase()}
+                </button>
+              )
+            })}
+          </div>
         )}
 
         {/* Mic button */}

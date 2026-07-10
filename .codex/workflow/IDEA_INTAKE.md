@@ -12,14 +12,17 @@ files, phases, tests, reviewers, or agents.
 2. Restate the idea as one outcome with a clear scope boundary.
 3. Inspect relevant architecture, source, tests, git history, and current
    workflow evidence. Do not plan from assumptions.
-4. Determine whether the idea continues, refines, replaces, or is independent
+4. Create a scenario contract using `.codex/workflow/SCENARIO_MATRIX.md`.
+   Product-facing goals must include happy, negative, adversarial, live
+   evidence, and failure-definition paths before implementation.
+5. Determine whether the idea continues, refines, replaces, or is independent
    of the active goal.
    - Continue/refine: update the active goal without erasing valid evidence.
    - Replace: preserve the prior goal and checkpoint in `GOAL_PROGRESS.md`,
      record the change in `DECISIONS.md`, then activate the new goal.
    - Independent: order it after the active goal unless the user explicitly
      made it the current priority.
-5. Create or update:
+6. Create or update:
    - `GLOBAL_GOAL.md`: outcome, scope, constraints, acceptance criteria, phase
      table, and completion rule.
    - `GOAL.md`: implementation-oriented goal brief and discovered context.
@@ -27,7 +30,10 @@ files, phases, tests, reviewers, or agents.
    - `RISK_REGISTER.md`: concrete open risks and mitigations.
    - `DECISIONS.md`: only material interpretation or architecture decisions.
    - `NEXT_ACTION.md`: exactly one immediately executable task.
-6. Enter `AUTONOMOUS_LOOP.md`. Do not stop after producing the plan.
+7. Enter `AUTONOMOUS_LOOP.md`. Do not stop after producing the plan.
+
+If the idea came from Telegram, follow
+`.codex/workflow/TELEGRAM_GOAL_IMPORT.md` first.
 
 ## Goal Quality Rules
 
@@ -41,6 +47,7 @@ as applicable:
 - build, test, and review requirements;
 - deployment and production-verification requirements;
 - rollback or recovery requirements.
+- scenario matrix and live QA requirements for every affected product surface.
 
 Plan two to six phases by default. Each phase must have:
 

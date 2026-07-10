@@ -50,6 +50,7 @@ export const InboundMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('mic_start'),
+    language: z.enum(['multi', 'ru', 'uk']).optional(),
   }),
   z.object({
     type:               z.literal('student_confused'),

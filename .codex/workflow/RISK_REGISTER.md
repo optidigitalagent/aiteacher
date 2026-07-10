@@ -25,6 +25,93 @@
 
 ## Open Risks
 
+### RISK-034 - Adult paid multilingual STT requires live provider smoke
+
+**Status:** OPEN
+**Severity:** P1
+**Area:** voice / paid lesson runtime
+**Description:** Adult paid STT defaults now use `nova-3` / `multi` to support
+Russian, Ukrainian, and English turns. Local tests prove the option contract
+and protected Kids override, but they do not prove Deepgram live provider
+transcription quality or production account support for the selected default.
+**Trigger:** Running an adult paid lesson with real browser microphone and
+speaking English, Russian, or Ukrainian.
+**Mitigation:** `detect_language` was not added; Kids STT remains explicitly
+`nova-2` / `en`; paid UI now offers a minimal RU/UA selector and backend
+validates `mic_start.language` before rebuilding adult Deepgram options with
+`ru`, `uk`, or default `multi`. Targeted option/schema/normalization tests,
+TypeScript, frontend build, and full backend suite pass. Environment variables
+can still override `DEEPGRAM_MODEL` and default `DEEPGRAM_LANGUAGE`.
+Commit `34cfefeccc721662c549ac9776497a68bfd08a56` deployed to Railway
+production; backend/frontend startup health, 10-minute stability, critical
+error-pattern sweeps, and HTTP 4xx/5xx log checks passed.
+**Resolution:** Pass real adult paid microphone smoke for English answer,
+Russian clarification, Ukrainian clarification, self-correction `Like keen on`,
+and repeated answer `keen on keen on`, with no critical backend/voice logs.
+**Opened:** 2026-07-10
+**Updated:** 2026-07-10 follow-up local repair verified; deployment/live smoke pending
+
+### RISK-035 - Live QA automation still cannot prove real microphone behavior unattended
+
+**Status:** OPEN
+**Severity:** P1
+**Area:** QA / voice / browser / production
+**Description:** Unit, TypeScript, and frontend build checks prove local
+contracts, but there is still no automated fake-mic/browser/log-correlation
+harness that can prove real paid lesson RU/UA/EN microphone behavior without
+manual running-product evidence.
+**Trigger:** Any voice, STT, TTS, or paid lesson classroom change.
+**Mitigation:** Workflow now marks live QA as blocking; local tests cover WS
+schema, STT option construction, expected-answer normalization, Kids STT
+protection, frontend build, and full backend regression suite.
+**Resolution:** Implement a real live QA harness that drives the paid classroom
+with controlled audio fixtures or browser microphone simulation, captures WS
+frames/screenshots/console, and correlates backend logs.
+**Opened:** 2026-07-10
+**Updated:** 2026-07-10
+
+---
+
+### RISK-032 - Telegram orchestrator token was shared in chat
+
+**Status:** OPEN
+**Severity:** P1
+**Area:** security / tooling
+**Description:** The Telegram Bot API token was provided in chat. It is not
+committed to repository files, but a token shared in chat should be considered
+exposed.
+**Trigger:** Anyone with the token can potentially control the bot until it is
+rotated by BotFather.
+**Mitigation:** Bot code reads `TELEGRAM_BOT_TOKEN` only from environment,
+`.env.example` contains no real value, tests ensure token-like strings are
+redacted from goal packets, and logs only print whether Telegram is enabled.
+**Resolution:** Rotate the bot token in BotFather after local verification and
+set the new value only in the runtime environment.
+**Opened:** 2026-07-10
+**Updated:** 2026-07-10
+
+---
+
+### RISK-033 - Live QA automation not yet implemented for product lessons
+
+**Status:** OPEN
+**Severity:** P1
+**Area:** QA / voice / browser / production
+**Description:** Workflow now requires live/adversarial evidence, but the full
+Playwright/fake-mic/log-correlation harness for lesson runtime behavior is not
+yet implemented.
+**Trigger:** Future product tasks could still reach a manual verification stop
+if the required scenario cannot yet be automated.
+**Mitigation:** `LIVE_QA_GATE.md`, `SCENARIO_MATRIX.md`, `REVIEW_GATE.md`, and
+new skills make the evidence gap explicit and blocking rather than silently
+calling work complete.
+**Resolution:** Implement the live QA harness with browser, WebSocket, fake
+mic/audio fixtures, TTS checks, runtime trace, and production log correlation.
+**Opened:** 2026-07-10
+**Updated:** 2026-07-10
+
+---
+
 ### RISK-031 - Paid section 1.1 live tutor intelligence repair requires deploy and live retest
 
 **Status:** MITIGATED
@@ -47,13 +134,16 @@ passed (1 file / 35 tests), backend TypeScript passed, full backend suite
 passed (67 files / 2162 tests), `git diff --check` passed with CRLF warnings
 only, and review gate passed for backend, curriculum, kids safety, prompt
 tester, and QA. No frontend UI, billing, auth, STT/TTS config, mic config,
-`docs/master-prompt.md`, or `.env` file was changed.
-**Resolution:** Commit, deploy, and pass authenticated owner paid lesson
-section `1.1` smoke verifying warm-up after readiness, synchronized item text
-and expected answer, repeated `keen on` acceptance, and natural
-reason/example/recast/repeat speaking scaffolding. The intro TTS sentence
-symptom remains recorded as a voice-runtime symptom unless reproduced after
-this AI repair.
+`docs/master-prompt.md`, or `.env` file was changed. Commit
+`594824f864c0b9b5c02e6734033c448d4216b242` deployed to Railway backend
+`80d7c496-5582-4002-951e-1759c37464e2` and frontend
+`dda6c780-89de-476d-a239-2ba6b9044117`; automated health/log checks passed,
+including the stability recheck with backend uptime 957s.
+**Resolution:** Pass authenticated owner paid lesson section `1.1` smoke
+verifying warm-up after readiness, synchronized item text and expected answer,
+repeated `keen on` acceptance, and natural reason/example/recast/repeat
+speaking scaffolding. The intro TTS sentence symptom remains recorded as a
+voice-runtime symptom unless reproduced after this AI repair.
 **Opened:** 2026-07-10
 **Updated:** 2026-07-10
 

@@ -1,5 +1,496 @@
 # GOAL_PROGRESS.md
 
+## PAID TEACHER RU/UA SELECTOR AND MIXED ANSWER FOLLOW-UP - 2026-07-10
+
+**Trigger:** User supplied live paid lesson transcript and reported remaining
+issues after the deployed `34cfefe` repair: Ukrainian voice still does not
+transcribe reliably, a short response containing one correct phrase and one
+incorrect phrase can still be rejected, and the automation/live QA workflow has
+not removed the need for the user to discover these regressions manually.
+
+**Chat analysis:**
+- Positive evidence: the teacher now handles clarification during deterministic
+  items better than before (`And what should I do here?` produced an
+  explanatory answer) and acknowledged a self-correction for `get fit`.
+- Remaining gaps: RU worked better than UA under automatic multilingual STT;
+  there was no manual RU/UA mic-language control; short mixed answer lists were
+  only partly covered (`Like keen on` tail), not cases like `hobby spare time`
+  or `keen on like`.
+- Automation root cause: workflow correctly records live QA as blocking, but
+  there is no implemented fake-mic/browser/log-correlation harness yet.
+  Telegram-orchestrator tests pass, but a running bot/internal endpoint or a
+  known local data dir is still required for fully automatic fresh-chat import.
+
+**Implementation:**
+- `frontend/src/features/classroom/components/BottomControls.tsx`
+  - Added a compact paid-only RU/UA segmented selector near the mic button.
+  - Buttons have accessible `aria-pressed` state and titles.
+- `frontend/src/features/classroom/components/ClassroomLayout.tsx`
+  - Tracks selected adult voice language and sends it as `mic_start.language`
+    (`multi` when no override is selected).
+- `backend/src/ws/message-types.ts`
+  - Validates optional `mic_start.language` as `multi`, `ru`, or `uk`.
+- `backend/src/voice/stt.ts`
+  - Added `AdultVoiceLanguage` and `buildAdultDeepgramLiveOptions()`.
+  - Adult STT can build explicit `language=ru` / `language=uk` live options;
+    default remains `multi`.
+- `backend/src/ws/lesson-ws.ts`
+  - Stores adult voice language per WS connection.
+  - Recreates adult STT when the next paid `mic_start` requests a different
+    language; Kids still uses separate `DEEPGRAM_KIDS_LIVE_OPTIONS`.
+- `backend/src/voice/voice-turn-stabilizer.ts`
+  - Added expected-answer-bounded cleanup for short mixed answer lists.
+  - Guards negated/possessive variants such as `not keen on like` and
+    `my hobby spare time`.
+- `backend/src/lesson/master-orchestrator.ts`
+  - Adds a natural deterministic acknowledgement when the correct answer was
+    recovered from a short mixed answer list.
+- `.gitignore`
+  - Ignores `tools/telegram-orchestrator/data-local/` so local goal packet
+    runtime state is not committed.
+
+**Validation evidence:**
+- Targeted tests:
+  `cd backend; npx vitest run src/voice/__tests__/voice-turn-stabilizer.test.ts src/voice/__tests__/stt-deepgram-options.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/ws/__tests__/message-types.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 4 files passed; 45 tests passed.
+- Backend TypeScript:
+  `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- Frontend build:
+  `cd frontend; npm run build` with npm/temp redirected to `D:\` -> exit 0;
+  Vite built `dist/` successfully with the pre-existing chunk-size warning.
+- Full backend suite:
+  `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 68 files passed; 2172 tests passed.
+- Telegram orchestrator:
+  `cd tools/telegram-orchestrator; node --test` -> exit 0; 4 tests passed.
+
+**Review gate:**
+- backend reviewer: RUN -> PASS; `mic_start.language` is validated by Zod, no
+  auth/billing/payment/DB/secrets changed, no `detect_language`, no new
+  external-call loop, Kids STT remains separate.
+- frontend reviewer: RUN -> PASS WITH WARNING; TypeScript/Vite build passes
+  and selector has accessible state. Warning: no Playwright screenshot/browser
+  smoke was available in this turn, so live visual proof remains pending.
+- curriculum reviewer: RUN -> PASS; accepted answers, scoring, exercise order,
+  and progression unchanged; cleanup remains current expected-answer bounded.
+- kids safety monitor: RUN -> PASS; Kids STT remains `nova-2` / `en`, and the
+  full backend suite passed.
+- QA tester: RUN -> PASS; targeted tests, backend TypeScript, frontend build,
+  full backend suite, and Telegram orchestrator tests passed.
+- adversarial product critic: RUN -> PASS WITH WARNING; local negative cases
+  cover negation/possessive false positives and mixed-answer acceptance.
+  Warning: real paid microphone RU/UA/EN behavior is still unverified.
+- live QA orchestrator: RUN -> PENDING; production microphone/browser/log
+  evidence still required after deployment.
+- acceptance auditor: RUN -> GOAL NOT COMPLETE; deployment and running-product
+  evidence for the follow-up repair are missing.
+
+**Current status:**
+- Follow-up implementation is complete locally and verified.
+- No new commit created yet for this follow-up.
+- New deployment is pending.
+
+**Next action:** Commit, push, deploy RU/UA selector and mixed-answer repair,
+run Railway health/log checks, then run adult paid lesson live microphone smoke.
+
+## PAID TEACHER MULTILINGUAL VOICE AND CONVERSATIONAL TUTOR BEHAVIOR - 2026-07-10
+
+**Trigger:** User requested two high-priority ordinary teacher improvements:
+stable Russian/Ukrainian/English understanding without language confusion, and
+a more conversational tutor that accepts one-turn self-correction/repetition
+instead of responding robotically or falsely rejecting correct final answers.
+
+**Goal rebase:**
+- Replaced the blocked Telegram live-smoke next action as the active execution
+  target. Telegram intake-orchestrator remains paused, with its live BotFather
+  smoke still pending.
+- Current active goal is ordinary paid teacher multilingual voice and
+  conversational tutor behavior.
+
+**Implementation:**
+- `backend/src/voice/stt.ts`
+  - Adult paid STT defaults changed from `nova-2` / `en` to `nova-3` /
+    `multi`, without adding Live-API-invalid `detect_language`.
+  - Kids STT now explicitly overrides the shared base back to `nova-2` / `en`
+    with existing Kids timing and `vad_events`.
+- `backend/src/voice/voice-turn-stabilizer.ts`
+  - Added bounded self-correction-tail normalization for current backend
+    expected answers, e.g. `Like keen on` -> `keen on`.
+  - Guarded against false positives for negated and possessive tails such as
+    `not keen on` and `my hobby`.
+- `backend/src/ws/lesson-ws.ts`
+  - Carries expected-answer normalization reason through the adult voice
+    stabilization path into the orchestrator.
+- `backend/src/lesson/master-orchestrator.ts`
+  - Deterministic teacher text now acknowledges self-correction and repeated
+    current expected answer phrases naturally while leaving engine grading and
+    cursor progression unchanged.
+- `backend/src/ai/teacher-brain/teacher-brain-rules.ts`
+  - Added self-correction awareness and clarified that tiny personal questions
+    are allowed only as bounded speaking/warmup or post-completion hooks, never
+    as a replacement for deterministic grading.
+- Tests updated:
+  - `backend/src/voice/__tests__/voice-turn-stabilizer.test.ts`
+  - `backend/src/voice/__tests__/stt-deepgram-options.test.ts`
+  - `backend/src/voice/__tests__/kids-stt-config-parity.test.ts`
+  - `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+  - `backend/src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+
+**Validation evidence:**
+- First targeted run failed because the self-correction tail was too broad and
+  exceeded speaking prompt budget by one rule. Fixed by moving self-correction
+  tail detection after punctuation fragment checks, blocking possessive/negated
+  prefixes, and merging the personal-question rule into an existing speaking
+  rule.
+- Targeted tests:
+  `cd backend; npx vitest run src/voice/__tests__/voice-turn-stabilizer.test.ts src/voice/__tests__/stt-deepgram-options.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 5 files passed; 200 tests passed.
+- TypeScript:
+  `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- Full backend suite:
+  `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 67 files passed; 2167 tests passed.
+
+**Review gate:**
+- backend reviewer: RUN -> PASS WITH WARNING; no auth, billing, payment, DB,
+  endpoint, secret, or new external-call loop added. Warning: adult Deepgram
+  `nova-3` / `multi` requires live provider smoke because local tests can only
+  validate option construction, not provider transcription quality.
+- frontend reviewer: NOT APPLICABLE - no frontend files or client UI contracts
+  changed.
+- curriculum reviewer: RUN -> PASS; accepted answers, scoring, exercise order,
+  and progression were not changed. Normalization is current expected-answer
+  bounded.
+- kids safety monitor: RUN -> PASS; Kids STT config is explicitly pinned to
+  `nova-2` / `en`, and the full backend suite including Kids tests passed.
+- QA tester: RUN -> PASS; targeted tests, TypeScript, and full backend suite
+  passed.
+- adversarial product critic: RUN -> PASS WITH WARNING; local adversarial cases
+  cover negation, possessive false positives, repeated phrase, and wrong-then-
+  correct self-correction. Warning: real mic RU/UA/EN smoke is still required.
+- live QA orchestrator: RUN -> PENDING; running-product voice evidence is
+  missing.
+- acceptance auditor: RUN -> GOAL NOT COMPLETE; local criteria are complete,
+  but live microphone smoke and deployment evidence are partial/not complete.
+
+**Current status:**
+- Local implementation is complete and verified.
+- Commit `34cfefeccc721662c549ac9776497a68bfd08a56`
+  (`fix(voice): support multilingual paid teacher turns`) was created and
+  pushed to `origin/main`.
+- Railway production deploy completed:
+  - backend `aiteacher` deployment
+    `d0f8cc64-69d3-4f26-a378-245445990152` -> SUCCESS at commit `34cfefe`.
+  - frontend `aware-alignment` deployment
+    `e887b721-d936-4cf6-aca5-486da11bd177` -> SUCCESS at commit `34cfefe`
+    (monorepo auto-deploy; no frontend product files changed).
+- Post-deploy health/log checks passed: backend `/health` HTTP 200 with
+  postgres/redis ok, final uptime 629s; frontend `/demo/setup` HTTP 200;
+  backend/frontend critical error-pattern sweeps and HTTP 4xx/5xx log checks
+  returned no entries.
+
+**Next action:** Run adult paid lesson live microphone smoke for RU/UA/EN and
+self-correction/repetition behavior against the deployed production build.
+
+## AUTONOMOUS PRODUCT DELIVERY V3 INTAKE AND IMPLEMENTATION - 2026-07-10
+
+**Trigger:** User reported that development is not autonomous enough: Codex
+can spend many tokens on small fixes, misunderstand broad goals such as
+Russian-language support, and leave the user to manually discover production
+failures. User authorized building the remaining automation and supplied a
+Telegram bot token for runtime use only.
+
+**Recovery/rebase:**
+- Current active goal was owner-only paid lesson access bypass, but repository
+  evidence showed real work had drifted into paid lesson voice, Teacher Brain,
+  multilingual handling, mic UX, and live tutor quality.
+- The owner paid lesson goal is preserved as paused with manual smoke pending.
+- New active goal is Autonomous Product Delivery V3.
+
+**Implementation:**
+- Created `tools/telegram-orchestrator` standalone service:
+  - `src/server.mjs` implements Telegram polling, `/start`, `/new_goal`,
+    `/confirm`, `/status`, `/export`, `/link`, internal link endpoints, goal
+    packet endpoints, and project-update relay.
+  - `src/orchestrator.mjs` builds goal packets with scenario contracts, agent
+    chain, blocking gates, Codex next action, and secret redaction.
+  - `.env.example` documents `TELEGRAM_BOT_TOKEN` and
+    `INTERNAL_TELEGRAM_API_KEY` without real values.
+  - `test/orchestrator.test.mjs` covers redaction, packet generation, agent
+    chain, and formatting.
+- Added workflow contracts:
+  - `.codex/workflow/ORCHESTRATION_BRIEF.md`
+  - `.codex/workflow/SCENARIO_MATRIX.md`
+  - `.codex/workflow/LIVE_QA_GATE.md`
+  - `.codex/workflow/FAILURE_ANALYSIS.md`
+  - `.codex/workflow/TEST_EVIDENCE.md`
+- Added specialist skills:
+  - `.codex/skills/goal-intake-orchestrator/SKILL.md`
+  - `.codex/skills/product-context-researcher/SKILL.md`
+  - `.codex/skills/goal-analyst/SKILL.md`
+  - `.codex/skills/scenario-designer/SKILL.md`
+  - `.codex/skills/backend-implementer/SKILL.md`
+  - `.codex/skills/frontend-implementer/SKILL.md`
+  - `.codex/skills/voice-runtime-implementer/SKILL.md`
+  - `.codex/skills/prompt-curriculum-implementer/SKILL.md`
+  - `.codex/skills/adversarial-product-critic/SKILL.md`
+  - `.codex/skills/live-qa-orchestrator/SKILL.md`
+  - `.codex/skills/failure-analyst/SKILL.md`
+  - `.codex/skills/developer-reminder/SKILL.md`
+  - `.codex/skills/handoff-scribe/SKILL.md`
+- Added `.codex/workflow/TELEGRAM_GOAL_IMPORT.md` so confirmed Telegram goal
+  packets have an explicit Codex import path.
+- Fixed adversarial/security review findings:
+  - Telegram polling refuses to start when `TELEGRAM_BOT_TOKEN` is set without
+    `ORCHESTRATOR_ALLOWED_CHAT_IDS`, unless explicit local dev override
+    `ORCHESTRATOR_ALLOW_ALL_CHATS_FOR_DEV=1` is set.
+  - `/status` and `/export` are scoped to the requesting chat.
+  - `/internal/orchestrator/events` rejects disallowed chats.
+  - JSON body parsing has a 64KB limit and returns 400 on invalid JSON.
+  - `tools/telegram-orchestrator/data/` is gitignored.
+  - README commands now point to `tools/telegram-orchestrator`.
+  - `live-qa-orchestrator` is included in the packet chain and orchestration
+    brief; named chain roles now have skill files or explicit dispatch mapping.
+  - Goal packets now include `affectedSurfaces` and concrete intake-seed
+    scenario rows.
+- Updated `AGENTS.md`, `IDEA_INTAKE.md`, `AUTONOMOUS_LOOP.md`, and
+  `REVIEW_GATE.md` so scenario contracts, goal rebasing, adversarial critique,
+  live QA, failure analysis, and developer reminders are blocking workflow
+  requirements when applicable.
+
+**Validation evidence:**
+- `cd tools/telegram-orchestrator; node --test` -> exit 0; 4 tests passed.
+- Local health smoke with `PORT=4110` and dummy
+  `INTERNAL_TELEGRAM_API_KEY` -> `/health` HTTP 200 `{"ok":true}`.
+- Internal endpoint smoke with dummy `INTERNAL_TELEGRAM_API_KEY` ->
+  unauthenticated `/internal/orchestrator/latest` HTTP 401 and authenticated
+  request HTTP 200 `{"ok":true,"goal":null}`.
+- Hardening smoke with dummy internal key -> invalid JSON on
+  `/internal/orchestrator/events` HTTP 400; disallowed `telegramChatId` event
+  relay HTTP 403.
+- Secret leak scan:
+  `rg "8970573556|AAFvbPMh|TELEGRAM_BOT_TOKEN=.*[A-Za-z0-9_:-]{10,}" . -g "!node_modules" -g "!.git"`
+  -> exit 1, no matches.
+- `git diff --check` -> exit 0; CRLF warnings only.
+
+**Review gate:**
+- backend reviewer: RUN -> PASS; no hardcoded secrets, no auth/payment/billing
+  product logic changed, bot internal endpoints require bearer key, Telegram
+  token is environment-only.
+- frontend reviewer: NOT APPLICABLE - no frontend UI files changed.
+- curriculum reviewer: NOT APPLICABLE - no curriculum or accepted-answer logic
+  changed.
+- kids safety monitor: NOT APPLICABLE - no Kids behavior changed.
+- QA tester: RUN -> PASS; bot unit tests, local health smoke, internal endpoint
+  auth smoke, secret leak scan, and diff check passed.
+- adversarial product critic: RUN -> PASS WITH WARNING; process gates now block
+  theory-only completion, but live Telegram runtime smoke is still pending.
+- live QA orchestrator: RUN -> BLOCKED/PENDING; local bot tests pass, but real
+  Telegram smoke requires secret runtime environment.
+- acceptance auditor: NOT APPLICABLE - Phase 4/5 live verification remains.
+
+**Next action:** Run Telegram bot live smoke from local environment with the
+token supplied only via `TELEGRAM_BOT_TOKEN`, verify commands and internal
+endpoints, then rotate the token.
+
+### Phase 4 recovery checkpoint - 2026-07-10
+
+**Trigger:** User asked to continue and pasted the Telegram bot token in chat.
+
+**Recovery evidence:**
+- `git status --short --untracked-files=all` -> dirty tree contains the
+  Autonomous Product Delivery V3 workflow/service changes listed above; no
+  commit created.
+- Current branch -> `main`; HEAD -> `594824f fix(lesson): repair paid tutor
+  intelligence`.
+- Workflow state still identifies Phase 4 Telegram live bot smoke as the
+  current next action.
+
+**What was attempted:**
+- Read `tools/telegram-orchestrator/src/server.mjs` and confirmed live polling
+  intentionally refuses to start when `TELEGRAM_BOT_TOKEN` is set without
+  `ORCHESTRATOR_ALLOWED_CHAT_IDS`, unless the explicit local dev override is
+  enabled.
+- Checked current process environment without printing secret values:
+  `TELEGRAM_BOT_TOKEN_PRESENT=0`,
+  `INTERNAL_TELEGRAM_API_KEY_PRESENT=0`,
+  `ORCHESTRATOR_ALLOWED_CHAT_IDS_PRESENT=0`.
+- Did not pass the pasted token through a shell command, URL, file, workflow
+  state, or log-producing tool call.
+
+**Fresh validation evidence:**
+- `cd tools/telegram-orchestrator; node --test` -> exit 0; 4 tests passed.
+- Secret scan:
+  `rg "8970573556|AAFvbPMh|TELEGRAM_BOT_TOKEN=.*[A-Za-z0-9_:-]{10,}" . -g "!node_modules" -g "!.git"`
+  -> exit 1, no matches.
+- `git diff --check` -> exit 0; CRLF warnings only.
+
+**Security decision for this checkpoint:**
+- Treat the token pasted in chat as exposed. It is still required for local
+  runtime smoke, but Codex must not re-emit it into shell/tool history. The
+  user should rotate it in BotFather after verification.
+
+**Blocked evidence:**
+- Live Telegram command smoke cannot be executed safely from this Codex process
+  until the runtime environment already contains `TELEGRAM_BOT_TOKEN`,
+  `INTERNAL_TELEGRAM_API_KEY`, and `ORCHESTRATOR_ALLOWED_CHAT_IDS`.
+- The allowlisted Telegram chat id is also required; using
+  `ORCHESTRATOR_ALLOW_ALL_CHATS_FOR_DEV=1` with an exposed token would widen
+  access and is not accepted as proof for this gate.
+
+**Next action:** Run Phase 4 live smoke only after the required runtime
+environment variables are present without embedding the token in command text.
+
+### Phase 4 continuation checkpoint - 2026-07-10
+
+**Trigger:** User asked to continue work from the blocked Telegram live smoke
+handoff.
+
+**Recovery evidence:**
+- `git status --short --untracked-files=all` -> dirty tree still contains the
+  Autonomous Product Delivery V3 workflow/service changes; no commit created.
+- Current branch -> `main`; HEAD -> `594824f fix(lesson): repair paid tutor
+  intelligence`.
+- `GLOBAL_GOAL.md` and `NEXT_ACTION.md` still identify Phase 4 Telegram live
+  bot smoke as the current unfinished gate.
+
+**Environment evidence without printing secret values:**
+- `TELEGRAM_BOT_TOKEN_PRESENT=False`
+- `INTERNAL_TELEGRAM_API_KEY_PRESENT=False`
+- `ORCHESTRATOR_ALLOWED_CHAT_IDS_PRESENT=False`
+- `ORCHESTRATOR_ALLOW_ALL_CHATS_FOR_DEV=False`
+
+**Fresh validation evidence:**
+- `cd tools/telegram-orchestrator; node --test` -> exit 0; 4 tests passed.
+- Placeholder scan:
+  `rg "TELEGRAM_BOT_TOKEN=\S+|INTERNAL_TELEGRAM_API_KEY=\S+" . -g "!node_modules" -g "!.git"`
+  -> exit 0; matches were only README placeholder/example lines.
+- Real token-like secret scan:
+  `rg "\b[0-9]{8,12}:[A-Za-z0-9_-]{35,}\b|TELEGRAM_BOT_TOKEN=[A-Za-z0-9_:-]{20,}|INTERNAL_TELEGRAM_API_KEY=[A-Za-z0-9_:-]{20,}" . -g "!node_modules" -g "!.git" -g "!tools/telegram-orchestrator/test/orchestrator.test.mjs"`
+  -> exit 1; no matches.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- Local dummy-key HTTP smoke without `TELEGRAM_BOT_TOKEN`:
+  health `ok=true`, unauthenticated `/internal/orchestrator/latest` HTTP 401,
+  authenticated latest `ok=true` and `goal=null`, invalid JSON on
+  `/internal/orchestrator/events` HTTP 400, final smoke assertion -> exit 0.
+
+**Current stop condition:**
+- Phase 4 live Telegram smoke is still blocked because the Codex process does
+  not have the required secret-safe runtime environment and the allowlisted
+  Telegram chat id is not available.
+
+**Next action:** Run Phase 4 live smoke only from an environment where
+`TELEGRAM_BOT_TOKEN`, `INTERNAL_TELEGRAM_API_KEY`, and
+`ORCHESTRATOR_ALLOWED_CHAT_IDS` are already set without placing the token in
+shell command text or workflow files.
+
+### Phase 4 standalone new-bot checkpoint - 2026-07-10
+
+**Trigger:** User rejected continuing with the previous Mentium bot/runtime and
+requested a brand-new bot that does not touch current product work.
+
+**Implementation:**
+- Renamed the standalone tool surface from Mentium to `Codex Intake Bot` in
+  `tools/telegram-orchestrator/package.json`, README, and `/start` help text.
+- Added `ORCHESTRATOR_BOT_NAME` so the visible bot name is configurable.
+- Added `ORCHESTRATOR_PLATFORM_LINK_ENABLED`; platform `/link` behavior is now
+  disabled by default and only enabled explicitly with value `1`.
+- Added `tools/telegram-orchestrator/scripts/start-local.ps1` and npm script
+  `start:local`. The helper prompts for a new BotFather token without echoing
+  it, generates a per-process internal key, disables platform linking, clears
+  Telegram webhook state for polling mode, detects the user's chat id after
+  `/start`, sets `ORCHESTRATOR_ALLOWED_CHAT_IDS`, and starts the bot locally.
+
+**Validation evidence:**
+- `cd tools/telegram-orchestrator; node --test` -> exit 0; 4 tests passed.
+- `cd tools/telegram-orchestrator; node --check src/server.mjs` -> exit 0.
+
+**Current status:**
+- Local code now supports a new standalone BotFather bot without touching the
+  old Mentium bot or platform link flow by default.
+- Live Telegram smoke is still pending because the new token must be entered by
+  the user in the local hidden prompt and Telegram commands must be sent
+  manually.
+
+**Next action:** Create a new bot in BotFather, then run
+`cd tools/telegram-orchestrator; npm run start:local` and verify `/start`,
+`/new_goal`, rough goal text, `/confirm`, `/status`, and `/export`.
+
+### Phase 4 readiness recheck - 2026-07-10
+
+**Trigger:** User asked whether the standalone orchestrator bot is ready and
+whether project development can resume instead of more automation work.
+
+**Recovery evidence:**
+- `git status --short --untracked-files=all` -> dirty tree still contains the
+  Autonomous Product Delivery V3 workflow/service changes; no commit created.
+- Current branch -> `main`; HEAD -> `594824f`.
+- `GLOBAL_GOAL.md`, `REVIEW_REPORT.md`, and `NEXT_ACTION.md` still identify
+  Phase 4 Telegram live bot smoke as the unfinished gate.
+
+**Fresh validation evidence:**
+- `cd tools/telegram-orchestrator; node --test` -> exit 0; 4 tests passed.
+- `cd tools/telegram-orchestrator; node --check src/server.mjs` -> exit 0.
+- PowerShell parse for `tools/telegram-orchestrator/scripts/start-local.ps1`
+  -> `parse ok`.
+- Real token-like secret scan excluding the synthetic redaction test -> exit 1,
+  no matches.
+- `git diff --check` -> exit 0; CRLF warnings only.
+
+**Current status:**
+- Standalone bot implementation is ready for the user-run local BotFather
+  smoke.
+- The automation goal cannot be marked complete until the secret/runtime
+  Telegram smoke is done, but Codex cannot safely perform that step from this
+  process because the new token must be entered only into the hidden local
+  prompt and Telegram commands must be sent manually.
+
+**Next action:** Either complete the user-run standalone bot smoke, or resume
+product development with this automation smoke explicitly left pending. The
+previous product-development verification still pending is authenticated owner
+paid lesson section `1.1` live microphone smoke.
+
+### Phase 4 blocked-runtime recheck - 2026-07-10
+
+**Trigger:** User asked `Continue.` with Phase 4 Telegram live bot smoke still
+recorded as the current next action.
+
+**Recovery evidence:**
+- `git status --short --untracked-files=all` -> dirty tree still contains the
+  Autonomous Product Delivery V3 workflow/service changes; no commit created.
+- Current branch -> `main`; HEAD ->
+  `594824f864c0b9b5c02e6734033c448d4216b242`.
+- Relevant source inspected: `tools/telegram-orchestrator/src/server.mjs`,
+  `src/orchestrator.mjs`, `scripts/start-local.ps1`,
+  `test/orchestrator.test.mjs`, and `package.json`.
+
+**Environment evidence without printing secret values:**
+- `TELEGRAM_BOT_TOKEN=False`
+- `INTERNAL_TELEGRAM_API_KEY=False`
+- `ORCHESTRATOR_ALLOWED_CHAT_IDS=False`
+- `ORCHESTRATOR_ALLOW_ALL_CHATS_FOR_DEV=False`
+
+**Fresh validation evidence:**
+- `cd tools/telegram-orchestrator; node --test` -> exit 0; 4 tests passed.
+- `cd tools/telegram-orchestrator; node --check src/server.mjs` -> exit 0.
+- PowerShell parse for `tools/telegram-orchestrator/scripts/start-local.ps1`
+  -> `parse ok`.
+- Real token-like secret scan excluding the synthetic redaction test -> exit 1,
+  no matches.
+- Local dummy-key HTTP smoke without `TELEGRAM_BOT_TOKEN` -> exit 0:
+  `/health` ok, unauthenticated internal latest HTTP 401, authenticated latest
+  ok with `goal=null`, invalid JSON event HTTP 400.
+- `git diff --check` -> exit 0; CRLF warnings only.
+
+**Current stop condition:**
+- Phase 4 live Telegram command smoke remains blocked in this Codex process
+  because a brand-new BotFather token must be entered only through the hidden
+  local prompt and the live commands must be sent manually from Telegram.
+
+**Next action:** Create a brand-new bot in BotFather, then run
+`cd tools/telegram-orchestrator; npm run start:local` and verify `/start`,
+`/new_goal`, rough goal text, `/confirm`, `/status`, and `/export`.
+
 ## PAID LESSON 1.1 LIVE TUTOR INTELLIGENCE REPAIR - 2026-07-10
 
 **Trigger:** User manually tested production paid lesson section `1.1` after
@@ -83,16 +574,41 @@ scaffolding reason/example/recast/repeat.
   completion claim before deploy and manual production smoke.
 
 **Current deploy state:**
-- Commit: no commit created yet for this repair.
-- Deployment: not deployed yet.
-- Production verification: not run after this repair. The prior production
-  symptom about intro TTS is recorded as a voice-runtime symptom; this patch
-  did not change TTS config.
+- Commit `594824f864c0b9b5c02e6734033c448d4216b242`
+  (`fix(lesson): repair paid tutor intelligence`) created from the scoped
+  backend/Teacher Brain docs/tests plus workflow evidence and pushed to
+  `origin/main`.
+- Railway backend `aiteacher` deployment
+  `80d7c496-5582-4002-951e-1759c37464e2` -> SUCCESS at commit `594824f`.
+- Railway frontend `aware-alignment` deployment
+  `dda6c780-89de-476d-a239-2ba6b9044117` -> SUCCESS at commit `594824f`
+  (monorepo auto-deploy; no frontend product files changed).
+- Backend `/health` initial check -> HTTP 200 with `status=ok`,
+  `checks.postgres=ok`, `checks.redis=ok`, uptime 17s at
+  `2026-07-10T07:54:33.338Z`.
+- Frontend `/demo/setup` initial check -> HTTP 200 and served
+  `/assets/index-Cq-fCicY.js`.
+- Backend startup logs show migrations applied, `[server] listening on
+  `0.0.0.0:8080`, PostgreSQL ready, Redis connected/ping OK/ready, and WS
+  attached.
+- Backend/frontend recent HTTP 4xx/5xx log checks returned no entries.
+- Backend/frontend critical error-pattern sweeps returned no entries.
+- Stability recheck at local `2026-07-10T11:10:13+03:00` passed: backend
+  `/health` HTTP 200 with uptime 957s and postgres/redis ok; frontend
+  `/demo/setup` HTTP 200; final backend/frontend HTTP 4xx/5xx checks returned
+  no entries; final backend/frontend critical error-pattern sweeps returned no
+  entries.
+- Production behavior verification: not manually run after this repair. The
+  prior production symptom about intro TTS is recorded as a voice-runtime
+  symptom; this patch did not change TTS config.
 
-**Next action:** Stage only the scoped backend/docs/test/workflow files for
-this repair, commit, push to `origin/main`, deploy Railway production, verify
-health/logs, then run/manual-check paid lesson section `1.1` production smoke
-for warm-up, item-answer sync, repeated `keen on`, and speaking scaffolding.
+**Next action:** Rerun authenticated owner paid lesson section `1.1` with real
+microphone and verify: `I'm ready` after intro opens the warm-up instead of
+immediate Exercise 1; the first displayed item is synchronized as
+`My ___ is photography.` -> `hobby`; `spare time` is rejected there;
+`keen on keen on` and `keen on keen on keen on` pass only when current expected
+answer is `keen on`; and the speaking task gives targeted reason/example/
+recast/repeat scaffolding without full-prompt echo or tiny-fragment completion.
 
 ## PAID PRIVATE TUTOR BEHAVIOR REPAIR - 2026-07-10
 

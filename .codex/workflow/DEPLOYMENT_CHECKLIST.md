@@ -1,5 +1,242 @@
 # DEPLOYMENT_CHECKLIST.md
 
+## DEPLOYMENT RECORD - Paid teacher multilingual voice and conversational tutor behavior - 2026-07-10
+
+Authorization:
+- User explicitly approved deploy for the paid production service so they can
+  run a full live microphone test.
+
+Reviewed commit:
+- `34cfefeccc721662c549ac9776497a68bfd08a56`
+  (`fix(voice): support multilingual paid teacher turns`)
+
+Pre-deploy gates:
+- `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- `cd backend; npx vitest run src/voice/__tests__/voice-turn-stabilizer.test.ts src/voice/__tests__/stt-deepgram-options.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 5 files passed; 200 tests passed.
+- `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 67 files passed; 2167 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- `git diff --cached --check` -> exit 0; CRLF warnings only.
+- Review gate -> PASS WITH PENDING LIVE SMOKE (backend, curriculum, kids
+  safety, prompt tester, QA, adversarial critic ran; frontend not applicable;
+  live QA and acceptance auditor still require real microphone evidence).
+- Targeted staged scope: 10 backend product/test files; no frontend UI,
+  billing, auth, `.env`, workflow, Telegram tooling, or secret files staged.
+
+Push:
+- `git push origin main` -> success (`594824f..34cfefe main -> main`).
+
+Railway:
+- `aiteacher` backend deployment
+  `d0f8cc64-69d3-4f26-a378-245445990152` -> SUCCESS at commit `34cfefe`.
+- `aware-alignment` frontend deployment
+  `e887b721-d936-4cf6-aca5-486da11bd177` -> SUCCESS at commit `34cfefe`
+  (monorepo auto-deploy; no frontend product files changed).
+
+Post-deploy verification:
+- Backend `/health` initial check -> HTTP 200; `status=ok`; postgres ok;
+  redis ok; uptime 24s at `2026-07-10T12:10:51.613Z`.
+- Backend startup logs -> migrations applied, `[server] listening on
+  0.0.0.0:8080`, PostgreSQL ready, Redis connected, Redis ping OK, Redis
+  ready, WS attached.
+- Frontend `/demo/setup` initial and final checks -> HTTP 200.
+- Initial backend/frontend critical error-pattern sweeps returned no entries.
+- Initial backend/frontend HTTP 4xx/5xx log checks for last 10 minutes returned
+  no entries.
+- 10-minute stability recheck -> backend `/health` HTTP 200 with uptime 629s,
+  postgres ok, redis ok at `2026-07-10T12:20:56.584Z`.
+- Final backend/frontend critical error-pattern sweeps returned no entries.
+- Final backend/frontend HTTP 4xx/5xx log checks for last 10 minutes returned
+  no entries.
+
+Pending:
+- Manual authenticated adult paid lesson live microphone smoke remains
+  required: English answer, Russian clarification, Ukrainian clarification,
+  `Like keen on`, `keen on keen on`, transcript/TTS/log behavior.
+
+## DEPLOYMENT RECORD - Paid lesson 1.1 live tutor intelligence repair - 2026-07-10
+
+Authorization:
+- User requested the paid Teacher Brain / Alex intelligence repair after a
+  production paid lesson section `1.1` smoke and instructed to deploy if in
+  scope after checks passed, subject to the repository deployment gate.
+
+Reviewed commit:
+- `594824f864c0b9b5c02e6734033c448d4216b242`
+  (`fix(lesson): repair paid tutor intelligence`)
+
+Pre-deploy gates:
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 3 files passed; 171 tests passed.
+- `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- `cd backend; npx vitest run src/demo/communicative-success.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 35 tests passed.
+- `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 67 files passed; 2162 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- `git diff --cached --check` -> exit 0.
+- Review gate -> PASS (backend + curriculum + kids safety + prompt tester +
+  QA ran; frontend not applicable; acceptance auditor not applicable until
+  manual production smoke).
+- Targeted staged scope: 17 backend/Teacher Brain product-doc/test files plus
+  5 workflow evidence files; no frontend UI, billing, auth, STT/TTS config,
+  mic config, `.env`, or `docs/master-prompt.md` files staged.
+
+Push:
+- `git push origin main` -> success (`ae5eb8b..594824f main -> main`).
+
+Railway:
+- `aiteacher` backend deployment
+  `80d7c496-5582-4002-951e-1759c37464e2` -> SUCCESS at commit `594824f`.
+- `aware-alignment` frontend deployment
+  `dda6c780-89de-476d-a239-2ba6b9044117` -> SUCCESS at commit `594824f`
+  (monorepo auto-deploy; no frontend product files changed in this repair).
+
+Post-deploy verification:
+- Backend `/health` initial check -> HTTP 200; `status=ok`; postgres ok;
+  redis ok; uptime 17s at `2026-07-10T07:54:33.338Z`.
+- Frontend `/demo/setup` initial check -> HTTP 200; served bundle
+  `/assets/index-Cq-fCicY.js`.
+- Backend logs -> migrations applied, `[server] listening on 0.0.0.0:8080`,
+  PostgreSQL ready, Redis connected, Redis ping OK, Redis ready, WS attached.
+- Frontend logs -> Caddy server running on `:8080`.
+- Recent backend/frontend HTTP 4xx/5xx log checks returned no entries.
+- Backend/frontend critical error-pattern sweeps returned no entries.
+- Stability wait note: one PowerShell wait loop timed out because it treated
+  Railway log UTC time as the local shell clock target; no deployment failure
+  occurred. Final post-deploy checks were rerun immediately afterward.
+- Final stability recheck at local `2026-07-10T11:10:13+03:00` -> backend
+  `/health` HTTP 200 with uptime 957s and postgres/redis ok; frontend
+  `/demo/setup` HTTP 200.
+- Final backend/frontend HTTP 4xx/5xx log checks for the last 10 minutes
+  returned no entries.
+- Final backend/frontend critical error-pattern sweeps returned no entries.
+
+Pending:
+- Manual authenticated owner paid lesson section `1.1` smoke with real
+  microphone remains required to verify readiness warm-up, Section 1.1
+  item-answer sync, repeated `keen on` acceptance, targeted speaking
+  scaffolding, and whether the intro TTS sentence symptom is still observable.
+
+---
+
+## DEPLOYMENT RECORD - Paid private tutor behavior repair - 2026-07-10
+
+Authorization:
+- User requested the paid Teacher Brain behavior repair after a live paid
+  lesson smoke. Repository operating preferences say to deploy when in scope
+  after checks pass, subject to deployment gate stop rules.
+
+Reviewed commit:
+- `ae5eb8b82d7eb538794ac961d11213ecf7a42b62`
+  (`fix(lesson): make paid Alex feel like a tutor`)
+
+Pre-deploy gates:
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 2 files passed; 153 tests passed.
+- `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 67 files passed; 2156 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- `git diff --cached --check` -> exit 0.
+- Review gate -> PASS WITH WARNING (backend + curriculum + kids safety +
+  prompt + QA ran; frontend not applicable; acceptance auditor not applicable
+  until manual production smoke).
+- Targeted staged scope: 9 backend product/test files plus 5 workflow evidence
+  files; no `.env` files staged; no secrets in staged diff.
+
+Push:
+- `git push origin main` -> success (`5208c2c..ae5eb8b main -> main`).
+
+Railway:
+- `aiteacher` backend deployment
+  `de818d67-e947-4f7f-98f8-48e9e327885e` -> SUCCESS at commit `ae5eb8b`.
+- `aware-alignment` frontend deployment
+  `439bdd8c-9ebf-44cd-8d38-ed6585348ca3` -> SUCCESS at commit `ae5eb8b`
+  (monorepo auto-deploy; no frontend product files changed in this repair).
+
+Post-deploy verification:
+- Backend `/health` -> HTTP 200; `status=ok`; postgres ok; redis ok; uptime
+  22s at `2026-07-10T07:14:04.688Z`.
+- Frontend `/demo/setup` -> HTTP 200; served bundle
+  `/assets/index-Cq-fCicY.js`.
+- Backend logs -> migrations applied, `[server] listening on 0.0.0.0:8080`,
+  PostgreSQL ready, Redis connected, Redis ping OK, Redis ready, WS attached.
+- Frontend logs -> Caddy server running on `:8080`.
+- Recent backend/frontend HTTP 4xx/5xx log checks returned no entries.
+- Backend/frontend critical error-pattern sweeps returned no entries.
+- 10-minute stability window recheck at `2026-07-10T07:23:55.579Z` -> backend
+  `/health` HTTP 200 with uptime 613s and postgres/redis ok; frontend
+  `/demo/setup` HTTP 200.
+- Final backend/frontend HTTP 4xx/5xx log checks for the last 10 minutes
+  returned no entries.
+- Final backend/frontend critical error-pattern sweeps returned no entries.
+
+Pending:
+- Manual authenticated owner paid lesson section `1.1` smoke with real
+  microphone remains required to verify warm-up/readiness, teacher-like
+  gap-fill feedback, clarification wording, and speaking mini-dialogue behavior.
+
+---
+
+## DEPLOYMENT RECORD - Paid lesson AI intelligence repair - 2026-07-10
+
+Authorization:
+- User explicitly requested `нужен деплой`.
+
+Reviewed commit:
+- `5208c2c8bec4ed72b6aa1e13d05fe7cfbd4de01f`
+  (`fix(lesson): polish paid tutor responses`)
+
+Pre-deploy gates:
+- `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 67 files passed; 2152 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- Review gate -> PASS (backend + curriculum + kids safety + QA passed;
+  frontend not applicable; acceptance auditor not applicable until manual
+  production smoke).
+- Targeted staged scope: 8 backend product/test files plus workflow evidence;
+  no `.env` files staged; no secrets in staged diff.
+
+Push:
+- `git push origin main` -> success (`8d67c9b..5208c2c main -> main`).
+
+Railway:
+- `aiteacher` backend deployment
+  `11426479-9ed4-49a7-b9b6-7013f96180d3` -> SUCCESS at commit `5208c2c`.
+- `aware-alignment` frontend deployment
+  `1ce94080-f4df-404b-88b5-d6817bf81cc4` -> SUCCESS at commit `5208c2c`
+  (monorepo auto-deploy; no frontend product files changed).
+
+Post-deploy verification:
+- Backend `/health` -> HTTP 200; `status=ok`; postgres ok; redis ok; uptime
+  45s at `2026-07-10T06:32:58.949Z`.
+- Frontend `/demo/setup` -> HTTP 200; served bundle
+  `/assets/index-Cq-fCicY.js`.
+- Backend logs -> migrations applied, `[server] listening on 0.0.0.0:8080`,
+  PostgreSQL ready, Redis ready, WS attached.
+- Recent backend HTTP 4xx log check -> no entries.
+- Recent backend HTTP 5xx log check -> no entries.
+- Backend error-pattern sweep for `HTTP 400`, `Unhandled`, `ECONNREFUSED`,
+  `Cannot find`, `Missing`, `Error:`, `voice_unavailable`,
+  `STT_CONNECT_FAILED`, `Deepgram` -> no entries in tail 300.
+- Frontend logs -> Caddy serving on `:8080`; `/demo/setup` handled with HTTP
+  200; recent frontend HTTP 4xx/5xx log checks -> no entries.
+- 10-minute stability window recheck at `2026-07-10T06:41:50Z` -> backend
+  `/health` HTTP 200 with uptime 577s and postgres/redis ok; frontend
+  `/demo/setup` HTTP 200.
+- Final 10-minute backend/frontend HTTP 4xx/5xx log checks -> no entries.
+- Final backend critical error-pattern sweep in tail 500 -> no entries.
+- Final frontend error-pattern sweep in tail 200 -> no entries.
+
+Pending:
+- Manual authenticated owner paid lesson section `1.1` smoke with real
+  microphone remains required.
+
+---
+
 ## DEPLOYMENT RECORD - Paid voice smoke defect repair - 2026-07-10
 
 Authorization:

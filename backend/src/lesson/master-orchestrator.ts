@@ -598,6 +598,9 @@ function buildCorrectAnswerReaction(
   if (voiceNormalizationReason === 'self_corrected_to_expected_answer_tail') {
     return `You corrected it to "${answer.trim()}" yourself - good.`
   }
+  if (voiceNormalizationReason === 'short_answer_list_contains_expected') {
+    return `I heard the correct answer "${answer.trim()}" in that turn - good.`
+  }
   if (voiceNormalizationReason === 'repeated_expected_answer_phrase') {
     return `Yes, "${answer.trim()}" is right - repeating it is okay.`
   }
