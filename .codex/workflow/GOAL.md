@@ -43,15 +43,34 @@ stay bounded and curriculum-safe.
 - [x] Short mixed answer lists containing the current expected answer are
   accepted, while `not keen on`, `not keen on like`, `my hobby`, and
   `my hobby spare time` remain rejected.
+- [x] RU/UA clarification questions during deterministic paid gap-fill items
+  are answered as clarification and return to the current item without grading
+  the native-language question as an English answer.
+- [x] English task-help/confusion during deterministic paid gap-fill items is
+  answered as help and returns to the current item without feedback, cursor
+  movement, or attempt-count changes.
+- [x] Direct word-help requests and ASR variants such as `which world is it`
+  and `help me with this worms` are answered as current-item help without
+  feedback, cursor movement, teacher-brain input, or attempt-count changes.
+- [x] Unknown RU/UA word-help fallback during deterministic gap-fill gives the
+  current expected answer instead of a dead-end `I'm not sure` response.
+- [x] Paid classroom sends `mic_start` before PCM capture can emit the first
+  `audio_chunk`, preventing first-word audio from being ignored as stale.
+- [x] Adult paid voice finalization submits/logs the captured turn id rather
+  than a mutable current turn id.
 - [x] Deterministic teacher text can acknowledge self-correction/repetition
   without changing curriculum answers, scoring, or progression.
 - [x] Teacher Brain speaking/warmup rules allow bounded topic-aware personal
   questions but do not open deterministic gap-fill free chat or replace grading.
-- [x] Focused backend tests, TypeScript, and full backend suite pass.
+- [x] Focused backend tests, TypeScript, frontend production build, and full
+  backend suite pass.
 - [ ] Running-product adult paid lesson smoke verifies real microphone RU, UA,
-  and EN turns with the configured STT provider.
-- [ ] Production deployment and post-deploy health/log checks are completed
-  only after deploy approval.
+  and EN turns with the configured STT provider, including no lost first words,
+  no split half-turns, no stale transcript carryover, and no missing
+  `student_message`.
+- [ ] Production deployment and post-deploy health/log checks are completed for
+  the latest mic/help repair; final acceptance still requires live microphone
+  smoke.
 
 ## Scope Boundaries
 
@@ -72,6 +91,18 @@ Protected:
 
 ## Current State
 
-Follow-up implementation is locally verified. Goal is not complete because the
-new RU/UA selector/mixed-answer repair still needs commit, deployment,
-post-deploy checks, and live adult paid microphone smoke.
+The previous "brain-side ready" claim is stale. A user-provided live transcript
+showed that the paid teacher still mishandled direct word-help / ASR-confused
+requests (`worms`, `world`, `which word is it`) and RU/UA unknown word-help by
+giving generic non-helpful responses. The same report described mic turn
+splitting, missing sends, and stale transcript carryover. Local repair now:
+
+- answers direct current-word help without grading or changing cursor/attempts;
+- uses the current expected answer when RU/UA word-help fallback would otherwise
+  say `I'm not sure`;
+- sends `mic_start` before frontend PCM capture can emit `audio_chunk`;
+- submits adult paid voice turns with the captured turn id.
+
+Local targeted tests, backend TypeScript, frontend build, focused regression,
+and the full backend suite pass. Commit/deploy and authenticated paid
+microphone smoke remain pending.

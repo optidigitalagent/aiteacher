@@ -1,5 +1,138 @@
 # DEPLOYMENT_CHECKLIST.md
 
+## DEPLOYMENT RECORD - Paid teacher English task-help deterministic gap-fill repair - 2026-07-10
+
+Authorization:
+- User asked Codex to decide whether the paid teacher intelligence/brain side
+  is ready, to probe it with adversarial questions, fix failures, retest, and
+  continue until the AI behavior is ready before moving to microphone testing.
+
+Reviewed commit:
+- `1ee5613aabd3f0881d31f94455055548c7b35758`
+  (`fix(lesson): keep english task help out of grading`)
+
+Pre-deploy gates:
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 1 file passed; 8 tests passed.
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/voice/stt-multilingual.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 4 files passed; 221 tests
+  passed.
+- `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 68 files passed; 2174 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- `git diff --cached --check` before product commit -> exit 0; CRLF warnings
+  only.
+- Review gate -> PASS WITH PENDING DEPLOY AND LIVE SMOKE (backend,
+  curriculum, kids safety, QA, adversarial critic, live QA, and acceptance
+  auditor assessed; frontend not applicable).
+- Targeted staged scope: 2 backend product/test files; no frontend UI,
+  billing, auth, `.env`, workflow, Telegram tooling, STT/TTS config, or secret
+  files staged.
+
+Push:
+- `git push origin main` -> success (`d3dcc2d..1ee5613 main -> main`).
+
+Railway:
+- `aiteacher` backend deployment
+  `8b0cd48e-edd1-4199-9736-1bc3ac573895` -> SUCCESS at commit `1ee5613`.
+- `aware-alignment` frontend deployment
+  `e9e1d4b0-cb49-4a7b-8b1f-0bb769b8c889` -> SUCCESS at commit `1ee5613`
+  (monorepo auto-deploy; no frontend product files changed).
+
+Post-deploy verification:
+- Backend `/health` initial check -> HTTP 200; `status=ok`; postgres ok;
+  redis ok; uptime 29s at `2026-07-10T14:00:49.382Z`.
+- Frontend `/demo/setup` initial check -> HTTP 200.
+- Backend startup logs -> migrations applied, `[server] listening on
+  0.0.0.0:8080`, PostgreSQL ready, Redis connected, Redis ping OK, Redis
+  ready, and WS endpoint attached.
+- Frontend startup logs -> Caddy serving on `:8080`.
+- Backend/frontend HTTP logs with status `400..599` over the checked
+  15-minute window returned no entries.
+- Backend/frontend critical error-pattern sweeps returned no findings.
+- Stability recheck -> backend `/health` HTTP 200 with postgres/redis ok,
+  uptime 352s at `2026-07-10T14:06:12.695Z`; frontend `/demo/setup` HTTP 200.
+- Final backend/frontend HTTP logs with status `400..599` over the checked
+  10-minute window returned no entries.
+- Final backend critical sweep returned no matches for `Unhandled`,
+  `ECONNREFUSED`, `Cannot find`, `Missing`, `voice_unavailable`,
+  `STT_CONNECT_FAILED`, `HTTP 400`, `Error:`, `TypeError`, or
+  `ReferenceError`.
+- Final frontend critical sweep returned no matches for `error`, `panic`,
+  `failed`, `cannot`, or `exception`.
+
+Pending:
+- Controlled authenticated paid browser/WS text smoke remains unavailable in
+  this Codex process due to missing subscribed JWT/auth state.
+- Original manual authenticated paid lesson microphone smoke remains required:
+  English answer, Russian clarification, Ukrainian clarification,
+  self-correction/repetition, mixed answer cleanup, TTS/log correlation.
+
+## DEPLOYMENT RECORD - Paid teacher multilingual clarification adversarial text repair - 2026-07-10
+
+Authorization:
+- User asked Codex to test paid teacher AI behavior in English, Russian, and
+  Ukrainian, fix failures, and bring the paid teacher to the required behavior.
+
+Reviewed commit:
+- `d3dcc2d3ff530ab01777088d9cdaddacf3d1c0b9`
+  (`fix(lesson): keep multilingual clarification out of grading`)
+
+Pre-deploy gates:
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 2 files passed; 160 tests
+  passed.
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 1 file passed; 7 tests passed.
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  with npm/temp redirected to `D:\` -> exit 0; 3 files passed; 179 tests
+  passed.
+- `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected
+  to `D:\` -> exit 0; 68 files passed; 2173 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- `git diff --cached --check` before product commit -> exit 0; CRLF warnings
+  only.
+- Review gate -> PASS WITH PENDING LIVE SMOKE (backend, curriculum, kids
+  safety, QA, live QA, and acceptance auditor assessed; frontend not
+  applicable).
+- Targeted staged scope: 2 backend product/test files; no frontend UI,
+  billing, auth, `.env`, workflow, Telegram tooling, or secret files staged.
+
+Push:
+- `git push origin main` -> success (`8566e5a..d3dcc2d main -> main`).
+
+Railway:
+- `aiteacher` backend deployment
+  `112554aa-2d1b-4131-bae2-8944e772cf46` -> SUCCESS at commit `d3dcc2d`.
+- `aware-alignment` frontend deployment
+  `3b78f115-b0b6-4e28-b18f-ffef0cb78a4c` -> SUCCESS at commit `d3dcc2d`
+  (monorepo auto-deploy; no frontend product files changed).
+
+Post-deploy verification:
+- Backend `/health` -> HTTP 200; `status=ok`; postgres ok; redis ok; uptime
+  24s at `2026-07-10T13:44:17.307Z`.
+- Frontend `/demo/setup` -> HTTP 200.
+- Backend startup logs -> migrations applied, `[server] listening on
+  0.0.0.0:8080`, PostgreSQL ready, Redis connected, Redis ping OK, Redis
+  ready, and WS endpoint attached.
+- Frontend startup logs -> Caddy serving on `:8080`.
+- Backend/frontend HTTP logs with status `400..599` over the checked
+  15-minute window returned no entries.
+- Backend recent critical sweep returned no matches for `Unhandled`,
+  `ECONNREFUSED`, `Cannot find`, `Missing`, `voice_unavailable`,
+  `STT_CONNECT_FAILED`, `HTTP 400`, or `Error:`.
+- Frontend recent critical sweep returned no matches for `error`, `panic`,
+  `failed`, `cannot`, or `exception`.
+
+Pending:
+- Controlled authenticated paid browser/WS text smoke remains unavailable in
+  this Codex process due to missing subscribed JWT/auth state.
+- Original manual authenticated paid lesson microphone smoke remains required:
+  English answer, Russian clarification, Ukrainian clarification,
+  self-correction/repetition, mixed answer cleanup, TTS/log correlation.
+
 ## DEPLOYMENT RECORD - Paid teacher multilingual voice and conversational tutor behavior - 2026-07-10
 
 Authorization:
@@ -522,6 +655,28 @@ Or via Railway dashboard: Deployments в†’ previous deploy в†’ Redeploy
 ## CHECKLIST STATUS
 
 ```
+Latest completed deploy: Paid teacher English task-help deterministic gap-fill repair (commit 1ee5613) - 2026-07-10
+Deployment status:       DEPLOYED
+Authorization:           user asked Codex to test paid teacher AI behavior, fix failures, and decide whether the brain side is ready
+Railway services:
+  - aiteacher backend: deployment 8b0cd48e-edd1-4199-9736-1bc3ac573895 SUCCESS, commit 1ee5613
+  - aware-alignment frontend: deployment e9e1d4b0-cb49-4a7b-8b1f-0bb769b8c889 SUCCESS, commit 1ee5613
+Pre-deploy verification:
+  - cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent -> exit 0; 1 file / 8 tests passed
+  - cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/voice/stt-multilingual.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent -> exit 0; 4 files / 221 tests passed
+  - cd backend; npx tsc --noEmit -> exit 0
+  - cd backend; npm test -- --reporter=dot --silent -> exit 0; 68 files / 2174 tests passed
+  - git diff --cached --check before product commit -> exit 0; CRLF warnings only
+Post-deploy verification:
+  - backend /health -> HTTP 200, status ok, postgres ok, redis ok, uptime 352s at 2026-07-10T14:06:12.695Z
+  - frontend /demo/setup -> HTTP 200, served SPA HTML
+  - backend logs -> migrations applied, server listening on 0.0.0.0:8080, PostgreSQL ready, Redis ready, WS attached
+  - frontend logs -> Caddy serving on :8080
+  - backend/frontend HTTP logs status 400..599 over checked 10-minute window -> no entries returned
+  - backend/frontend critical log sweeps -> no findings
+Pending:
+  - manual authenticated paid lesson microphone smoke: EN answer, RU selector clarification, UA selector clarification, mixed answer cleanup, TTS/log correlation
+
 Latest completed deploy: Paid lesson mic UX parity repair (commit 84110f3) - 2026-07-09
 Deployment status:       DEPLOYED
 Authorization:           user explicitly requested "deploy"

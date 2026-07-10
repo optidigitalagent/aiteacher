@@ -11,11 +11,14 @@ as English; one-turn self-correction/repetition must be accepted when the final
 answer is correct; and bounded conversational follow-ups must stay tied to the
 lesson without changing grading, progression, or curriculum authority.
 
-**Current completion status:** original multilingual/self-correction repair was
-deployed at commit `34cfefe`; follow-up RU/UA manual mic-language selector and
-short mixed-answer-list repair are implemented and locally verified. New
-commit, push, Railway deployment, post-deploy health/log checks, and
-running-product adult paid lesson microphone smoke are pending.
+**Current completion status:** prior reports that the backend teacher "brain"
+was ready are stale. A user-provided live transcript on 2026-07-10 showed two
+remaining product defects: direct word-help / ASR-confused help turns such as
+`worms`, `world`, and RU/UA unknown word-help were still not useful enough, and
+the paid mic could start PCM capture before the backend received `mic_start`,
+which can drop the beginning of a turn. A local repair is implemented and
+verified; commit/deploy and authenticated running-product microphone smoke are
+still pending.
 
 **Acceptance criteria:**
 - [x] Adult paid STT defaults are multilingual for RU/UA/EN voice turns without
@@ -36,16 +39,35 @@ running-product adult paid lesson microphone smoke are pending.
 - [x] Short mixed answer lists that contain the current expected answer, such
   as `hobby spare time` or `keen on like`, are accepted without accepting
   negated/possessive phrases.
+- [x] RU/UA clarification questions during deterministic paid gap-fill items
+  are answered as clarification and return to the current item without grading
+  the native-language question as an English answer.
+- [x] English task-help/confusion during deterministic paid gap-fill items is
+  answered as help and returns to the current item without feedback, cursor
+  movement, or attempt-count changes.
+- [x] Direct word-help requests and ASR variants such as `which world is it`
+  and `help me with this worms` are answered as current-item help without
+  feedback, cursor movement, teacher-brain input, or attempt-count changes.
+- [x] Unknown RU/UA word-help fallback during deterministic gap-fill gives the
+  current expected answer instead of a dead-end `I'm not sure` response, while
+  preserving known phrase-map translations such as `for 30 minutes`.
+- [x] Paid classroom sends `mic_start` before PCM capture can emit the first
+  `audio_chunk`, preventing first-word audio from being ignored as stale.
+- [x] Adult paid voice finalization submits/logs the captured turn id rather
+  than a mutable current turn id.
 - [x] Teacher text acknowledges self-correction/repetition without changing
   curriculum answers, scoring, or progression.
 - [x] Teacher Brain rules allow bounded topic-aware personal questions only in
   speaking/warmup or after backend completion; deterministic gap-fill grading
   remains backend-owned.
-- [x] Focused tests, `npx tsc --noEmit`, and full backend suite pass.
+- [x] Focused tests, `npx tsc --noEmit`, frontend production build, and full
+  backend suite pass.
 - [ ] Running-product adult paid lesson smoke verifies real microphone RU, UA,
-  and EN turns with the configured STT provider.
-- [ ] Deploy is completed only after approval, then health/log checks and paid
-  lesson smoke pass.
+  and EN turns with the configured STT provider, including no lost first words,
+  no split half-turns, no stale transcript carryover, and no missing
+  `student_message`.
+- [ ] Deploy is completed for the latest mic/help repair, then health/log
+  checks and authenticated paid lesson microphone smoke pass.
 
 **Paused goals:**
 - Autonomous Product Delivery V3 / Telegram intake-orchestrator: local service

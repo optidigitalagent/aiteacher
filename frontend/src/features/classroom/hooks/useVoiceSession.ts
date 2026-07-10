@@ -14,7 +14,7 @@ import {
 interface Options { send: SendFn }
 
 export function useVoiceSession({ send }: Options): VoiceState & {
-  toggle:           () => Promise<void>
+  toggle:           (beforeCapture?: () => void) => Promise<void>
   stopRecording:    () => void
   onAudioChunk:     (base64: string) => void
   onTranscript:     (text: string) => void
@@ -54,7 +54,7 @@ export function useVoiceSession({ send }: Options): VoiceState & {
   // Stopping recording does NOT send interrupt — that comes from paidToggle only when
   // the teacher is actively speaking. Sending interrupt on normal stop causes the backend
   // to set interruptPending=true, which then skips TTS for the student's response.
-  const toggle = useCallback(async () => {
+  const toggle = useCallback(async (beforeCapture?: () => void) => {
     if (isListening) {
       if (streamRef.current) stopPCMCapture(streamRef.current, 'mic_stop_toggle')
       streamRef.current = null
@@ -79,6 +79,7 @@ export function useVoiceSession({ send }: Options): VoiceState & {
 
     try {
       const stream = await requestMicPermission()
+      beforeCapture?.()
       streamRef.current = stream
       setIsListening(true)
       setTranscript('')

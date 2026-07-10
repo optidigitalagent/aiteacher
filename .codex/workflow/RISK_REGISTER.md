@@ -25,6 +25,30 @@
 
 ## Open Risks
 
+### RISK-036 - Paid mic turn ordering and transcript carryover require live proof
+
+**Status:** OPEN
+**Severity:** P1
+**Area:** voice / frontend / backend / paid lesson runtime
+**Description:** Local repair sends `mic_start` before frontend PCM capture can
+emit `audio_chunk` and uses captured adult voice turn ids during stabilized
+finalization. This should prevent lost first words, half-turn submission, and
+some stale-turn races, but real browser microphone timing, Deepgram finalization,
+and production WebSocket/log behavior still require authenticated paid smoke.
+**Trigger:** Adult paid lesson microphone use, especially quick click-start,
+speaking immediately, click-stop, reconnect, or starting a next turn after a
+late transcript.
+**Mitigation:** Frontend build passes; static source check proves
+`beforeCapture?.()` is before `startPCMCapture()` and paid `mic_start` is sent
+through that callback. Backend full suite passes, including existing late
+transcript and stale partial guards.
+**Resolution:** Deploy latest repair and pass authenticated paid mic smoke
+with browser/WS/backend-log evidence showing one clean `student_message` per
+turn, no ignored first audio as stale/before-begin, no split half-turns, no
+stale transcript carryover, and TTS response for each teacher turn.
+**Opened:** 2026-07-10
+**Updated:** 2026-07-10
+
 ### RISK-034 - Adult paid multilingual STT requires live provider smoke
 
 **Status:** OPEN
@@ -49,7 +73,11 @@ error-pattern sweeps, and HTTP 4xx/5xx log checks passed.
 Russian clarification, Ukrainian clarification, self-correction `Like keen on`,
 and repeated answer `keen on keen on`, with no critical backend/voice logs.
 **Opened:** 2026-07-10
-**Updated:** 2026-07-10 follow-up local repair verified; deployment/live smoke pending
+**Updated:** 2026-07-10 follow-up deployed and post-deploy health/log checks
+passed through `1ee5613`, but user live transcript later showed direct
+word-help and mic-turn defects remained. Latest local repair covers direct
+word-help / ASR variants and `mic_start` ordering, but controlled RU/UA/EN
+browser microphone smoke remains pending.
 
 ### RISK-035 - Live QA automation still cannot prove real microphone behavior unattended
 

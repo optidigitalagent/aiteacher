@@ -87,18 +87,40 @@ function buildCurrentItemReturnPrompt(state: EngineLessonState): string {
 }
 
 const ENGLISH_TASK_HELP_RE =
-  /\b(i\s+don'?t\s+understand|i\s+dont\s+understand|i'?m\s+confused|im\s+confused|i'?m\s+lost|im\s+lost|what\s+should\s+i\s+(?:do|say|write|answer)|what\s+do\s+i\s+(?:do|say|write|answer)|what\s+is\s+the\s+task|what\s+is\s+the\s+question|can\s+you\s+(?:explain|help|clarify)|could\s+you\s+(?:explain|help|clarify)|help\s+me)\b/i
+  /\b(i\s+don'?t\s+understand|i\s+dont\s+understand|i\s+don'?t\s+know|i\s+dont\s+know|i'?m\s+confused|im\s+confused|i'?m\s+lost|im\s+lost|what\s+should\s+i\s+(?:do|say|write|answer)|what\s+do\s+i\s+(?:do|say|write|answer)|what\s+is\s+the\s+task|what\s+is\s+the\s+question|what\s+(?:word|world)\s+is\s+it|which\s+(?:word|world)\s+is\s+it|can\s+you\s+(?:explain|help|clarify)|could\s+you\s+(?:explain|help|clarify)|help\s+me)\b/i
+
+const ENGLISH_DIRECT_ANSWER_HELP_RE =
+  /\b(i\s+don'?t\s+know|i\s+dont\s+know|what\s+(?:word|world)\s+is\s+it|which\s+(?:word|world)\s+is\s+it|what\s+is\s+the\s+(?:word|answer)|which\s+is\s+the\s+(?:word|answer)|tell\s+me\s+the\s+(?:word|answer)|can\s+you\s+help\s+me\s+with\s+this\s+(?:word|world|worm|worms))\b/i
 
 function isEnglishTaskHelpRequest(text: string): boolean {
   return ENGLISH_TASK_HELP_RE.test(text.trim())
 }
 
-function buildEnglishTaskHelpAnswer(state: EngineLessonState): string {
+function wantsCurrentAnswerHelp(text: string): boolean {
+  return ENGLISH_DIRECT_ANSWER_HELP_RE.test(text.trim())
+}
+
+function buildCurrentExpectedHelpAnswer(state: EngineLessonState): string | null {
+  const exState = state.currentExerciseState
+  const step = exState?.spec.steps[exState.currentStepIndex]
+  const stepPrompt = buildCurrentItemReturnPrompt(state)
+  const expected = normalizeSpokenLine(step?.expectedAnswer ?? '')
+  if (!exState || !step || !stepPrompt || !expected) return null
+  const meaningHint = buildMeaningHint(expected)
+  return `The word here is "${expected}". ${meaningHint} Now say it once: ${stepPrompt}`
+}
+
+function buildEnglishTaskHelpAnswer(text: string, state: EngineLessonState): string {
   const exState = state.currentExerciseState
   const step = exState?.spec.steps[exState.currentStepIndex]
   const stepPrompt = buildCurrentItemReturnPrompt(state)
   if (!exState || !step || !stepPrompt) {
     return "No problem. Tell me what part is unclear, and we'll continue from the same point."
+  }
+
+  if (wantsCurrentAnswerHelp(text)) {
+    const answerHelp = buildCurrentExpectedHelpAnswer(state)
+    if (answerHelp) return answerHelp
   }
 
   const instruction = normalizeSpokenLine(exState.spec.instruction)
@@ -824,7 +846,7 @@ export class MasterLessonOrchestrator {
     }
 
     if (isEnglishTaskHelpRequest(studentAnswer)) {
-      const teacherText = buildEnglishTaskHelpAnswer(engineState)
+      const teacherText = buildEnglishTaskHelpAnswer(studentAnswer, engineState)
       console.log(`[master-orch] english_task_help_not_submitted_to_engine lessonId=${lessonId}`)
       return {
         cursorUpdate:   null,
@@ -838,7 +860,11 @@ export class MasterLessonOrchestrator {
     const multilingual = detectMultilingualInterruption(studentAnswer)
     if (multilingual.detected) {
       const stepPrompt = buildCurrentItemReturnPrompt(engineState)
-      const teacherText = buildMultilingualPhraseAnswer(studentAnswer, stepPrompt, sessionId ?? lessonId)
+      const phraseText = buildMultilingualPhraseAnswer(studentAnswer, stepPrompt, sessionId ?? lessonId)
+      const fallbackAnswer = phraseText.startsWith("I'm not sure about that exact word")
+        ? buildCurrentExpectedHelpAnswer(engineState)
+        : null
+      const teacherText = fallbackAnswer ?? phraseText
       console.log(`[master-orch] multilingual_clarification_not_submitted_to_engine lessonId=${lessonId}`)
       return {
         cursorUpdate:   null,

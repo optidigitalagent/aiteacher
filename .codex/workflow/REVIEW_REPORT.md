@@ -6,15 +6,347 @@
 
 ---
 
+## REVIEW GATE - Paid teacher live transcript mic + word-help repair - 2026-07-10
+
+**Cycle ID:** paid-teacher-live-transcript-mic-word-help/2026-07-10
+
+**Phase:** Follow-up repair after user live transcript disproved the prior
+brain-side-ready claim.
+
+**Base/current commit:**
+- Base HEAD: `1ee5613aabd3f0881d31f94455055548c7b35758`.
+- Current commit: no commit created yet.
+
+**Changed files reviewed:**
+- `backend/src/lesson/master-orchestrator.ts`
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+- `backend/src/ws/lesson-ws.ts`
+- `frontend/src/features/classroom/hooks/useVoiceSession.ts`
+- `frontend/src/features/classroom/components/ClassroomLayout.tsx`
+
+**Role applicability:**
+- backend reviewer: RUN - paid backend help routing and adult voice turn id
+  capture changed.
+- frontend reviewer: RUN - paid mic start ordering changed.
+- curriculum reviewer: RUN - deterministic gap-fill help boundary changed.
+- kids safety monitor: RUN - mandatory protected-surface check.
+- QA tester: RUN - mandatory after implementation.
+- adversarial product critic: RUN - product-facing teacher and mic behavior
+  changed.
+- live QA orchestrator: RUN - voice/browser behavior is affected, but
+  authenticated paid mic access is unavailable in this process.
+- acceptance auditor: RUN - active goal still has open deploy/live mic evidence.
+
+**Backend reviewer: PASS**
+- Critical findings: none.
+- Direct word-help requests (`which word is it`, ASR `world`, ASR `worms`,
+  `I don't know`) are intercepted before `exerciseEngine.submitAnswer()`.
+- RU/UA unknown word-help fallback now uses the current expected answer instead
+  of a generic non-answer, while known phrase-map translations still use
+  `buildMultilingualPhraseAnswer()`.
+- Adult paid stabilized finalization now submits/logs `captureTurnId`.
+- No auth, billing, payment, LiqPay, endpoint, DB schema, raw SQL, Redis
+  contract, secret, `.env`, external API call, STT/TTS provider config, or
+  prompt-master change.
+
+**Frontend reviewer: PASS**
+- Critical findings: none.
+- Paid mic start now sends `mic_start` from `toggle(beforeCapture)` after mic
+  permission succeeds and before `startPCMCapture()`, so the first
+  `audio_chunk` is ordered after `mic_start` on the same WebSocket.
+- `cd frontend; npm run build` -> exit 0; Vite build succeeded with the
+  pre-existing chunk-size warning.
+- Warning: actual real-browser microphone behavior still requires authenticated
+  running-product smoke.
+
+**Curriculum reviewer: PASS**
+- Accepted answers, scoring, exercise order, cursor progression, and attempt
+  counting are unchanged.
+- The new direct help paths return no `feedback`, no `cursorUpdate`, no
+  `teacherInput`, and no attempt count.
+
+**Kids safety monitor: PASS**
+- Kids Brain, Kids STT config, child-facing curriculum, and safety policy were
+  not changed.
+- Full backend suite passed.
+
+**QA tester: PASS**
+- `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 10 tests passed.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd frontend; npm run build` -> exit 0; production build succeeded with
+  pre-existing chunk-size warning.
+- Focused regression:
+  `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/voice/__tests__/stt-deepgram-options.test.ts src/voice/__tests__/kids-stt-config-parity.test.ts src/ws/__tests__/message-types.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  -> exit 0; 6 files passed; 209 tests passed.
+- Full backend suite:
+  `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 68 files
+  passed; 2176 tests passed.
+- Static paid mic ordering check -> exit 0; `paid mic start ordering static
+  check passed`.
+- New failures/regressions: none.
+
+**Adversarial product critic: PASS WITH WARNING**
+- Checked user-reported direct word-help and ASR-confused help turns, RU/UA
+  word-help fallback, known RU/UA phrase-map preservation, mic-start ordering,
+  captured turn id use, and protected curriculum boundaries.
+- Blocking local findings: none.
+- Warning: no local test can prove real browser microphone capture quality,
+  Deepgram transcription quality, TTS audibility, or production log correlation.
+
+**Live QA orchestrator: PENDING AUTHENTICATED MICROPHONE SMOKE**
+- Local source and tests prove the ordering contract and pre-grading help
+  behavior.
+- Controlled running-product paid mic smoke is still unavailable because this
+  process lacks subscribed JWT/auth state and stored browser auth.
+
+**Acceptance auditor: GOAL NOT COMPLETE**
+- Latest local repair is verified.
+- Active goal completion remains blocked by commit/deploy plus the original
+  running-product paid microphone criterion, now expanded to include no lost
+  first words, no split half-turns, no stale transcript carryover, and no
+  missing `student_message`.
+
+**Overall verdict:** PASS WITH PENDING DEPLOY AND LIVE SMOKE. The latest repair
+is locally valid; it must be committed, deployed, health/log checked, and then
+verified with authenticated paid microphone smoke before the goal can be
+complete.
+
+**Next action:** Commit, push, deploy the latest mic/help repair, run
+post-deploy health/log checks, then run authenticated paid microphone smoke
+when auth state is available.
+
+---
+
+## REVIEW GATE - Paid teacher English task-help deterministic gap-fill repair - 2026-07-10
+
+**Cycle ID:** paid-teacher-english-task-help-gap-fill/2026-07-10
+
+**Phase:** Follow-up backend intelligence hardening after user-requested
+brain-side audit.
+
+**Base/current commit:**
+- Base HEAD: `d3dcc2d3ff530ab01777088d9cdaddacf3d1c0b9`.
+- Product commit: `1ee5613aabd3f0881d31f94455055548c7b35758`
+  (`fix(lesson): keep english task help out of grading`).
+
+**Changed files reviewed:**
+- `backend/src/lesson/master-orchestrator.ts`
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+
+**Role applicability:**
+- backend reviewer: RUN - paid backend orchestrator answer routing changed.
+- frontend reviewer: NOT APPLICABLE - no frontend files or UI contracts changed.
+- curriculum reviewer: RUN - deterministic gap-fill grading boundary changed.
+- kids safety monitor: RUN - mandatory protected-surface check; adult paid
+  orchestrator only.
+- QA tester: RUN - mandatory after implementation.
+- adversarial product critic: RUN - product-facing teacher behavior was tested.
+- live QA orchestrator: RUN - production behavior affected, but authenticated
+  paid browser/mic access is unavailable in this process.
+- acceptance auditor: RUN - active goal still has open live microphone evidence.
+
+**Backend reviewer: PASS**
+- Critical findings: none.
+- English task-help/confusion is intercepted in
+  `backend/src/lesson/master-orchestrator.ts` before
+  `exerciseEngine.submitAnswer()`.
+- The new branch returns no `feedback`, no `cursorUpdate`, no `teacherInput`,
+  and a backend-authored `deterministicTeacherText`.
+- No auth, billing, payment, LiqPay, endpoint, DB schema, raw SQL, Redis write,
+  secret, `.env`, external API call, STT/TTS config, or prompt-master change.
+- No new client trust; backend engine remains authoritative for grading and
+  cursor movement.
+
+**Frontend reviewer: NOT APPLICABLE**
+- No frontend files or UI contracts changed.
+
+**Curriculum reviewer: PASS**
+- Accepted answers, scoring, exercise order, retry counts, and progression were
+  not changed.
+- The new path prevents explicit task-help/confusion from being counted as a
+  wrong gap-fill answer.
+- The teacher response returns to the exact current item.
+
+**Kids safety monitor: PASS**
+- Kids Brain, Kids STT, child-facing curriculum, and safety policy were not
+  changed.
+- Full backend suite, including Kids tests, passed.
+
+**QA tester: PASS**
+- New targeted regression:
+  `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 8 tests passed.
+- Focused teacher/adversarial checks:
+  `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/voice/stt-multilingual.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  -> exit 0; 4 files passed; 221 tests passed.
+- Backend TypeScript:
+  `cd backend; npx tsc --noEmit` -> exit 0.
+- Full backend suite:
+  `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 68 files
+  passed; 2174 tests passed.
+- New failures/regressions: none.
+
+**Adversarial product critic: PASS WITH WARNING**
+- Checked EN task-help/confusion, RU/UA clarification, self-correction,
+  repetition, short mixed answer lists, negative/possessive false positives,
+  prompt boundedness, and deterministic grading authority.
+- Blocking findings: none locally.
+- Warning: authenticated paid browser/WS/TTS/microphone proof is still missing.
+
+**Live QA orchestrator: PENDING AUTHENTICATED MICROPHONE SMOKE**
+- Local backend behavior and full regression suite are verified.
+- Railway backend deployment
+  `8b0cd48e-edd1-4199-9736-1bc3ac573895` and frontend deployment
+  `e9e1d4b0-cb49-4a7b-8b1f-0bb769b8c889` reached SUCCESS at commit
+  `1ee5613`.
+- Backend `/health` and frontend `/demo/setup` returned HTTP 200, backend
+  startup logs showed server/Postgres/Redis/WS ready, and backend/frontend
+  4xx/5xx plus critical sweeps returned no findings.
+- Controlled authenticated paid browser/WS text smoke and real microphone smoke
+  are still unavailable because this process lacks subscribed JWT/auth state.
+
+**Acceptance auditor: GOAL NOT COMPLETE**
+- Brain-side backend evidence is complete locally for the tested intelligence
+  surfaces.
+- Active goal completion remains blocked by the original running-product paid
+  microphone criterion: EN/RU/UA real mic turns with browser/WS/TTS/backend-log
+  correlation.
+
+**Overall verdict:** PASS WITH PENDING LIVE SMOKE. The English task-help repair
+is committed, pushed, deployed, and post-deploy health/log verified. The active
+goal must still not be marked complete until paid microphone scenarios pass.
+
+**Next action:** Run authenticated paid lesson live smoke against production
+for EN/RU/UA mic turns plus browser/WS/TTS/log correlation.
+
+---
+
+## REVIEW GATE - Paid teacher multilingual clarification adversarial text repair - 2026-07-10
+
+**Cycle ID:** paid-teacher-multilingual-clarification-adversarial-text/2026-07-10
+
+**Phase:** Follow-up backend intelligence repair, deployment, and post-deploy
+checks.
+
+**Base/current commit:**
+- Base HEAD: `8566e5ae9b25edc65d6c91620ecbfa94b6302f79`.
+- Product commit: `d3dcc2d3ff530ab01777088d9cdaddacf3d1c0b9`
+  (`fix(lesson): keep multilingual clarification out of grading`).
+
+**Changed files reviewed:**
+- `backend/src/lesson/master-orchestrator.ts`
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+
+**Role applicability:**
+- backend reviewer: RUN - paid backend orchestrator answer routing changed.
+- frontend reviewer: NOT APPLICABLE - no frontend files or UI contracts
+  changed.
+- curriculum reviewer: RUN - clarification routing touches deterministic
+  gap-fill grading boundary.
+- kids safety monitor: RUN - mandatory protected-surface check; adult paid
+  orchestrator only.
+- QA tester: RUN - mandatory after implementation.
+- live QA orchestrator: RUN - production behavior affected, but authenticated
+  paid browser/mic access is unavailable in this process.
+- acceptance auditor: RUN - active goal still has open live microphone
+  acceptance evidence.
+
+**Backend reviewer: PASS**
+- Critical findings: none.
+- RU/UA clarification is intercepted in
+  `backend/src/lesson/master-orchestrator.ts` before
+  `exerciseEngine.submitAnswer()`.
+- The new branch returns no `feedback`, no `cursorUpdate`, no `teacherInput`,
+  and a backend-authored `deterministicTeacherText`.
+- No auth, billing, payment, LiqPay, DB schema, raw SQL, Redis write, endpoint,
+  secret, `.env`, new external call, or prompt-master change.
+- No new STT/TTS provider configuration or Deepgram connection behavior.
+
+**Frontend reviewer: NOT APPLICABLE**
+- No frontend files changed.
+
+**Curriculum reviewer: PASS**
+- Accepted answers, scoring, exercise order, and cursor progression were not
+  changed.
+- The new behavior preserves curriculum authority by preventing native-language
+  clarification from being counted as an answer attempt.
+- The teacher response returns to the exact current item.
+
+**Kids safety monitor: PASS**
+- Kids Brain, Kids STT, child-facing curriculum, and safety policy were not
+  changed.
+- Full backend suite, including Kids tests, passed.
+
+**QA tester: PASS**
+- Baseline focused check before repair:
+  `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  -> exit 0; 2 files passed; 160 tests passed.
+- New targeted regression:
+  `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts --reporter=dot --silent`
+  -> exit 0; 1 file passed; 7 tests passed.
+- Focused adversarial/teacher checks:
+  `cd backend; npx vitest run src/lesson/__tests__/paid-vocab-flow.test.ts src/voice/__tests__/voice-turn-stabilizer.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  -> exit 0; 3 files passed; 179 tests passed.
+- Backend TypeScript:
+  `cd backend; npx tsc --noEmit` -> exit 0.
+- Full backend suite:
+  `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 68 files
+  passed; 2173 tests passed.
+- New failures/regressions: none.
+
+**Deploy Railway: PASS**
+- `git push origin main` -> success (`8566e5a..d3dcc2d main -> main`).
+- Railway `aiteacher` backend deployment
+  `112554aa-2d1b-4131-bae2-8944e772cf46` -> SUCCESS at commit `d3dcc2d`.
+- Railway `aware-alignment` frontend deployment
+  `3b78f115-b0b6-4e28-b18f-ffef0cb78a4c` -> SUCCESS at commit `d3dcc2d`.
+- Backend `/health` -> HTTP 200, `status=ok`, postgres ok, redis ok.
+- Frontend `/demo/setup` -> HTTP 200.
+- Backend startup logs show migrations applied, server listening on
+  `0.0.0.0:8080`, PostgreSQL ready, Redis ready, and WS endpoint attached.
+- Frontend startup logs show Caddy serving on `:8080`.
+- Backend/frontend HTTP 4xx/5xx checks over the checked 15-minute window
+  returned no entries.
+- Backend/frontend critical error sweeps returned no findings.
+
+**Live QA orchestrator: PARTIAL**
+- Production deployment and health/log checks are verified.
+- Controlled authenticated paid browser/WS text smoke was not possible from
+  this process because no valid subscribed JWT, stored auth state, `JWT_SECRET`,
+  or `DATABASE_URL` is available.
+- Real microphone RU/UA/EN evidence remains the original open criterion.
+
+**Acceptance auditor: GOAL NOT COMPLETE**
+- Complete for this follow-up: backend behavior, targeted regression,
+  TypeScript, full backend suite, commit, push, deploy, and health/log checks.
+- Not complete for the active goal: controlled authenticated paid microphone
+  smoke with browser/WS/TTS/backend-log correlation remains missing.
+
+**Overall verdict:** PASS WITH PENDING LIVE SMOKE. The adversarial text
+clarification repair is deployed and verified; active goal completion remains
+blocked only on authenticated paid live smoke.
+
+**Next action:** Run authenticated paid lesson live smoke against production
+for EN/RU/UA mic turns plus browser/WS/TTS/log correlation; include typed
+RU/UA clarification and English derail attempts if authenticated browser access
+is available.
+
+---
+
 ## REVIEW GATE - Paid teacher RU/UA selector and mixed answer follow-up - 2026-07-10
 
 **Cycle ID:** paid-teacher-ru-ua-selector-mixed-answer-follow-up/2026-07-10
 
-**Phase:** Phase 2 - follow-up local implementation and validation.
+**Phase:** Phase 2 - follow-up implementation, deployment, and post-deploy checks.
 
 **Base/current commit:**
 - Base HEAD: `34cfefeccc721662c549ac9776497a68bfd08a56`.
-- Current commit: no new commit created yet for this follow-up.
+- Product commits:
+  - `f981c448ed363767ca9ed9e30d42dafddd1578a1`
+    (`fix(voice): add paid mic language selector`)
+  - `8566e5ae9b25edc65d6c91620ecbfa94b6302f79`
+    (`fix(frontend): label ukrainian mic option`)
 
 **Changed files reviewed:**
 - `backend/src/voice/stt.ts`
@@ -100,22 +432,54 @@
 - Warning: provider-level Ukrainian transcription quality cannot be proven by
   local tests.
 
-**Live QA orchestrator: PENDING**
-- Required evidence missing: deployed paid classroom with RU/UA selector,
-  real microphone RU, UA, and EN turns, WebSocket transcript/student_message
-  evidence, TTS, and backend logs.
+**Deploy Railway: PASS**
+- `git push origin main` -> exit 0; `main` now at
+  `8566e5ae9b25edc65d6c91620ecbfa94b6302f79`.
+- Railway `aiteacher` backend deployment
+  `09068b86-9bdc-4554-9572-ce6465c62d1b` -> SUCCESS at commit `8566e5a`.
+- Railway `aware-alignment` frontend deployment
+  `383bd7ea-93f6-44ea-b025-6d06ff76bd26` -> SUCCESS at commit `8566e5a`.
+- Backend `/health` -> HTTP 200, `status=ok`, `postgres=ok`, `redis=ok`.
+- Frontend `/demo/setup` -> HTTP 200.
+- Backend startup logs show migrations applied, server listening on
+  `0.0.0.0:8080`, PostgreSQL ready, Redis ready, and WS endpoint attached.
+- Frontend startup logs show Caddy serving on `:8080`.
+- Backend/frontend HTTP logs with status `>=400` over the checked 15-minute
+  window returned no entries.
+- Backend recent log sweep returned no matches for critical startup/STT error
+  patterns.
+
+**Live QA orchestrator: PENDING MANUAL MICROPHONE SMOKE**
+- Deployment and HTTP/log health are verified.
+- Required evidence still missing: authenticated paid classroom with real
+  microphone RU, UA, and EN turns, WebSocket transcript/student_message
+  evidence, TTS, and backend transcript/log correlation.
+- Continuation recheck at `2026-07-10T16:15:33+03:00`: backend `/health`
+  returned HTTP 200 with postgres/redis ok; frontend `/demo/setup` returned
+  HTTP 200; Railway status still showed backend deployment
+  `09068b86-9bdc-4554-9572-ce6465c62d1b` and frontend deployment
+  `383bd7ea-93f6-44ea-b025-6d06ff76bd26` as `SUCCESS` at commit `8566e5a`.
+- Recent production logs showed partial, uncontrolled voice evidence: default
+  adult `language=multi`, selected UA `language=uk`, TTS provider selection,
+  and expected-answer normalization for several paid lesson turns. No RU
+  selector evidence, controlled browser/WS capture, screenshot/console evidence,
+  or TTS audio decode/duration evidence was available in this session.
+- Current environment lacks `PLAYWRIGHT_TEST_TOKEN`, owner/test credentials,
+  stored browser auth state, `JWT_SECRET`, `DATABASE_URL`, and provider keys;
+  authenticated `/lesson/start` requires a valid JWT and active subscription.
 
 **Acceptance auditor: GOAL NOT COMPLETE**
 - Complete locally: backend/frontend implementation, schema validation,
   expected-answer bounded cleanup, Kids STT protection, targeted tests,
   backend TypeScript, frontend build, full backend suite, Telegram bot tests.
-- Not complete: commit/push/deployment evidence and running-product voice smoke.
+- Not complete: running-product paid microphone smoke.
 
-**Overall verdict:** PASS WITH PENDING DEPLOYMENT AND LIVE SMOKE. Local
-implementation is valid. Goal is not complete.
+**Overall verdict:** PASS WITH PENDING MANUAL LIVE SMOKE. Implementation,
+commit, push, deployment, and production HTTP/log checks are valid. Goal is not
+complete until paid microphone scenarios are verified.
 
-**Next action:** Commit, push, deploy RU/UA selector and mixed-answer repair,
-then run post-deploy health/log checks and live paid microphone smoke.
+**Next action:** Run authenticated paid lesson microphone smoke for the
+deployed RU/UA selector and mixed-answer repair.
 
 ---
 

@@ -831,8 +831,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
     } else if (isSpeaking && !isListening) {
       console.log(`[paid-lesson] mic_start_no_interrupt reason=audio_draining audioRemainingMs=${Math.round(audioRemaining)}`)
     }
-    await toggle()
     if (wasListening) {
+      await toggle()
       // Mic just stopped: keep the transcript visible while the backend finalizes.
       // The pending state disables submit/mic until student_message echoes back.
       setAwaitingStudentMessage(true)
@@ -855,7 +855,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       lastTranscriptRef.current = ''
       setAnswer('')
       onTranscript('')
-      send({ type: 'mic_start', language: adultVoiceLanguage ?? 'multi' })
+      await toggle(() => send({ type: 'mic_start', language: adultVoiceLanguage ?? 'multi' }))
     }
   }, [lessonStarted, isSpeaking, isListening, toggle, send, onTranscript, setAwaitingStudentMessage, adultVoiceLanguage])
 

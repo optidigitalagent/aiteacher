@@ -200,6 +200,66 @@ describe('paid lesson vocabulary item flow', () => {
     }
   })
 
+  it('answers direct word-help and ASR word/world/worms variants without grading', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+
+    for (const [lessonId, question, expectedAnswer] of [
+      ['paid-vocab-flow-direct-word-help-1', "Sorry. I don't know. Can you help me with this worms?", 'hobby'],
+      ['paid-vocab-flow-direct-word-help-2', "I don't know. Which world is it?", 'hobby'],
+      ['paid-vocab-flow-direct-word-help-3', 'Which word is it?', 'hobby'],
+    ] as const) {
+      await exerciseEngine.init(lessonId, '1.1')
+
+      const result = await orchestrator.handleStudentAnswer({
+        lessonId,
+        userId: 'user-1',
+        sessionId: 'session-1',
+        studentAnswer: question,
+        lessonStartedAt: Date.now(),
+      })
+
+      expect(result.feedback).toBeNull()
+      expect(result.cursorUpdate).toBeNull()
+      expect(result.teacherInput).toBeNull()
+      expect(result.deterministicTeacherText).toContain(`"${expectedAnswer}"`)
+      expect(result.deterministicTeacherText).toContain('My ___ is photography.')
+
+      const state = await exerciseEngine.getState(lessonId)
+      expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+      expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
+    }
+  })
+
+  it('uses the current expected answer for unknown RU/UA word-help fallback in gap-fill', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-ua-current-answer-help'
+
+    await exerciseEngine.init(lessonId, '1.1')
+
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u042f\u043a \u0441\u043a\u0430\u0437\u0430\u0442\u0438 \u0445\u043e\u0431\u0456 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u043e\u044e?',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.teacherInput).toBeNull()
+    expect(result.deterministicTeacherText).toContain('"hobby"')
+    expect(result.deterministicTeacherText).toContain('My ___ is photography.')
+    expect(result.deterministicTeacherText).not.toContain("I'm not sure about that exact word")
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
+  })
+
   it('keeps exercise authority after repeated wrong answers and advances keen on to the gym item deterministically', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')

@@ -4501,13 +4501,13 @@ function scheduleTurnFinalize(
 
         console.log(
           `[voice:turn] submitted chars=${finalText.length} ` +
-          `kind=${classification.kind} exerciseType=${exerciseType ?? 'unknown'} turnId=${meta.voiceTurnId}`,
+          `kind=${classification.kind} exerciseType=${exerciseType ?? 'unknown'} turnId=${captureTurnId}`,
         )
         submitVoiceTurnText(
           ws,
           meta,
           finalText,
-          meta.voiceTurnId,
+          captureTurnId,
           'stabilized-mic-stop',
           normalized.normalization,
         )
