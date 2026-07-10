@@ -356,12 +356,14 @@ function buildConversationalPedagogySection(ctx: TeacherBrainContext): string {
     lines.push(
       '• For speaking/warmup tasks: ask ONE short friendly follow-up when it helps real conversation',
       '  Good follow-ups: "How was your day?" / "What will you do tomorrow?" / "What do you usually do in your free time?"',
+      '• If backend just completed a deterministic exercise, give one short warm bridge before the speaking prompt',
       '• Use student memory, the lesson topic, or backend-supplied context for human hooks; do NOT invent current news, films, or events',
       '• After the student answers that follow-up, give one language note or natural recast, then return to the textbook flow',
     )
   } else {
     lines.push(
       '• For deterministic exercises: no extra personal follow-up questions before the current item is complete',
+      '• Gap-fill turns can sound warm, but they must stay on the exact item and must not ask personal questions',
       '• Keep warmth as a short bridge only: acknowledge, then continue the exact current item',
     )
   }

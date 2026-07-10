@@ -160,10 +160,29 @@ export interface ExpectedAnswerNormalization {
   matchedAnswer: string
   reason:
     | 'exact_expected_answer'
+    | 'phonetic_expected_answer_alias'
+    | 'readiness_expected_answer_tail'
     | 'sentence_final_expected_answer'
     | 'sentence_any_expected_answer'
     | 'answer_phrase_tail'
 }
+
+const READINESS_TAIL_WORDS = new Set([
+  'i',
+  'im',
+  'am',
+  'ready',
+  'ok',
+  'okay',
+  'yes',
+  'yeah',
+  'alright',
+  'hold',
+  'wait',
+  'uh',
+  'um',
+  'er',
+])
 
 function normalizeForExpectedAnswerMatch(text: string): string {
   return text
@@ -179,6 +198,19 @@ function splitSpokenFragments(text: string): string[] {
     .split(/[.!?;\n]+/)
     .map(part => part.trim())
     .filter(Boolean)
+}
+
+function expectedAnswerAliases(normalizedAnswer: string): string[] {
+  if (normalizedAnswer === 'get fit') return ['get it']
+  return []
+}
+
+function isBoundedReadinessTail(whole: string, normalizedAnswer: string): boolean {
+  if (!whole.endsWith(` ${normalizedAnswer}`)) return false
+  const prefix = whole.slice(0, whole.length - normalizedAnswer.length).trim()
+  const prefixWords = prefix.split(/\s+/).filter(Boolean)
+  if (prefixWords.length === 0 || prefixWords.length > 5) return false
+  return prefixWords.every(word => READINESS_TAIL_WORDS.has(word))
 }
 
 // Deepgram can return "Harvey. Hobby." or "Get fit. Free time." when the
@@ -205,6 +237,12 @@ export function normalizeTranscriptToExpectedAnswer(
     if (whole === normalizedAnswer) {
       return { text: answer, matchedAnswer: answer, reason: 'exact_expected_answer' }
     }
+    if (expectedAnswerAliases(normalizedAnswer).includes(whole)) {
+      return { text: answer, matchedAnswer: answer, reason: 'phonetic_expected_answer_alias' }
+    }
+    if (isBoundedReadinessTail(whole, normalizedAnswer)) {
+      return { text: answer, matchedAnswer: answer, reason: 'readiness_expected_answer_tail' }
+    }
   }
 
   const fragments = splitSpokenFragments(raw)
@@ -214,6 +252,9 @@ export function normalizeTranscriptToExpectedAnswer(
     for (const answer of candidates) {
       const normalizedAnswer = normalizeForExpectedAnswerMatch(answer)
       if (!normalizedAnswer) continue
+      if (expectedAnswerAliases(normalizedAnswer).includes(normalizedLast)) {
+        return { text: answer, matchedAnswer: answer, reason: 'phonetic_expected_answer_alias' }
+      }
       if (normalizedLast === normalizedAnswer) {
         return { text: answer, matchedAnswer: answer, reason: 'sentence_final_expected_answer' }
       }

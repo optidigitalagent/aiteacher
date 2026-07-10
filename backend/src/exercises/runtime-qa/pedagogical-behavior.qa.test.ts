@@ -901,6 +901,13 @@ describe('Phase 7 — Conversational Pedagogy Layer', () => {
     expect(joinedRules).toContain('student memory')
   })
 
+  it('CONVERSATIONAL_PEDAGOGY_RULES permits a warm bridge into speaking but not gap-fill follow-up', () => {
+    const joinedRules = CONVERSATIONAL_PEDAGOGY_RULES.rules.join(' ').toLowerCase()
+    expect(joinedRules).toContain('warm bridge')
+    expect(joinedRules).toContain('deterministic completion opens speaking/warmup')
+    expect(joinedRules).toContain('deterministic gap-fill gets no personal follow-up')
+  })
+
   // ── b) Speaking mode behavior contract includes Phase 7 rules ─────────────
 
   it('soft_speaking behavior contract includes CONVERSATIONAL PEDAGOGY RULES group', () => {

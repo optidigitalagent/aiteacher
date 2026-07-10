@@ -1,5 +1,54 @@
 # DEPLOYMENT_CHECKLIST.md
 
+## DEPLOYMENT RECORD - Paid voice smoke defect repair - 2026-07-10
+
+Authorization:
+- User explicitly requested `deploy`.
+
+Reviewed commit:
+- `8d67c9bf8f01ea6299dd734b7694612a004f2aab`
+  (`fix(voice): stabilize paid STT turns and tutor phrasing`)
+
+Pre-deploy gates:
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 67 files
+  passed; 2145 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+- Review gate -> PASS WITH WARNING (backend + curriculum + kids safety + QA
+  passed; frontend not applicable; acceptance auditor not applicable until
+  manual production smoke).
+- Targeted staged scope: 10 backend product/test files; no `.env` files
+  staged; no secrets in diff.
+
+Push:
+- `git push origin main` -> success (`6409e63..8d67c9b main -> main`).
+
+Railway:
+- `aiteacher` backend deployment
+  `5825f93f-b66a-43a6-a80b-e3777850ed2b` -> SUCCESS.
+- `aware-alignment` frontend deployment
+  `55ae43b3-7d59-44dc-a97b-d6a21c146cd5` -> SUCCESS.
+
+Post-deploy verification:
+- Backend `/health` -> HTTP 200; `status=ok`; postgres ok; redis ok; uptime
+  25s at `2026-07-10T06:00:54.276Z`.
+- Frontend `/demo/setup` -> HTTP 200.
+- Backend logs -> migrations applied, `[server] listening on 0.0.0.0:8080`,
+  PostgreSQL ready, Redis ready, WS attached.
+- Voice logs -> `[stt:config] provider=deepgram model=nova-2 language=en` and
+  `[stt:lifecycle] status="open"` observed for the owner lesson reconnect.
+- Recent backend HTTP 4xx log check -> no entries.
+- Recent backend HTTP 5xx log check -> no entries.
+- Error-pattern sweep for `HTTP 400`, `Unhandled`, `ECONNREFUSED`, `Cannot
+  find`, `Missing`, `Error:`, `voice_unavailable`, `STT_CONNECT_FAILED` -> no
+  entries.
+
+Pending:
+- Manual authenticated owner paid lesson section `1.1` mic smoke with real
+  microphone remains required.
+
+---
+
 ## DEPLOYMENT RECORD - Paid lesson runtime TTS/cursor repair - 2026-07-09
 
 ### Pre-Deploy Gates
@@ -236,6 +285,27 @@ Or via Railway dashboard: Deployments в†’ previous deploy в†’ Redeploy
 ## CHECKLIST STATUS
 
 ```
+Latest completed deploy: Paid lesson mic UX parity repair (commit 84110f3) - 2026-07-09
+Deployment status:       DEPLOYED
+Authorization:           user explicitly requested "deploy"
+Railway services:
+  - aiteacher backend: deployment d135b78f-08f1-401b-8b16-5269a0525828 SUCCESS, commit 84110f3
+  - aware-alignment frontend: deployment 8bcac989-c795-414c-9aa5-7c7f8a5e66a9 SUCCESS, commit 84110f3
+Pre-deploy verification:
+  - cd frontend; npm run build -> exit 0; TypeScript and Vite production build completed
+  - cd backend; npx tsc --noEmit -> exit 0
+  - cd backend; npm test -- --reporter=dot --silent -> exit 0; 66 files, 2134 tests
+  - git diff --check -> exit 0; CRLF warnings only
+  - review gate -> PASS WITH WARNING (frontend + QA PASS; RISK-026)
+Post-deploy verification:
+  - backend /health -> HTTP 200, postgres ok, redis ok, uptime 42s at 2026-07-09T13:05:59.438Z
+  - frontend /demo/setup -> HTTP 200, served /assets/index-BHvv8tow.js
+  - backend logs -> migrations applied, server listening on 0.0.0.0:8080, PostgreSQL ready, Redis connected, WS attached
+  - Redis startup race "already connecting/connected" observed, then [redis] connected and health redis ok
+  - checked 10-minute HTTP 4xx/5xx log windows -> no entries returned
+Pending:
+  - manual authenticated owner paid lesson mic UX smoke for section 1.1
+
 Latest completed deploy: Paid lesson voice/state follow-up repair (commit 2d15350) - 2026-07-09
 Deployment status:       DEPLOYED
 Authorization:           user explicitly requested "deploy"

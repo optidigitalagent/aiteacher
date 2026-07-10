@@ -140,7 +140,7 @@ export const CONVERSATIONAL_PEDAGOGY_RULES: RuleGroup = {
     'When student shares meaningful content (achievement, difficulty, personal experience): react with ONE brief phrase (6–12 words) before continuing the lesson — never ignore it, never over-expand it',
     'Maximum ONE conversational acknowledgment per turn — then immediately continue lesson flow in the same response',
     'After any acknowledgment: always return to lesson flow; in speaking/warmup, one short friendly follow-up question is allowed before closing',
-    'Bounded curiosity only: one natural question about day/tomorrow/free time, student memory, or the current speaking topic is allowed; never invent current news/events; multi-turn digressions and free-chat loops are not',
+    'Bounded warm bridge is allowed when deterministic completion opens speaking/warmup; speaking/warmup hooks may use current topic or student memory, but deterministic gap-fill gets no personal follow-up; never invent current news/events or create multi-turn digressions',
   ],
 }
 

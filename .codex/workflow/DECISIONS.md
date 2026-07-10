@@ -22,6 +22,77 @@
 
 ## Active Decisions
 
+### 2026-07-10 - Paid lesson intelligence repair stays deterministic and expected-answer bounded
+
+**Decision:** Repair the observed paid lesson teaching defects with bounded
+backend logic: STT cleanup may only return the current backend expected answer,
+deterministic exercise wording remains backend-authored from engine/cursor
+state, and Teacher Brain only gets a warm bridge/follow-up allowance in
+speaking/warmup rather than gap-fill item turns.
+**Reason:** The user reported real paid lesson AI behavior issues, but asked to
+improve the AI intelligence/teaching layer rather than frontend or microphone
+mechanics. Keeping cleanup expected-answer bounded fixes likely STT mistakes
+without broad substring acceptance. Keeping deterministic text backend-authored
+prevents LLM wording from contradicting cursor authority.
+**Alternatives rejected:** Broad phonetic/substring answer acceptance; moving
+gap-fill correctness to the LLM; opening personal follow-up inside
+deterministic gap-fill; changing frontend mic behavior.
+**Reversible:** Yes.
+**Risk:** Medium until the repair is deployed and verified with the live paid
+lesson and real microphone.
+
+### 2026-07-10 - Paid voice repair stays backend-authoritative and avoids invented news
+
+**Decision:** The paid voice smoke repair keeps backend Deepgram / exercise
+engine as the authoritative voice path. STT model/language can be configured by
+environment, but the default remains `nova-2` / `en`. Human tutor behavior may
+ask one short follow-up only in speaking/warmup and may use lesson topic,
+student memory, or backend-supplied context, but must not invent current
+news/events.
+**Reason:** The user wants cleaner voice turns and a more human teacher without
+raising cost or breaking curriculum authority. Backend expected-answer cleanup
+can safely normalize noisy deterministic transcripts because expected answers
+come from current backend state. Current-event claims would require external
+research, which is not authorized by repository rules.
+**Alternatives rejected:** Browser-only paid STT submission; broad substring
+answer acceptance; changing the default STT language/model without provider
+verification; free-chat loops; invented news/movie/festival hooks.
+**Reversible:** Yes.
+**Risk:** Medium until deployed and verified with real production audio.
+
+### 2026-07-10 - User operating preferences live in AGENTS.md
+
+**Decision:** The user's Russian project-work rules were added to root
+`AGENTS.md` as `User Operating Preferences`.
+**Reason:** `AGENTS.md` is the repository instruction file that Codex reads
+before work. Keeping these preferences there makes future fresh chats inherit
+the rules for autonomous checks, deployment when in scope, post-deploy
+verification, concise final responses, and compact handoff reports.
+**Alternatives rejected:** Store the rules only in chat history or only in
+workflow progress, which would be missed by new chats.
+**Reversible:** Yes.
+**Risk:** Low - documentation/workflow instruction change only.
+
+### 2026-07-09 - Paid adult voice finalization is backend-outcome driven
+
+**Decision:** Paid adult mic stop must end with an explicit backend outcome:
+`student_message`, `voice_turn_empty`, or STT `voice_unavailable`. The frontend
+does not normally release pending mic state on a short local no-text guess; its
+timer is only a lost-event fallback. Noisy deterministic STT cleanup may submit
+only a backend current expected answer.
+**Reason:** Production evidence showed the old 1500ms frontend timeout could
+clear pending state before backend finalization, allowing stale/double submits.
+It also showed Deepgram can include self-corrections in one transcript
+(`Harvey. Hobby.`, `Get fit. Free time.`). Backend state is the only safe
+authority for final answer text, transcript recording, scoring, and cursor
+progression.
+**Alternatives rejected:** Browser-only paid STT submit; accepting any
+substring that contains an answer; keeping frontend no-text timeout as normal
+control flow; allowing teacher prompt rules to open free chat during
+deterministic textbook items.
+**Reversible:** Yes.
+**Risk:** Medium until deployed and verified with real production audio.
+
 ### 2026-07-09 - Paid mic transcript preview does not replace backend STT
 
 **Decision:** Paid lesson keeps backend Deepgram / lesson engine as the

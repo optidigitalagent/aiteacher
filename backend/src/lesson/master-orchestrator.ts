@@ -488,6 +488,42 @@ function pickVariant(options: readonly string[], seed: number): string {
   return options[Math.abs(seed) % options.length] ?? options[0]!
 }
 
+function buildNextItemPrompt(nextItem: string, seed: number): string {
+  const lead = pickVariant([
+    'Try this one:',
+    'Here is the next one:',
+    'Now answer this:',
+    'Let\'s use it here:',
+  ], seed)
+  return `${lead} ${nextItem}`
+}
+
+function isSoftSpeakingTransition(result: EngineResult): boolean {
+  const nextMode = result.nextExerciseSpec?.meta.runtimeMode
+  const cursorType = result.exerciseCursor?.exerciseType
+  return nextMode === 'soft_speaking' || cursorType === 'discussion' || cursorType === 'speaking_prompt'
+}
+
+function buildMeaningHint(correctAnswer: string): string {
+  switch (correctAnswer.toLowerCase().trim()) {
+    case 'hobby':
+      return 'You need the noun for an activity you enjoy.'
+    case 'spare time':
+    case 'free time':
+      return 'You need the phrase for time when you are not working or studying.'
+    case 'keen on':
+      return 'You need the two-word phrase for being very interested in something.'
+    case 'take up':
+      return 'You need the phrasal verb for starting a new activity.'
+    case 'give up':
+      return 'You need the phrasal verb for stopping an activity.'
+    case 'get fit':
+      return 'You need the two-word phrase for becoming healthy and strong.'
+    default:
+      return 'Look for the vocabulary phrase that matches this sentence.'
+  }
+}
+
 function buildDeterministicTeacherText(
   result: EngineResult,
   etr: EngineTurnResult,
@@ -498,18 +534,26 @@ function buildDeterministicTeacherText(
   const correctAnswer = result.validation?.correctAnswer
     ? normalizeSpokenLine(result.validation.correctAnswer)
     : ''
-  const confirmation = pickVariant(['Right.', 'Good.', 'Yes.', 'Exactly.'], etr.itemIndex)
-  const nextBridge = pickVariant(['Next:', 'Now:', 'Let\'s continue:'], etr.itemIndex)
+  const confirmation = pickVariant([
+    'Nice, that fits.',
+    'Good, that is the phrase.',
+    'Yes, that works here.',
+    'Exactly, that is it.',
+  ], etr.itemIndex)
 
   if (result.action === 'step_correct' || result.action === 'soft_pass') {
     return nextItem
-      ? `${confirmation} ${nextBridge} ${nextItem}`
+      ? `${confirmation} ${buildNextItemPrompt(nextItem, etr.itemIndex)}`
       : `${confirmation} Exercise ${etr.exerciseNumber} is complete.`
   }
 
   if (result.action === 'exercise_complete') {
+    if (nextItem && isSoftSpeakingTransition(result)) {
+      const completedLabel = etr.exerciseType === 'fill_gap' ? 'vocabulary' : 'the practice'
+      return `Nice, ${completedLabel} is done. Now let's use it in a real opinion: ${nextItem}`
+    }
     return nextItem
-      ? `${confirmation} Exercise ${etr.exerciseNumber} is complete. ${nextBridge} ${nextItem}`
+      ? `${confirmation} Exercise ${etr.exerciseNumber} is complete. ${buildNextItemPrompt(nextItem, etr.itemIndex)}`
       : `${confirmation} Exercise ${etr.exerciseNumber} is complete.`
   }
 
@@ -523,12 +567,14 @@ function buildDeterministicTeacherText(
   if (result.action === 'step_wrong') {
     const itemPrompt = currentItem ? ` Try again - ${currentItem}` : ' Try again.'
     if (etr.correctionTurn === 'C') {
-      return 'Let\'s stay on this item. Try once more.'
+      return currentItem
+        ? `Stay with this sentence. Use the vocabulary phrase, then try once more - ${currentItem}`
+        : 'Stay with this item. Try once more.'
     }
     if (etr.correctionTurn === 'B' && correctAnswer) {
       const answerWords = correctAnswer.split(/\s+/).filter(Boolean)
       if (answerWords.length > 1) {
-        return `The answer has ${answerWords.length} words and starts with "${answerWords[0]}".${itemPrompt}`
+        return `It is a ${answerWords.length}-word phrase: ${answerWords[0]} __.${itemPrompt}`
       }
       return `The word starts with "${correctAnswer.slice(0, 1)}".${itemPrompt}`
     }
@@ -538,7 +584,7 @@ function buildDeterministicTeacherText(
       'Nearly.',
       'You are on the right track.',
     ], etr.retryCount)
-    return `${hintLead} Think about the phrase that fits this sentence.${itemPrompt}`
+    return `${hintLead} ${buildMeaningHint(correctAnswer)}${itemPrompt}`
   }
 
   return null

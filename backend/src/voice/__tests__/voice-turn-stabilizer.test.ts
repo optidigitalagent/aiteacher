@@ -36,6 +36,26 @@ describe('paid lesson expected-answer transcript cleanup', () => {
     expect(result?.reason).toBe('sentence_final_expected_answer')
   })
 
+  it('recovers the expected answer from a short readiness/filler tail', () => {
+    const result = normalizeTranscriptToExpectedAnswer("I'm ready. Hold Hobby.", ['hobby'])
+    expect(result?.text).toBe('hobby')
+    expect(result?.reason).toBe('readiness_expected_answer_tail')
+  })
+
+  it('keeps readiness cleanup bounded to filler words before the answer', () => {
+    expect(normalizeTranscriptToExpectedAnswer('My hobby', ['hobby'])).toBeNull()
+  })
+
+  it('maps a narrow phonetic alias only for the current expected answer', () => {
+    const result = normalizeTranscriptToExpectedAnswer('Get it.', ['get fit'])
+    expect(result?.text).toBe('get fit')
+    expect(result?.reason).toBe('phonetic_expected_answer_alias')
+  })
+
+  it('does not treat the phonetic alias as a generic answer', () => {
+    expect(normalizeTranscriptToExpectedAnswer('Get it.', ['free time'])).toBeNull()
+  })
+
   it('recovers expected answer phrases from noisy speech-verb tails', () => {
     const result = normalizeTranscriptToExpectedAnswer("On. K nine. I won't say keen on.", ['keen on'])
     expect(result?.text).toBe('keen on')

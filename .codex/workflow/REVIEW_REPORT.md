@@ -6,6 +6,279 @@
 
 ---
 
+## REVIEW GATE - Paid lesson AI intelligence repair - 2026-07-10
+
+**Cycle ID:** paid-lesson-ai-intelligence-repair/2026-07-10
+
+**Phase:** Phase 3 - paid owner production smoke repair follow-up.
+
+**Base/current commit:**
+- Base HEAD: `8d67c9bf8f01ea6299dd734b7694612a004f2aab`.
+- Current commit: no new commit created.
+
+**Changed files reviewed:**
+- `backend/src/voice/voice-turn-stabilizer.ts`
+- `backend/src/voice/__tests__/voice-turn-stabilizer.test.ts`
+- `backend/src/lesson/master-orchestrator.ts`
+- `backend/src/lesson/auto-section-manifest-builder.ts`
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+- `backend/src/ai/teacher-brain/teacher-brain-rules.ts`
+- `backend/src/ai/teacher-brain/teacher-brain-builder.ts`
+- `backend/src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+
+**Role applicability:**
+- backend reviewer: RUN - backend voice transcript normalization, lesson
+  orchestrator wording, manifest generation, and Teacher Brain prompt contract
+  changed.
+- frontend reviewer: NOT APPLICABLE - no frontend files or client message
+  contracts changed.
+- curriculum reviewer: RUN - teaching behavior, speaking prompt wording, and
+  deterministic feedback changed.
+- kids safety monitor: RUN - shared Teacher Brain contract and full backend
+  Kids test surface are affected by prompt-rule changes.
+- QA tester: RUN - mandatory after implementation.
+- acceptance auditor: NOT APPLICABLE - no final goal completion is claimed.
+
+**Backend reviewer: PASS**
+- Critical findings: none.
+- Evidence:
+  - No auth, billing, payment, LiqPay, endpoint, DB, Redis, secret, or
+    external provider code changed.
+  - STT cleanup remains backend-authoritative: normalization can only return an
+    answer already present in the current backend expected-answer list.
+  - `get it` -> `get fit` is scoped to expected answer `get fit`; unrelated
+    expected answers are covered by a negative test.
+  - Deterministic teacher text still comes from `EngineResult` /
+    `ExerciseCursor`; the LLM does not control cursor movement.
+  - No new async functions, network loops, TTS calls, or LLM calls were added.
+
+**Curriculum reviewer: PASS**
+- Curriculum data files changed: none.
+- Accepted answers, scoring, retry counts, exercise order, and progression are
+  unchanged.
+- Wrong-turn hints reveal no full answer before the existing reveal path; turn
+  B still gives only shape/first-word information.
+- Vocabulary Exercise 2 still asks the same opinion question but presents a
+  simpler answer frame for speaking.
+- Deterministic gap-fill still forbids personal follow-up; only the
+  deterministic-completion bridge into soft speaking was warmed.
+
+**Kids safety monitor: PASS**
+- No Kids curriculum, safety filters, child profile data, Kids runtime scoring,
+  or child-facing lesson content was intentionally changed.
+- Prompt-rule change narrows deterministic gap-fill by explicitly forbidding
+  personal follow-up questions there.
+- Full backend suite, including Kids runtime/voice/safety tests, passed.
+
+**QA tester: PASS**
+- Targeted tests:
+  - First run of targeted tests -> exit 1; 160 passed, 1 failed in
+    `pedagogical-behavior.qa.test.ts` because the `bounded` safety marker was
+    removed from a rule string. Rule text was repaired.
+  - Rerun:
+    `cd backend; npx vitest run src/voice/__tests__/voice-turn-stabilizer.test.ts src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+    -> exit 0; 3 files passed; 161 tests passed.
+- TypeScript:
+  - `cd backend; npx tsc --noEmit` -> exit 0.
+- Full backend suite:
+  - `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 67 files
+    passed; 2152 tests passed.
+- Diff check:
+  - `git diff --check` -> exit 0; CRLF warnings only.
+- New failures: none after repair.
+- Regressions: none observed.
+
+**Overall verdict:** PASS. Local backend AI/teaching repair is implemented and
+validated. GOAL NOT COMPLETE because the repair is not committed, deployed, or
+production-smoked.
+
+**Next action:** Commit/push/deploy after explicit production approval, then
+rerun authenticated owner paid lesson section `1.1` with real microphone and
+verify the reported STT cleanup and teaching-style fixes.
+
+---
+
+## REVIEW GATE - Paid voice smoke defect repair - 2026-07-10
+
+**Cycle ID:** paid-voice-smoke-defect-repair/2026-07-10
+
+**Scope reviewed:**
+- `backend/src/ws/lesson-ws.ts`
+- `backend/src/voice/voice-turn-stabilizer.ts`
+- `backend/src/voice/stt.ts`
+- `backend/src/lesson/master-orchestrator.ts`
+- `backend/src/ai/prompt-builder.ts`
+- `backend/src/ai/teacher-brain/teacher-brain-builder.ts`
+- `backend/src/ai/teacher-brain/teacher-brain-rules.ts`
+- `backend/src/voice/__tests__/voice-turn-stabilizer.test.ts`
+- `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+- `backend/src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+
+**Base/current commit:**
+- Base HEAD: `6409e636573a4e6d6a75186ad7b3d53a3e8839f1`.
+- Current commit: no new commit created.
+
+**Role applicability:**
+- backend reviewer: RUN - backend WebSocket voice finalization, STT config,
+  deterministic orchestrator wording, and prompt files changed.
+- frontend reviewer: NOT APPLICABLE - no frontend files changed.
+- curriculum reviewer: RUN - prompt/teacher behavior and deterministic teacher
+  wording changed.
+- kids safety monitor: RUN - shared `lesson-ws.ts` voice code changed; Kids
+  behavior must remain safe.
+- QA tester: RUN - mandatory after implementation.
+- acceptance auditor: NOT APPLICABLE - this is not goal completion; deploy and
+  live owner smoke remain pending.
+
+**Backend reviewer: PASS WITH WARNING**
+- Critical findings: none.
+- Evidence:
+  - No auth, billing, payment, LiqPay, endpoint, DB schema, Redis key, or
+    secret handling changed.
+  - All inbound WebSocket messages still go through `InboundMessageSchema`.
+  - Adult STT reconnect is bounded to one `waitUntilReady(2000)` on `mic_start`;
+    no retry loop or new TTS/LLM loop was added.
+  - `voice_turn_empty:stt_connect_failed` is explicit backend outcome signaling,
+    not client-trusted progression.
+  - `DEEPGRAM_MODEL` / `DEEPGRAM_LANGUAGE` are config hooks only; defaults
+    preserve existing `nova-2` / `en`.
+- Warning:
+  - Adult reconnect buffering is covered by TypeScript/full suite and analogous
+    Kids buffering tests, but real paid browser/audio timing still requires
+    production smoke.
+
+**Curriculum reviewer: PASS**
+- Curriculum files changed: none.
+- Accepted answers, scoring, retry counts, exercise order, and item text are
+  unchanged.
+- Deterministic expected-answer normalization is bounded to backend current
+  expected answers and only affects the submitted transcript text for noisy STT.
+- Deterministic teacher text remains derived from backend `EngineResult` /
+  `EngineTurnResult`; wording varies but cursor authority does not move to AI.
+- Speaking/warmup now allows one bounded follow-up; deterministic textbook
+  items still forbid personal digressions.
+
+**Kids safety monitor: PASS**
+- No child-facing curriculum, Kids prompt template, safety policy, safety event
+  handling, or Kids profile data changed.
+- Shared `lesson-ws.ts` changes add adult-specific fields and preserve Kids
+  branch state; full backend suite including Kids voice/runtime tests passed.
+- No new unsafe content category or free-chat behavior was added for Kids.
+
+**QA tester: PASS**
+- Targeted tests:
+  - `cd backend; npx vitest run src/voice/__tests__/voice-turn-stabilizer.test.ts src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+    -> exit 0; 3 files passed; 154 tests passed.
+- TypeScript:
+  - `cd backend; npx tsc --noEmit` -> exit 0.
+- Full backend suite:
+  - `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 67 files
+    passed; 2145 tests passed.
+- Diff check:
+  - `git diff --check` -> exit 0; CRLF warnings only.
+- New failures: none.
+- Regressions: none observed.
+
+**Overall verdict:** PASS WITH WARNING. Local repair is implemented and
+validated, but not committed, deployed, or production-smoked. GOAL NOT COMPLETE.
+
+**Next action:** Commit and deploy the scoped repair, then rerun authenticated
+owner paid lesson smoke with real microphone.
+
+---
+
+## REVIEW GATE - User operating preferences in AGENTS - 2026-07-10
+
+**Cycle ID:** user-operating-preferences-agents/2026-07-10
+
+**Scope reviewed:**
+- `AGENTS.md`
+- `.codex/workflow/GOAL_PROGRESS.md`
+- `.codex/workflow/DECISIONS.md`
+- `.codex/workflow/REVIEW_REPORT.md`
+
+**Role applicability:**
+- backend reviewer: NOT APPLICABLE - no backend product code changed.
+- frontend reviewer: NOT APPLICABLE - no frontend product code changed.
+- curriculum reviewer: NOT APPLICABLE - no curriculum, scoring, prompt, or
+  progression behavior changed.
+- kids safety monitor: NOT APPLICABLE - no child-facing behavior changed.
+- QA tester: RUN - documentation diff and scope checks.
+- acceptance auditor: NOT APPLICABLE - not a product-goal completion claim.
+
+**QA tester: PASS**
+- `git diff --check` -> exit 0; CRLF warnings only.
+- Scope review: intended new changes are limited to `AGENTS.md` and workflow
+  tracking. Existing unrelated dirty product/workflow changes remain untouched.
+
+**Overall verdict:** PASS. Documentation/workflow instruction update is
+complete; no product deploy is applicable.
+
+---
+
+## REVIEW GATE - Paid lesson voice finalization + human tutor repair - 2026-07-09
+
+**Cycle ID:** paid-lesson-voice-finalization-human-tutor/2026-07-09
+
+**Scope reviewed:**
+- `backend/src/ws/lesson-ws.ts`
+- `backend/src/ws/message-types.ts`
+- `backend/src/voice/voice-turn-stabilizer.ts`
+- `backend/src/voice/__tests__/voice-turn-stabilizer.test.ts`
+- `frontend/src/features/classroom/components/ClassroomLayout.tsx`
+- `frontend/src/features/classroom/services/classroomSocket.ts`
+- `backend/src/ai/prompt-builder.ts`
+- `backend/src/ai/teacher-brain/teacher-brain-builder.ts`
+- `backend/src/ai/teacher-brain/teacher-brain-rules.ts`
+- `backend/src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+
+**Role applicability:**
+- backend reviewer: RUN - paid WebSocket/STT finalization changed.
+- frontend reviewer: RUN - paid mic pending UX changed.
+- curriculum reviewer: RUN - teacher brain/prompt behavior changed and STT
+  cleanup touches accepted-answer handoff.
+- kids safety monitor: NOT APPLICABLE - no child-facing content/policy change;
+  shared voice path covered by full backend tests.
+- QA tester: RUN - mandatory after implementation.
+- acceptance auditor: NOT APPLICABLE - deploy and live owner smoke remain
+  pending.
+
+**Backend reviewer: PASS**
+- Critical findings: none.
+- Notes:
+  - Adult paid voice now mirrors the reliable parts of Kids stabilization:
+    partial fallback, late transcript window, audio chunk counting, explicit
+    no-usable-transcript event, and duplicate-submit guard.
+  - Expected-answer normalization is constrained to backend current expected
+    answers and deterministic runtime.
+
+**Frontend reviewer: PASS**
+- Critical findings: none.
+- Notes:
+  - Paid mic pending state is backend-driven via `student_message`,
+    `voice_turn_empty`, and STT `voice_unavailable`.
+  - TTS `voice_unavailable` no longer clears the answer unless a mic turn is
+    actually awaiting backend finalization.
+
+**Curriculum reviewer: PASS**
+- Critical findings: none.
+- Notes:
+  - Deterministic items still forbid extra personal follow-up before current
+    item completion.
+  - Speaking/warmup is allowed one friendly follow-up, then must return to
+    textbook flow.
+
+**QA tester: PASS**
+- `cd backend; npx vitest run src/voice/__tests__/voice-turn-stabilizer.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+  -> exit 0; 150 tests passed.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd frontend; npm run build` -> exit 0.
+- `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 67 test
+  files passed; 2142 tests passed.
+
+**Remaining risk:** production is still on the previous deployment until this
+repair is committed/deployed; live microphone smoke remains required.
+
 ## REVIEW GATE - Paid lesson mic UX parity repair - 2026-07-09
 
 **Cycle ID:** paid-lesson-mic-ux-parity/2026-07-09
@@ -56,9 +329,20 @@
 - New failures: none.
 - Regression risk: live paid mic/browser behavior not verified until deploy.
 
-**Overall verdict:** PASS WITH WARNING. Local frontend mic UX parity repair is
-ready. GOAL NOT COMPLETE because the repair is not committed, deployed, or
-production-smoked yet; explicit deployment approval is required.
+**Deployment update:** Commit
+`84110f38088e0759f639b67a983b3da919145faf`
+(`fix(frontend): align paid mic turn UX with demo`) was pushed to `origin/main`
+and deployed to Railway production after explicit user approval. Backend
+`aiteacher` deployment `d135b78f-08f1-401b-8b16-5269a0525828` and frontend
+`aware-alignment` deployment `8bcac989-c795-414c-9aa5-7c7f8a5e66a9` both
+reached SUCCESS. Backend `/health` returned HTTP 200 with Postgres/Redis ok,
+frontend `/demo/setup` returned HTTP 200 with bundle `/assets/index-BHvv8tow.js`,
+and checked 10-minute HTTP 4xx/5xx log windows returned no entries.
+
+**Overall verdict:** PASS WITH WARNING. Frontend mic UX parity repair is
+committed, deployed, and automated health/log checks passed. GOAL NOT COMPLETE
+because manual authenticated owner production smoke with real audio remains
+pending.
 
 ---
 

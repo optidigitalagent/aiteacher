@@ -66,6 +66,7 @@ function buildVocabManifest(
   grammarTarget: string,
 ): SectionExerciseManifest {
   const items = buildFillGapItems(vocab)
+  const speakingPrompt = buildVocabSpeakingPrompt(deepThinkingQuestion)
 
   if (items.length === 0) {
     console.warn(`[auto-manifest] section="${sectionId}" vocab fill_gap has 0 items — skipping`)
@@ -87,8 +88,8 @@ function buildVocabManifest(
       type: 'discussion',
       executable: true,
       runtimeMode: 'soft_speaking',
-      instruction: deepThinkingQuestion,
-      allowedPrompt: deepThinkingQuestion,
+      instruction: speakingPrompt,
+      allowedPrompt: speakingPrompt,
       dependsOn: 1,
       completionBehavior: 'single_response',
     },
@@ -96,6 +97,18 @@ function buildVocabManifest(
 
   console.log(`[auto-manifest] auto_manifest_built section="${sectionId}" type=vocabulary exercises=${exercises.length} items=${items.length}`)
   return { section: sectionId, unit, exercises }
+}
+
+function buildVocabSpeakingPrompt(deepThinkingQuestion: string): string {
+  const question = firstQuestion(deepThinkingQuestion)
+  return `${question} Give two reasons. Start like this: "I think ... because ..."`
+}
+
+function firstQuestion(text: string): string {
+  const trimmed = text.trim()
+  const questionMark = trimmed.indexOf('?')
+  if (questionMark < 0) return trimmed
+  return trimmed.slice(0, questionMark + 1)
 }
 
 // ── Grammar manifest ──────────────────────────────────────────────────────────

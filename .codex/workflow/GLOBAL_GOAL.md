@@ -56,7 +56,7 @@ Out of scope:
 | 0 | Intake and scope reconciliation | COMPLETE |
 | 1 | Implement owner-only backend access | COMPLETE |
 | 2 | Validate and review | COMPLETE |
-| 3 | Deploy and production owner smoke | PARTIAL - owner bypass deployed; backend runtime repairs deployed; paid mic UX parity repair local, deploy/smoke pending |
+| 3 | Deploy and production owner smoke | PARTIAL - owner bypass deployed; backend runtime repairs deployed; paid mic UX parity repair deployed; paid voice smoke defect repair deployed; manual owner smoke pending |
 
 ---
 
@@ -71,6 +71,11 @@ Out of scope:
   production on 2026-07-09 at commit
   `2d1535048b7ad49119e22f5d0ac59af3571bcacc`; automated health/log checks
   passed.
-- Paid lesson microphone UX parity repair is implemented locally but not yet
-  committed/deployed; a new production deploy requires explicit approval.
+- Paid lesson microphone UX parity repair was deployed to Railway production on
+  2026-07-09 at commit `84110f38088e0759f639b67a983b3da919145faf`;
+  automated health/log checks passed.
+- Paid voice smoke defect repair was committed as
+  `8d67c9bf8f01ea6299dd734b7694612a004f2aab` and deployed to Railway
+  production on 2026-07-10; automated health/log checks passed, but manual
+  owner mic smoke is still pending.
 - Manual authenticated owner paid lesson voice verification remains required.

@@ -25,7 +25,87 @@
 
 ## Open Risks
 
-### RISK-026 - Paid lesson mic UX differs from demo until deployed and smoked
+### RISK-029 - Paid AI intelligence repair requires deploy and live retest
+
+**Status:** MITIGATED
+**Severity:** P1
+**Area:** voice / backend / prompt / paid lesson runtime
+**Description:** Local repair addresses the latest paid section `1.1` teaching
+defects: bounded STT cleanup for `I'm ready. Hold Hobby.` and `Get it.` ->
+`get fit`, warmer deterministic confirmations, more concrete wrong-turn hints,
+a warm Exercise 1 -> Exercise 2 bridge, and a simpler speaking prompt frame.
+The remaining risk is unverified production behavior with real browser audio,
+Railway runtime, Deepgram, TTS, and the live lesson state.
+**Trigger:** Owner paid lesson section `1.1`, especially noisy readiness plus
+answer transcripts, `get fit` phonetic STT, wrong gap-fill retries, and the
+transition from vocabulary Exercise 1 into soft-speaking Exercise 2.
+**Mitigation:** Targeted tests passed (3 files / 161 tests), backend TypeScript
+passed, full backend suite passed (67 files / 2152 tests), and `git diff
+--check` passed with CRLF warnings only.
+**Resolution:** Commit/push/deploy the repair after explicit production
+approval, then pass authenticated owner paid lesson smoke verifying the reported
+STT cleanup and teaching-style fixes in production.
+**Opened:** 2026-07-10
+**Updated:** 2026-07-10
+
+---
+
+### RISK-028 - Paid voice smoke repair requires deploy and live retest
+
+**Status:** MITIGATED
+**Severity:** P1
+**Area:** voice / backend / prompt / paid lesson runtime
+**Description:** Deployed repair addresses adult paid STT reconnect buffering,
+expected-answer cleanup for noisy transcripts, configurable Deepgram
+model/language, less repetitive deterministic teacher wording, and bounded
+human tutor follow-ups. The remaining risk is unverified production timing with
+real browser audio, Railway networking, Deepgram, and TTS.
+**Trigger:** Owner paid lesson section `1.1`, especially quick click
+mic -> speak -> click mic turns, Deepgram reconnect after teacher audio,
+noisy fragments such as `Free time. Weekend.`, and speaking/warmup follow-up
+turns.
+**Mitigation:** Targeted tests passed (3 files / 154 tests), backend TypeScript
+passed, full backend suite passed (67 files / 2145 tests), and `git diff
+--check` passed with CRLF warnings only. Commit `8d67c9b` deployed to Railway:
+backend `5825f93f-b66a-43a6-a80b-e3777850ed2b` SUCCESS, frontend
+`55ae43b3-7d59-44dc-a97b-d6a21c146cd5` SUCCESS. Automated health/log checks
+passed.
+**Resolution:** Pass authenticated owner paid lesson smoke verifying one clean
+`student_message` per voice turn, no stale transcript carryover, no lost
+correct mic-stop answer, no deterministic cursor drift, and bounded human
+follow-up in speaking/warmup.
+**Opened:** 2026-07-10
+**Updated:** 2026-07-10
+
+---
+
+### RISK-027 - Paid adult voice finalization requires production smoke
+
+**Status:** MITIGATED
+**Severity:** P1
+**Area:** voice / frontend / paid lesson runtime
+**Description:** Local code now repairs paid adult mic finalization, late
+transcript recovery, explicit empty-turn signaling, and expected-answer cleanup
+for noisy STT transcripts. The remaining risk is that real production browser,
+WebSocket, Deepgram, and TTS timing can still differ from local tests.
+**Trigger:** Owner paid lesson section `1.1` with real microphone after deploy,
+especially quick self-corrections (`Harvey. Hobby.`), prior-answer carryover
+(`Get fit. Free time.`), and interrupting Alex while audio is still playing.
+**Mitigation:** Added adult partial/late transcript recovery, backend
+`voice_turn_empty`, frontend backend-driven pending clear, and expected-answer
+normalization pinned by tests. Evidence: targeted backend tests 150/150,
+backend `npx tsc --noEmit` exit 0, frontend build exit 0, full backend
+`npm test` exit 0.
+**Resolution:** Deploy current repair and pass authenticated owner paid lesson
+smoke verifying one clean `student_message` per mic click-stop turn, immediate
+teacher-audio interruption, no stale `exercise_answer` double-submit, and
+human speaking/warmup follow-up without deterministic exercise drift.
+**Opened:** 2026-07-09
+**Updated:** 2026-07-09
+
+---
+
+### RISK-026 - Paid lesson mic UX requires manual production smoke
 
 **Status:** MITIGATED
 **Severity:** P1
@@ -33,17 +113,23 @@
 **Description:** Paid lesson microphone UX was not demo-equivalent: spoken
 words could disappear around `mic_stop`, pending finalization could hide the
 student's transcript, and typed submit did not interrupt active teacher audio.
+The frontend repair is now deployed; the remaining risk is unverified
+real-browser/real-audio behavior for the owner account.
 **Trigger:** Owner paid lesson voice smoke using the paid WebSocket/Deepgram
 path rather than the demo WebSpeech path.
 **Mitigation:** Local frontend repair keeps paid transcripts visible while the
 backend finalizes the turn, disables mic/send while `studentTurnPending` is
 true to prevent double-submit, clears stale text only when starting a new mic
 turn, and sends `interrupt` plus stops local audio on paid typed/exercise
-submit. Evidence: `cd frontend; npm run build` -> exit 0 and
-`git diff --check` -> exit 0 with CRLF warnings only.
-**Resolution:** Deploy after explicit approval and repeat authenticated owner
-paid lesson smoke for transcript visibility, pending button behavior, typed
-interrupt, backend final student message, and prior voiced/progression fixes.
+submit. Evidence: `cd frontend; npm run build` -> exit 0; `git diff --check`
+-> exit 0 with CRLF warnings only; commit
+`84110f38088e0759f639b67a983b3da919145faf` deployed to Railway backend
+`d135b78f-08f1-401b-8b16-5269a0525828` and frontend
+`8bcac989-c795-414c-9aa5-7c7f8a5e66a9`; `/health` returned HTTP 200 with
+Postgres/Redis ok.
+**Resolution:** Repeat authenticated owner paid lesson smoke for transcript
+visibility, pending button behavior, typed interrupt, backend final student
+message, and prior voiced/progression fixes.
 **Opened:** 2026-07-09
 **Updated:** 2026-07-09
 

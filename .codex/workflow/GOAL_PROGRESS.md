@@ -1,5 +1,336 @@
 # GOAL_PROGRESS.md
 
+## PAID LESSON AI INTELLIGENCE REPAIR - 2026-07-10
+
+**Trigger:** User completed a paid lesson section `1.1` smoke and reported
+specific AI/teaching defects: STT heard `I'm ready. Hold Hobby.` and `Get it.`
+as wrong answers, deterministic correct feedback still sounded like a
+validator (`Good. Now:`, `Exactly. Next:`), wrong feedback was too dry, the
+Exercise 1 -> Exercise 2 transition was abrupt, and the speaking prompt was
+too instruction-heavy.
+
+**Implementation:**
+- `backend/src/voice/voice-turn-stabilizer.ts`
+  - Added bounded expected-answer cleanup for short readiness/filler tails so
+    `I'm ready. Hold Hobby.` normalizes to the current expected answer `hobby`.
+  - Added the narrow phonetic alias `get it` -> `get fit`, only when the
+    backend current expected answer normalizes to `get fit`.
+  - Added guards so `My hobby` and `Get it.` for unrelated expected answers do
+    not normalize.
+- `backend/src/lesson/master-orchestrator.ts`
+  - Reworked backend-authored deterministic teacher text to use warmer
+    confirmations and next-item bridges without giving cursor authority to the
+    LLM.
+  - Added answer-specific first wrong-turn hints for the Section 1.1 vocabulary
+    phrases and more natural second/third wrong-turn wording.
+  - Added a short warm transition when deterministic exercise completion opens
+    a soft-speaking exercise.
+- `backend/src/lesson/auto-section-manifest-builder.ts`
+  - Changed vocabulary Exercise 2 prompt generation from the raw
+    `deepThinkingQuestion` into a tutor-like question plus answer frame:
+    `Give two reasons. Start like this: "I think ... because ..."`.
+- `backend/src/ai/teacher-brain/teacher-brain-rules.ts` and
+  `backend/src/ai/teacher-brain/teacher-brain-builder.ts`
+  - Clarified that deterministic completion may use one warm bridge into
+    speaking/warmup, while deterministic gap-fill must not ask personal
+    follow-up questions.
+- Tests updated:
+  - `backend/src/voice/__tests__/voice-turn-stabilizer.test.ts`
+  - `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+  - `backend/src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+
+**Validation evidence:**
+- Initial targeted run found one rule-text assertion failure after replacing
+  the `bounded` marker; fixed by restoring the marker in
+  `CONVERSATIONAL_PEDAGOGY_RULES`.
+- `cd backend; npx vitest run src/voice/__tests__/voice-turn-stabilizer.test.ts src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  -> exit 0; 3 files passed; 161 tests passed.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 67 files
+  passed; 2152 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+
+**Review gate:**
+- backend reviewer: RUN -> PASS; no auth/billing/payment/DB/Redis/external API
+  surfaces changed; backend remains authoritative for expected-answer cleanup
+  and cursor progression.
+- frontend reviewer: NOT APPLICABLE - no frontend files or client message
+  contracts changed.
+- curriculum reviewer: RUN -> PASS; accepted answers, scoring, exercise order,
+  and progression are unchanged; prompt wording is bounded to teaching style.
+- kids safety monitor: RUN -> PASS; no Kids product behavior was intentionally
+  changed, and full backend Kids-related tests passed.
+- QA tester: RUN -> PASS; targeted tests, TypeScript, full backend suite, and
+  diff check passed.
+- acceptance auditor: NOT APPLICABLE - this repair is not a final active-goal
+  completion claim.
+
+**Commit/deploy state:**
+- Commit: no commit created.
+- Deployment: not deployed; production deploy would be a separate production
+  mutation and needs explicit approval/current deploy action.
+- Production verification: not run for this local repair.
+
+**Next action:** After explicit production approval, commit/push/deploy this
+paid lesson AI intelligence repair to Railway, then rerun authenticated owner
+paid lesson section `1.1` with real microphone and verify the two STT cleanup
+cases, warmer deterministic feedback, concrete wrong hints, and friendly
+Exercise 1 -> Exercise 2 speaking transition.
+
+## PAID VOICE SMOKE DEFECT REPAIR - 2026-07-10
+
+**Trigger:** User reran the deployed ordinary paid lesson and reported that the
+manual smoke still feels bad: Deepgram transcript preview is messy, stale words
+can remain and combine with the next spoken answer, some correct mic-stop
+answers are not submitted, Russian/Ukrainian voice input is not reliably
+transcribed, and Alex sounds too scripted instead of like a real online tutor.
+
+**Implementation:**
+- `backend/src/ws/lesson-ws.ts`
+  - Added adult paid STT reconnect/wait buffering parity with the Kids path:
+    adult `mic_start` recreates dead Deepgram STT, buffers `audio_chunk` frames
+    during `waitUntilReady`, handles `mic_stop` during the wait window, and
+    emits explicit `voice_turn_empty:stt_connect_failed` when STT cannot open.
+- `backend/src/voice/voice-turn-stabilizer.ts`
+  - Expanded deterministic expected-answer cleanup so short noisy fragments
+    before/after the backend current expected answer normalize to that answer
+    (`Free time. Weekend.` -> `free time`).
+- `backend/src/voice/stt.ts`
+  - Added env hooks `DEEPGRAM_MODEL` and `DEEPGRAM_LANGUAGE`, preserving default
+    production behavior `nova-2` / `en`.
+- `backend/src/lesson/master-orchestrator.ts`
+  - Kept deterministic teacher text backend-authoritative, but varied short
+    confirmations and retry lead-ins to reduce repeated scripted phrasing.
+- `backend/src/ai/prompt-builder.ts`,
+  `backend/src/ai/teacher-brain/teacher-brain-rules.ts`, and
+  `backend/src/ai/teacher-brain/teacher-brain-builder.ts`
+  - Aligned the old prompt text with the Teacher Brain vault: one short
+    friendly follow-up is allowed in `soft_speaking` / `warmup`; deterministic
+    textbook items still forbid personal digressions; human hooks may use
+    lesson topic/student memory/backend context but must not invent current
+    news/events.
+- Tests updated/added:
+  - `backend/src/voice/__tests__/voice-turn-stabilizer.test.ts`
+  - `backend/src/lesson/__tests__/paid-vocab-flow.test.ts`
+  - `backend/src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+
+**Validation evidence:**
+- `cd backend; npx vitest run src/voice/__tests__/voice-turn-stabilizer.test.ts src/lesson/__tests__/paid-vocab-flow.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts --reporter=dot --silent`
+  -> exit 0; 3 files passed; 154 tests passed.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd backend; npm test -- --reporter=dot --silent`
+  -> exit 0; 67 files passed; 2145 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only.
+
+**Review gate:**
+- backend reviewer: RUN -> PASS WITH WARNING; adult reconnect buffering is
+  scoped and guarded, but it still requires production audio timing smoke.
+- frontend reviewer: NOT APPLICABLE - no frontend files changed.
+- curriculum reviewer: RUN -> PASS; accepted answers, scoring, progression,
+  and exercise order are unchanged; one follow-up is limited to speaking/warmup.
+- kids safety monitor: RUN -> PASS; shared `lesson-ws.ts` still preserves Kids
+  voice tests and no child-facing prompt/content was loosened.
+- QA tester: RUN -> PASS; targeted tests, backend TypeScript, full backend
+  suite, and diff check passed.
+- acceptance auditor: NOT APPLICABLE - repair is not deployed or production
+  smoked yet.
+
+**Commit/deploy state:**
+- Commit `8d67c9bf8f01ea6299dd734b7694612a004f2aab`
+  (`fix(voice): stabilize paid STT turns and tutor phrasing`) created from the
+  scoped backend product/test files and pushed to `origin/main`.
+- Railway backend `aiteacher` deployment
+  `5825f93f-b66a-43a6-a80b-e3777850ed2b` -> SUCCESS at commit `8d67c9b`.
+- Railway frontend `aware-alignment` deployment
+  `55ae43b3-7d59-44dc-a97b-d6a21c146cd5` -> SUCCESS at commit `8d67c9b`
+  (monorepo auto-deploy; no frontend product files changed in this repair).
+- Post-deploy backend `/health` -> HTTP 200 with `status=ok`,
+  `checks.postgres=ok`, `checks.redis=ok`, uptime 25s at
+  `2026-07-10T06:00:54.276Z`.
+- Post-deploy frontend `/demo/setup` -> HTTP 200.
+- Backend startup logs show migrations applied, `[server] listening on
+  0.0.0.0:8080`, PostgreSQL ready, Redis ready, WS attached, and live
+  `[stt:config]` / `[stt:lifecycle] status="open"` for the owner lesson
+  reconnect.
+- Recent backend HTTP 4xx/5xx and startup error pattern checks returned no
+  entries.
+- Production manual owner mic smoke remains required.
+
+**Next action:** Rerun authenticated owner paid lesson section `1.1` with real
+microphone and verify clean
+mic-start/mic-stop submission, no stale transcript carryover, better expected
+answer cleanup, and one bounded human follow-up in speaking/warmup.
+
+## RAILWAY DEPLOY FAILURE REPAIR - 2026-07-10
+
+**Trigger:** User reported Railway failures after commit
+`bc1c9dcccee679a23dfd6c5f31d18b2a73be1314` and asked to investigate only the
+failed `aiteacher` and `aware-alignment` deployments, fix the smallest safe
+issue, verify locally, commit/push, and stop after Railway success.
+
+**Failure classification:**
+- `aiteacher` deployment `02338e22-b22b-4c2f-9eff-4767d518c584` failed in
+  build during `npm run build` / `tsc --noEmit`.
+  - Root cause: `lesson-ws.ts` sent `{ type: 'voice_turn_empty', reason }`, but
+    `backend/src/ws/message-types.ts` had not added that event to
+    `OutboundMessage`. TypeScript reported `TS2322` for the message type and
+    reason union.
+- `aware-alignment` deployment `2a2c69a0-3d1a-495f-b259-9e0349afb485` failed in
+  frontend build during `npm run build`.
+  - Root cause: `ClassroomLayout.tsx` handled `voice_turn_empty`, but
+    `frontend/src/features/classroom/services/classroomSocket.ts` had not added
+    that event to `BackendMessage`. TypeScript reported `TS2678` and `TS2339`.
+- Follow-up frontend deployment `f12ed943-ee47-4e64-b80e-f991e58a1339` failed
+  before app build on Railway builder image resolution:
+  `railpack-frontend:v0.30.1 ... lease does not exist`. This was classified as
+  a transient Railway builder issue; an empty retry commit rebuilt successfully.
+
+**Fix:**
+- `backend/src/ws/message-types.ts` now declares `OutboundVoiceTurnEmpty` and
+  includes it in `OutboundMessage`.
+- `frontend/src/features/classroom/services/classroomSocket.ts` now includes
+  `voice_turn_empty` in `BackendMessage`.
+- No product behavior, feature flags, env vars, auth, billing, Kids Brain,
+  STT/TTS config, or unrelated files were changed by the deploy-fix commit.
+
+**Validation evidence:**
+- `cd backend; npx tsc --noEmit` with npm/temp redirected to `D:\` -> exit 0.
+- `cd frontend; npm run build` with npm/temp redirected to `D:\` -> exit 0;
+  TypeScript and Vite production build completed; existing chunk-size warning
+  only.
+- `cd backend; npm test -- --reporter=dot --silent` with npm/temp redirected to
+  `D:\` -> exit 0; 67 files passed; 2142 tests passed.
+- `git diff --check` -> exit 0; CRLF warnings only from pre-existing dirty
+  files.
+
+**Review gate:**
+- backend reviewer: RUN -> PASS; type union now matches the already-implemented
+  backend outbound packet.
+- frontend reviewer: RUN -> PASS; frontend socket type now matches the already
+  handled packet.
+- curriculum reviewer: NOT APPLICABLE - no curriculum, scoring, prompt, or
+  progression behavior changed in the deploy-fix commit.
+- kids safety monitor: NOT APPLICABLE - no child-facing behavior changed.
+- QA tester: RUN -> PASS; local backend TypeScript, frontend build, full backend
+  tests, Railway build logs, health checks, and service statuses verified.
+- acceptance auditor: NOT APPLICABLE - this was deploy failure repair only, not
+  active product-goal completion.
+
+**Commit/deploy state:**
+- Fix commit: `aaac2042e8ab713b365697d5fa9784139b4ca6e7`
+  (`fix(ws): type voice turn empty event`) pushed to `origin/main`.
+- Empty retry commit: `6409e636573a4e6d6a75186ad7b3d53a3e8839f1`
+  (`chore(deploy): retry Railway frontend build`) pushed to `origin/main`
+  after Railway refused CLI redeploy of the failed frontend deployment.
+- Railway production status after retry:
+  - backend `aiteacher` deployment
+    `b9f66248-d0b2-43cd-a056-549dbc020b25` -> SUCCESS at commit `6409e63`.
+  - frontend `aware-alignment` deployment
+    `b5f1a5ec-b039-4da6-a324-7f26796eddb3` -> SUCCESS at commit `6409e63`.
+- Backend `/health` -> HTTP 200 with `status=ok`, `postgres=ok`, `redis=ok`.
+- Frontend `/demo/setup` -> HTTP 200.
+- Backend and frontend HTTP 5xx log checks for the recent window returned no
+  entries.
+
+**Next action:** Stop per user instruction. Existing product goal still needs
+manual authenticated owner paid lesson smoke when resumed.
+
+## USER OPERATING PREFERENCES ADDED TO AGENTS - 2026-07-10
+
+**Trigger:** User asked to insert the Russian project work rules into the main
+file Codex reads before starting work.
+
+**Implementation:**
+- `AGENTS.md` now includes a `User Operating Preferences` section covering
+  autonomous end-to-end work, required checks, deploy when in scope, post-deploy
+  verification, concise final answers, and the required compact Russian handoff
+  report format for future chats.
+
+**Validation evidence:**
+- `git diff --check` -> exit 0; CRLF warnings only.
+- `git status --short --untracked-files=all` -> exit 0; intended new changes
+  are `AGENTS.md`, `.codex/workflow/GOAL_PROGRESS.md`,
+  `.codex/workflow/DECISIONS.md`, and `.codex/workflow/REVIEW_REPORT.md`.
+  Existing unrelated dirty product/workflow changes remain untouched.
+
+**Review gate:**
+- backend reviewer: NOT APPLICABLE - no backend product code changed.
+- frontend reviewer: NOT APPLICABLE - no frontend product code changed.
+- curriculum reviewer: NOT APPLICABLE - no curriculum, scoring, prompt, or
+  progression behavior changed.
+- kids safety monitor: NOT APPLICABLE - no child-facing behavior changed.
+- QA tester: RUN - documentation diff and final scope checks.
+- acceptance auditor: NOT APPLICABLE - not a product-goal completion claim.
+
+**Commit/deploy state:**
+- Commit: no commit created.
+- Deployment: not applicable; `AGENTS.md` / workflow documentation change only.
+
+**Next action:** Existing active next action remains unchanged: deploy the paid
+lesson voice-finalization and human-tutor repair, then run owner paid mic smoke.
+
+## PAID LESSON VOICE FINALIZATION + HUMAN TUTOR REPAIR - 2026-07-09
+
+**Trigger:** User reran the deployed paid lesson and reported that interrupt
+behavior is better, but paid mic still does not match demo: click mic -> speak
+-> click mic should immediately submit cleanly; clicking mic while Alex speaks
+should stop teacher audio immediately; spoken words must be visible and passed
+cleanly to frontend/backend. User also requested a more human teacher style
+with friendly conversational follow-up on top of textbook exercises.
+
+**Implementation:**
+- `backend/src/ws/lesson-ws.ts`
+  - Added adult paid voice partial/late transcript recovery similar to Kids
+    stabilization.
+  - Added adult audio chunk counting so `mic_stop` can distinguish true silence
+    from delayed Deepgram finalization.
+  - Added `voice_turn_empty` outbound event for no usable transcript, so the
+    frontend no longer guesses with a short local timeout.
+  - Centralized adult voice submit through `submitVoiceTurnText` dedupe.
+  - Normalizes noisy deterministic short-answer transcripts only when the final
+    phrase matches the backend expected answer, e.g. `Harvey. Hobby.` ->
+    `hobby`, `Get fit. Free time.` -> `free time`.
+- `frontend/src/features/classroom/components/ClassroomLayout.tsx`
+  - Handles `voice_turn_empty` and STT `voice_unavailable` to clear pending mic
+    state only when the backend proves no `student_message` will follow.
+  - Replaced the normal 1500ms local no-text release with a 7000ms lost-event
+    fallback.
+- `backend/src/ai/teacher-brain/*` and `backend/src/ai/prompt-builder.ts`
+  - Keeps deterministic textbook items strict and cursor-safe.
+  - Allows exactly one short friendly follow-up in `soft_speaking`/`warmup`
+    tasks, then returns to textbook flow.
+- Tests added/updated for paid STT cleanup and conversational brain guards.
+
+**Validation evidence:**
+- `cd backend; npx vitest run src/voice/__tests__/voice-turn-stabilizer.test.ts src/exercises/runtime-qa/pedagogical-behavior.qa.test.ts`
+  -> exit 0; 2 files passed; 150 tests passed.
+- `cd backend; npx tsc --noEmit` -> exit 0.
+- `cd frontend; npm run build` -> exit 0; TypeScript and Vite production build
+  completed; Vite emitted only the existing chunk-size warning.
+- `cd backend; npm test -- --reporter=dot --silent` -> exit 0; 67 test
+  files passed; 2142 tests passed.
+
+**Review gate:**
+- backend reviewer: RUN -> PASS; adult voice turn finalization now has explicit
+  empty-turn protocol and dedupe; Kids tests remained green.
+- frontend reviewer: RUN -> PASS; paid mic pending state is now backend-driven.
+- curriculum reviewer: RUN -> PASS; expected-answer cleanup is bounded to
+  backend expected answers and teacher conversation remains forbidden inside
+  deterministic item work.
+- kids safety monitor: NOT APPLICABLE - no child-facing script/policy changed;
+  shared voice changes were covered by full Kids-related backend tests.
+- QA tester: RUN -> PASS; targeted + full backend + frontend build passed.
+- acceptance auditor: NOT APPLICABLE - deploy and live owner paid smoke still
+  required.
+
+**Commit/deploy state:**
+- Commit: no commit created.
+- Deployment: not deployed in this turn.
+- Production verification: unverified for this new build.
+
+**Exact next action:** deploy the current local repair to Railway, then run
+authenticated owner paid lesson smoke with real microphone/audio.
+
 ## PAID LESSON MIC UX PARITY REPAIR - 2026-07-09
 
 **Trigger:** User reran production paid lesson after commit
@@ -50,13 +381,41 @@ the AI/frontend.
   pending.
 
 **Commit/deploy state:**
-- Commit: no commit created for this mic UX parity repair yet.
-- Deployment: not deployed. A new Railway production deploy requires explicit
-  approval.
-- Production verification: not run for this repair.
+- Commit: `84110f38088e0759f639b67a983b3da919145faf`
+  (`fix(frontend): align paid mic turn UX with demo`) created and pushed to
+  `origin/main`.
+- Deployment: Railway backend `aiteacher` deployment
+  `d135b78f-08f1-401b-8b16-5269a0525828` -> SUCCESS; Railway frontend
+  `aware-alignment` deployment `8bcac989-c795-414c-9aa5-7c7f8a5e66a9` ->
+  SUCCESS.
+- Production verification: automated health/log checks passed; manual owner
+  authenticated paid mic smoke remains pending.
 
-**Next action:** Commit and deploy the paid lesson mic UX parity repair after
-explicit approval, then repeat authenticated owner paid lesson smoke.
+**Deploy evidence:**
+- Pre-deploy `cd frontend; npm run build` with npm/temp redirected to `D:\`
+  -> exit 0; TypeScript and Vite production build completed.
+- Pre-deploy `cd backend; npx tsc --noEmit` -> exit 0.
+- Pre-deploy `cd backend; npm test -- --reporter=dot --silent` -> exit 0;
+  66 files passed; 2134 tests passed.
+- Pre-deploy `git diff --check` -> exit 0; CRLF warnings only.
+- `git push origin main` pushed `2d15350..84110f3`.
+- `railway service status --all` after rollout:
+  `aiteacher` `d135b78f-08f1-401b-8b16-5269a0525828` SUCCESS,
+  `aware-alignment` `8bcac989-c795-414c-9aa5-7c7f8a5e66a9` SUCCESS.
+- Backend `/health` -> HTTP 200 at `2026-07-09T13:05:59.438Z` with
+  `status=ok`, `postgres=ok`, `redis=ok`, uptime 42s.
+- Frontend `/demo/setup` -> HTTP 200 and served new bundle
+  `/assets/index-BHvv8tow.js`.
+- Railway logs show migrations applied, `[server] listening on 0.0.0.0:8080`,
+  PostgreSQL ready, Redis connected after benign startup race
+  `already connecting/connected`, WS endpoint attached, and no checked HTTP
+  4xx/5xx entries in the 10-minute post-deploy window.
+
+**Next action:** Repeat authenticated owner paid lesson smoke with real audio
+and verify paid mic UX parity: spoken words remain visible while finalizing,
+mic/send are blocked only during pending finalization, typed send interrupts
+teacher audio, backend receives the final student message, and previous
+voiced/progression fixes still hold.
 
 ## PAID LESSON PRODUCTION SMOKE FAILURE REPAIR - 2026-07-09
 

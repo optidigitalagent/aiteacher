@@ -58,6 +58,18 @@ paid lesson smoke showed improvement but found a remaining frontend microphone
 UX gap versus demo: paid transcript visibility, pending-turn button behavior,
 and typed-send interruption were not demo-equivalent. The mic UX parity repair
 is implemented locally in `frontend/src/features/classroom/components/ClassroomLayout.tsx`
-and `cd frontend; npm run build` passes, but it is not yet committed, deployed,
-or production-smoked. A new Railway production deploy requires explicit
-approval.
+and deployed to Railway production at commit
+`84110f38088e0759f639b67a983b3da919145faf`: backend `aiteacher` deployment
+`d135b78f-08f1-401b-8b16-5269a0525828` and frontend `aware-alignment`
+deployment `8bcac989-c795-414c-9aa5-7c7f8a5e66a9` are both `SUCCESS`.
+Automated post-deploy health/log checks passed. A later manual authenticated
+owner paid lesson smoke on 2026-07-10 exposed remaining paid voice defects:
+messy/stale Deepgram transcripts, occasional lost mic-stop submissions,
+Russian/Ukrainian voice handling gaps, and overly scripted teacher phrasing.
+The paid voice smoke defect repair is committed as
+`8d67c9bf8f01ea6299dd734b7694612a004f2aab`, pushed to `origin/main`, and
+deployed to Railway production: backend `aiteacher` deployment
+`5825f93f-b66a-43a6-a80b-e3777850ed2b` and frontend `aware-alignment`
+deployment `55ae43b3-7d59-44dc-a97b-d6a21c146cd5` are both `SUCCESS`.
+Automated post-deploy health/log checks passed. Manual authenticated owner
+paid lesson mic smoke remains pending.
