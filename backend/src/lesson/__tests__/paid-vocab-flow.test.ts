@@ -316,6 +316,94 @@ describe('paid lesson vocabulary item flow', () => {
     expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
   })
 
+  it('answers Ukrainian free-time translation with the current item phrase instead of an English-only warning', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-ua-free-time-current-item'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'hobby',
+      lessonStartedAt: Date.now(),
+    })
+    const stateBeforeHelp = await exerciseEngine.getState(lessonId)
+    const attemptsBeforeHelp = stateBeforeHelp?.currentExerciseState?.stepAttempts.length ?? 0
+
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u0422\u0430\u043a, \u0430\u043b\u0435 \u044f \u043f\u0438\u0442\u0430\u044e, \u044f\u043a \u0441\u043a\u0430\u0437\u0430\u0442\u0438, \u0432\u0456\u043b\u044c\u043d\u0438\u0439 \u0447\u0430\u0441 \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456.',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.teacherInput).toBeNull()
+    expect(result.deterministicTeacherText).toContain('"spare time"')
+    expect(result.deterministicTeacherText).toContain('What do you do in your ___?')
+    expect(result.deterministicTeacherText).not.toContain("I can see you're writing")
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(1)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
+  })
+
+  it('answers Ukrainian gym-strength translation with get fit on the current item', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-ua-get-fit-current-item'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'hobby',
+      lessonStartedAt: Date.now(),
+    })
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'spare time',
+      lessonStartedAt: Date.now(),
+    })
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'keen on',
+      lessonStartedAt: Date.now(),
+    })
+    const stateBeforeHelp = await exerciseEngine.getState(lessonId)
+    const attemptsBeforeHelp = stateBeforeHelp?.currentExerciseState?.stepAttempts.length ?? 0
+
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u042f\u043a \u0441\u043a\u0430\u0437\u0430\u0442\u0438 \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456, \u0449\u043e \u0441\u0442\u0430\u0454 \u0441\u0438\u043b\u044c\u043d\u0456\u0448\u0438\u043c, \u043a\u0430\u0447\u0430\u0454\u0442\u044c\u0441\u044f.',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.teacherInput).toBeNull()
+    expect(result.deterministicTeacherText).toContain('"get fit"')
+    expect(result.deterministicTeacherText).toContain('I joined a gym to ___.')
+    expect(result.deterministicTeacherText).not.toContain("I can see you're writing")
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(3)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
+  })
+
   it('keeps exercise authority after repeated wrong answers and advances keen on to the gym item deterministically', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')

@@ -72,6 +72,24 @@ describe('Phase 7.3 — Cyrillic phrase translations', () => {
     const lower = result.toLowerCase()
     expect(lower).toContain('managed to finish')
   })
+
+  it('live Ukrainian "як сказати, вільний час на англійській мові" returns free time', () => {
+    const result = buildMultilingualPhraseAnswer(
+      '\u0422\u0430\u043a, \u0430\u043b\u0435 \u044f \u043f\u0438\u0442\u0430\u044e, \u044f\u043a \u0441\u043a\u0430\u0437\u0430\u0442\u0438, \u0432\u0456\u043b\u044c\u043d\u0438\u0439 \u0447\u0430\u0441 \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456.',
+      STEP_PROMPT,
+    )
+    expect(result.toLowerCase()).toContain('free time')
+    expect(result.toLowerCase()).not.toContain("i can see you're writing")
+  })
+
+  it('live Ukrainian gym-strength question returns get fit/work out language', () => {
+    const result = buildMultilingualPhraseAnswer(
+      '\u042f\u043a \u0441\u043a\u0430\u0437\u0430\u0442\u0438 \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456, \u0449\u043e \u0441\u0442\u0430\u0454 \u0441\u0438\u043b\u044c\u043d\u0456\u0448\u0438\u043c, \u043a\u0430\u0447\u0430\u0454\u0442\u044c\u0441\u044f.',
+      STEP_PROMPT,
+    )
+    expect(result.toLowerCase()).toMatch(/get fit|work out|works out/)
+    expect(result.toLowerCase()).not.toContain("i can see you're writing")
+  })
 })
 
 // ── 2. English idiom → explanation ───────────────────────────────────────────

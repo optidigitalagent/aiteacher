@@ -251,8 +251,18 @@ const CYRILLIC_PHRASE_MAP: Array<readonly [string, string]> = [
   ['цікавить',            'interests me'],
   ['нравиться',           'like'],
   // Ukrainian — time
+  ['вільний час',          'free time'],
+  ['вільний',              'free'],
   ['протягом 30 хвилин',  'for 30 minutes'],
   ['протягом',            'for (a period of time)'],
+  // Ukrainian — health / exercise
+  ['стає сильнішим',       'get fit'],
+  ['стати сильнішим',      'get fit'],
+  ['стає здоровішим',      'get fit'],
+  ['стати здоровішим',     'get fit'],
+  ['качатися',             'work out'],
+  ['качається',            'works out'],
+  ['качатись',             'work out'],
   // Ukrainian — achievement
   ['встиг закінчити',     'managed to finish'],
   ['встигти закінчити',   'managed to finish'],
@@ -283,8 +293,17 @@ const CYRILLIC_PHRASE_MAP: Array<readonly [string, string]> = [
   ['очень нравится',      'really like'],
   ['интересует',          'interests me'],
   // Russian — time
+  ['свободное время',      'free time'],
+  ['свободное',            'free'],
   ['в течение 30 минут',  'for 30 minutes'],
   ['в течение',           'for (a period of time)'],
+  // Russian — health / exercise
+  ['становится сильнее',   'get fit'],
+  ['стать сильнее',        'get fit'],
+  ['становится здоровее',  'get fit'],
+  ['стать здоровее',       'get fit'],
+  ['качаться',             'work out'],
+  ['качается',             'works out'],
   // Russian — achievement
   ['успел закончить',     'managed to finish'],
   ['успеть закончить',    'managed to finish'],
@@ -330,9 +349,9 @@ function lookupEnglishPhrase(phrase: string): string | null {
 // Works for UA/RU native-language patterns, English "how to say [Cyrillic]", and broken-ESL English.
 const PHRASE_EXTRACT_RE: RegExp[] = [
   // UA: "як сказати X", "що означає X", "як перекласти X", etc.
-  /(?:як\s+сказати|як\s+перекласти|як\s+буде|що\s+означає|як\s+звучить|як\s+по.?англ\w*|як\s+правильно\s*(?:сказати)?)\s+(.+?)(?:\s+(?:по\s+англ\w+|англійською|in\s+english))?\s*$/i,
+  /(?:як\s+сказати|як\s+перекласти|як\s+буде|що\s+означає|як\s+звучить|як\s+по.?англ\w*|як\s+правильно\s*(?:сказати)?)\s*[,:"']?\s+(.+?)(?:\s+(?:по\s+англ\w+|на\s+англ\w+(?:\s+мові)?|англійською|in\s+english))?\s*$/i,
   // RU: "как сказать X", "что значит X", "переведи X", etc.
-  /(?:как\s+сказать|как\s+будет|как\s+перевести|что\s+значит|как\s+по.?англ\w*|как\s+правильно\s*(?:сказать)?|переведи)\s+(.+?)(?:\s+(?:на\s+английском|in\s+english))?\s*$/i,
+  /(?:как\s+сказать|как\s+будет|как\s+перевести|что\s+значит|как\s+по.?англ\w*|как\s+правильно\s*(?:сказать)?|переведи)\s*[,:"']?\s+(.+?)(?:\s+(?:на\s+английском(?:\s+языке)?|in\s+english))?\s*$/i,
   // English "what does [phrase] mean" / "what do [phrase] mean"
   /^what\s+(?:does|do)\s+(.+?)\s+mean\s*[?!.]?\s*$/i,
   // English broken-ESL: "what's mean X" / "whats mean X" / "what mean X" / "what means X"

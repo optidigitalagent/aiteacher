@@ -110,6 +110,37 @@ function buildCurrentExpectedHelpAnswer(state: EngineLessonState): string | null
   return `The word here is "${expected}". ${meaningHint} Now say it once: ${stepPrompt}`
 }
 
+function asksAboutCurrentExpectedMeaning(text: string, expectedAnswer: string, phraseText: string): boolean {
+  const lowerText = text.toLowerCase()
+  const lowerPhrase = phraseText.toLowerCase()
+  switch (expectedAnswer.toLowerCase().trim()) {
+    case 'spare time':
+    case 'free time':
+      return /вільн\w*\s+час|свободн\w*\s+врем|free\s+time|spare\s+time/.test(lowerText) ||
+        /"free time"|"spare time"/.test(lowerPhrase)
+    case 'get fit':
+      return /ста(?:є|ти|в|ла)?\s+(?:сильн|здоров)|станов\w*\s+(?:сильн|здоров)|кач\w+|work\s+out|get\s+fit/.test(lowerText) ||
+        /"get fit"|"work out"|"works out"/.test(lowerPhrase)
+    case 'hobby':
+      return /хобі|хобби|hobby/.test(lowerText) || /"hobby"/.test(lowerPhrase)
+    default:
+      return lowerPhrase.includes(`"${expectedAnswer.toLowerCase().trim()}"`)
+  }
+}
+
+function buildCurrentExpectedHelpAnswerForQuestion(
+  text: string,
+  state: EngineLessonState,
+  phraseText: string,
+): string | null {
+  const exState = state.currentExerciseState
+  const step = exState?.spec.steps[exState.currentStepIndex]
+  const expected = normalizeSpokenLine(step?.expectedAnswer ?? '')
+  if (!expected) return null
+  if (!asksAboutCurrentExpectedMeaning(text, expected, phraseText)) return null
+  return buildCurrentExpectedHelpAnswer(state)
+}
+
 function buildEnglishTaskHelpAnswer(text: string, state: EngineLessonState): string {
   const exState = state.currentExerciseState
   const step = exState?.spec.steps[exState.currentStepIndex]
@@ -861,10 +892,12 @@ export class MasterLessonOrchestrator {
     if (multilingual.detected) {
       const stepPrompt = buildCurrentItemReturnPrompt(engineState)
       const phraseText = buildMultilingualPhraseAnswer(studentAnswer, stepPrompt, sessionId ?? lessonId)
-      const fallbackAnswer = phraseText.startsWith("I'm not sure about that exact word")
+      const currentItemAnswer = buildCurrentExpectedHelpAnswerForQuestion(studentAnswer, engineState, phraseText)
+      const fallbackAnswer = phraseText.startsWith("I'm not sure about that exact word") ||
+        phraseText.startsWith("I can see you're writing")
         ? buildCurrentExpectedHelpAnswer(engineState)
         : null
-      const teacherText = fallbackAnswer ?? phraseText
+      const teacherText = currentItemAnswer ?? fallbackAnswer ?? phraseText
       console.log(`[master-orch] multilingual_clarification_not_submitted_to_engine lessonId=${lessonId}`)
       return {
         cursorUpdate:   null,
