@@ -86,6 +86,34 @@ function buildCurrentItemReturnPrompt(state: EngineLessonState): string {
   return `Exercise ${exState.spec.meta.exerciseNumber}, Number ${exState.currentStepIndex + 1}: ${item}`
 }
 
+const ENGLISH_TASK_HELP_RE =
+  /\b(i\s+don'?t\s+understand|i\s+dont\s+understand|i'?m\s+confused|im\s+confused|i'?m\s+lost|im\s+lost|what\s+should\s+i\s+(?:do|say|write|answer)|what\s+do\s+i\s+(?:do|say|write|answer)|what\s+is\s+the\s+task|what\s+is\s+the\s+question|can\s+you\s+(?:explain|help|clarify)|could\s+you\s+(?:explain|help|clarify)|help\s+me)\b/i
+
+function isEnglishTaskHelpRequest(text: string): boolean {
+  return ENGLISH_TASK_HELP_RE.test(text.trim())
+}
+
+function buildEnglishTaskHelpAnswer(state: EngineLessonState): string {
+  const exState = state.currentExerciseState
+  const step = exState?.spec.steps[exState.currentStepIndex]
+  const stepPrompt = buildCurrentItemReturnPrompt(state)
+  if (!exState || !step || !stepPrompt) {
+    return "No problem. Tell me what part is unclear, and we'll continue from the same point."
+  }
+
+  const instruction = normalizeSpokenLine(exState.spec.instruction)
+  const expected = normalizeSpokenLine(step.expectedAnswer)
+  const formatHint = expected
+    ? `You need ${expected.split(/\s+/).filter(Boolean).length === 1 ? 'one word' : 'a short phrase'} for the blank.`
+    : 'Answer the question in your own words.'
+  const meaningHint = expected ? ` ${buildMeaningHint(expected)}` : ''
+  const taskHint = instruction
+    ? `The task is: ${instruction}`
+    : 'Use the item on screen and give the missing answer.'
+
+  return `${taskHint} ${formatHint}${meaningHint} Now, ${stepPrompt}`
+}
+
 // ── Runtime Error Codes ───────────────────────────────────────────────────────
 
 export type RuntimeErrorCode =
@@ -786,6 +814,18 @@ export class MasterLessonOrchestrator {
         await markPaidOpeningWarmupPending(lessonId)
       }
       console.log(`[master-orch] readiness_not_submitted_to_engine lessonId=${lessonId}`)
+      return {
+        cursorUpdate:   null,
+        feedback:       null,
+        teacherInput:   null,
+        deterministicTeacherText: teacherText,
+        lessonComplete: false,
+      }
+    }
+
+    if (isEnglishTaskHelpRequest(studentAnswer)) {
+      const teacherText = buildEnglishTaskHelpAnswer(engineState)
+      console.log(`[master-orch] english_task_help_not_submitted_to_engine lessonId=${lessonId}`)
       return {
         cursorUpdate:   null,
         feedback:       null,

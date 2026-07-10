@@ -168,6 +168,38 @@ describe('paid lesson vocabulary item flow', () => {
     }
   })
 
+  it('answers English task-help confusion without grading it as a gap-fill attempt', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+
+    for (const [lessonId, question] of [
+      ['paid-vocab-flow-english-help', 'I do not understand the task. What should I do here?'],
+      ['paid-vocab-flow-english-confused', 'Can you explain what I should answer?'],
+    ] as const) {
+      await exerciseEngine.init(lessonId, '1.1')
+
+      const result = await orchestrator.handleStudentAnswer({
+        lessonId,
+        userId: 'user-1',
+        sessionId: 'session-1',
+        studentAnswer: question,
+        lessonStartedAt: Date.now(),
+      })
+
+      expect(result.feedback).toBeNull()
+      expect(result.cursorUpdate).toBeNull()
+      expect(result.teacherInput).toBeNull()
+      expect(result.deterministicTeacherText).toContain('one word')
+      expect(result.deterministicTeacherText).toContain('activity you enjoy')
+      expect(result.deterministicTeacherText).toContain('My ___ is photography.')
+
+      const state = await exerciseEngine.getState(lessonId)
+      expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+      expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
+    }
+  })
+
   it('keeps exercise authority after repeated wrong answers and advances keen on to the gym item deterministically', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
