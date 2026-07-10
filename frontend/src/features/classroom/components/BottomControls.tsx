@@ -187,7 +187,7 @@ export default function BottomControls({
                     transition: 'background 0.15s, color 0.15s',
                   }}
                 >
-                  {lang.toUpperCase()}
+                  {lang === 'uk' ? 'UA' : 'RU'}
                 </button>
               )
             })}
