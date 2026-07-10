@@ -138,6 +138,36 @@ describe('paid lesson vocabulary item flow', () => {
     expect(correctFirst?.cursorUpdate?.currentItem).toBe('What do you do in your ___?')
   })
 
+  it('answers RU/UA clarification without grading it as a gap-fill attempt', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+
+    for (const [lessonId, question, expectedPhrase] of [
+      ['paid-vocab-flow-ua-clarification', 'як сказати протягом 30 хвилин', 'for 30 minutes'],
+      ['paid-vocab-flow-ru-clarification', 'как сказать смешной фильм', 'funny movie'],
+    ] as const) {
+      await exerciseEngine.init(lessonId, '1.1')
+
+      const result = await orchestrator.handleStudentAnswer({
+        lessonId,
+        userId: 'user-1',
+        sessionId: 'session-1',
+        studentAnswer: question,
+        lessonStartedAt: Date.now(),
+      })
+
+      expect(result.feedback).toBeNull()
+      expect(result.cursorUpdate).toBeNull()
+      expect(result.deterministicTeacherText).toContain(expectedPhrase)
+      expect(result.deterministicTeacherText).toContain('My ___ is photography.')
+
+      const state = await exerciseEngine.getState(lessonId)
+      expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+      expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
+    }
+  })
+
   it('keeps exercise authority after repeated wrong answers and advances keen on to the gym item deterministically', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')

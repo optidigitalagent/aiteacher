@@ -38,6 +38,7 @@ import {
 import { getHintPolicy } from '../behavior-runtime/exercise-teaching/exercise-format-registry.js'
 import redis from '../db/redis.js'
 import type { ExpectedAnswerNormalization } from '../voice/voice-turn-stabilizer.js'
+import { buildMultilingualPhraseAnswer, detectMultilingualInterruption } from '../runtime/conversation-moves.js'
 
 const PAID_OPENING_WARMUP_TTL_SECONDS = 14_400
 
@@ -76,6 +77,13 @@ function isReadinessIntentGuard(text: string): boolean {
     .replace(/[.!?…]+$/, '')
     .trim()
   return /^(i'm\s+ready|i\s+am\s+ready|ready|yes|yeah|yep|ok|okay|sure|let's\s+start|start|go|begin|let's\s+go|go\s+ahead|ok(ay)?,?\s+(let's\s+(go|start)|go|start)|alright,?\s+(let's\s+(go|start)|go|start))$/i.test(normalized)
+}
+
+function buildCurrentItemReturnPrompt(state: EngineLessonState): string {
+  const exState = state.currentExerciseState
+  const item = normalizeSpokenLine(exState?.spec.steps[exState.currentStepIndex]?.question ?? '')
+  if (!exState || !item) return ''
+  return `Exercise ${exState.spec.meta.exerciseNumber}, Number ${exState.currentStepIndex + 1}: ${item}`
 }
 
 // ── Runtime Error Codes ───────────────────────────────────────────────────────
@@ -778,6 +786,20 @@ export class MasterLessonOrchestrator {
         await markPaidOpeningWarmupPending(lessonId)
       }
       console.log(`[master-orch] readiness_not_submitted_to_engine lessonId=${lessonId}`)
+      return {
+        cursorUpdate:   null,
+        feedback:       null,
+        teacherInput:   null,
+        deterministicTeacherText: teacherText,
+        lessonComplete: false,
+      }
+    }
+
+    const multilingual = detectMultilingualInterruption(studentAnswer)
+    if (multilingual.detected) {
+      const stepPrompt = buildCurrentItemReturnPrompt(engineState)
+      const teacherText = buildMultilingualPhraseAnswer(studentAnswer, stepPrompt, sessionId ?? lessonId)
+      console.log(`[master-orch] multilingual_clarification_not_submitted_to_engine lessonId=${lessonId}`)
       return {
         cursorUpdate:   null,
         feedback:       null,
