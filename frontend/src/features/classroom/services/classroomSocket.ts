@@ -133,6 +133,8 @@ export type BackendMessage =
   | { type: 'lesson_timer_update'; remainingMs: number }
   // TTS provider quota / rate-limit / outage — non-blocking, lesson continues in text mode
   | { type: 'voice_unavailable'; reason?: 'TTS_PROVIDER_QUOTA' | 'TTS_RATE_LIMITED' | 'TTS_PROVIDER_UNAVAILABLE' | 'TTS_UNKNOWN_ERROR' | string }
+  // Backend finalized a mic turn but found no usable transcript; no student_message will follow
+  | { type: 'voice_turn_empty'; reason?: 'empty' | 'late_empty' | 'filter' | 'noise' | 'stt_connect_failed' | string }
   // Kids Brain v1: sent when active exercise changes (exercise number, instruction, target words)
   | {
       type:             'kids_exercise_context'

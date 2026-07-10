@@ -181,6 +181,12 @@ export interface OutboundVoiceUnavailable {
   reason: 'TTS_PROVIDER_QUOTA' | 'TTS_RATE_LIMITED' | 'TTS_PROVIDER_UNAVAILABLE' | 'TTS_UNKNOWN_ERROR' | 'STT_CONNECT_FAILED'
 }
 
+/** Sent when a mic turn produced no usable transcript, so no student_message will follow. */
+export interface OutboundVoiceTurnEmpty {
+  type:   'voice_turn_empty'
+  reason: 'empty' | 'late_empty' | 'filter' | 'noise' | 'stt_connect_failed'
+}
+
 /**
  * Sent immediately after the backend authenticates the WS connection and
  * validates the paid session. The frontend should show "Begin Lesson" only
@@ -307,6 +313,7 @@ export type OutboundMessage =
   | OutboundStudentMessage
   | OutboundTeacherTurnEnd
   | OutboundVoiceUnavailable
+  | OutboundVoiceTurnEmpty
   | OutboundLessonReady
   | OutboundExerciseCursorUpdated
   | OutboundTipAdded
