@@ -506,6 +506,10 @@ interface ClientMeta {
   voicePartialTurnId:       string | null
   voiceAwaitingLateTranscript: boolean
   voiceLateFinalizeRef:        ReturnType<typeof setTimeout> | null
+  voiceAudioPendingBuffer:     string[]
+  voiceWaitingForSttReady:     boolean
+  voiceMicStopDuringWait:      boolean
+  voiceSTTConnectFailed:       boolean
   // Stabilization window: 450ms timer started on mic_stop.
   // Keeps micActive=true while waiting for late Deepgram is_final segments.
   // Replaced the legacy pendingMicStop+800ms-timeout path.
@@ -788,6 +792,10 @@ async function tryLateRecover(
   meta.pendingTranscript = ''
   meta.pendingMicStop    = false
   meta.micActive         = false
+  meta.voiceAudioPendingBuffer = []
+  meta.voiceWaitingForSttReady = false
+  meta.voiceMicStopDuringWait  = false
+  meta.voiceSTTConnectFailed   = false
   meta.stt = createSTT(ws, meta)
 
   // Record reconnect event in transcript
@@ -982,6 +990,10 @@ async function resumeLesson(
   meta.pendingTranscript = ''
   meta.pendingMicStop    = false
   meta.micActive         = false  // set true on next mic_start
+  meta.voiceAudioPendingBuffer = []
+  meta.voiceWaitingForSttReady = false
+  meta.voiceMicStopDuringWait  = false
+  meta.voiceSTTConnectFailed   = false
   meta.stt = createSTT(ws, meta)
 
   // Guard: advance cursor past any completed items so a stale/corrupted itemIndex
@@ -4374,6 +4386,12 @@ function scheduleTurnFinalize(
             sendVoiceTurnEmpty(ws, 'stt_connect_failed')
             return
           }
+          if (meta.voiceSTTConnectFailed) {
+            meta.voiceSTTConnectFailed = false
+            console.log(`[voice:turn] no_transcript reason=stt_connect_failed turnId=${captureTurnId}`)
+            sendVoiceTurnEmpty(ws, 'stt_connect_failed')
+            return
+          }
           console.log(`[voice:turn] no_transcript reason=${noReason} turnId=${captureTurnId}`)
           sendVoiceTurnEmpty(ws, noReason)
           if (meta.kidsBrainV1Active) {
@@ -4516,6 +4534,10 @@ export function attachLessonWS(server: Server): void {
         voicePartialTurnId:       null,
         voiceAwaitingLateTranscript: false,
         voiceLateFinalizeRef:        null,
+        voiceAudioPendingBuffer:     [],
+        voiceWaitingForSttReady:     false,
+        voiceMicStopDuringWait:      false,
+        voiceSTTConnectFailed:       false,
         stabilizationRef:         null,
         kidsPartialTranscript:      '',
         kidsPartialTurnId:          null,
@@ -4567,6 +4589,10 @@ export function attachLessonWS(server: Server): void {
         voicePartialTurnId:       null,
         voiceAwaitingLateTranscript: false,
         voiceLateFinalizeRef:        null,
+        voiceAudioPendingBuffer:     [],
+        voiceWaitingForSttReady:     false,
+        voiceMicStopDuringWait:      false,
+        voiceSTTConnectFailed:       false,
         stabilizationRef:         null,
         billingStartedAt: null,
         isKidsMode:             false,
@@ -4742,6 +4768,10 @@ export function attachLessonWS(server: Server): void {
             meta.voiceAudioChunkCount    = 0
             meta.voicePartialTranscript  = ''
             meta.voicePartialTurnId      = null
+            meta.voiceAudioPendingBuffer = []
+            meta.voiceWaitingForSttReady = false
+            meta.voiceMicStopDuringWait  = false
+            meta.voiceSTTConnectFailed   = false
             meta.kidsPartialTranscript  = ''
             meta.kidsPartialTurnId      = null
             meta.kidsAudioChunkCount    = 0
@@ -4814,6 +4844,44 @@ export function attachLessonWS(server: Server): void {
               }
             }
 
+            if (!(meta.kidsBrainV1Active || meta.isKidsMode) && (!meta.stt || !meta.stt.isAlive())) {
+              console.log(`[voice] stt_reconnect reason=connection_dead turnId=${meta.voiceTurnId}`)
+              meta.stt?.close()
+              meta.stt = createSTT(ws, meta)
+
+              meta.voiceWaitingForSttReady = true
+              const sttReady = await meta.stt.waitUntilReady(2000)
+              meta.voiceWaitingForSttReady = false
+
+              if (!sttReady) {
+                console.warn(`[voice] stt_connect_failed turnId=${meta.voiceTurnId} bufferedChunks=${meta.voiceAudioPendingBuffer.length}`)
+                meta.voiceAudioPendingBuffer = []
+                meta.voiceSTTConnectFailed = true
+                send(ws, { type: 'voice_unavailable', reason: 'STT_CONNECT_FAILED' })
+                break
+              }
+
+              if (meta.voiceAudioPendingBuffer.length > 0) {
+                const flushCount = meta.voiceAudioPendingBuffer.length
+                console.log(`[voice] stt_buffer_flush chunks=${flushCount} turnId=${meta.voiceTurnId}`)
+                for (const chunk of meta.voiceAudioPendingBuffer) {
+                  meta.stt.send(chunk)
+                  meta.voiceAudioChunkCount++
+                }
+                meta.voiceAudioPendingBuffer = []
+              }
+
+              if (meta.voiceMicStopDuringWait) {
+                meta.voiceMicStopDuringWait = false
+                const captureChunks = meta.voiceAudioChunkCount
+                const captureTurnId = meta.voiceTurnId
+                console.log(`[voice] finalize_after_wait chunks=${captureChunks} turnId=${captureTurnId}`)
+                meta.micActive = true
+                scheduleTurnFinalize(ws, meta, captureTurnId, captureChunks, 450)
+                break
+              }
+            }
+
             meta.micActive = true  // open the gate — accept STT events
             console.log(`[voice] mic_start turnId=${meta.voiceTurnId} micActive=true`)
             break
@@ -4845,6 +4913,11 @@ export function attachLessonWS(server: Server): void {
               meta.kidsMicStopDuringWait = true
               break
             }
+            if (!isKidsTurn && meta.voiceWaitingForSttReady) {
+              console.log(`[voice] mic_stop_while_waiting turnId=${captureTurnId}`)
+              meta.voiceMicStopDuringWait = true
+              break
+            }
 
             scheduleTurnFinalize(ws, meta, captureTurnId, captureChunks, STABILIZATION_MS)
             break
@@ -4865,17 +4938,26 @@ export function attachLessonWS(server: Server): void {
                 }
                 return  // buffered — not stale
               }
+              if (!isKids && meta.voiceWaitingForSttReady && meta.voiceAudioPendingBuffer.length < 200) {
+                meta.voiceAudioPendingBuffer.push(msg.data)
+                if (meta.voiceAudioPendingBuffer.length === 1) {
+                  console.log(`[voice] stt_buffer_append turnId=${meta.voiceTurnId} bufferedTotal=1`)
+                }
+                return  // buffered — not stale
+              }
               // Determine stale reason for diagnostics
               const staleReason = !meta.voiceTurnId
                 ? 'no_turn'
                 : (isKids && meta.kidsWaitingForSttReady)
                   ? 'stt_waiting'  // buffer was full (>200 chunks)
+                  : (!isKids && meta.voiceWaitingForSttReady)
+                    ? 'stt_waiting'
                   : 'mic_not_active'
               console.log('[ws:audio] stale_chunk_ignored', JSON.stringify({
                 reason:             staleReason,
                 isKids,
                 micActive:          meta.micActive,
-                waitingForSttReady: meta.kidsWaitingForSttReady,
+                waitingForSttReady: isKids ? meta.kidsWaitingForSttReady : meta.voiceWaitingForSttReady,
                 turnId:             meta.voiceTurnId,
                 connectionId:       meta.connectionId,
               }))

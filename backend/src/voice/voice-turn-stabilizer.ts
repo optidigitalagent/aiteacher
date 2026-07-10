@@ -158,7 +158,11 @@ export function classifyVoiceTranscript(
 export interface ExpectedAnswerNormalization {
   text: string
   matchedAnswer: string
-  reason: 'exact_expected_answer' | 'sentence_final_expected_answer' | 'answer_phrase_tail'
+  reason:
+    | 'exact_expected_answer'
+    | 'sentence_final_expected_answer'
+    | 'sentence_any_expected_answer'
+    | 'answer_phrase_tail'
 }
 
 function normalizeForExpectedAnswerMatch(text: string): string {
@@ -212,6 +216,19 @@ export function normalizeTranscriptToExpectedAnswer(
       if (!normalizedAnswer) continue
       if (normalizedLast === normalizedAnswer) {
         return { text: answer, matchedAnswer: answer, reason: 'sentence_final_expected_answer' }
+      }
+    }
+  }
+
+  if (fragments.length >= 2 && fragments.length <= 4) {
+    for (const fragment of fragments) {
+      const normalizedFragment = normalizeForExpectedAnswerMatch(fragment)
+      for (const answer of candidates) {
+        const normalizedAnswer = normalizeForExpectedAnswerMatch(answer)
+        if (!normalizedAnswer) continue
+        if (normalizedFragment === normalizedAnswer) {
+          return { text: answer, matchedAnswer: answer, reason: 'sentence_any_expected_answer' }
+        }
       }
     }
   }

@@ -222,15 +222,16 @@ SEQUENCE (strictly — never add steps):
      Do NOT read out any items[]. Do NOT ask numbered sub-questions.
   2. Wait for ONE student response.
   3. Give ONE brief feedback note (grammar fix OR vocabulary tip — max 1 sentence). No "correct answer" reveal.
-  4. Immediately complete: "Good. Exercise [N] is done." → next_action must signal exercise completion.
-  5. Move to the next exercise.
+  4. Optional human tutor follow-up: in soft_speaking/warmup only, ask ONE short friendly textbook-related question when it creates real speaking practice.
+  5. After that answer, immediately complete: "Good. Exercise [N] is done." → next_action must signal exercise completion.
+  6. Move to the next exercise.
 
 ABSOLUTELY FORBIDDEN for speaking/discussion exercises:
-  ❌ Follow-up questions after the student has responded ("What does he do?", "Why?", "Tell me more", "And also...")
+  ❌ Multiple follow-up questions after the student has responded ("What does he do?", "Why?", "Tell me more", "And also...")
   ❌ Applying the A/B/C/D correction ladder — speaking has no single correct answer.
   ❌ Asking the student to repeat or rephrase until exact match ("Say it again", "Again", "Full sentence please").
   ❌ Creating interview flows (multiple successive WH-questions on the same topic).
-  ❌ Asking the student to elaborate, justify, or expand on what they said.
+  ❌ Asking the student to elaborate, justify, or expand beyond ONE short friendly speaking/warmup follow-up.
   ❌ Looping on the same prompt after the student has given one substantive response.
   ❌ Reading out items[] as if they are interview questions to ask one by one.
   ❌ Using items[] from an adjacent listening exercise as the discussion script.
@@ -296,7 +297,8 @@ RULES:
   ✓ Maximum ONE brief acknowledgment per turn — then immediately continue lesson
   ✓ Acknowledgment must be 6–12 words — never a paragraph
   ✓ Always continue lesson flow in the same response — never end at the acknowledgment
-  ✗ NEVER ask follow-up questions about student's personal content ("why?", "what happened?", "tell me more")
+  ✓ In soft_speaking/warmup only: ONE short friendly follow-up is allowed when Teacher Brain says the current task is conversational
+  ✗ In deterministic exercises: NEVER ask follow-up questions about student's personal content ("why?", "what happened?", "tell me more")
   ✗ NEVER open a multi-turn digression about what the student shared
   ✗ NEVER abandon the current exercise to chat
   ✗ NEVER make the acknowledgment longer than the lesson content that follows`
@@ -735,7 +737,7 @@ STEP 4a — CORRECT answer:
   Optional follow-up (ONLY for deterministic exercise types — NOT for speaking/discussion):
     "Why 'does' here and not 'do'?" — only if it deepens understanding.
   For SOFT SPEAKING types (discussion, speaking_prompt, roleplay, any soft_speaking mode):
-    SKIP the optional follow-up. Give ONE brief feedback note → immediately announce STEP 5 completion.
+    You MAY ask ONE short friendly textbook-related follow-up. After the student's answer, give ONE brief feedback note → immediately announce STEP 5 completion.
   Then: next item of Exercise ${exerciseNum}, OR if all items done → STEP 5.
   ITEM FLOW: present the next item DIRECTLY — no exercise number prefix. Say: "Right. [item text]." or just "[item text] — go ahead." NEVER: "Exercise ${exerciseNum}, number 2: [item]." The exercise context is already on screen.
 

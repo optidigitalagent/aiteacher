@@ -484,6 +484,10 @@ function normalizeSpokenLine(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
+function pickVariant(options: readonly string[], seed: number): string {
+  return options[Math.abs(seed) % options.length] ?? options[0]!
+}
+
 function buildDeterministicTeacherText(
   result: EngineResult,
   etr: EngineTurnResult,
@@ -494,17 +498,19 @@ function buildDeterministicTeacherText(
   const correctAnswer = result.validation?.correctAnswer
     ? normalizeSpokenLine(result.validation.correctAnswer)
     : ''
+  const confirmation = pickVariant(['Right.', 'Good.', 'Yes.', 'Exactly.'], etr.itemIndex)
+  const nextBridge = pickVariant(['Next:', 'Now:', 'Let\'s continue:'], etr.itemIndex)
 
   if (result.action === 'step_correct' || result.action === 'soft_pass') {
     return nextItem
-      ? `Right. Now - ${nextItem}`
-      : `Right. Exercise ${etr.exerciseNumber} is complete.`
+      ? `${confirmation} ${nextBridge} ${nextItem}`
+      : `${confirmation} Exercise ${etr.exerciseNumber} is complete.`
   }
 
   if (result.action === 'exercise_complete') {
     return nextItem
-      ? `Right. Exercise ${etr.exerciseNumber} is complete. Now - ${nextItem}`
-      : `Right. Exercise ${etr.exerciseNumber} is complete.`
+      ? `${confirmation} Exercise ${etr.exerciseNumber} is complete. ${nextBridge} ${nextItem}`
+      : `${confirmation} Exercise ${etr.exerciseNumber} is complete.`
   }
 
   if (result.action === 'step_revealed' && result.validation?.correctAnswer) {
@@ -526,7 +532,13 @@ function buildDeterministicTeacherText(
       }
       return `The word starts with "${correctAnswer.slice(0, 1)}".${itemPrompt}`
     }
-    return `Good try. Think about the phrase that fits this sentence.${itemPrompt}`
+    const hintLead = pickVariant([
+      'Good try.',
+      'Close.',
+      'Nearly.',
+      'You are on the right track.',
+    ], etr.retryCount)
+    return `${hintLead} Think about the phrase that fits this sentence.${itemPrompt}`
   }
 
   return null

@@ -883,6 +883,24 @@ describe('Phase 7 — Conversational Pedagogy Layer', () => {
     expect(hasBoundedRule).toBe(true)
   })
 
+  it('CONVERSATIONAL_PEDAGOGY_RULES allows exactly one friendly follow-up in speaking modes', () => {
+    const joinedRules = CONVERSATIONAL_PEDAGOGY_RULES.rules.join(' ').toLowerCase()
+    expect(joinedRules).toContain('one short friendly follow-up')
+    expect(joinedRules).toContain('multi-turn digressions')
+  })
+
+  it('SPEAKING_RULES permits one textbook-related follow-up before completion', () => {
+    const joinedRules = SPEAKING_RULES.rules.join(' ').toLowerCase()
+    expect(joinedRules).toContain('one friendly textbook-related follow-up')
+    expect(joinedRules).toContain('before completing')
+  })
+
+  it('CONVERSATIONAL_PEDAGOGY_RULES forbids invented current news hooks', () => {
+    const joinedRules = CONVERSATIONAL_PEDAGOGY_RULES.rules.join(' ').toLowerCase()
+    expect(joinedRules).toContain('never invent current news')
+    expect(joinedRules).toContain('student memory')
+  })
+
   // ── b) Speaking mode behavior contract includes Phase 7 rules ─────────────
 
   it('soft_speaking behavior contract includes CONVERSATIONAL PEDAGOGY RULES group', () => {

@@ -356,6 +356,7 @@ function buildConversationalPedagogySection(ctx: TeacherBrainContext): string {
     lines.push(
       '• For speaking/warmup tasks: ask ONE short friendly follow-up when it helps real conversation',
       '  Good follow-ups: "How was your day?" / "What will you do tomorrow?" / "What do you usually do in your free time?"',
+      '• Use student memory, the lesson topic, or backend-supplied context for human hooks; do NOT invent current news, films, or events',
       '• After the student answers that follow-up, give one language note or natural recast, then return to the textbook flow',
     )
   } else {

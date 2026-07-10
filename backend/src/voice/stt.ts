@@ -3,6 +3,8 @@ import type { LiveSchema } from '@deepgram/sdk/dist/main/lib/types/Transcription
 import { type IncomingMessage, type ClientRequest } from 'node:http'
 
 const API_KEY = process.env.DEEPGRAM_API_KEY ?? ''
+const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL ?? 'nova-2'
+const DEEPGRAM_LANGUAGE = process.env.DEEPGRAM_LANGUAGE ?? 'en'
 
 // How long after speech stops before we fire the transcript.
 // 1500ms = student can think for 1.5s mid-answer without triggering AI.
@@ -18,8 +20,8 @@ const UTTERANCE_END_MS_KIDS = 1000
 // detect_language is a PrerecordedSchema-only field; sending it to the Live API
 // causes HTTP 400. Use explicit language=en instead.
 export const DEEPGRAM_LIVE_OPTIONS: LiveSchema = {
-  model:            'nova-2',
-  language:         'en',
+  model:            DEEPGRAM_MODEL,
+  language:         DEEPGRAM_LANGUAGE,
   smart_format:     true,
   interim_results:  true,
   endpointing:      300,

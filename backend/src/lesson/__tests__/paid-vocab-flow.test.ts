@@ -108,7 +108,7 @@ describe('paid lesson vocabulary item flow', () => {
 
     expect(result?.feedback?.correct).toBe(true)
     expect(result?.cursorUpdate?.currentItem).toBe('I joined a gym to ___.')
-    expect(result?.deterministicTeacherText).toBe('Right. Now - I joined a gym to ___.')
+    expect(result?.deterministicTeacherText).toContain('I joined a gym to ___.')
     expect(result?.deterministicTeacherText).not.toContain('Try once more')
     expect(result?.deterministicTeacherText).not.toContain('stay on this item')
   })
