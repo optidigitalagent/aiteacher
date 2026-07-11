@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 
 const redisStore = new Map<string, string>()
 
@@ -963,5 +964,18 @@ describe('paid lesson vocabulary item flow', () => {
     expect(speaking?.instruction).toBe(
       'Do you think free time is more important than school time? Give two reasons. Start like this: "I think ... because ..."',
     )
+  })
+
+  it('pins soft-speaking retry text to deterministic WS output before Teacher Brain narration', () => {
+    const source = readFileSync(new URL('../../ws/lesson-ws.ts', import.meta.url), 'utf8')
+    const retryBranch = source.slice(
+      source.indexOf('if (isSoftRetry) {'),
+      source.indexOf('if (engineResult?.action === \'lesson_complete\')'),
+    )
+
+    expect(retryBranch).toContain('deterministicSoftSpeakingRetry')
+    expect(retryBranch).toContain("send(ws, { type: 'ai_text', phase: 'EXERCISES', text: teacherText })")
+    expect(retryBranch).toContain("replayQueuedInput(ws, meta, 'soft-speaking-retry')")
+    expect(retryBranch).toContain('return')
   })
 })

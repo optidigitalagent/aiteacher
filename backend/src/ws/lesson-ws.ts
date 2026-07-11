@@ -3245,6 +3245,36 @@ async function processInput(
                 }
               }
 
+              if (isSoftRetry) {
+                const retry = manifestValidation.softSpeakingRetry
+                const teacherText = retry?.repairPrompt ?? retry?.teacherHint ?? 'Good start. Add one clear reason, then try again.'
+                send(ws, { type: 'ai_text', phase: 'EXERCISES', text: teacherText })
+                if (meta.userId) {
+                  recordTeacherMessage({
+                    lessonId:       meta.lessonId,
+                    sessionId:      meta.sessionId,
+                    userId:         meta.userId,
+                    studentId:      meta.studentId,
+                    text:           teacherText,
+                    phase:          'EXERCISES',
+                    exerciseNumber: manifestValidation.exerciseNum,
+                    exerciseType:   manifestValidation.cursor?.exerciseType ?? null,
+                    itemIndex:      manifestValidation.itemIndex,
+                    itemTotal:      manifestValidation.cursor?.itemTotal ?? null,
+                    correctionTurn: null,
+                    source:         'system',
+                    metadata:       {
+                      deterministicSoftSpeakingRetry: true,
+                      issueType: retry?.issueType ?? null,
+                    },
+                  })
+                }
+                await ttsStream(ws, meta, teacherText)
+                meta.aiProcessing = false
+                replayQueuedInput(ws, meta, 'soft-speaking-retry')
+                return
+              }
+
               if (engineResult?.action === 'lesson_complete') {
                 const teacherText = `Nice work. You built a fuller answer, and that is real speaking practice. Lesson complete.`
                 send(ws, { type: 'ai_text', phase: 'WRAP_UP', text: teacherText })
