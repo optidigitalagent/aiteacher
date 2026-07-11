@@ -111,7 +111,9 @@ function isReadinessIntentGuard(text: string): boolean {
     .replace(/\s+/g, ' ')
     .replace(/[.!?…]+$/, '')
     .trim()
-  return /^(i'm\s+ready|i\s+am\s+ready|ready|yes|yeah|yep|ok|okay|sure|let's\s+start|start|go|begin|let's\s+go|go\s+ahead|ok(ay)?,?\s+(let's\s+(go|start)|go|start)|alright,?\s+(let's\s+(go|start)|go|start))$/i.test(normalized)
+  if (/\b(?:not\s+ready|not\s+yet)\b/i.test(normalized)) return false
+  return /^(i'm\s+ready|i\s+am\s+ready|ready|yes|yeah|yep|ok|okay|sure|let's\s+start|start|go|begin|let's\s+go|go\s+ahead|ok(ay)?,?\s+(let's\s+(go|start)|go|start)|alright,?\s+(let's\s+(go|start)|go|start))$/i.test(normalized) ||
+    /(?:^|[\s,.;:!?])(?:i'm|i\s+am)\s+ready(?:$|[\s,.;:!?])/i.test(normalized)
 }
 
 function buildCurrentItemReturnPrompt(state: EngineLessonState): string {

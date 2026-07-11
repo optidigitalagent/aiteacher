@@ -351,6 +351,29 @@ function lookupEnglishPhrase(phrase: string): string | null {
   return null
 }
 
+const CYRILLIC_ENGLISH_SUFFIX_RE =
+  /\s+(?:\u043d\u0430|\u043f\u043e)\s+\u0430\u043d\u0433\u043b[\p{L}]*(?:\s+\u043c\u043e\u0432[\p{L}]*)?\s*$/iu
+
+function cleanRequestedPhrase(raw: string): string {
+  let candidate = raw.trim().replace(/[?!.,]+$/u, '').trim()
+  candidate = candidate.replace(
+    /^(?:\u043d\u0430|\u043f\u043e)\s+\u0430\u043d\u0433\u043b[\p{L}]*(?:\s+\u043c\u043e\u0432[\p{L}]*)?\s+/iu,
+    '',
+  )
+  candidate = candidate.replace(CYRILLIC_ENGLISH_SUFFIX_RE, '').trim()
+
+  const parts = candidate.split(/[?!.]+/u).map((part) => part.trim()).filter(Boolean)
+  if (parts.length > 1) {
+    candidate = parts[parts.length - 1] ?? candidate
+  }
+
+  return candidate
+    .replace(/^(?:\u0430\s+)?(?:\u044f\u043a|\u043a\u0430\u043a)\s+/iu, '')
+    .replace(/^(?:\u0446\u0435|\u044d\u0442\u043e)\s+/iu, '')
+    .replace(/[?!.,]+$/u, '')
+    .trim()
+}
+
 // Patterns to extract the requested phrase from a multilingual or ESL clarification question.
 // Works for UA/RU native-language patterns, English "how to say [Cyrillic]", and broken-ESL English.
 const PHRASE_EXTRACT_RE: RegExp[] = [
@@ -365,6 +388,8 @@ const PHRASE_EXTRACT_RE: RegExp[] = [
   /^what\s+means?\s+(.+)/i,
   // English "how to say [phrase]", "how say [phrase]" — works for Cyrillic OR English phrases
   /^(?:[\p{L}\s,]+?\s+)?how\s+(?:to\s+)?say\s+(.+)$/iu,
+  /^(?:\u0430\s+)?(?:\u044f\u043a|\u043a\u0430\u043a)\s+(.+?)(?:[?!.]+\s*)?(?:\u043d\u0430|\u043f\u043e)\s+\u0430\u043d\u0433\u043b[\p{L}]*(?:\s+\u043c\u043e\u0432[\p{L}]*)?\s*[?!.]?\s*$/iu,
+  /^(.+?)\s+(?:\u043d\u0430|\u043f\u043e)\s+\u0430\u043d\u0433\u043b[\p{L}]*(?:\s+\u043c\u043e\u0432[\p{L}]*)?\s*[?!.]?\s*$/iu,
 ]
 
 // Extract the requested phrase from a multilingual or clarification question.
@@ -372,7 +397,7 @@ function extractRequestedPhrase(text: string): string | null {
   for (const re of PHRASE_EXTRACT_RE) {
     const m = text.match(re)
     if (m?.[1]) {
-      const candidate = m[1].trim().replace(/[?!.,]+$/, '').trim().slice(0, 60)
+      const candidate = cleanRequestedPhrase(m[1]).slice(0, 60)
       if (candidate.length >= 2) return candidate
     }
   }
@@ -441,6 +466,10 @@ export function detectMultilingualInterruption(text: string): MultilingualInterr
     }
     // Phase 7.3: also detect "how to say [Cyrillic content]" (English query about Cyrillic phrase)
     if (isHowToSayCyrillicQuery(text)) {
+      return { detected: true, nativeText: text.slice(0, 120) }
+    }
+    const lookup = lookupRequestedPhrase(text)
+    if (lookup.hasCyrillic && lookup.requested) {
       return { detected: true, nativeText: text.slice(0, 120) }
     }
     return { detected: false, nativeText: null }
@@ -512,6 +541,8 @@ export function detectPhraseQuestion(text: string): boolean {
     if (MULTILINGUAL_REQUEST_RE.test(text)) return true
     // English "how to say [Cyrillic]"
     if (isHowToSayCyrillicQuery(text)) return true
+    const lookup = lookupRequestedPhrase(text)
+    if (lookup.hasCyrillic && lookup.requested) return true
     // English "what does X mean", "what means X", "what's mean X"
     if (/^what\s+(?:does|do)\s+.+\s+mean\s*[?!.]?\s*$/.test(lower)) return true
     if (/^what(?:'?s|\s+is)?\s+mean\s+\S/.test(lower)) return true

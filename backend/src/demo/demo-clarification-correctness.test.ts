@@ -18,6 +18,7 @@ import {
   classifyDemoInput,
   detectPhraseQuestion,
   detectMultilingualInterruption,
+  lookupRequestedPhrase,
 } from '../runtime/conversation-moves.js'
 
 const STEP_PROMPT = 'Will you go to the party if it rains?'
@@ -98,6 +99,20 @@ describe('Phase 7.3 — Cyrillic phrase translations', () => {
     )
     expect(result.toLowerCase()).toContain('homework')
     expect(result.toLowerCase()).not.toContain("i can see you're writing")
+  })
+
+  it('extracts conversational Ukrainian lookup forms from the live transcript', () => {
+    const apple = lookupRequestedPhrase(
+      '\u0410 \u044f\u043a \u044f\u0431\u043b\u0443\u043a\u043e? \u041d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456?',
+    )
+    const bed = lookupRequestedPhrase(
+      '\u042f\u043a \u0437\u0430 \u0442\u0438? \u041b\u0456\u0436\u043a\u043e \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456.',
+    )
+
+    expect(apple.requested).toBe('\u044f\u0431\u043b\u0443\u043a\u043e')
+    expect(bed.requested?.toLowerCase()).toBe('\u043b\u0456\u0436\u043a\u043e')
+    expect(detectPhraseQuestion('\u0410 \u044f\u043a \u044f\u0431\u043b\u0443\u043a\u043e? \u041d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456?')).toBe(true)
+    expect(detectMultilingualInterruption('\u042f\u043a \u0437\u0430 \u0442\u0438? \u041b\u0456\u0436\u043a\u043e \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456.').detected).toBe(true)
   })
 })
 

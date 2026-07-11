@@ -60,7 +60,7 @@ describe('paid lesson vocabulary item flow', () => {
       lessonId,
       userId: 'user-1',
       sessionId: 'session-1',
-      studentAnswer: 'Okay.',
+      studentAnswer: '\u0939\u093e\u0902 \u091c\u0940. I\'m ready.',
       lessonStartedAt: Date.now(),
     })
 
@@ -570,6 +570,46 @@ describe('paid lesson vocabulary item flow', () => {
     const stateAfterFollowup = await exerciseEngine.getState(lessonId)
     expect(stateAfterFollowup?.currentExerciseState?.currentStepIndex).toBe(0)
     expect(stateAfterFollowup?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
+  })
+
+  it('does not grade conversational Ukrainian lookup forms from the live transcript', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-live-ua-side-question'
+
+    await exerciseEngine.init(lessonId, '1.1')
+
+    const appleQuestion = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u0410 \u044f\u043a \u044f\u0431\u043b\u0443\u043a\u043e? \u041d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456?',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(appleQuestion.feedback).toBeNull()
+    expect(appleQuestion.cursorUpdate).toBeNull()
+    expect(appleQuestion.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
+    expect(appleQuestion.teacherInput ?? '').toContain('\u044f\u0431\u043b\u0443\u043a\u043e')
+    expect(appleQuestion.teacherInput ?? '').toContain('Do NOT grade this as the exercise answer')
+
+    const bedQuestion = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u042f\u043a \u0437\u0430 \u0442\u0438? \u041b\u0456\u0436\u043a\u043e \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456.',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(bedQuestion.feedback).toBeNull()
+    expect(bedQuestion.cursorUpdate).toBeNull()
+    expect(bedQuestion.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
+    expect((bedQuestion.teacherInput ?? '').toLowerCase()).toContain('\u043b\u0456\u0436\u043a\u043e')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
   })
 
   it('routes English lookup questions to bounded AI side-question help instead of grading', async () => {
