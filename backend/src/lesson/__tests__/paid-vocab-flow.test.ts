@@ -334,6 +334,19 @@ describe('paid lesson vocabulary item flow', () => {
     expect(source.slice(deterministicIndex, teacherInputIndex)).toContain('ttsStream')
   })
 
+  it('keeps AI-routed side questions locked to the exercises phase', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync(new URL('../../ws/lesson-ws.ts', import.meta.url), 'utf8')
+    const handlerIndex = source.indexOf('async function handleEngineExerciseAnswer')
+    const teacherInputIndex = source.indexOf('if (orchResult.teacherInput)', handlerIndex)
+    const processInputIndex = source.indexOf('await processInput(ws, meta, orchResult.teacherInput, false, true)', teacherInputIndex)
+
+    expect(handlerIndex).toBeGreaterThan(-1)
+    expect(teacherInputIndex).toBeGreaterThan(handlerIndex)
+    expect(processInputIndex).toBeGreaterThan(teacherInputIndex)
+    expect(source.slice(teacherInputIndex, processInputIndex)).toContain('await forcePhaseToExercises(lessonId)')
+  })
+
   it('blocks previous paid voice transcripts from repopulating the next mic input', async () => {
     const { readFileSync } = await import('node:fs')
     const source = readFileSync(

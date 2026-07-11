@@ -3891,6 +3891,7 @@ async function handleEngineExerciseAnswer(
   }
 
   if (orchResult.teacherInput) {
+    await forcePhaseToExercises(lessonId)
     await processInput(ws, meta, orchResult.teacherInput, false, true)
   }
 }
