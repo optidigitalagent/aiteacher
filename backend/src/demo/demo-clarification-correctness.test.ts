@@ -119,7 +119,7 @@ describe('Phase 7.3 — Cyrillic phrase translations', () => {
     const ship = lookupRequestedPhrase('\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c')
 
     expect(ship.requested).toBe('\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c')
-    expect(ship.explanation).toBeNull()
+    expect(ship.explanation).toBe('ship')
     expect(ship.hasCyrillic).toBe(true)
     expect(detectPhraseQuestion('\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c')).toBe(true)
     expect(detectMultilingualInterruption('\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c').detected).toBe(true)

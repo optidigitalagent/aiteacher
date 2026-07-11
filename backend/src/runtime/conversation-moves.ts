@@ -248,6 +248,7 @@ const CYRILLIC_PHRASE_MAP: Array<readonly [string, string]> = [
   ['\u0434\u043e\u043c\u0430\u0448\u043d\u044f \u0440\u043e\u0431\u043e\u0442\u0430',      'homework'],
   ['\u0434\u043e\u043c\u0430\u0448\u043d\u0454 \u0437\u0430\u0432\u0434\u0430\u043d\u043d\u044f',   'homework'],
   ['\u0445\u043e\u0431\u0456',                'hobby'],
+  ['\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c',           'ship'],
   // Ukrainian — feelings/actions
   ['подобається',         'like'],
   ['дуже подобається',    'really like'],
@@ -294,6 +295,7 @@ const CYRILLIC_PHRASE_MAP: Array<readonly [string, string]> = [
   ['\u0434\u043e\u043c\u0430\u0448\u043d\u044f\u044f \u0440\u0430\u0431\u043e\u0442\u0430',      'homework'],
   ['\u0434\u043e\u043c\u0430\u0448\u043d\u0435\u0435 \u0437\u0430\u0434\u0430\u043d\u0438\u0435',   'homework'],
   ['\u0445\u043e\u0431\u0431\u0438',              'hobby'],
+  ['\u043a\u043e\u0440\u0430\u0431\u043b\u044c',             'ship'],
   // Russian — feelings/actions
   ['нравится',            'like'],
   ['очень нравится',      'really like'],
@@ -325,6 +327,7 @@ const ENGLISH_PHRASE_MAP: Array<readonly [string, string]> = [
   ['keep pulling you back in',  'something keeps making you want to return to it or continue doing it'],
   ['pull you back in',          'draw you back in — make you want to return or keep doing something'],
   ['take part in',              'participate in; join an activity or event'],
+  ['ship',                      'a large boat used to travel on water or carry things by sea'],
   ['come up with',              'think of or produce — an idea, plan, or answer'],
   ['figure out',                'understand or solve something after thinking about it'],
   ['work out',                  'exercise; or find a solution to a problem'],

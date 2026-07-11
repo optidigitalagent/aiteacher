@@ -536,7 +536,7 @@ describe('paid lesson vocabulary item flow', () => {
     expect(stateAfterFollowup?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
   })
 
-  it('routes unknown mid-exercise translation questions to bounded AI side-question help', async () => {
+  it('answers known mid-exercise translation questions deterministically without grading', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
     const orchestrator = new MasterLessonOrchestrator()
@@ -556,12 +556,9 @@ describe('paid lesson vocabulary item flow', () => {
 
     expect(result.feedback).toBeNull()
     expect(result.cursorUpdate).toBeNull()
-    expect(result.deterministicTeacherText).toBeUndefined()
-    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
-    expect(result.teacherInput ?? '').toContain('\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c')
-    expect(result.teacherInput ?? '').toContain('ask ONE short related follow-up')
-    expect(result.teacherInput ?? '').toContain('Do NOT grade this as the exercise answer')
-    expect(result.teacherInput ?? '').toContain('My ___ is photography.')
+    expect(result.teacherInput).toBeNull()
+    expect(result.deterministicTeacherText).toContain('"\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c" in English is "ship"')
+    expect(result.deterministicTeacherText).not.toContain('My ___ is photography.')
 
     const state = await exerciseEngine.getState(lessonId)
     expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
@@ -605,11 +602,9 @@ describe('paid lesson vocabulary item flow', () => {
 
     expect(result.feedback).toBeNull()
     expect(result.cursorUpdate).toBeNull()
-    expect(result.deterministicTeacherText).toBeUndefined()
-    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
-    expect(result.teacherInput ?? '').toContain('\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c')
-    expect(result.teacherInput ?? '').toContain('Do NOT grade this as the exercise answer')
-    expect(result.teacherInput ?? '').toContain('My ___ is photography.')
+    expect(result.teacherInput).toBeNull()
+    expect(result.deterministicTeacherText).toContain('"\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c" in English is "ship"')
+    expect(result.deterministicTeacherText).not.toContain('My ___ is photography.')
 
     const state = await exerciseEngine.getState(lessonId)
     expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
@@ -656,7 +651,7 @@ describe('paid lesson vocabulary item flow', () => {
     expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
   })
 
-  it('routes English lookup questions to bounded AI side-question help instead of grading', async () => {
+  it('answers known English lookup questions deterministically instead of grading', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
     const orchestrator = new MasterLessonOrchestrator()
@@ -673,10 +668,9 @@ describe('paid lesson vocabulary item flow', () => {
 
     expect(result.feedback).toBeNull()
     expect(result.cursorUpdate).toBeNull()
-    expect(result.deterministicTeacherText).toBeUndefined()
-    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
-    expect(result.teacherInput ?? '').toContain('Requested word or phrase: "ship"')
-    expect(result.teacherInput ?? '').toContain('Do NOT grade this as the exercise answer')
+    expect(result.teacherInput).toBeNull()
+    expect(result.deterministicTeacherText).toContain('"Ship" means: a large boat used to travel on water')
+    expect(result.deterministicTeacherText).not.toContain('My ___ is photography.')
 
     const state = await exerciseEngine.getState(lessonId)
     expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
@@ -742,6 +736,47 @@ describe('paid lesson vocabulary item flow', () => {
     expect(replacement.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
     expect((replacement.teacherInput ?? '').toLowerCase()).toContain('\u043b\u0456\u0436\u043a\u043e')
     expect(replacement.teacherInput ?? '').toContain('Do NOT grade this as the exercise answer')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
+  })
+
+  it('lets a standalone Cyrillic lookup replace a pending side-question follow-up', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-standalone-side-question-replaced'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u0410 \u044f\u043a \u044f\u0431\u043b\u0443\u043a\u043e? \u041d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456?',
+      lessonStartedAt: Date.now(),
+    })
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u042f\u043a \u0437\u0430 \u0442\u0438? \u041b\u0456\u0436\u043a\u043e \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456.',
+      lessonStartedAt: Date.now(),
+    })
+
+    const replacement = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(replacement.feedback).toBeNull()
+    expect(replacement.cursorUpdate).toBeNull()
+    expect(replacement.teacherInput).toBeNull()
+    expect(replacement.deterministicTeacherText).toContain('"\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c" in English is "ship"')
+    expect(replacement.deterministicTeacherText).not.toContain('My ___ is photography.')
 
     const state = await exerciseEngine.getState(lessonId)
     expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
