@@ -401,6 +401,17 @@ function extractRequestedPhrase(text: string): string | null {
       if (candidate.length >= 2) return candidate
     }
   }
+  const standalone = cleanRequestedPhrase(text).slice(0, 60)
+  const standaloneWords = standalone.split(/\s+/u).filter(Boolean)
+  if (
+    standalone.length >= 2 &&
+    standalone.length <= 40 &&
+    standaloneWords.length > 0 &&
+    standaloneWords.length <= 4 &&
+    /^[\p{Script=Cyrillic}\s'’-]+$/u.test(standalone)
+  ) {
+    return standalone
+  }
   return null
 }
 

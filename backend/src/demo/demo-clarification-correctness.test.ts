@@ -114,6 +114,16 @@ describe('Phase 7.3 — Cyrillic phrase translations', () => {
     expect(detectPhraseQuestion('\u0410 \u044f\u043a \u044f\u0431\u043b\u0443\u043a\u043e? \u041d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456?')).toBe(true)
     expect(detectMultilingualInterruption('\u042f\u043a \u0437\u0430 \u0442\u0438? \u041b\u0456\u0436\u043a\u043e \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456.').detected).toBe(true)
   })
+
+  it('treats short standalone Cyrillic lookup words as phrase questions', () => {
+    const ship = lookupRequestedPhrase('\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c')
+
+    expect(ship.requested).toBe('\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c')
+    expect(ship.explanation).toBeNull()
+    expect(ship.hasCyrillic).toBe(true)
+    expect(detectPhraseQuestion('\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c')).toBe(true)
+    expect(detectMultilingualInterruption('\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c').detected).toBe(true)
+  })
 })
 
 // ── 2. English idiom → explanation ───────────────────────────────────────────

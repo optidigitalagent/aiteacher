@@ -572,6 +572,37 @@ describe('paid lesson vocabulary item flow', () => {
     expect(stateAfterFollowup?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
   })
 
+  it('routes standalone Cyrillic lookup words to side-question help instead of grading', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-bare-cyrillic-side-question'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    const stateBeforeHelp = await exerciseEngine.getState(lessonId)
+    const attemptsBeforeHelp = stateBeforeHelp?.currentExerciseState?.stepAttempts.length ?? 0
+
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.deterministicTeacherText).toBeUndefined()
+    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
+    expect(result.teacherInput ?? '').toContain('\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c')
+    expect(result.teacherInput ?? '').toContain('Do NOT grade this as the exercise answer')
+    expect(result.teacherInput ?? '').toContain('My ___ is photography.')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
+  })
+
   it('does not grade conversational Ukrainian lookup forms from the live transcript', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
@@ -667,6 +698,41 @@ describe('paid lesson vocabulary item flow', () => {
     expect(nextQuestion.teacherInput).toBeNull()
     expect(nextQuestion.deterministicTeacherText).toContain('"homework"')
     expect(nextQuestion.deterministicTeacherText).not.toContain('My ___ is photography.')
+  })
+
+  it('lets live conversational lookup replace a pending side-question follow-up', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-live-side-question-replaced'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u0410 \u044f\u043a \u044f\u0431\u043b\u0443\u043a\u043e? \u041d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456?',
+      lessonStartedAt: Date.now(),
+    })
+
+    const replacement = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u042f\u043a \u0437\u0430 \u0442\u0438? \u041b\u0456\u0436\u043a\u043e \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456.',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(replacement.feedback).toBeNull()
+    expect(replacement.cursorUpdate).toBeNull()
+    expect(replacement.deterministicTeacherText).toBeUndefined()
+    expect(replacement.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
+    expect((replacement.teacherInput ?? '').toLowerCase()).toContain('\u043b\u0456\u0436\u043a\u043e')
+    expect(replacement.teacherInput ?? '').toContain('Do NOT grade this as the exercise answer')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
   })
 
   it('keeps exercise authority after repeated wrong answers and advances keen on to the gym item deterministically', async () => {
