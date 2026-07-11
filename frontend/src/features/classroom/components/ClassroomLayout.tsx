@@ -327,10 +327,15 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const awaitingStudentMessageRef = useRef(false)
   const [studentTurnPending, setStudentTurnPending] = useState(false)
   const transcriptIgnoreUntilRef = useRef(0)
+  const previousTranscriptBlockUntilRef = useRef(0)
+  const previousVoiceTranscriptRef = useRef('')
   const setAwaitingStudentMessage = useCallback((value: boolean) => {
     awaitingStudentMessageRef.current = value
     setStudentTurnPending(value)
   }, [])
+
+  const normalizeTranscriptPreview = useCallback((text: string) =>
+    text.trim().toLowerCase().replace(/\s+/g, ' '), [])
 
   const interruptPaidTeacherIfNeeded = useCallback((source: 'text_submit' | 'exercise_submit') => {
     if (isDemoMode || !isSpeaking || isListening) return
@@ -387,6 +392,16 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
         // Show Deepgram transcript while the backend finalizes this voice turn.
         // During pending finalization the input is read-only, so preview cannot double-submit.
         if (!awaitingStudentMessageRef.current && Date.now() < transcriptIgnoreUntilRef.current) break
+        const normalizedTranscript = normalizeTranscriptPreview(msg.text)
+        const normalizedPrevious = normalizeTranscriptPreview(previousVoiceTranscriptRef.current)
+        if (
+          normalizedTranscript &&
+          normalizedPrevious &&
+          Date.now() < previousTranscriptBlockUntilRef.current &&
+          normalizedTranscript === normalizedPrevious
+        ) {
+          break
+        }
         // Guard: don't overwrite text the student typed manually (i.e. answer
         // is non-empty AND differs from the previous transcript value).
         const prevT = lastTranscriptRef.current
@@ -836,6 +851,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       // Mic just stopped: keep the transcript visible while the backend finalizes.
       // The pending state disables submit/mic until student_message echoes back.
       setAwaitingStudentMessage(true)
+      previousVoiceTranscriptRef.current = answerRef.current || lastTranscriptRef.current
       send({ type: 'mic_stop' })
       lastTranscriptRef.current = ''
       // Backend must answer every mic_stop with either student_message or voice_turn_empty.
@@ -852,7 +868,8 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       // Keep a short UI-only ignore window so late transcript events from the
       // previous turn cannot repopulate the input just as the student starts.
       setAwaitingStudentMessage(false)
-      transcriptIgnoreUntilRef.current = Date.now() + 500
+      transcriptIgnoreUntilRef.current = Date.now() + 900
+      previousTranscriptBlockUntilRef.current = Date.now() + 4000
       lastTranscriptRef.current = ''
       setAnswer('')
       onTranscript('')

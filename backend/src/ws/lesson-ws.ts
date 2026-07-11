@@ -3866,6 +3866,30 @@ async function handleEngineExerciseAnswer(
 
   // Teacher Brain narrates engine decision — correction context already contains
   // off-topic recovery info so the off-topic guard is skipped
+  if (orchResult.deterministicTeacherText) {
+    const teacherText = orchResult.deterministicTeacherText
+    send(ws, { type: 'ai_text', phase: 'EXERCISES', text: teacherText })
+    if (meta.userId) {
+      recordTeacherMessage({
+        lessonId,
+        sessionId:      meta.sessionId,
+        userId:         meta.userId,
+        studentId:      meta.studentId,
+        text:           teacherText,
+        phase:          'EXERCISES',
+        exerciseNumber: orchResult.cursorUpdate?.exerciseNumber ?? null,
+        exerciseType:   orchResult.cursorUpdate?.exerciseType ?? null,
+        itemIndex:      orchResult.cursorUpdate?.itemIndex ?? null,
+        itemTotal:      orchResult.cursorUpdate?.itemTotal ?? null,
+        correctionTurn: null,
+        source:         'system',
+        metadata:       { deterministicTeacherText: true, engineExerciseAnswer: true },
+      })
+    }
+    await ttsStream(ws, meta, teacherText)
+    return
+  }
+
   if (orchResult.teacherInput) {
     await processInput(ws, meta, orchResult.teacherInput, false, true)
   }

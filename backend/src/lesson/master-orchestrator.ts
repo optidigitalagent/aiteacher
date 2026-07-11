@@ -51,6 +51,10 @@ function paidOpeningWarmupKey(lessonId: string): string {
   return `paid_opening_warmup:${lessonId}`
 }
 
+function paidSideQuestionFollowupKey(lessonId: string): string {
+  return `paid_side_question_followup:${lessonId}`
+}
+
 type PaidOpeningWarmupStage = 'pending' | 'detail'
 
 async function getPaidOpeningWarmupStage(lessonId: string): Promise<PaidOpeningWarmupStage | null> {
@@ -74,6 +78,26 @@ async function markPaidOpeningWarmupPending(
 async function clearPaidOpeningWarmupPending(lessonId: string): Promise<void> {
   try {
     await redis.del(paidOpeningWarmupKey(lessonId))
+  } catch { /* non-fatal */ }
+}
+
+async function isPaidSideQuestionFollowupPending(lessonId: string): Promise<boolean> {
+  try {
+    return (await redis.get(paidSideQuestionFollowupKey(lessonId))) === 'pending'
+  } catch {
+    return false
+  }
+}
+
+async function markPaidSideQuestionFollowupPending(lessonId: string): Promise<void> {
+  try {
+    await redis.set(paidSideQuestionFollowupKey(lessonId), 'pending', 'EX', PAID_OPENING_WARMUP_TTL_SECONDS)
+  } catch { /* non-fatal */ }
+}
+
+async function clearPaidSideQuestionFollowupPending(lessonId: string): Promise<void> {
+  try {
+    await redis.del(paidSideQuestionFollowupKey(lessonId))
   } catch { /* non-fatal */ }
 }
 
@@ -158,10 +182,62 @@ function isCurrentItemPlaceholderLookup(lookup: RequestedPhraseLookup): boolean 
   return /^(?:\u0446\u0435|\u0446\u0435 \u0441\u043b\u043e\u0432\u043e|\u044d\u0442\u043e|\u044d\u0442\u043e \u0441\u043b\u043e\u0432\u043e|this|this word|it|the word|answer)$/.test(requested)
 }
 
+function isExplicitSideQuestion(lookup: RequestedPhraseLookup): boolean {
+  return Boolean(lookup.requested && !isCurrentItemPlaceholderLookup(lookup))
+}
+
 function shouldUseCurrentExpectedFallback(lookup: RequestedPhraseLookup, phraseText: string): boolean {
   const genericFallback = phraseText.startsWith("I'm not sure about that exact word") ||
     phraseText.startsWith("I can see you're writing")
   return genericFallback && isCurrentItemPlaceholderLookup(lookup)
+}
+
+function buildSideQuestionFollowup(lookup: RequestedPhraseLookup): string {
+  const explanation = lookup.explanation?.toLowerCase().trim() ?? ''
+  if (explanation === 'homework') return 'Do you usually have much homework? One short answer is enough.'
+  if (explanation === 'hobby') return 'What hobby do you like? One short answer is enough.'
+  if (explanation === 'like' || explanation === 'really like') {
+    return 'What is one thing you really like? One short answer is enough.'
+  }
+  if (explanation.includes('dance')) return 'Do you like dancing? One short answer is enough.'
+  return 'Can you use that idea in one short English sentence?'
+}
+
+function buildKnownSideQuestionAnswer(lookup: RequestedPhraseLookup): string | null {
+  if (!lookup.requested || !lookup.explanation) return null
+  if (lookup.mapType === 'english') {
+    const phrase = lookup.requested.charAt(0).toUpperCase() + lookup.requested.slice(1)
+    return `"${phrase}" means: ${lookup.explanation}. ${buildSideQuestionFollowup(lookup)}`
+  }
+  return `"${lookup.requested}" in English is "${lookup.explanation}". ${buildSideQuestionFollowup(lookup)}`
+}
+
+function buildSideQuestionTeacherInput(
+  studentAnswer: string,
+  lookup: RequestedPhraseLookup,
+  state: EngineLessonState,
+): string | null {
+  const stepPrompt = buildCurrentItemReturnPrompt(state)
+  const requested = lookup.requested?.trim()
+  if (!requested || !stepPrompt) return null
+  return [
+    '[SIDE QUESTION DURING CURRENT ITEM]',
+    `Student asked: "${studentAnswer.slice(0, 160)}"`,
+    `Requested word or phrase: "${requested.slice(0, 80)}"`,
+    `Current textbook item to preserve: ${stepPrompt}`,
+    '',
+    'Answer the exact language question first. If it is a translation question, give the natural English word or phrase.',
+    'Then ask ONE short related follow-up question the student can answer in a few words.',
+    'Do NOT grade this as the exercise answer. Do NOT change the exercise, answer the blank, or move the cursor.',
+    'Keep the whole reply concise, friendly, and in English.',
+  ].join('\n')
+}
+
+function buildSideQuestionReturn(state: EngineLessonState): string {
+  const stepPrompt = buildCurrentItemReturnPrompt(state)
+  return stepPrompt
+    ? `Got it. Nice English practice. Now let's return to the question: ${stepPrompt}`
+    : "Got it. Nice English practice. Let's continue."
 }
 
 function buildEnglishTaskHelpAnswer(text: string, state: EngineLessonState): string {
@@ -889,6 +965,10 @@ export class MasterLessonOrchestrator {
       }
     }
 
+    const pendingSideFollowup = await isPaidSideQuestionFollowupPending(lessonId)
+    const incomingLookup = lookupRequestedPhrase(studentAnswer)
+    const incomingSideQuestion = isExplicitSideQuestion(incomingLookup)
+
     const openingWarmupStage = await getPaidOpeningWarmupStage(lessonId)
     if (openingWarmupStage) {
       if (openingWarmupStage === 'pending' && shouldAskOpeningWarmupDetail(studentAnswer, engineState)) {
@@ -911,6 +991,21 @@ export class MasterLessonOrchestrator {
         deterministicTeacherText: buildOpeningWarmupReturn(engineState),
         lessonComplete: false,
       }
+    }
+
+    if (pendingSideFollowup) {
+      await clearPaidSideQuestionFollowupPending(lessonId)
+      if (!incomingSideQuestion) {
+        console.log(`[master-orch] paid_side_question_followup_answered lessonId=${lessonId}`)
+        return {
+          cursorUpdate:   null,
+          feedback:       null,
+          teacherInput:   null,
+          deterministicTeacherText: buildSideQuestionReturn(engineState),
+          lessonComplete: false,
+        }
+      }
+      console.log(`[master-orch] paid_side_question_followup_replaced lessonId=${lessonId}`)
     }
 
     if (isReadinessIntentGuard(studentAnswer)) {
@@ -943,14 +1038,65 @@ export class MasterLessonOrchestrator {
     }
 
     const multilingual = detectMultilingualInterruption(studentAnswer)
+    if (incomingSideQuestion && !multilingual.detected) {
+      const knownAnswer = buildKnownSideQuestionAnswer(incomingLookup)
+      await markPaidSideQuestionFollowupPending(lessonId)
+      if (knownAnswer) {
+        console.log(`[master-orch] side_question_known_not_submitted_to_engine lessonId=${lessonId}`)
+        return {
+          cursorUpdate:   null,
+          feedback:       null,
+          teacherInput:   null,
+          deterministicTeacherText: knownAnswer,
+          lessonComplete: false,
+        }
+      }
+      const teacherInput = buildSideQuestionTeacherInput(studentAnswer, incomingLookup, engineState)
+      if (teacherInput) {
+        console.log(`[master-orch] side_question_ai_not_submitted_to_engine lessonId=${lessonId}`)
+        return {
+          cursorUpdate:   null,
+          feedback:       null,
+          teacherInput,
+          lessonComplete: false,
+        }
+      }
+    }
+
     if (multilingual.detected) {
       const stepPrompt = buildCurrentItemReturnPrompt(engineState)
-      const phraseLookup = lookupRequestedPhrase(studentAnswer)
+      const phraseLookup = incomingLookup
       const phraseText = buildMultilingualPhraseAnswer(studentAnswer, stepPrompt, sessionId ?? lessonId)
       const currentItemAnswer = buildCurrentExpectedHelpAnswerForQuestion(studentAnswer, engineState, phraseText)
       const fallbackAnswer = shouldUseCurrentExpectedFallback(phraseLookup, phraseText)
         ? buildCurrentExpectedHelpAnswer(engineState)
         : null
+
+      if (!currentItemAnswer && !fallbackAnswer && isExplicitSideQuestion(phraseLookup)) {
+        const knownAnswer = buildKnownSideQuestionAnswer(phraseLookup)
+        await markPaidSideQuestionFollowupPending(lessonId)
+        if (knownAnswer) {
+          console.log(`[master-orch] multilingual_side_question_known lessonId=${lessonId}`)
+          return {
+            cursorUpdate:   null,
+            feedback:       null,
+            teacherInput:   null,
+            deterministicTeacherText: knownAnswer,
+            lessonComplete: false,
+          }
+        }
+        const teacherInput = buildSideQuestionTeacherInput(studentAnswer, phraseLookup, engineState)
+        if (teacherInput) {
+          console.log(`[master-orch] multilingual_side_question_ai lessonId=${lessonId}`)
+          return {
+            cursorUpdate:   null,
+            feedback:       null,
+            teacherInput,
+            lessonComplete: false,
+          }
+        }
+      }
+
       const teacherText = currentItemAnswer ?? fallbackAnswer ?? phraseText
       console.log(`[master-orch] multilingual_clarification_not_submitted_to_engine lessonId=${lessonId}`)
       return {

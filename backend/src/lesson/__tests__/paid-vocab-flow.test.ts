@@ -176,11 +176,27 @@ describe('paid lesson vocabulary item flow', () => {
       expect(result.feedback).toBeNull()
       expect(result.cursorUpdate).toBeNull()
       expect(result.deterministicTeacherText).toContain(expectedPhrase)
-      expect(result.deterministicTeacherText).toContain('My ___ is photography.')
+      expect(result.deterministicTeacherText).toContain('one short English sentence')
 
       const state = await exerciseEngine.getState(lessonId)
       expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
       expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
+
+      const followupAnswer = await orchestrator.handleStudentAnswer({
+        lessonId,
+        userId: 'user-1',
+        sessionId: 'session-1',
+        studentAnswer: 'I can try.',
+        lessonStartedAt: Date.now(),
+      })
+
+      expect(followupAnswer.feedback).toBeNull()
+      expect(followupAnswer.cursorUpdate).toBeNull()
+      expect(followupAnswer.deterministicTeacherText).toContain('My ___ is photography.')
+
+      const stateAfterFollowup = await exerciseEngine.getState(lessonId)
+      expect(stateAfterFollowup?.currentExerciseState?.currentStepIndex).toBe(0)
+      expect(stateAfterFollowup?.currentExerciseState?.stepAttempts).toHaveLength(0)
     }
   })
 
@@ -302,6 +318,37 @@ describe('paid lesson vocabulary item flow', () => {
     expect(helpRouteIndex).toBeLessThan(offTopicIndex)
     expect(source.slice(helpRouteIndex, offTopicIndex)).toContain('handleVoiceAnswer')
     expect(source.slice(helpRouteIndex, offTopicIndex)).toContain('currentAnswerHelp: true')
+  })
+
+  it('sends deterministic orchestrator text on the typed exercise-answer path', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync(new URL('../../ws/lesson-ws.ts', import.meta.url), 'utf8')
+    const handlerIndex = source.indexOf('async function handleEngineExerciseAnswer')
+    const teacherInputIndex = source.indexOf('if (orchResult.teacherInput)', handlerIndex)
+    const deterministicIndex = source.indexOf('if (orchResult.deterministicTeacherText)', handlerIndex)
+
+    expect(handlerIndex).toBeGreaterThan(-1)
+    expect(deterministicIndex).toBeGreaterThan(handlerIndex)
+    expect(teacherInputIndex).toBeGreaterThan(deterministicIndex)
+    expect(source.slice(deterministicIndex, teacherInputIndex)).toContain("type: 'ai_text'")
+    expect(source.slice(deterministicIndex, teacherInputIndex)).toContain('ttsStream')
+  })
+
+  it('blocks previous paid voice transcripts from repopulating the next mic input', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync(
+      new URL('../../../../frontend/src/features/classroom/components/ClassroomLayout.tsx', import.meta.url),
+      'utf8',
+    )
+    const transcriptCaseIndex = source.indexOf("case 'transcript'")
+    const micStartIndex = source.indexOf("send({ type: 'mic_start'", transcriptCaseIndex)
+
+    expect(transcriptCaseIndex).toBeGreaterThan(-1)
+    expect(micStartIndex).toBeGreaterThan(transcriptCaseIndex)
+    expect(source).toContain('previousVoiceTranscriptRef')
+    expect(source).toContain('previousTranscriptBlockUntilRef')
+    expect(source.slice(transcriptCaseIndex, micStartIndex)).toContain('normalizedTranscript === normalizedPrevious')
+    expect(source.slice(micStartIndex - 500, micStartIndex)).toContain('previousTranscriptBlockUntilRef.current = Date.now() + 4000')
   })
 
   it('uses the current expected answer for unknown RU/UA word-help fallback in gap-fill', async () => {
@@ -451,12 +498,135 @@ describe('paid lesson vocabulary item flow', () => {
     expect(result.cursorUpdate).toBeNull()
     expect(result.teacherInput).toBeNull()
     expect(result.deterministicTeacherText).toContain('"homework"')
-    expect(result.deterministicTeacherText).toContain('I love reading in my ___.')
+    expect(result.deterministicTeacherText).toContain('Do you usually have much homework?')
     expect(result.deterministicTeacherText).not.toContain('The word here is "free time"')
 
     const state = await exerciseEngine.getState(lessonId)
     expect(state?.currentExerciseState?.currentStepIndex).toBe(4)
     expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
+
+    const followupAnswer = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'Yes, every day.',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(followupAnswer.feedback).toBeNull()
+    expect(followupAnswer.cursorUpdate).toBeNull()
+    expect(followupAnswer.teacherInput).toBeNull()
+    expect(followupAnswer.deterministicTeacherText).toContain('I love reading in my ___.')
+
+    const stateAfterFollowup = await exerciseEngine.getState(lessonId)
+    expect(stateAfterFollowup?.currentExerciseState?.currentStepIndex).toBe(4)
+    expect(stateAfterFollowup?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
+  })
+
+  it('routes unknown mid-exercise translation questions to bounded AI side-question help', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-unknown-side-question-ai'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    const stateBeforeHelp = await exerciseEngine.getState(lessonId)
+    const attemptsBeforeHelp = stateBeforeHelp?.currentExerciseState?.stepAttempts.length ?? 0
+
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u0410 \u044f\u043a \u0441\u043a\u0430\u0437\u0430\u0442\u0438 \u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456?',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.deterministicTeacherText).toBeUndefined()
+    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
+    expect(result.teacherInput ?? '').toContain('\u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c')
+    expect(result.teacherInput ?? '').toContain('ask ONE short related follow-up')
+    expect(result.teacherInput ?? '').toContain('Do NOT grade this as the exercise answer')
+    expect(result.teacherInput ?? '').toContain('My ___ is photography.')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
+
+    const followupAnswer = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'No, never.',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(followupAnswer.feedback).toBeNull()
+    expect(followupAnswer.cursorUpdate).toBeNull()
+    expect(followupAnswer.teacherInput).toBeNull()
+    expect(followupAnswer.deterministicTeacherText).toContain('My ___ is photography.')
+
+    const stateAfterFollowup = await exerciseEngine.getState(lessonId)
+    expect(stateAfterFollowup?.currentExerciseState?.currentStepIndex).toBe(0)
+    expect(stateAfterFollowup?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeHelp)
+  })
+
+  it('routes English lookup questions to bounded AI side-question help instead of grading', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-english-side-question-ai'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'What does ship mean?',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.deterministicTeacherText).toBeUndefined()
+    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
+    expect(result.teacherInput ?? '').toContain('Requested word or phrase: "ship"')
+    expect(result.teacherInput ?? '').toContain('Do NOT grade this as the exercise answer')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
+  })
+
+  it('lets a new side question replace a pending side-question follow-up', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-side-question-replaced'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u0410 \u044f\u043a \u0441\u043a\u0430\u0437\u0430\u0442\u0438 \u043a\u043e\u0440\u0430\u0431\u0435\u043b\u044c \u043d\u0430 \u0430\u043d\u0433\u043b\u0456\u0439\u0441\u044c\u043a\u0456\u0439 \u043c\u043e\u0432\u0456?',
+      lessonStartedAt: Date.now(),
+    })
+
+    const nextQuestion = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u0410 \u044f\u043a \u0441\u043a\u0430\u0437\u0430\u0442\u0438 \u0434\u043e\u043c\u0430\u0448\u043d\u044f \u0440\u043e\u0431\u043e\u0442\u0430?',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(nextQuestion.feedback).toBeNull()
+    expect(nextQuestion.cursorUpdate).toBeNull()
+    expect(nextQuestion.teacherInput).toBeNull()
+    expect(nextQuestion.deterministicTeacherText).toContain('"homework"')
+    expect(nextQuestion.deterministicTeacherText).not.toContain('My ___ is photography.')
   })
 
   it('keeps exercise authority after repeated wrong answers and advances keen on to the gym item deterministically', async () => {
