@@ -242,6 +242,17 @@ function buildSideQuestionReturn(state: EngineLessonState): string {
     : "Got it. Nice English practice. Let's continue."
 }
 
+function isCurrentDeterministicAnswer(text: string, state: EngineLessonState): boolean {
+  const exState = state.currentExerciseState
+  const step = exState?.spec.steps[exState.currentStepIndex]
+  const expected = normalizeSpokenLine(step?.expectedAnswer ?? '')
+  const answer = normalizeSpokenLine(text)
+  if (!expected || !answer) return false
+  if (answer === expected) return true
+  return (step?.validationRule.allowedVariants ?? [])
+    .some(variant => normalizeSpokenLine(variant) === answer)
+}
+
 function buildEnglishTaskHelpAnswer(text: string, state: EngineLessonState): string {
   const exState = state.currentExerciseState
   const step = exState?.spec.steps[exState.currentStepIndex]
@@ -996,8 +1007,8 @@ export class MasterLessonOrchestrator {
     }
 
     if (pendingSideFollowup) {
-      await clearPaidSideQuestionFollowupPending(lessonId)
-      if (!incomingSideQuestion) {
+      if (!incomingSideQuestion && !isCurrentDeterministicAnswer(studentAnswer, engineState)) {
+        await clearPaidSideQuestionFollowupPending(lessonId)
         console.log(`[master-orch] paid_side_question_followup_answered lessonId=${lessonId}`)
         return {
           cursorUpdate:   null,
@@ -1007,6 +1018,7 @@ export class MasterLessonOrchestrator {
           lessonComplete: false,
         }
       }
+      await clearPaidSideQuestionFollowupPending(lessonId)
       console.log(`[master-orch] paid_side_question_followup_replaced lessonId=${lessonId}`)
     }
 

@@ -677,6 +677,38 @@ describe('paid lesson vocabulary item flow', () => {
     expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
   })
 
+  it('grades the current answer after a side-question instead of swallowing it as follow-up', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-side-question-then-current-answer'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    const sideQuestion = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'What does ship mean?',
+      lessonStartedAt: Date.now(),
+    })
+    expect(sideQuestion.feedback).toBeNull()
+    expect(sideQuestion.cursorUpdate).toBeNull()
+
+    const answer = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'hobby',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(answer.feedback?.correct).toBe(true)
+    expect(answer.cursorUpdate?.itemIndex).toBe(1)
+    expect(answer.cursorUpdate?.currentItem).toBe('What do you do in your ___?')
+    expect(answer.deterministicTeacherText).toContain('"hobby" fits perfectly')
+    expect(answer.deterministicTeacherText).not.toContain("return to the question")
+  })
+
   it('lets a new side question replace a pending side-question follow-up', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')

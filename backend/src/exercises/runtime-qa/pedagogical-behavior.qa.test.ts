@@ -817,6 +817,24 @@ describe('Phase 6B.3 — Soft-Speaking Threshold Calibration', () => {
     expect(result.repairPrompt).toContain('more natural sentence')
   })
 
+  it('reason-required school opinion repair does not impose the opposite free-time answer', () => {
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-school-position-1',
+      exerciseNumber:    2,
+      exerciseType:      'discussion',
+      instruction:       'Do you think free time is more important than school time? Give two reasons.',
+      itemText:          'Do you think free time is more important than school time? Give two reasons.',
+      studentTranscript: 'School you can learn. Talking with friends.',
+      attemptCount:      1,
+    })
+    expect(result.allowProgression).toBe(false)
+    expect(result.issueType).toBe('needs_recast_repeat')
+    expect(result.repairPrompt).toContain('School is important')
+    expect(result.repairPrompt).toContain('learn')
+    expect(result.repairPrompt).not.toContain('Free time is important')
+    expect(result.repairPrompt).not.toContain('relax')
+  })
+
   it('reason-required speaking completes after the improved third speaking turn', () => {
     const result = validateSoftSpeakingAnswer({
       exerciseId:        'test-ss-free-time-3',

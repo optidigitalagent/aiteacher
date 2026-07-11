@@ -494,15 +494,36 @@ function chooseRepairPrefix(attemptCount: number): string {
 
 function buildSpeakingDepthPrompt(instruction: string, normalized: string, attemptCount: number): string {
   const topicText = `${normalizeText(instruction)} ${normalized}`
+  const supportsSchool =
+    /\bschool(?:\s+time)?\s+(?:is\s+)?more\s+important\b/.test(normalized) ||
+    /\bmore\s+important\s+than\s+free\s+time\b/.test(normalized) ||
+    (/\bschool\b/.test(normalized) && /\b(?:learn|study|friend|friends|talking)\b/.test(normalized) && !/\brelax\b/.test(normalized))
+  const supportsFreeTime =
+    /\bfree\s+time\s+(?:is\s+)?more\s+important\b/.test(normalized) ||
+    /\bmore\s+important\s+than\s+school(?:\s+time)?\b/.test(normalized) ||
+    /\brelax\b/.test(normalized)
+
   if (attemptCount <= 0) {
-    if (/free time|school time|relax/.test(topicText)) {
+    if (supportsSchool) {
+      return 'Good start. Why is school important for learning or friends? Can you give one real example from your life?'
+    }
+    if (supportsFreeTime) {
       return 'Good start. Why do you think relaxing helps you study better? Can you give one real example from your life?'
+    }
+    if (/free time|school time/.test(topicText)) {
+      return 'Good start. Add one reason from your own opinion and one real example.'
     }
     return 'Good start. Why do you think that? Give me one real example.'
   }
 
-  if (/free time|school time|relax/.test(topicText)) {
+  if (supportsSchool) {
+    return 'Nice idea. A more natural sentence is: "School is important because I can learn and talk with friends." Now try to say the full answer again.'
+  }
+  if (supportsFreeTime) {
     return 'Nice idea. A more natural sentence is: "Free time is important because it helps me relax and study better afterwards." Now try to say the full answer again.'
+  }
+  if (/free time|school time/.test(topicText)) {
+    return 'Nice idea. Make it more natural: give your opinion and your own reason in one answer. Now try the full answer again.'
   }
   return 'Nice idea. Make it more natural: give your opinion, one reason, and one example in one answer. Now try the full answer again.'
 }
@@ -792,6 +813,23 @@ function validateWithSlots(
     }
 
     // No required slots detected at all but has some semantic content
+    if (
+      taskSpec.taskKind === 'reason_required' &&
+      /free time|school time|reason|opinion|think/.test(normalizeText(instruction)) &&
+      /\b(?:school|learn|study|friend|friends|talking|free time|relax)\b/.test(normalized)
+    ) {
+      return {
+        allowProgression:      false,
+        needsRetry:            true,
+        isPartiallyAcceptable: true,
+        issueType:             attemptCount > 0 ? 'needs_recast_repeat' : 'missing_reason',
+        repairPrompt:          attemptCount > 0
+          ? buildSpeakingDepthPrompt(instruction, normalized, attemptCount)
+          : buildPedagogicalRetry(instruction, ['reason' as AnswerSlot], subjectGuess, attemptCount),
+        confidence:            0.7,
+      }
+    }
+
     return {
       allowProgression:      false,
       needsRetry:            true,
