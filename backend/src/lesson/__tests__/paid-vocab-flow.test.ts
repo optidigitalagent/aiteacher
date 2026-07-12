@@ -864,6 +864,54 @@ describe('paid lesson vocabulary item flow', () => {
     expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeQuestion)
   })
 
+  it('lets a new English personal side question replace a pending general side-question follow-up', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-english-general-side-question-replaced'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    for (const answer of ['hobby', 'spare time', 'keen on']) {
+      await orchestrator.handleStudentAnswer({
+        lessonId,
+        userId: 'user-1',
+        sessionId: 'session-1',
+        studentAnswer: answer,
+        lessonStartedAt: Date.now(),
+      })
+    }
+    const stateBeforeQuestion = await exerciseEngine.getState(lessonId)
+    const attemptsBeforeQuestion = stateBeforeQuestion?.currentExerciseState?.stepAttempts.length ?? 0
+
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'What we think about this About dancing?',
+      lessonStartedAt: Date.now(),
+    })
+
+    const replacement = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'Do you like dancing?',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(replacement.feedback).toBeNull()
+    expect(replacement.cursorUpdate).toBeNull()
+    expect(replacement.deterministicTeacherText).toBeUndefined()
+    expect(replacement.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
+    expect(replacement.teacherInput ?? '').toContain('Student asked: "Do you like dancing?"')
+    expect(replacement.teacherInput ?? '').toContain('dancing')
+    expect(replacement.teacherInput ?? '').toContain('I joined a gym to ___.')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(3)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeQuestion)
+  })
+
   it('recognizes Ukrainian sport hall preference questions during gap-fill', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')

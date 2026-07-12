@@ -1082,32 +1082,11 @@ export class MasterLessonOrchestrator {
     }
 
     const generalSideQuestion = buildGeneralSideQuestionTeacherInput(studentAnswer, engineState)
-    if (generalSideQuestion) {
-      await markPaidSideQuestionFollowupPending(lessonId)
-      console.log(`[master-orch] general_side_question_ai_not_submitted_to_engine lessonId=${lessonId}`)
-      return {
-        cursorUpdate:   null,
-        feedback:       null,
-        teacherInput:   generalSideQuestion,
-        lessonComplete: false,
-      }
-    }
-
     const knownGeneralSideQuestion = buildKnownGeneralSideQuestionAnswer(studentAnswer, engineState)
-    if (knownGeneralSideQuestion) {
-      await markPaidSideQuestionFollowupPending(lessonId)
-      console.log(`[master-orch] general_side_question_known_not_submitted_to_engine lessonId=${lessonId}`)
-      return {
-        cursorUpdate:   null,
-        feedback:       null,
-        teacherInput:   null,
-        deterministicTeacherText: knownGeneralSideQuestion,
-        lessonComplete: false,
-      }
-    }
+    const incomingGeneralSideQuestion = Boolean(generalSideQuestion || knownGeneralSideQuestion)
 
     if (pendingSideFollowup) {
-      if (!incomingSideQuestion && !isCurrentDeterministicAnswer(studentAnswer, engineState)) {
+      if (!incomingSideQuestion && !incomingGeneralSideQuestion && !isCurrentDeterministicAnswer(studentAnswer, engineState)) {
         await clearPaidSideQuestionFollowupPending(lessonId)
         console.log(`[master-orch] paid_side_question_followup_answered lessonId=${lessonId}`)
         return {
@@ -1120,6 +1099,29 @@ export class MasterLessonOrchestrator {
       }
       await clearPaidSideQuestionFollowupPending(lessonId)
       console.log(`[master-orch] paid_side_question_followup_replaced lessonId=${lessonId}`)
+    }
+
+    if (generalSideQuestion) {
+      await markPaidSideQuestionFollowupPending(lessonId)
+      console.log(`[master-orch] general_side_question_ai_not_submitted_to_engine lessonId=${lessonId}`)
+      return {
+        cursorUpdate:   null,
+        feedback:       null,
+        teacherInput:   generalSideQuestion,
+        lessonComplete: false,
+      }
+    }
+
+    if (knownGeneralSideQuestion) {
+      await markPaidSideQuestionFollowupPending(lessonId)
+      console.log(`[master-orch] general_side_question_known_not_submitted_to_engine lessonId=${lessonId}`)
+      return {
+        cursorUpdate:   null,
+        feedback:       null,
+        teacherInput:   null,
+        deterministicTeacherText: knownGeneralSideQuestion,
+        lessonComplete: false,
+      }
     }
 
     if (isReadinessIntentGuard(studentAnswer)) {
