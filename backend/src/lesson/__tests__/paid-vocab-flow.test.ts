@@ -729,10 +729,9 @@ describe('paid lesson vocabulary item flow', () => {
 
     expect(result.feedback).toBeNull()
     expect(result.cursorUpdate).toBeNull()
-    expect(result.deterministicTeacherText).toBeUndefined()
-    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
-    expect(result.teacherInput ?? '').toContain('sport -> which sport/how long')
-    expect(result.teacherInput ?? '').toContain('I joined a gym to ___.')
+    expect(result.teacherInput).toBeNull()
+    expect(result.deterministicTeacherText ?? '').toContain('Gym training')
+    expect(result.deterministicTeacherText ?? '').toContain('I joined a gym to ___.')
 
     const state = await exerciseEngine.getState(lessonId)
     expect(state?.currentExerciseState?.currentStepIndex).toBe(3)
@@ -806,10 +805,9 @@ describe('paid lesson vocabulary item flow', () => {
 
     expect(result.feedback).toBeNull()
     expect(result.cursorUpdate).toBeNull()
-    expect(result.deterministicTeacherText).toBeUndefined()
-    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
-    expect(result.teacherInput ?? '').toContain('Student asked: "Do you like dancing?"')
-    expect(result.teacherInput ?? '').toContain('Do NOT grade this as the exercise answer')
+    expect(result.teacherInput).toBeNull()
+    expect(result.deterministicTeacherText ?? '').toContain('dancing')
+    expect(result.deterministicTeacherText ?? '').toContain('I joined a gym to ___.')
 
     const state = await exerciseEngine.getState(lessonId)
     expect(state?.currentExerciseState?.currentStepIndex).toBe(3)
@@ -901,11 +899,9 @@ describe('paid lesson vocabulary item flow', () => {
 
     expect(replacement.feedback).toBeNull()
     expect(replacement.cursorUpdate).toBeNull()
-    expect(replacement.deterministicTeacherText).toBeUndefined()
-    expect(replacement.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
-    expect(replacement.teacherInput ?? '').toContain('Student asked: "Do you like dancing?"')
-    expect(replacement.teacherInput ?? '').toContain('dancing')
-    expect(replacement.teacherInput ?? '').toContain('I joined a gym to ___.')
+    expect(replacement.teacherInput).toBeNull()
+    expect(replacement.deterministicTeacherText ?? '').toContain('dancing')
+    expect(replacement.deterministicTeacherText ?? '').toContain('I joined a gym to ___.')
 
     const state = await exerciseEngine.getState(lessonId)
     expect(state?.currentExerciseState?.currentStepIndex).toBe(3)

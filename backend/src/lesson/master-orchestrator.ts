@@ -215,11 +215,16 @@ function buildKnownSideQuestionAnswer(lookup: RequestedPhraseLookup): string | n
 }
 
 function buildKnownGeneralSideQuestionAnswer(text: string, state: EngineLessonState): string | null {
-  if (!/\p{Script=Cyrillic}/u.test(text)) return null
   const lower = text.toLowerCase()
   if (!/[?؟]/u.test(text) && !/^(ти|ты|ви|вы|чи)\s+/iu.test(lower)) return null
   const stepPrompt = buildCurrentItemReturnPrompt(state)
   const anchor = stepPrompt ? ` Now let's return to the question: ${stepPrompt}` : " Let's continue."
+  if (!/\p{Script=Cyrillic}/u.test(text)) {
+    if (/^(?:do|did|would|will|can|could)\s+you\s+(?:like|enjoy|love)\b.*\bdanc(?:e|ing)\b/.test(lower)) {
+      return `Yes, I do. I like dancing because it is fun and it helps people stay active. What kind of dancing do you enjoy?${anchor}`
+    }
+    return null
+  }
   if (/спортзал|спортзалі|спортзале|тренажерн|gym|качал/u.test(lower)) {
     return `Yes, I do. Gym training can make you healthier and stronger when you do it safely.${anchor}`
   }
@@ -1101,17 +1106,6 @@ export class MasterLessonOrchestrator {
       console.log(`[master-orch] paid_side_question_followup_replaced lessonId=${lessonId}`)
     }
 
-    if (generalSideQuestion) {
-      await markPaidSideQuestionFollowupPending(lessonId)
-      console.log(`[master-orch] general_side_question_ai_not_submitted_to_engine lessonId=${lessonId}`)
-      return {
-        cursorUpdate:   null,
-        feedback:       null,
-        teacherInput:   generalSideQuestion,
-        lessonComplete: false,
-      }
-    }
-
     if (knownGeneralSideQuestion) {
       await markPaidSideQuestionFollowupPending(lessonId)
       console.log(`[master-orch] general_side_question_known_not_submitted_to_engine lessonId=${lessonId}`)
@@ -1120,6 +1114,17 @@ export class MasterLessonOrchestrator {
         feedback:       null,
         teacherInput:   null,
         deterministicTeacherText: knownGeneralSideQuestion,
+        lessonComplete: false,
+      }
+    }
+
+    if (generalSideQuestion) {
+      await markPaidSideQuestionFollowupPending(lessonId)
+      console.log(`[master-orch] general_side_question_ai_not_submitted_to_engine lessonId=${lessonId}`)
+      return {
+        cursorUpdate:   null,
+        feedback:       null,
+        teacherInput:   generalSideQuestion,
         lessonComplete: false,
       }
     }
