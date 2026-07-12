@@ -214,6 +214,24 @@ function buildKnownSideQuestionAnswer(lookup: RequestedPhraseLookup): string | n
   return `"${lookup.requested}" in English is "${lookup.explanation}". ${buildSideQuestionFollowup(lookup)}`
 }
 
+function buildKnownGeneralSideQuestionAnswer(text: string, state: EngineLessonState): string | null {
+  if (!/\p{Script=Cyrillic}/u.test(text)) return null
+  const lower = text.toLowerCase()
+  if (!/[?؟]/u.test(text) && !/^(ти|ты|ви|вы|чи)\s+/iu.test(lower)) return null
+  const stepPrompt = buildCurrentItemReturnPrompt(state)
+  const anchor = stepPrompt ? ` Now let's return to the question: ${stepPrompt}` : " Let's continue."
+  if (/спортзал|спортзалі|спортзале|тренажерн|gym|качал/u.test(lower)) {
+    return `Yes, I do. Gym training can make you healthier and stronger when you do it safely.${anchor}`
+  }
+  if (/фаст\s*фуд|fast\s*food|бургер|шаурм/u.test(lower)) {
+    return `Usually no. Fast food can be okay sometimes, but too much of it is bad for your health.${anchor}`
+  }
+  if (/книг|книж|читати|читать|book/u.test(lower)) {
+    return `Yes. Reading is useful because books build vocabulary and help you think more clearly.${anchor}`
+  }
+  return null
+}
+
 function buildSideQuestionTeacherInput(
   studentAnswer: string,
   lookup: RequestedPhraseLookup,
@@ -767,15 +785,27 @@ function shouldAskOpeningWarmupDetail(answer: string, state: EngineLessonState):
     .replace(/\s+/g, ' ')
     .trim()
   if (!normalized) return false
-  return /^(yes|yes i have|yeah|yep|i did|no|no i didn'?t|not really)$/.test(normalized)
+  return /^(yes|yes i have|yeah|yep|i did|no|no i didn'?t|no i haven'?t|i haven'?t|i have not|not really|heaven no i haven'?t)$/.test(normalized)
 }
 
 function buildOpeningWarmupDetailQuestion(answer: string): string {
   const normalized = normalizeSpokenLine(answer).toLowerCase()
-  if (/^(no|not really)\b/.test(normalized)) {
-    return 'No problem. If you had free time later, what would you like to do? One short sentence is enough.'
+  if (/\b(no|not really|haven'?t|have not)\b/.test(normalized)) {
+    return 'No problem - busy day, then. If you had a little free time later, what would you like to do? One short sentence is enough.'
   }
   return 'Got it. What did you do in your free time? One short sentence is enough.'
+}
+
+function shouldClarifyOpeningWarmupAnswer(answer: string): boolean {
+  const trimmed = answer.trim()
+  if (!trimmed) return false
+  const cyrillicLetters = (trimmed.match(/\p{Script=Cyrillic}/gu) ?? []).length
+  const latinLetters = (trimmed.match(/[a-z]/giu) ?? []).length
+  return cyrillicLetters > 0 && cyrillicLetters >= latinLetters
+}
+
+function buildOpeningWarmupClarification(): string {
+  return 'I did not fully catch that. Say it in simple English: did you have free time today, and what did you do?'
 }
 
 function buildReadinessRefocus(state: EngineLessonState): string {
@@ -984,6 +1014,17 @@ export class MasterLessonOrchestrator {
 
     const openingWarmupStage = await getPaidOpeningWarmupStage(lessonId)
     if (openingWarmupStage) {
+      if (shouldClarifyOpeningWarmupAnswer(studentAnswer)) {
+        await markPaidOpeningWarmupPending(lessonId, openingWarmupStage)
+        console.log(`[master-orch] paid_opening_warmup_clarification_requested lessonId=${lessonId}`)
+        return {
+          cursorUpdate:   null,
+          feedback:       null,
+          teacherInput:   null,
+          deterministicTeacherText: buildOpeningWarmupClarification(),
+          lessonComplete: false,
+        }
+      }
       if (openingWarmupStage === 'pending' && shouldAskOpeningWarmupDetail(studentAnswer, engineState)) {
         await markPaidOpeningWarmupPending(lessonId, 'detail')
         console.log(`[master-orch] paid_opening_warmup_detail_requested lessonId=${lessonId}`)
@@ -1002,6 +1043,19 @@ export class MasterLessonOrchestrator {
         feedback:       null,
         teacherInput:   null,
         deterministicTeacherText: buildOpeningWarmupReturn(engineState),
+        lessonComplete: false,
+      }
+    }
+
+    const knownGeneralSideQuestion = buildKnownGeneralSideQuestionAnswer(studentAnswer, engineState)
+    if (knownGeneralSideQuestion) {
+      await markPaidSideQuestionFollowupPending(lessonId)
+      console.log(`[master-orch] general_side_question_known_not_submitted_to_engine lessonId=${lessonId}`)
+      return {
+        cursorUpdate:   null,
+        feedback:       null,
+        teacherInput:   null,
+        deterministicTeacherText: knownGeneralSideQuestion,
         lessonComplete: false,
       }
     }

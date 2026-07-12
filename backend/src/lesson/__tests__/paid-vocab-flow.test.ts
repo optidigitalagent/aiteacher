@@ -117,6 +117,54 @@ describe('paid lesson vocabulary item flow', () => {
     expect(firstAnswer.feedback?.correct).toBe(true)
   })
 
+  it('keeps negative and unclear native-language opening warm-up as conversation, not exercise start', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-warmup-negative-unclear'
+
+    await exerciseEngine.init(lessonId, '1.1')
+
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: "I'm ready.",
+      lessonStartedAt: Date.now(),
+    })
+
+    const noFreeTime = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: "Heaven. No. I haven't.",
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(noFreeTime.feedback).toBeNull()
+    expect(noFreeTime.cursorUpdate).toBeNull()
+    expect(noFreeTime.deterministicTeacherText).toContain('busy day')
+    expect(noFreeTime.deterministicTeacherText).toContain('what would you like to do')
+    expect(noFreeTime.deterministicTeacherText).not.toContain('My ___ is photography.')
+
+    const unclearNative = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u0411\u0443\u0432 \u0432\u0456\u043b\u044c\u043d\u0438\u0439 \u0447\u0430\u0441, \u043c\u0430\u0431\u0443\u0442\u044c, \u0443 \u0432\u0456\u043b\u044c\u043d\u0438\u0439 \u0447\u0430\u0441, \u0442\u0430\u043a',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(unclearNative.feedback).toBeNull()
+    expect(unclearNative.cursorUpdate).toBeNull()
+    expect(unclearNative.deterministicTeacherText).toContain('did not fully catch')
+    expect(unclearNative.deterministicTeacherText).toContain('Say it in simple English')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
+  })
+
   it('keeps Section 1.1 item text and expected answer synchronized', async () => {
     const { exerciseEngine } = await import('../../engine/exercise-engine.js')
     const { tryBuildAutoManifest } = await import('../auto-section-manifest-builder.js')
@@ -650,6 +698,45 @@ describe('paid lesson vocabulary item flow', () => {
     const state = await exerciseEngine.getState(lessonId)
     expect(state?.currentExerciseState?.currentStepIndex).toBe(0)
     expect(state?.currentExerciseState?.stepAttempts).toHaveLength(0)
+  })
+
+  it('answers Ukrainian gym opinion questions during gap-fill without grading them wrong', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-ua-gym-opinion-side-question'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    for (const answer of ['hobby', 'spare time', 'keen on']) {
+      await orchestrator.handleStudentAnswer({
+        lessonId,
+        userId: 'user-1',
+        sessionId: 'session-1',
+        studentAnswer: answer,
+        lessonStartedAt: Date.now(),
+      })
+    }
+    const stateBeforeQuestion = await exerciseEngine.getState(lessonId)
+    const attemptsBeforeQuestion = stateBeforeQuestion?.currentExerciseState?.stepAttempts.length ?? 0
+
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u0422\u0438 \u043b\u044e\u0431\u0438\u0448 \u0437\u0430\u0439\u043c\u0430\u0442\u0438\u0441\u044f \u0443 \u0441\u043f\u043e\u0440\u0442\u0437\u0430\u043b\u0456?',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.teacherInput).toBeNull()
+    expect(result.deterministicTeacherText).toContain('Yes, I do')
+    expect(result.deterministicTeacherText).toContain('healthier and stronger')
+    expect(result.deterministicTeacherText).toContain('I joined a gym to ___.')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(3)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeQuestion)
   })
 
   it('answers known English lookup questions deterministically instead of grading', async () => {

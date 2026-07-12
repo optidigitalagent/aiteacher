@@ -33,6 +33,7 @@ import {
 } from '../voice/stt.js'
 import { applyKidsTargetWordCorrection } from './kids-stt-correction.js'
 import { speakToClient } from '../voice/tts.js'
+import { sanitizeTeacherTextForTts } from '../voice/tts-text.js'
 import { loadExercise, recordAnswer } from '../exercises/exercise-store.js'
 import { validateAnswer } from '../exercises/validator.js'
 import { useSoftFeedback, buildProtocolOffTopicRecovery } from '../exercises/runtime/index.js'
@@ -3634,6 +3635,11 @@ async function processInput(
 }
 
 async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise<void> {
+  const speechText = sanitizeTeacherTextForTts(text)
+  if (!speechText) {
+    send(ws, { type: 'teacher_turn_end' })
+    return
+  }
   // Student interrupted while AI was processing — skip TTS for this turn.
   // teacher_turn_end is still sent so the frontend mic lifecycle completes cleanly.
   if (meta.interruptPending) {
@@ -3650,31 +3656,31 @@ async function ttsStream(ws: WebSocket, meta: ClientMeta, text: string): Promise
     send(ws, { type: 'teacher_turn_end' })
     return
   }
-  meta.ttsCharCount += text.length
+  meta.ttsCharCount += speechText.length
   meta.ttsActive = true
   const prev = meta.ttsController
   meta.ttsController = new AbortController()
   // Abort previous AFTER registering new controller so the chain is clean
   try { prev?.abort() } catch { /* ignore abort-chain side effects */ }
-  console.log(`[paid-lesson] teacher_speaking start chars=${text.length}`)
+  console.log(`[paid-lesson] teacher_speaking start chars=${speechText.length}`)
   recordTraceEvent({
     sessionId:    meta.sessionId,
     userIdHash:   hashUserId(meta.userId),
     eventType:    'tts_generated',
-    payloadSummary: `chars=${text.length}`,
+    payloadSummary: `chars=${speechText.length}`,
     severity:     'debug',
   })
   try {
     const result = await speakToClient(
       (msg) => send(ws, msg),
-      text,
+      speechText,
       meta.ttsController.signal,
       meta.voiceId ?? undefined,
     )
     if (result.ok) {
-      console.log(`[paid-lesson] teacher_speaking end chars=${text.length}`)
+      console.log(`[paid-lesson] teacher_speaking end chars=${speechText.length}`)
     } else {
-      console.warn(`[tts:fallback] adult TTS degraded reason=${result.reason} chars=${text.length}`)
+      console.warn(`[tts:fallback] adult TTS degraded reason=${result.reason} chars=${speechText.length}`)
     }
     // Signal frontend that all TTS audio has been sent for this turn.
     // The client uses this to calculate accurate audio-queue completion time
