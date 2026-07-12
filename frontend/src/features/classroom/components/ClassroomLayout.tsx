@@ -337,6 +337,13 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
   const normalizeTranscriptPreview = useCallback((text: string) =>
     text.trim().toLowerCase().replace(/\s+/g, ' '), [])
 
+  const isPreviousTurnTranscriptFragment = useCallback((current: string, previous: string) => {
+    if (!current || !previous) return false
+    if (current === previous) return true
+    if (current.length < 8 && previous.length < 8) return false
+    return previous.includes(current) || current.includes(previous)
+  }, [])
+
   const interruptPaidTeacherIfNeeded = useCallback((source: 'text_submit' | 'exercise_submit') => {
     if (isDemoMode || !isSpeaking || isListening) return
     const audioRemaining = getScheduledAudioEndMs()
@@ -398,7 +405,7 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
           normalizedTranscript &&
           normalizedPrevious &&
           Date.now() < previousTranscriptBlockUntilRef.current &&
-          normalizedTranscript === normalizedPrevious
+          isPreviousTurnTranscriptFragment(normalizedTranscript, normalizedPrevious)
         ) {
           break
         }
@@ -859,6 +866,11 @@ export default function ClassroomLayout({ mode }: { mode: ClassroomMode }) {
       setTimeout(() => {
         if (awaitingStudentMessageRef.current) {
           setAwaitingStudentMessage(false)
+          transcriptIgnoreUntilRef.current = Date.now() + 1200
+          previousTranscriptBlockUntilRef.current = Date.now() + 8000
+          lastTranscriptRef.current = ''
+          setAnswer('')
+          onTranscript('')
           console.log('[paid-lesson] mic_awaiting_cleared reason=backend_finalize_timeout')
         }
       }, 7000)

@@ -409,8 +409,40 @@ describe('paid lesson vocabulary item flow', () => {
     expect(micStartIndex).toBeGreaterThan(transcriptCaseIndex)
     expect(source).toContain('previousVoiceTranscriptRef')
     expect(source).toContain('previousTranscriptBlockUntilRef')
-    expect(source.slice(transcriptCaseIndex, micStartIndex)).toContain('normalizedTranscript === normalizedPrevious')
+    expect(source).toContain('isPreviousTurnTranscriptFragment')
+    expect(source).toContain('previous.includes(current) || current.includes(previous)')
+    expect(source.slice(transcriptCaseIndex, micStartIndex)).toContain(
+      'isPreviousTurnTranscriptFragment(normalizedTranscript, normalizedPrevious)',
+    )
     expect(source.slice(micStartIndex - 500, micStartIndex)).toContain('previousTranscriptBlockUntilRef.current = Date.now() + 4000')
+  })
+
+  it('clears paid mic preview on backend finalize timeout before allowing another turn', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync(
+      new URL('../../../../frontend/src/features/classroom/components/ClassroomLayout.tsx', import.meta.url),
+      'utf8',
+    )
+    const timeoutIndex = source.indexOf("reason=backend_finalize_timeout")
+    const timeoutBlock = source.slice(Math.max(0, timeoutIndex - 500), timeoutIndex + 200)
+
+    expect(timeoutIndex).toBeGreaterThan(-1)
+    expect(timeoutBlock).toContain("setAnswer('')")
+    expect(timeoutBlock).toContain("onTranscript('')")
+    expect(timeoutBlock).toContain('previousTranscriptBlockUntilRef.current = Date.now() + 8000')
+  })
+
+  it('waits for late adult STT text before submitting an interim partial', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync(new URL('../../ws/lesson-ws.ts', import.meta.url), 'utf8')
+    const partialFallbackIndex = source.indexOf("console.log(`[voice:turn] partial_fallback")
+    const lateCollectionIndex = source.indexOf('partial_late_collection_start', partialFallbackIndex)
+    const rawSubmitIndex = source.indexOf("if (!raw || !shouldProcessTranscript(raw))", partialFallbackIndex)
+
+    expect(partialFallbackIndex).toBeGreaterThan(-1)
+    expect(lateCollectionIndex).toBeGreaterThan(partialFallbackIndex)
+    expect(lateCollectionIndex).toBeLessThan(rawSubmitIndex)
+    expect(source.slice(lateCollectionIndex, rawSubmitIndex)).toContain("'late-paid-partial'")
   })
 
   it('uses the current expected answer for unknown RU/UA word-help fallback in gap-fill', async () => {

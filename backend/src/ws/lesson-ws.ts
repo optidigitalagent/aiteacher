@@ -4438,6 +4438,39 @@ function scheduleTurnFinalize(
           `source=${transcriptSource} chunks=${captureChunks} stabilizationMs=${stabilizationMs}`,
         )
 
+        if (!isKidsTurn && transcriptSource === 'partial' && captureChunks > 0) {
+          const LATE_MS = 900
+          console.log(`[voice:turn] partial_late_collection_start window=${LATE_MS}ms turnId=${captureTurnId}`)
+          meta.voiceAwaitingLateTranscript = true
+          meta.voiceLateFinalizeRef = setTimeout(() => {
+            meta.voiceAwaitingLateTranscript = false
+            meta.voiceLateFinalizeRef = null
+            const lateText = meta.voicePartialTranscript.trim()
+            const matchesTurn = meta.voicePartialTurnId === captureTurnId
+            if (lateText && matchesTurn && shouldProcessTranscript(lateText)) {
+              meta.voicePartialTranscript = ''
+              getAdultVoiceAnswerContext(meta.lessonId)
+                .then((voiceCtx) => {
+                  const normalized = normalizeAdultVoiceAnswer(lateText, voiceCtx)
+                  submitVoiceTurnText(
+                    ws,
+                    meta,
+                    normalized.text,
+                    captureTurnId,
+                    'late-paid-partial',
+                    normalized.normalization,
+                  )
+                })
+                .catch((err: unknown) =>
+                  console.error('[paid-lesson] late adult partial normalization error:', err))
+              return
+            }
+            console.log(`[voice:turn] no_transcript reason=late_empty turnId=${captureTurnId}`)
+            sendVoiceTurnEmpty(ws, 'late_empty')
+          }, LATE_MS)
+          return
+        }
+
         // Kids STT quality diagnostic — logged for every Kids turn for monitoring
         if (isKidsTurn) {
           console.log(JSON.stringify({
