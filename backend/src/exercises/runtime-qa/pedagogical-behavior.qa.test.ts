@@ -770,6 +770,40 @@ describe('Phase 6B.3 — Soft-Speaking Threshold Calibration', () => {
     expect(result.repairPrompt).toContain('real example')
   })
 
+  it('free-time opinion retry does not invent relaxing or studying when the student says choice', () => {
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-free-time-choice-1',
+      exerciseNumber:    2,
+      exerciseType:      'discussion',
+      instruction:       'Do you think free time is more important than school time? Give two reasons.',
+      itemText:          'Do you think free time is more important than school time? Give two reasons.',
+      studentTranscript: 'I think free time is more important because I can do everything what I want at all.',
+      attemptCount:      0,
+    })
+    expect(result.allowProgression).toBe(false)
+    expect(result.issueType).toBe('needs_example')
+    expect(result.repairPrompt).toContain('choose what you do')
+    expect(result.repairPrompt).not.toContain('relaxing helps')
+    expect(result.repairPrompt).not.toContain('study better')
+  })
+
+  it('speaking retry acknowledges when the student rejects an invented relaxation assumption', () => {
+    const result = validateSoftSpeakingAnswer({
+      exerciseId:        'test-ss-free-time-reject-relaxing-1',
+      exerciseNumber:    2,
+      exerciseType:      'discussion',
+      instruction:       'Do you think free time is more important than school time? Give two reasons.',
+      itemText:          'Do you think free time is more important than school time? Give two reasons.',
+      studentTranscript: "Sorry. I miss. I don't think that relaxing helps me study better.",
+      attemptCount:      1,
+    })
+    expect(result.allowProgression).toBe(false)
+    expect(result.repairPrompt).toContain("You're right")
+    expect(result.repairPrompt).toContain('your own reason')
+    expect(result.repairPrompt).not.toContain('Nice idea')
+    expect(result.repairPrompt).not.toContain('Free time is important because it helps me relax')
+  })
+
   it('opinion fragment gets targeted reason scaffold instead of the full prompt', () => {
     const result = validateSoftSpeakingAnswer({
       exerciseId:        'test-ss-free-time-fragment-1',

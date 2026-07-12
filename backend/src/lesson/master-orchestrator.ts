@@ -232,6 +232,40 @@ function buildKnownGeneralSideQuestionAnswer(text: string, state: EngineLessonSt
   return null
 }
 
+function isNativeGeneralSideQuestion(text: string): boolean {
+  if (!/\p{Script=Cyrillic}/u.test(text)) return false
+  const lower = text.toLowerCase().trim()
+  return /(?:^|\s)(?:\u044f\u043a\s+\u0442\u0438\s+\u0434\u0443\u043c\u0430\u0454\u0448|\u0449\u043e\s+\u0442\u0438\s+\u0434\u0443\u043c\u0430\u0454\u0448|\u0442\u0438\s+\u043b\u044e\u0431\u0438\u0448|\u0447\u0438\s+\u0442\u0438|\u043a\u0430\u043a\s+\u0442\u044b\s+\u0434\u0443\u043c\u0430\u0435\u0448|\u0447\u0442\u043e\s+\u0442\u044b\s+\u0434\u0443\u043c\u0430\u0435\u0448|\u0442\u044b\s+\u043b\u044e\u0431\u0438\u0448)/iu.test(lower)
+}
+
+function isEnglishGeneralSideQuestion(text: string): boolean {
+  const lower = text.trim().toLowerCase().replace(/\s+/g, ' ')
+  if (!lower || /_{2,}/.test(lower) || isEnglishTaskHelpRequest(text)) return false
+  if (/^(?:do|did|are|were|was|can|could|would|will|should)\s+you\b/.test(lower)) return true
+  if (/^what\s+(?:do\s+you\s+think|we\s+think|is\s+your|about)\b/.test(lower)) return true
+  if (/\bwhat\s+(?:do\s+you|we)\s+think\b/.test(lower) && /\babout\b/.test(lower)) return true
+  return /^how\s+about\b/.test(lower)
+}
+
+function buildGeneralSideQuestionTeacherInput(
+  studentAnswer: string,
+  state: EngineLessonState,
+): string | null {
+  if (!isEnglishGeneralSideQuestion(studentAnswer) && !isNativeGeneralSideQuestion(studentAnswer)) return null
+  const stepPrompt = buildCurrentItemReturnPrompt(state)
+  if (!stepPrompt) return null
+  return [
+    '[SIDE QUESTION DURING CURRENT ITEM]',
+    `Student asked: "${studentAnswer.slice(0, 160)}"`,
+    `Current textbook item to preserve: ${stepPrompt}`,
+    '',
+    'Answer the student question first. If they ask your preference or opinion, answer briefly as Alex in first person.',
+    'Ask ONE short context-aware follow-up tied to their topic: reading -> books read; sport -> which sport/how long; animals -> which animals/pets; dancing -> kind of dancing.',
+    'Do NOT grade this as the exercise answer. Do NOT change the exercise, answer the blank, or move the cursor.',
+    'End by returning to the current textbook item.',
+  ].join('\n')
+}
+
 function buildSideQuestionTeacherInput(
   studentAnswer: string,
   lookup: RequestedPhraseLookup,
@@ -1043,6 +1077,18 @@ export class MasterLessonOrchestrator {
         feedback:       null,
         teacherInput:   null,
         deterministicTeacherText: buildOpeningWarmupReturn(engineState),
+        lessonComplete: false,
+      }
+    }
+
+    const generalSideQuestion = buildGeneralSideQuestionTeacherInput(studentAnswer, engineState)
+    if (generalSideQuestion) {
+      await markPaidSideQuestionFollowupPending(lessonId)
+      console.log(`[master-orch] general_side_question_ai_not_submitted_to_engine lessonId=${lessonId}`)
+      return {
+        cursorUpdate:   null,
+        feedback:       null,
+        teacherInput:   generalSideQuestion,
         lessonComplete: false,
       }
     }

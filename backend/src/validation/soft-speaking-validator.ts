@@ -494,6 +494,11 @@ function chooseRepairPrefix(attemptCount: number): string {
 
 function buildSpeakingDepthPrompt(instruction: string, normalized: string, attemptCount: number): string {
   const topicText = `${normalizeText(instruction)} ${normalized}`
+  const rejectsRelaxStudyAssumption =
+    /\b(?:don'?t|don\s+t)\s+think\b.*\brelax(?:ing)?\b.*\bstudy\b/.test(normalized) ||
+    /\brelax(?:ing)?\b.*\bdoesn'?t\s+help\b.*\bstudy\b/.test(normalized)
+  const valuesChoice =
+    /\b(?:choose|choice|everything\s+what\s+i\s+want|anything\s+i\s+want|what\s+i\s+want|do\s+what\s+i\s+want)\b/.test(normalized)
   const supportsSchool =
     /\bschool(?:\s+time)?\s+(?:is\s+)?more\s+important\b/.test(normalized) ||
     /\bmore\s+important\s+than\s+free\s+time\b/.test(normalized) ||
@@ -503,12 +508,19 @@ function buildSpeakingDepthPrompt(instruction: string, normalized: string, attem
     /\bmore\s+important\s+than\s+school(?:\s+time)?\b/.test(normalized) ||
     /\brelax\b/.test(normalized)
 
+  if (rejectsRelaxStudyAssumption) {
+    return "You're right - you did not say relaxing helps you study. Use your own reason: why is choosing what you do important? Now try the full answer again."
+  }
+
   if (attemptCount <= 0) {
     if (supportsSchool) {
       return 'Good start. Why is school important for learning or friends? Can you give one real example from your life?'
     }
     if (supportsFreeTime) {
-      return 'Good start. Why do you think relaxing helps you study better? Can you give one real example from your life?'
+      if (valuesChoice) {
+        return 'Good start. Why is it important to choose what you do in free time? Give one real example from your life.'
+      }
+      return 'Good start. Give one reason from your real life and one real example. What do you like doing in your free time?'
     }
     if (/free time|school time/.test(topicText)) {
       return 'Good start. Add one reason from your own opinion and one real example.'

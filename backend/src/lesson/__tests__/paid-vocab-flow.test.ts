@@ -729,13 +729,177 @@ describe('paid lesson vocabulary item flow', () => {
 
     expect(result.feedback).toBeNull()
     expect(result.cursorUpdate).toBeNull()
-    expect(result.teacherInput).toBeNull()
-    expect(result.deterministicTeacherText).toContain('Yes, I do')
-    expect(result.deterministicTeacherText).toContain('healthier and stronger')
-    expect(result.deterministicTeacherText).toContain('I joined a gym to ___.')
+    expect(result.deterministicTeacherText).toBeUndefined()
+    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
+    expect(result.teacherInput ?? '').toContain('sport -> which sport/how long')
+    expect(result.teacherInput ?? '').toContain('I joined a gym to ___.')
 
     const state = await exerciseEngine.getState(lessonId)
     expect(state?.currentExerciseState?.currentStepIndex).toBe(3)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeQuestion)
+  })
+
+  it('does not grade Ukrainian hobby opinion questions as gap-fill answers', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-ua-hobby-opinion-side-question'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'hobby',
+      lessonStartedAt: Date.now(),
+    })
+    const stateBeforeQuestion = await exerciseEngine.getState(lessonId)
+    const attemptsBeforeQuestion = stateBeforeQuestion?.currentExerciseState?.stepAttempts.length ?? 0
+
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u042f\u043a \u0442\u0438 \u0434\u0443\u043c\u0430\u0454\u0448, \u0445\u043e\u0431\u0456, \u0432\u0430\u0436\u043b\u0438\u0432\u0430 \u0447\u0430\u0441\u0442\u0438\u043d\u0430 \u0434\u043b\u044f \u0436\u0438\u0442\u0442\u044f \u043b\u044e\u0434\u0438\u043d\u0438.',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.deterministicTeacherText).toBeUndefined()
+    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
+    expect(result.teacherInput ?? '').toContain('reading -> books read')
+    expect(result.teacherInput ?? '').toContain('What do you do in your ___?')
+    expect(result.teacherInput ?? '').not.toContain('Close')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(1)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeQuestion)
+  })
+
+  it('routes English personal side questions through tutor help instead of grading', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-english-personal-side-question'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    for (const answer of ['hobby', 'spare time', 'keen on']) {
+      await orchestrator.handleStudentAnswer({
+        lessonId,
+        userId: 'user-1',
+        sessionId: 'session-1',
+        studentAnswer: answer,
+        lessonStartedAt: Date.now(),
+      })
+    }
+    const stateBeforeQuestion = await exerciseEngine.getState(lessonId)
+    const attemptsBeforeQuestion = stateBeforeQuestion?.currentExerciseState?.stepAttempts.length ?? 0
+
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'Do you like dancing?',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.deterministicTeacherText).toBeUndefined()
+    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
+    expect(result.teacherInput ?? '').toContain('Student asked: "Do you like dancing?"')
+    expect(result.teacherInput ?? '').toContain('Do NOT grade this as the exercise answer')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(3)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeQuestion)
+
+    const answer = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'get fit',
+      lessonStartedAt: Date.now(),
+    })
+    expect(answer.feedback?.correct).toBe(true)
+    expect(answer.cursorUpdate?.currentItem).toBe('I love reading in my ___.')
+  })
+
+  it('does not grade broken-English opinion questions during gap-fill', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-broken-english-side-question'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    for (const answer of ['hobby', 'spare time', 'keen on']) {
+      await orchestrator.handleStudentAnswer({
+        lessonId,
+        userId: 'user-1',
+        sessionId: 'session-1',
+        studentAnswer: answer,
+        lessonStartedAt: Date.now(),
+      })
+    }
+    const stateBeforeQuestion = await exerciseEngine.getState(lessonId)
+    const attemptsBeforeQuestion = stateBeforeQuestion?.currentExerciseState?.stepAttempts.length ?? 0
+
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: 'What we think about this About dancing?',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
+    expect(result.teacherInput ?? '').toContain('dancing')
+    expect(result.teacherInput ?? '').toContain('Do NOT grade this as the exercise answer')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(3)
+    expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeQuestion)
+  })
+
+  it('recognizes Ukrainian sport hall preference questions during gap-fill', async () => {
+    const { exerciseEngine } = await import('../../engine/exercise-engine.js')
+    const { MasterLessonOrchestrator } = await import('../master-orchestrator.js')
+    const orchestrator = new MasterLessonOrchestrator()
+    const lessonId = 'paid-vocab-flow-ua-sport-hall-side-question'
+
+    await exerciseEngine.init(lessonId, '1.1')
+    for (const answer of ['hobby', 'spare time', 'keen on', 'get fit']) {
+      await orchestrator.handleStudentAnswer({
+        lessonId,
+        userId: 'user-1',
+        sessionId: 'session-1',
+        studentAnswer: answer,
+        lessonStartedAt: Date.now(),
+      })
+    }
+    const stateBeforeQuestion = await exerciseEngine.getState(lessonId)
+    const attemptsBeforeQuestion = stateBeforeQuestion?.currentExerciseState?.stepAttempts.length ?? 0
+
+    const result = await orchestrator.handleStudentAnswer({
+      lessonId,
+      userId: 'user-1',
+      sessionId: 'session-1',
+      studentAnswer: '\u0422\u0438 \u043b\u044e\u0431\u0438\u0448 \u0445\u043e\u0434\u0438\u0442\u0438 \u0434\u043e \u0441\u043f\u043e\u0440\u0442\u0438\u0432\u043d\u043e\u0433\u043e \u0437\u0430\u043b\u0443.',
+      lessonStartedAt: Date.now(),
+    })
+
+    expect(result.feedback).toBeNull()
+    expect(result.cursorUpdate).toBeNull()
+    expect(result.deterministicTeacherText).toBeUndefined()
+    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
+    expect(result.teacherInput ?? '').toContain('sport -> which sport/how long')
+    expect(result.teacherInput ?? '').toContain('I love reading in my ___.')
+
+    const state = await exerciseEngine.getState(lessonId)
+    expect(state?.currentExerciseState?.currentStepIndex).toBe(4)
     expect(state?.currentExerciseState?.stepAttempts).toHaveLength(attemptsBeforeQuestion)
   })
 
