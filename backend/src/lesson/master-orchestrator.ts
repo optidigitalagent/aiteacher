@@ -225,7 +225,7 @@ function buildKnownGeneralSideQuestionAnswer(text: string, state: EngineLessonSt
     }
     return null
   }
-  if (/спортзал|спортзалі|спортзале|тренажерн|gym|качал/u.test(lower)) {
+  if (/спортзал|спортзалі|спортзале|спортив[^\s]*\s+зал[^\s]*|тренажерн|gym|качал/u.test(lower)) {
     return `Yes, I do. Gym training can make you healthier and stronger when you do it safely.${anchor}`
   }
   if (/фаст\s*фуд|fast\s*food|бургер|шаурм/u.test(lower)) {

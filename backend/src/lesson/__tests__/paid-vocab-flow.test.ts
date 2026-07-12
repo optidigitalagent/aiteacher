@@ -937,10 +937,9 @@ describe('paid lesson vocabulary item flow', () => {
 
     expect(result.feedback).toBeNull()
     expect(result.cursorUpdate).toBeNull()
-    expect(result.deterministicTeacherText).toBeUndefined()
-    expect(result.teacherInput ?? '').toContain('[SIDE QUESTION DURING CURRENT ITEM]')
-    expect(result.teacherInput ?? '').toContain('sport -> which sport/how long')
-    expect(result.teacherInput ?? '').toContain('I love reading in my ___.')
+    expect(result.teacherInput).toBeNull()
+    expect(result.deterministicTeacherText ?? '').toContain('Gym training')
+    expect(result.deterministicTeacherText ?? '').toContain('I love reading in my ___.')
 
     const state = await exerciseEngine.getState(lessonId)
     expect(state?.currentExerciseState?.currentStepIndex).toBe(4)
